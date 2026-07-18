@@ -233,7 +233,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (!instantAmount.trim() || parseFloat(instantAmount) <= 0) { setIwStep(1); setInstantError('Enter USDT amount'); return }
     if (!instantPaymentMethod) { setIwStep(2); setInstantError('Select a payment method'); return }
     if (ad?.side === 'sell' && !instantDeliveryMethod) { setIwStep(3); setInstantError('Select your receiving method'); return }
-    if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setIwStep(3); setInstantError('Enter your receiving address'); return }
+    if (ad?.side === 'sell' && instantDeliveryMethod && !instantDeliveryAddress.trim()) { setIwStep(4); setInstantError('Enter your receiving address'); return }
     const offered = ad?.networks?.length ? ad.networks : (ad?.network ? [ad.network] : [])
     const isWallet = instantDeliveryMethod === 'wallet_blockchain'
     const chosenNet = isWallet ? (instantNetwork || offered[0] || '') : ''
@@ -249,10 +249,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
     if (ad?.side === 'buy') {
       const dests = adBuyDestinations(ad)
       if (dests.length === 0) { setInstantError('This listing has no receiving destination on file'); return }
-      if (dests.length > 1 && !instantSendDestKey) { setIwStep(3); setInstantError('Select where to send the USDT'); return }
-      const chosen = dests.find((d) => destKeyOf(d) === instantSendDestKey) ?? dests[0]!
       const payFroms = ad.resolvedPaymentMethods ?? []
       if (payFroms.length > 1 && !instantBuyerPayFrom) { setIwStep(3); setInstantError("Select the buyer's payment method") ; return }
+      if (dests.length > 1 && !instantSendDestKey) { setIwStep(payFroms.length > 1 ? 4 : 3); setInstantError('Select where to send the USDT'); return }
+      const chosen = dests.find((d) => destKeyOf(d) === instantSendDestKey) ?? dests[0]!
       buyPayload = {
         buyerDeliveryMethod: chosen.method,
         ...(chosen.method === 'wallet_blockchain' && chosen.network ? { network: chosen.network } : {}),
@@ -333,18 +333,23 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       }))
 
   // Start-Trade wizard step-completion (mirrors handleInstantTrade validation).
+  // The flow is a 4-step ladder — each step carries exactly ONE decision, and the
+  // address/destination is always the LAST step:
+  //   SELL ad: 1 amount · 2 pay via · 3 how you'll receive · 4 your address
+  //   BUY ad:  1 amount · 2 receive via · 3 buyer pays you from · 4 where you'll send
+  // (a BUY ad with ≤1 declared pay-from account skips step 3 → a 3-step ladder).
   const iwAmt = instantAmount ? parseFloat(instantAmount) : 0
   const iwStep1Done = iwAmt > 0 && iwAmt >= Number(ad.minOrder) && iwAmt <= Math.min(Number(ad.maxOrder), Number(ad.availableAmount))
   const iwStep2Done = !!instantPaymentMethod
-  const iwStep3Done = (() => {
-    if (isSellAd) return !!instantDeliveryMethod && instantDeliveryAddress.trim().length > 0
-    // BUY ad: need a send destination (when >1) and a pay-from account (when >1).
-    const dests = adBuyDestinations(ad)
-    const payFroms = ad.resolvedPaymentMethods ?? []
-    const destOk = dests.length <= 1 || !!instantSendDestKey
-    const payOk = payFroms.length <= 1 || !!instantBuyerPayFrom
-    return dests.length > 0 && destOk && payOk
-  })()
+  const iwDests = adBuyDestinations(ad)
+  const iwHasPayFromStep = !isSellAd && resolvedMethods.length > 1
+  const iwStep3Done = isSellAd
+    ? !!instantDeliveryMethod
+    : (!iwHasPayFromStep || !!instantBuyerPayFrom)
+  const iwLastStepN = isSellAd || iwHasPayFromStep ? 4 : 3
+  const iwLastDone = isSellAd
+    ? (!!instantDeliveryMethod && instantDeliveryAddress.trim().length > 0)
+    : (iwDests.length > 0 && (iwDests.length <= 1 || !!instantSendDestKey))
 
   // Network-aware delivery label. Wallet delivery shows the on-chain asset+network(s)
   // ("Wallet · USDT BEP20" or "Wallet · USDT BEP20 / Aptos") so the buyer always
@@ -356,16 +361,25 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       ? `Wallet · ${walletNetworksLabel}`
       : (DELIVERY_LABELS[dt] ?? dt)
 
+  // Wallet/on-chain first, then exchanges — each button carries its logo so the
+  // two delivery families are visually distinct at a glance.
+  const walletDeliveryTypes = deliveryTypes.filter((dt) => dt === 'wallet_blockchain')
+  const exchangeDeliveryTypes = deliveryTypes.filter((dt) => dt !== 'wallet_blockchain')
+  const deliveryLogo = (dt: string) =>
+    dt === 'wallet_blockchain'
+      ? { type: 'token' as const, slug: ad.coin }
+      : { type: 'exchange' as const, slug: dt }
   const DeliveryMethodPicker = ({ selected, onSelect }: { selected: string; onSelect: (v: string) => void }) => (
     <div className="grid grid-cols-2 gap-2 mt-1.5">
-      {deliveryTypes.map((dt) => (
+      {[...walletDeliveryTypes, ...exchangeDeliveryTypes].map((dt) => (
         <button
           type="button"
           key={dt}
           onClick={() => onSelect(selected === dt ? '' : dt)}
-          className={`py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
+          className={`inline-flex items-center justify-center gap-1.5 px-2 py-2 text-sm rounded-xl border font-semibold transition-colors ${selected === dt ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}
         >
-          {deliveryLabelFull(dt)}
+          <EntityLogo {...deliveryLogo(dt)} size="xs" className="flex-shrink-0" />
+          <span className="truncate">{deliveryLabelFull(dt)}</span>
         </button>
       ))}
     </div>
@@ -502,24 +516,44 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             </svg>
           </button>
           {networkOpen && (
-            <div className="mt-3">
-              <p className="text-xs text-text-muted mb-2">
+            <div className="mt-3 space-y-4">
+              <p className="text-xs text-text-muted">
                 {isSellAd
                   ? 'Seller can send USDT via these methods. You will select one when starting a trade.'
                   : 'Buyer accepts USDT via these methods. Select one when starting a trade.'}
               </p>
-              <div className="flex flex-wrap gap-2">
-                {deliveryTypes.map((dt) => (
-                  <span key={dt} className="bg-surface border border-border px-3 py-1 rounded-full text-sm font-medium text-text-primary">
-                    {deliveryLabelFull(dt)}
-                  </span>
-                ))}
-              </div>
-              {deliveryTypes.includes('wallet_blockchain') && (
-                <p className="text-xs text-text-muted mt-2">
-                  {isSellAd ? 'You will receive' : 'Send'} on-chain as <span className="font-semibold text-text-secondary">{walletNetworksLabel}</span>
-                  {offeredNetworks.length > 1 ? ' — pick one network when starting the trade.' : ` (${offeredNetworks[0]} network).`}
-                </p>
+              {/* Grouped like the CTM Payment Methods card: on-chain wallet delivery
+                  and exchange internal transfers are two different families, each
+                  chip carrying its logo. */}
+              {walletDeliveryTypes.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">Wallet / Blockchain</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {walletDeliveryTypes.map((dt) => (
+                      <span key={dt} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm font-medium">
+                        <EntityLogo {...deliveryLogo(dt)} size="xs" className="flex-shrink-0" />
+                        <span className="truncate">{deliveryLabelFull(dt)}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <p className="text-xs text-text-muted mt-2">
+                    {isSellAd ? 'You will receive' : 'Send'} on-chain as <span className="font-semibold text-text-secondary">{walletNetworksLabel}</span>
+                    {offeredNetworks.length > 1 ? ' — pick one network when starting the trade.' : ` (${offeredNetworks[0]} network).`}
+                  </p>
+                </div>
+              )}
+              {exchangeDeliveryTypes.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">Exchange · Internal Transfer</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {exchangeDeliveryTypes.map((dt) => (
+                      <span key={dt} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm font-medium">
+                        <EntityLogo {...deliveryLogo(dt)} size="xs" className="flex-shrink-0" />
+                        <span className="truncate">{deliveryLabelFull(dt)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -738,17 +772,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
         </div>
       )}
 
-      {/* Accepted bid banner */}
-      {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
-        new Date(myActiveBid.expiresAt).getTime() <= nowTs ? (
-          <div className="bg-surface-alt border border-border rounded-xl p-4">
-            <p className="font-semibold text-text-secondary">Your bid was accepted, but the trade window has expired</p>
-            <p className="text-sm text-text-muted mt-1">
-              The payment details weren&apos;t completed in time, so this bid has expired. No worries —
-              start a fresh trade at the listed price or place a new bid below.
-            </p>
-          </div>
-        ) : (
+      {/* Accepted bid banner — only while the completion window is still OPEN.
+          An expired accepted bid renders nothing here: the Bids tab already
+          records it, and the Buy/Bid CTAs below have come back. */}
+      {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && !bidExpiredDead && (
         <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
           <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
           <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
@@ -762,7 +789,6 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             Complete Trade Details
           </button>
         </div>
-        )
       )}
 
       {/* Pending bid notice */}
@@ -916,120 +942,64 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
             </div>
             )}
 
-            {/* ── STEP 3 — Delivery / counterparty details ── */}
-            <WizardStepHeader
-              n={3}
-              title={isSellAd ? `How you'll receive ${ad.coin}` : `Where you'll send ${ad.coin}`}
-              subtitle={iwStep3Done ? 'Ready to start' : 'Delivery details'}
-              done={iwStep3Done}
-              open={iwStep === 3}
-              onClick={() => iwStep1Done && iwStep2Done && setIwStep(3)}
-            />
-            {iwStep === 3 && (
-            <div className="space-y-3">
-
-            {/* BUY ad (taker = seller): where to send USDT (4a) + which buyer account pays (4b) */}
-            {!isSellAd && (() => {
-              const dests = adBuyDestinations(ad)
-              const payFroms = ad.resolvedPaymentMethods ?? []
-              return (
-                <>
-                  {dests.length > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-text-primary mb-0.5">Where will you send {ad.coin}?</label>
-                      <p className="text-xs text-text-muted mb-1.5">{dests.length > 1 ? "Choose one of the buyer's receiving methods." : "The buyer's receiving method."}</p>
-                      {dests.length > 2 ? (
-                        // Long receiving-method list collapses into a dropdown; the
-                        // destination address shows as the sublabel of each option.
-                        <MethodSelect
-                          options={dests.map((d) => ({
-                            id: destKeyOf(d),
-                            label: destLabelOf(d),
-                            sublabel: d.address,
-                            logo: d.method === 'wallet_blockchain' ? { type: 'token' as const, slug: 'USDT' } : { type: 'exchange' as const, slug: d.method },
-                          }))}
-                          value={instantSendDestKey}
-                          onChange={setInstantSendDestKey}
-                          placeholder="Select where you'll send USDT…"
-                        />
-                      ) : (
-                        <div className="space-y-2">
-                          {dests.map((d) => {
-                            const key = destKeyOf(d)
-                            const selected = dests.length === 1 || instantSendDestKey === key
-                            return (
-                              <button type="button" key={key} onClick={() => setInstantSendDestKey(key)}
-                                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                                <div className="min-w-0">
-                                  <p className="text-sm font-medium text-text-primary">{destLabelOf(d)}</p>
-                                  <p className="text-xs text-text-muted font-mono break-all">{d.address}</p>
-                                </div>
-                                {dests.length > 1 && <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>{selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>}
-                              </button>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  {payFroms.length > 1 && (
-                    <div>
-                      <label className="block text-sm font-medium text-text-primary mb-0.5">Buyer will pay you via</label>
-                      <p className="text-xs text-text-muted mb-1.5">Pick one of the buyer&apos;s accounts — they&apos;ll send PKR from it.</p>
-                      {payFroms.length > 2 ? (
-                        <MethodSelect
-                          options={payFroms.map((m) => ({
-                            id: m.id,
-                            label: m.label,
-                            logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
-                          }))}
-                          value={instantBuyerPayFrom}
-                          onChange={setInstantBuyerPayFrom}
-                          placeholder="Select the buyer's account…"
-                        />
-                      ) : (
-                        <div className="space-y-2">
-                          {payFroms.map((m) => (
-                            <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
-                              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
-                              <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
-                              <span className="text-sm font-medium text-text-primary">{m.label}</span>
-                              <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
+            {/* ── STEPS 3 & 4 (SELL ad) — receive method, then address LAST ── */}
+            {isSellAd && (
+              <>
+                {(() => {
+                  const logo = instantDeliveryMethod ? deliveryLogo(instantDeliveryMethod) : undefined
+                  return (
+                    <WizardStepHeader
+                      n={3}
+                      title={`How you'll receive ${ad.coin}`}
+                      subtitle={instantDeliveryMethod ? deliveryLabelFull(instantDeliveryMethod) : "Choose the seller's delivery method"}
+                      {...(logo ? { subtitleLogo: logo } : {})}
+                      done={iwStep3Done}
+                      open={iwStep === 3}
+                      onClick={() => iwStep1Done && iwStep2Done && setIwStep(3)}
+                    />
+                  )
+                })()}
+                {iwStep === 3 && (
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
+                    <p className="text-xs text-text-muted mb-1">Choose one from the seller&apos;s available methods.</p>
+                    <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress(''); setInstantNetwork('') }} />
+                    {instantDeliveryMethod === 'wallet_blockchain' && offeredNetworks.length > 1 && (
+                      <div className="mt-2">
+                        <p className="text-xs text-text-muted mb-1.5">Which network do you want to receive on?</p>
+                        <div className="flex flex-wrap gap-2">
+                          {offeredNetworks.map((n) => (
+                            <button key={n} type="button" onClick={() => { setInstantNetwork(n); setInstantDeliveryAddress('') }}
+                              className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${instantNetwork === n ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
+                              {networkAssetLabel(n, ad.coin)}
                             </button>
                           ))}
                         </div>
-                      )}
-                    </div>
-                  )}
-                </>
-              )
-            })()}
+                      </div>
+                    )}
+                  </div>
+                  <button type="button" disabled={!iwStep3Done} onClick={() => setIwStep(4)}
+                    className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+                    Continue
+                  </button>
+                </div>
+                )}
 
-            {/* Delivery method — only for buying (receiving USDT) */}
-            {isSellAd && deliveryTypes.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-0.5">How will you receive {ad.coin}?</label>
-                <p className="text-xs text-text-muted mb-1">Choose one from the seller's available methods.</p>
-                <DeliveryMethodPicker selected={instantDeliveryMethod} onSelect={(v) => { setInstantDeliveryMethod(v); setInstantDeliveryAddress(''); setInstantNetwork('') }} />
-                {instantDeliveryMethod && (() => {
+                <WizardStepHeader
+                  n={4}
+                  title={instantDeliveryMethod && instantDeliveryMethod !== 'wallet_blockchain' ? `Your ${instantDeliveryMethod} UID` : 'Your receiving address'}
+                  subtitle={iwLastDone ? 'Ready to start' : `Where the seller sends your ${ad.coin}`}
+                  done={iwLastDone}
+                  open={iwStep === 4}
+                  onClick={() => iwStep1Done && iwStep2Done && iwStep3Done && setIwStep(4)}
+                />
+                {iwStep === 4 && (() => {
                   const isWallet = instantDeliveryMethod === 'wallet_blockchain'
                   const effNet = isWallet ? (instantNetwork || offeredNetworks[0]) : instantDeliveryMethod
                   const matching = mySavedAddresses.filter((a) => a.network === effNet)
                   return (
-                    <div className="mt-2 space-y-2">
-                      {isWallet && offeredNetworks.length > 1 && (
-                        <div>
-                          <p className="text-xs text-text-muted mb-1.5">Which network do you want to receive on?</p>
-                          <div className="flex flex-wrap gap-2">
-                            {offeredNetworks.map((n) => (
-                              <button key={n} type="button" onClick={() => { setInstantNetwork(n); setInstantDeliveryAddress('') }}
-                                className={`px-3 py-1.5 rounded-lg border text-xs font-semibold transition-colors ${instantNetwork === n ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:bg-surface-alt'}`}>
-                                {networkAssetLabel(n, ad.coin)}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                    <div className="space-y-2">
                       {matching.length > 0 && (
                         <div>
                           <p className="text-xs text-text-muted mb-1.5">Your saved addresses — tap to fill:</p>
@@ -1071,10 +1041,114 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                     </div>
                   )
                 })()}
-              </div>
+              </>
             )}
 
-            </div>
+            {/* ── STEPS 3 & 4 (BUY ad) — buyer's pay-from account, then the send
+                destination LAST. With ≤1 declared pay-from account the ladder is
+                3 steps and the destination is step 3. ── */}
+            {!isSellAd && (
+              <>
+                {iwHasPayFromStep && (() => {
+                  const sel = resolvedMethods.find((m) => m.id === instantBuyerPayFrom)
+                  const logo = sel ? { type: (MOBILE_TYPES.includes(sel.type) ? 'payment_method' : 'bank') as 'payment_method' | 'bank', slug: sel.label } : undefined
+                  return (
+                    <>
+                      <WizardStepHeader
+                        n={3}
+                        title="Buyer will pay you via"
+                        subtitle={sel ? sel.label : "Pick one of the buyer's accounts"}
+                        {...(logo ? { subtitleLogo: logo } : {})}
+                        done={iwStep3Done}
+                        open={iwStep === 3}
+                        onClick={() => iwStep1Done && iwStep2Done && setIwStep(3)}
+                      />
+                      {iwStep === 3 && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium text-text-primary mb-0.5">Buyer will pay you via</label>
+                          <p className="text-xs text-text-muted mb-1.5">Pick one of the buyer&apos;s accounts — they&apos;ll send PKR from it.</p>
+                          {resolvedMethods.length > 2 ? (
+                            <MethodSelect
+                              options={resolvedMethods.map((m) => ({
+                                id: m.id,
+                                label: m.label,
+                                logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                              }))}
+                              value={instantBuyerPayFrom}
+                              onChange={setInstantBuyerPayFrom}
+                              placeholder="Select the buyer's account…"
+                            />
+                          ) : (
+                            <div className="space-y-2">
+                              {resolvedMethods.map((m) => (
+                                <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
+                                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                                  <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
+                                  <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                                  <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        <button type="button" disabled={!iwStep3Done} onClick={() => setIwStep(4)}
+                          className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+                          Continue
+                        </button>
+                      </div>
+                      )}
+                    </>
+                  )
+                })()}
+
+                <WizardStepHeader
+                  n={iwLastStepN}
+                  title={`Where you'll send ${ad.coin}`}
+                  subtitle={iwLastDone ? 'Ready to start' : "The buyer's receiving method"}
+                  done={iwLastDone}
+                  open={iwStep === iwLastStepN}
+                  onClick={() => iwStep1Done && iwStep2Done && iwStep3Done && setIwStep(iwLastStepN)}
+                />
+                {iwStep === iwLastStepN && iwDests.length > 0 && (
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-0.5">Where will you send {ad.coin}?</label>
+                    <p className="text-xs text-text-muted mb-1.5">{iwDests.length > 1 ? "Choose one of the buyer's receiving methods." : "The buyer's receiving method."}</p>
+                    {iwDests.length > 2 ? (
+                      // Long receiving-method list collapses into a dropdown; the
+                      // destination address shows as the sublabel of each option.
+                      <MethodSelect
+                        options={iwDests.map((d) => ({
+                          id: destKeyOf(d),
+                          label: destLabelOf(d),
+                          sublabel: d.address,
+                          logo: d.method === 'wallet_blockchain' ? { type: 'token' as const, slug: 'USDT' } : { type: 'exchange' as const, slug: d.method },
+                        }))}
+                        value={instantSendDestKey}
+                        onChange={setInstantSendDestKey}
+                        placeholder="Select where you'll send USDT…"
+                      />
+                    ) : (
+                      <div className="space-y-2">
+                        {iwDests.map((d) => {
+                          const key = destKeyOf(d)
+                          const selected = iwDests.length === 1 || instantSendDestKey === key
+                          return (
+                            <button type="button" key={key} onClick={() => setInstantSendDestKey(key)}
+                              className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${selected ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-text-primary">{destLabelOf(d)}</p>
+                                <p className="text-xs text-text-muted font-mono break-all">{d.address}</p>
+                              </div>
+                              {iwDests.length > 1 && <span className={`w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${selected ? 'border-primary bg-primary' : 'border-border'}`}>{selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </>
             )}
 
             <div className="flex gap-3">

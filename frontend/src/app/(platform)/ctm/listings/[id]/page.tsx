@@ -301,9 +301,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setWizStep(3); setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
       if (!isBuyListing && !paymentMethodId) { setWizStep(2); setError('Select a payment method'); return }
     }
-    // SELL listings: buyer must provide their token receiving address
+    // SELL listings: buyer must provide their token receiving address (the LAST
+    // step — 4 on the PKR rail, 3 on the USDT rail).
     if (listing?.side === 'sell' && !buyerSettlementId.trim()) {
-      setWizStep(3); setError('Enter your token receiving address'); return
+      setWizStep(railUsdt ? 3 : 4); setError('Enter your token receiving address'); return
     }
     setError('')
     setSubmitting(true)
@@ -422,7 +423,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
     : resolvedMethods // taker is buyer, picks from all seller's accepted accounts
 
   // Start-Trade wizard step-completion (mirrors handleStartTrade validation so the
-  // 3-step accordion never lets a step "complete" without its required field).
+  // accordion never lets a step "complete" without its required field).
+  // A SELL listing on the PKR rail is a FOUR-step ladder — each step is exactly one
+  // decision, with the taker's receiving address always LAST:
+  //   1 amount · 2 seller's account · 3 your pay-from account · 4 your address
+  // The USDT rail (no PKR pay-from) and BUY listings stay three steps.
   const wizTokenAmt = tokenAmount ? parseFloat(tokenAmount) : 0
   const wizMinT = Number(listing.minOrderTokens)
   const wizMaxT = Math.min(Number(listing.maxOrderTokens), Number(listing.availableAmount))
@@ -430,7 +435,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const wizStep2Done = rail === 'usdt'
     ? (!!usdtMethod && (isBuyListing ? usdtAddress.trim().length > 0 : true))
     : (isBuyListing ? paymentMethodIds.length > 0 : !!paymentMethodId)
-  const wizStep3Done = isBuyListing
+  const sellPkrRail = !isBuyListing && rail === 'pkr'
+  // Pay-from is its own step only on the SELL/PKR path; a taker with no saved
+  // accounts can still continue (the step shows an "Add account" affordance).
+  const wizPayFromDone = !sellPkrRail || myMethods.length === 0 || !!buyerFromMethodId
+  const wizLastStep = sellPkrRail ? 4 : 3
+  const wizFinalDone = isBuyListing
     ? (rail === 'usdt' ? true : acceptedBuyerMethodIds.length > 0)
     : buyerSettlementId.trim().length > 0
 
@@ -846,19 +856,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         </div>
       )}
 
-      {/* Complete Trade banner — shown when buyer's bid was accepted but payment details not yet provided.
-          Once the confirmation window has passed the bid can no longer be completed (the backend rejects it
-          and a job winds it up + releases the listing lock), so show an expired state instead of a dead CTA. */}
-      {!isMine && myActiveBid?.status === 'accepted_pending_buyer' && (
-        new Date(myActiveBid.expiresAt).getTime() <= nowTs ? (
-          <div className="bg-surface-alt border border-border rounded-xl p-4">
-            <p className="font-semibold text-text-secondary">Your bid was accepted, but the trade window has expired</p>
-            <p className="text-sm text-text-muted mt-1">
-              The payment details weren&apos;t completed in time, so this bid has expired. No worries —
-              start a fresh trade or place a new bid below.
-            </p>
-          </div>
-        ) : (
+      {/* Complete Trade banner — ONLY while the completion window is still open.
+          Once the window lapses the bid is dead: nothing renders here (the Bids
+          tab keeps the record) and the Buy/Bid CTAs below come back. */}
+      {!isMine && myActiveBid?.status === 'accepted_pending_buyer' &&
+        new Date(myActiveBid.expiresAt).getTime() > nowTs && (
           <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl p-4">
             <p className="font-semibold text-amber-900 dark:text-amber-200">Your bid was accepted!</p>
             <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
@@ -872,7 +874,6 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               Complete Trade Details
             </button>
           </div>
-        )
       )}
 
       {/* CTA — also shown when an accepted bid's window has lapsed (E1): a dead
@@ -903,32 +904,24 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
           You have a pending bid on this listing. Waiting for the merchant to respond.
         </div>
       )}
-      {/* Accepted bid → trade status notice (wording follows the live trade status,
-          so a completed/cancelled/disputed trade is never shown as "open") */}
+      {/* Accepted bid → trade notice — only while the trade still NEEDS attention
+          (open or disputed). Completed/cancelled trades render nothing here: the
+          Bids/Trades tabs already record them, and a stale banner must never
+          follow the user around after the trade is settled. */}
       {!isMine && myActiveBid?.status === 'accepted' && myActiveBid.trade?.tradeRef && (() => {
         const ts = myActiveBid.trade.status
-        const done = ts === 'completed'
-        const cancelled = ts === 'cancelled'
+        if (ts === 'completed' || ts === 'cancelled') return null
         const disputed = ts === 'disputed'
-        const tone = done
-          ? 'bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300'
-          : cancelled
-            ? 'bg-surface-alt border-border text-text-secondary'
-            : disputed
-              ? 'bg-red-500/10 border-red-500/30 text-red-800 dark:text-red-300'
-              : 'bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300'
-        const message = done
-          ? 'Your bid was accepted and this trade is complete.'
-          : cancelled
-            ? 'Your bid was accepted but this trade was cancelled.'
-            : disputed
-              ? 'Your bid was accepted and this trade is under dispute.'
-              : 'Your bid was accepted and the trade is open.'
-        const cta = done || cancelled || disputed ? 'View trade →' : 'Go to trade →'
+        const tone = disputed
+          ? 'bg-red-500/10 border-red-500/30 text-red-800 dark:text-red-300'
+          : 'bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300'
+        const message = disputed
+          ? 'Your bid was accepted and this trade is under dispute.'
+          : 'Your bid was accepted and the trade is open.'
         return (
           <div className={`border rounded-xl p-4 text-sm flex items-center justify-between gap-3 ${tone}`}>
             <span>{message}</span>
-            <a href={`/ctm/trade/${myActiveBid.trade.tradeRef}`} className="font-semibold text-primary hover:underline whitespace-nowrap">{cta}</a>
+            <a href={`/ctm/trade/${myActiveBid.trade.tradeRef}`} className="font-semibold text-primary hover:underline whitespace-nowrap">{disputed ? 'View trade →' : 'Go to trade →'}</a>
           </div>
         )
       })()}
@@ -999,18 +992,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="text-text-muted">Token amount</span>
                     <span className="font-medium text-text-primary">{tokenAmt > 0 ? tokenAmt.toLocaleString(undefined, { maximumFractionDigits: 3 }) : '—'} {listing.token.symbol}</span>
                   </div>
-                  <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive (PKR)' : 'Total payable'}</span>
-                    <span className="text-text-primary">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <div className="flex justify-between gap-2 border-t border-border pt-2 font-semibold">
+                    <span className="text-text-muted whitespace-nowrap">{isBuyListing ? 'Total you receive (PKR)' : 'Total payable'}</span>
+                    <span className="text-text-primary whitespace-nowrap">PKR {totalPkr.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
                   {/* USDT equivalent — always shown so someone who thinks in USDT
-                      can read the value even on the PKR rail. On a BUY listing it
-                      parallels the PKR line ("Total you will receive (USDT)"); on a
-                      SELL/USDT rail it's the amount payable / a ≈ reference estimate. */}
+                      can read the value even on the PKR rail. ONE line per side:
+                      "USDT 3.121" sits directly under "PKR 880" (currency-first,
+                      never wrapping onto a second line). */}
                   {usdtPerToken !== null && tokenAmt > 0 && (
-                    <div className="flex justify-between text-primary font-semibold">
-                      <span>{isBuyListing ? 'Total you will receive (USDT)' : (rail === 'usdt' ? 'In USDT' : '≈ In USDT')}</span>
-                      <span>{rail === 'usdt' ? '' : '≈ '}{(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
+                    <div className="flex justify-between gap-2 text-primary font-semibold">
+                      <span className="whitespace-nowrap">{isBuyListing ? 'Total you receive (USDT)' : (rail === 'usdt' ? 'In USDT' : '≈ In USDT')}</span>
+                      <span className="whitespace-nowrap">USDT {(tokenAmt * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>
                     </div>
                   )}
                 </div>
@@ -1027,7 +1020,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             <WizardStepHeader
               n={2}
               title={isBuyListing ? "How you'll receive payment" : "How you'll pay"}
-              subtitle={rail === 'usdt' ? (usdtMethod ? ctmUsdtMethodLabel(usdtMethod) : 'Choose USDT method') : (isBuyListing ? (paymentMethodIds.length ? `${paymentMethodIds.length} account(s)` : 'Choose account(s)') : "Choose seller's account")}
+              subtitle={rail === 'usdt'
+                ? (usdtMethod ? ctmUsdtMethodLabel(usdtMethod) : 'Choose USDT method')
+                : (isBuyListing
+                  ? (paymentMethodIds.length ? `${paymentMethodIds.length} account(s)` : 'Choose account(s)')
+                  : (modalPaymentMethods.find((m) => m.id === paymentMethodId)?.label ?? "Choose seller's account"))}
               done={wizStep2Done}
               open={wizStep === 2}
               onClick={() => wizStep1Done && setWizStep(2)}
@@ -1172,7 +1169,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               ) : (
                 <MethodSelect
-                  options={modalPaymentMethods.map((m) => ({ id: m.id, label: m.label, logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label } }))}
+                  options={modalPaymentMethods.map((m) => ({ id: m.id, label: m.label, ...(m.ref ? { sublabel: m.ref } : {}), logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label } }))}
                   value={paymentMethodId}
                   onChange={setPaymentMethodId}
                   placeholder="Select the seller's payment account…"
@@ -1187,16 +1184,71 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
             </div>
             )}
 
-            {/* ── STEP 3 — Confirm counterparty / your details ── */}
+            {/* ── STEP 3 (SELL + PKR) — YOUR pay-from account, its own step ── */}
+            {sellPkrRail && (() => {
+              const picked = myMethods.find((m) => m.id === buyerFromMethodId)
+              const logo = picked ? { type: (picked.type === 'bank_transfer' ? 'bank' : 'payment_method') as 'bank' | 'payment_method', slug: picked.label } : undefined
+              return (
+                <>
+                  <WizardStepHeader
+                    n={3}
+                    title="Your payment account"
+                    subtitle={picked ? `${picked.label}${picked.ref ? ` · ${picked.ref}` : ''}` : "Account you'll pay from"}
+                    {...(logo ? { subtitleLogo: logo } : {})}
+                    done={wizPayFromDone && (wizStep > 3 || !!buyerFromMethodId)}
+                    open={wizStep === 3}
+                    onClick={() => wizStep1Done && wizStep2Done && setWizStep(3)}
+                  />
+                  {wizStep === 3 && (
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-0.5">
+                        Your payment account (you&apos;ll pay from)
+                      </label>
+                      <p className="text-xs text-text-muted mb-2">
+                        Select which of your accounts you&apos;ll send payment from — this lets the seller know where to expect it.
+                      </p>
+                      {myMethods.length === 0 && (
+                        <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2 mb-2">
+                          No saved payment accounts found. Add one so the seller knows where your payment comes from.
+                        </p>
+                      )}
+                      {/* Each option carries its own number/IBAN inline (same box,
+                          number under the name) so the taker instantly recognises
+                          which of THEIR accounts it is. */}
+                      <MethodSelect
+                        options={myMethods.map((m) => ({
+                          id: m.id,
+                          label: m.label,
+                          ...(m.ref ? { sublabel: m.ref } : {}),
+                          logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label },
+                        }))}
+                        value={buyerFromMethodId}
+                        onChange={setBuyerFromMethodId}
+                        placeholder="Select the account you'll pay from…"
+                      />
+                      <div className="mt-2"><AddPaymentMethodLink href="/payment-methods" label="Add account" /></div>
+                    </div>
+                    <button type="button" disabled={!wizPayFromDone} onClick={() => setWizStep(4)}
+                      className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
+                      Continue
+                    </button>
+                  </div>
+                  )}
+                </>
+              )
+            })()}
+
+            {/* ── LAST STEP — buyer's receiving address (SELL) / accepted accounts (BUY) ── */}
             <WizardStepHeader
-              n={3}
-              title={isBuyListing ? "Accounts you'll accept from the buyer" : 'Your details'}
-              subtitle={wizStep3Done ? 'Ready to start' : (isBuyListing ? 'Pick accepted account(s)' : 'Your token receiving address')}
-              done={wizStep3Done}
-              open={wizStep === 3}
-              onClick={() => wizStep1Done && wizStep2Done && setWizStep(3)}
+              n={wizLastStep}
+              title={isBuyListing ? "Accounts you'll accept from the buyer" : `Your ${listing.token.symbol} receiving address`}
+              subtitle={wizFinalDone ? 'Ready to start' : (isBuyListing ? 'Pick accepted account(s)' : 'Where the seller sends your tokens')}
+              done={wizFinalDone}
+              open={wizStep === wizLastStep}
+              onClick={() => wizStep1Done && wizStep2Done && wizPayFromDone && setWizStep(wizLastStep)}
             />
-            {wizStep === 3 && (
+            {wizStep === wizLastStep && (
             <div className="space-y-3">
 
             {/* BUY + USDT rail has no extra field here — confirm and start. */}
@@ -1228,30 +1280,6 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     )
                   })}
                 </div>
-              </div>
-            )}
-
-            {/* SELL listing: show buyer's own methods so seller knows which account payment will come from */}
-            {rail === 'pkr' && !isBuyListing && myMethods.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-0.5">
-                  Your payment account (you&apos;ll pay from)
-                </label>
-                <p className="text-xs text-text-muted mb-2">
-                  Select which of your accounts you&apos;ll send payment from — this lets the seller know where to expect it.
-                </p>
-                <MethodSelect
-                  options={myMethods.map((m) => ({ id: m.id, label: m.label, logo: { type: m.type === 'bank_transfer' ? 'bank' : 'payment_method', slug: m.label } }))}
-                  value={buyerFromMethodId}
-                  onChange={setBuyerFromMethodId}
-                  placeholder="Select the account you'll pay from…"
-                />
-                {/* A7: confirm the chosen account's own number so the taker knows it's theirs. */}
-                {(() => {
-                  const picked = myMethods.find((m) => m.id === buyerFromMethodId)
-                  return picked?.ref ? <p className="mt-1 text-xs text-text-muted">Your {picked.label}: <span className="font-medium text-text-primary">{picked.ref}</span></p> : null
-                })()}
-                <div className="mt-2"><AddPaymentMethodLink href="/payment-methods" label="Add account" /></div>
               </div>
             )}
 
@@ -1302,7 +1330,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
 
             <div className="flex gap-3">
               <button onClick={() => setShowModal(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface transition-colors">Cancel</button>
-              <button onClick={handleStartTrade} disabled={submitting || !wizStep1Done || !wizStep2Done || !wizStep3Done} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
+              <button onClick={handleStartTrade} disabled={submitting || !wizStep1Done || !wizStep2Done || !wizPayFromDone || !wizFinalDone} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-60">
                 {submitting ? 'Starting…' : 'Start Trade'}
               </button>
             </div>
@@ -1385,16 +1413,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <span className="text-text-muted">Token amount</span>
                     <span className="font-medium text-text-primary">{amount.toLocaleString(undefined, { maximumFractionDigits: 3 })} {listing.token.symbol}</span>
                   </div>
-                  <div className="flex justify-between border-t border-border pt-2 font-semibold">
-                    <span className="text-text-muted">{isBuyListing ? 'Total you will receive (PKR)' : 'Total payable'}</span>
-                    <span className="text-text-primary">PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
+                  <div className="flex justify-between gap-2 border-t border-border pt-2 font-semibold">
+                    <span className="text-text-muted whitespace-nowrap">{isBuyListing ? 'Total you receive (PKR)' : 'Total payable'}</span>
+                    <span className="text-text-primary whitespace-nowrap">PKR {total.toLocaleString(undefined, { maximumFractionDigits: 2 })}</span>
                   </div>
-                  {/* USDT equivalent (reference, from the platform USDT rate) so a
-                      bidder who thinks in USDT can read the value too. */}
+                  {/* USDT equivalent (reference, from the platform USDT rate) — one
+                      line, "USDT x.xxx" aligned under "PKR x,xxx". */}
                   {usdtPerToken !== null && amount > 0 && (
-                    <div className="flex justify-between text-primary font-semibold">
-                      <span>{isBuyListing ? 'Total you will receive (USDT)' : '≈ In USDT'}</span>
-                      <span>≈ {(amount * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })} USDT</span>
+                    <div className="flex justify-between gap-2 text-primary font-semibold">
+                      <span className="whitespace-nowrap">{isBuyListing ? 'Total you receive (USDT)' : '≈ In USDT'}</span>
+                      <span className="whitespace-nowrap">USDT {(amount * usdtPerToken).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 3 })}</span>
                     </div>
                   )}
                 </div>
@@ -1490,11 +1518,16 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           setConfirmPaymentMethodId(m.id)
                         }
                       }}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
+                      className={`inline-flex flex-col items-start gap-0.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${isSelected ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                      {m.label}
-                      {isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                      <span className="inline-flex items-center gap-1.5">
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                        {isSelected && <span className="ml-0.5 text-xs">✓</span>}
+                      </span>
+                      {/* The account's own number/UID inside the SAME chip so the
+                          taker recognises which account it is. */}
+                      {m.ref && <span className="text-[11px] font-normal text-text-muted">{m.ref}</span>}
                     </button>
                   )
                 })}
@@ -1533,11 +1566,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   {myMethods.map((m) => (
                     <button type="button" key={m.id}
                       onClick={() => setConfirmBuyerFromMethodId(prev => prev === m.id ? '' : m.id)}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmBuyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
+                      className={`inline-flex flex-col items-start gap-0.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${confirmBuyerFromMethodId === m.id ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}
                     >
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                      {m.label}
-                      {confirmBuyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
+                      <span className="inline-flex items-center gap-1.5">
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                        {m.label}
+                        {confirmBuyerFromMethodId === m.id && <span className="ml-0.5 text-xs">✓</span>}
+                      </span>
+                      {m.ref && <span className="text-[11px] font-normal text-text-muted">{m.ref}</span>}
                     </button>
                   ))}
                 </div>

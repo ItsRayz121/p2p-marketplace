@@ -1017,9 +1017,10 @@ export default function TradePage() {
                     no longer floats up here; the method rail now lives inside the
                     Seller Receiving Account block below (with its logo). */}
                 <div className="bg-surface-alt/40 rounded-lg p-3 space-y-2 text-sm">
+                  {/* No "Payment method" row — the full method + account details sit
+                      in the Seller Receiving Account block right below. */}
                   <DetailRow label="Amount" value={`${parseFloat(trade.amount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.coin}`} />
                   <DetailRow label="Price" value={`PKR ${Number(trade.price).toLocaleString()}`} />
-                  <DetailRow label="Payment method" value={pmLabel} />
                   <div className="border-t border-border pt-2 mt-1">
                     <DetailRow label="Total PKR" value={`PKR ${Number(trade.fiatAmount ?? trade.totalPkr).toLocaleString()}`} highlight />
                   </div>

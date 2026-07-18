@@ -827,6 +827,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const ratingPanel = (counterparty: string) => (
     <div className="space-y-5">
+      <p className="text-sm text-text-muted -mt-1">Thank you for using RupChain.</p>
       {/* Trade summary — mirrors the USDT marketplace rating box. Full-width so the
           four tiles sit on one horizontal row on larger screens. */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
@@ -839,22 +840,19 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <p className="font-semibold text-text-primary">{payAmountLabelShort}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Payment</p>
+          <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
           <p className="font-semibold text-text-primary">{paymentMethodLabel}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
-          <p className="text-text-muted text-xs mb-0.5">Counterparty</p>
-          <p className="font-semibold text-text-primary">@{counterparty}</p>
+          <p className="text-text-muted text-xs mb-0.5">{isBuyer ? 'Seller' : 'Buyer'}</p>
+          <p className="font-semibold text-text-primary">{counterparty}</p>
         </div>
       </div>
-      <div className="space-y-3">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-sm font-semibold text-text-primary">Rate your experience with @{counterparty}</p>
-            <p className="text-xs text-text-muted">How was your experience?</p>
-          </div>
+      <div className="border-t border-border pt-4 space-y-3">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-sm font-semibold text-text-primary">Rate your experience with {counterparty}</p>
           {ratingWindowOpen && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-600 dark:text-amber-400 bg-amber-500/10 rounded-full px-2 py-0.5 flex-shrink-0" title="Time left to submit your rating">
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-gold flex-shrink-0" title="Time left to submit your rating">
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               {ratingCountdown} left
             </span>
@@ -865,11 +863,14 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         ) : (
           <>
             {ratingError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{ratingError}</div>}
-            <div className="flex gap-2" role="group" aria-label="Star rating">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setRating(s)} aria-label={`Rate ${s} out of 5`} aria-pressed={s <= rating}
-                  className={`text-2xl transition-transform hover:scale-110 ${s <= rating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
-              ))}
+            <div>
+              <p className="text-sm text-text-muted mb-2">How was your experience?</p>
+              <div className="flex gap-2" role="group" aria-label="Star rating">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button key={s} onClick={() => setRating(s)} aria-label={`Rate ${s} out of 5`} aria-pressed={s <= rating}
+                    className={`text-2xl transition-transform hover:scale-110 ${s <= rating ? 'text-gold' : 'text-text-muted/30'}`}>★</button>
+                ))}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
               {RATING_TAGS.map((tag) => (
@@ -906,7 +907,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <>
             <div className="flex gap-2">
               {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl ${s <= platformRating ? 'text-yellow-400' : 'text-text-disabled'}`}>★</button>
+                <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl transition-transform hover:scale-110 ${s <= platformRating ? 'text-gold' : 'text-text-muted/30'}`}>★</button>
               ))}
             </div>
             <textarea rows={2} placeholder="Suggestions (optional)" value={platformComment} onChange={(e) => setPlatformComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
@@ -1075,8 +1076,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 expanded={expandedSteps.has(legPos.fiat)} onToggle={() => toggleStep(legPos.fiat)}>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
+                  {/* No "Payment method" row here — the full account details sit in
+                      the Seller Receiving / Your Sending blocks right below. */}
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
-                  <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label="Total payable" value={payAmountLabel} highlight />
                   </div>
@@ -1294,7 +1296,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
                   <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
-                  <Row label="Payment method" value={paymentMethodLabel} />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label="Total to receive" value={payAmountLabel} highlight />
                   </div>
@@ -1340,7 +1341,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                       <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
                       <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
-                      <Row label="Payment method" value={paymentMethodLabel} />
                       <div className="border-t border-border pt-1.5 mt-1">
                         <Row label="Amount to confirm" value={payAmountLabel} />
                       </div>
