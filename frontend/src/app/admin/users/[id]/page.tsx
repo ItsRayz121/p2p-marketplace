@@ -12,7 +12,7 @@ import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import {
   ArrowLeft, Shield, Star, TrendingUp, Users, AlertTriangle, Wallet,
   Scale, ClipboardList, CreditCard, Gavel, Bell, MessageSquareWarning,
-  Sparkles, Mail, KeyRound,
+  Sparkles, Mail, KeyRound, Copy, Check, ExternalLink,
 } from 'lucide-react'
 import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
 import { AppealCard } from '@/components/admin/AppealCard'
@@ -54,6 +54,59 @@ function Section({ title, count, children }: { title: string; count?: number; ch
       </div>
       {children}
     </div>
+  )
+}
+
+/** Explorer address links per deposit-address chain family. One EVM HD address
+ *  is shared across every EVM chain, so we link the two most-used explorers. */
+function explorerLinksFor(chainFamily: string, address: string): Array<{ label: string; href: string }> {
+  if (chainFamily === 'EVM') {
+    return [
+      { label: 'BscScan', href: `https://bscscan.com/address/${address}` },
+      { label: 'Etherscan', href: `https://etherscan.io/address/${address}` },
+    ]
+  }
+  if (chainFamily === 'APTOS') {
+    return [{ label: 'Aptos Explorer', href: `https://explorer.aptoslabs.com/account/${address}?network=mainnet` }]
+  }
+  return []
+}
+
+function DepositAddressRow({ addr }: { addr: any }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(addr.address)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch { /* clipboard unavailable */ }
+  }
+  return (
+    <li className="px-5 py-3 text-sm flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <Badge variant="default" size="sm">{addr.chainFamily}</Badge>
+      <span className="font-mono text-xs text-text-primary break-all">{addr.address}</span>
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy address"
+        title="Copy address"
+        className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-alt transition-colors"
+      >
+        {copied ? <Check size={14} /> : <Copy size={14} />}
+      </button>
+      {explorerLinksFor(addr.chainFamily, addr.address).map((l) => (
+        <a
+          key={l.label}
+          href={l.href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+        >
+          {l.label} <ExternalLink size={11} />
+        </a>
+      ))}
+      <span className="text-xs text-text-muted ml-auto whitespace-nowrap">since {fmtDate(addr.createdAt)}</span>
+    </li>
   )
 }
 
@@ -453,6 +506,16 @@ export default function AdminUserProfilePage() {
       {/* ── Wallet ── */}
       {tab === 'wallet' && (
         <div className="space-y-4">
+          <Section title="Deposit Addresses" count={data.depositAddresses?.length}>
+            {data.depositAddresses?.length ? (
+              <ul className="divide-y divide-border">
+                {data.depositAddresses.map((a: any) => (
+                  <DepositAddressRow key={a.id} addr={a} />
+                ))}
+              </ul>
+            ) : <Empty msg="No deposit addresses generated yet — the user hasn't opened the deposit screen." />}
+          </Section>
+
           <Section title="Withdrawals" count={data.withdrawals?.length}>
             {data.withdrawals?.length ? (
               <div className="overflow-x-auto">

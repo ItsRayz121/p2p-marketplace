@@ -41,12 +41,10 @@ export function ShareListingButton({
       return
     }
 
-    // Web / desktop sharer → prefer the Telegram deep link when the bot is
-    // configured. A plain web link opened INSIDE Telegram launches the Mini App
-    // at its root (the dashboard), losing the listing; the `t.me/<bot>?startapp=…`
-    // link instead re-launches the Mini App straight to this listing. Falls back
-    // to the canonical web URL when no bot username is configured.
-    const primary = telegram ?? web
+    // Web / desktop sharer → the canonical https URL. Recipients open it in a
+    // normal browser tab with a rich preview; only shares initiated INSIDE the
+    // Mini App (handled above) use the `t.me/<bot>?startapp=…` deep link.
+    const primary = web
 
     // Native share sheet (mobile browsers + installed app).
     const nav = typeof navigator !== 'undefined' ? navigator : undefined

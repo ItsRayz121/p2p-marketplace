@@ -500,7 +500,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const [
       p2pTrades, ctmTrades, gasOrders,
-      withdrawals, deposits,
+      withdrawals, deposits, depositAddresses,
       p2pStatus, ctmBuyStatus, ctmSellStatus, gasStatus,
       p2pDisputes, ctmDisputes,
       ratingsReceived, ctmRatingsReceived, ratingAgg, ctmRatingAgg,
@@ -532,6 +532,11 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { userId: id },
         orderBy: { detectedAt: 'desc' }, take: 30,
         select: { id: true, txHash: true, chain: true, symbol: true, amount: true, status: true, detectedAt: true, creditedAt: true },
+      }),
+      db.depositAddress.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, chainFamily: true, address: true, derivationIndex: true, createdAt: true },
       }),
       db.trade.groupBy({ by: ['status'], where: { OR: [{ buyerId: id }, { sellerId: id }] }, _count: { status: true } }),
       db.ctmTrade.groupBy({ by: ['status'], where: { buyerId: id }, _count: { status: true } }),
@@ -662,7 +667,7 @@ export async function adminRoutes(app: FastifyInstance) {
           referralCount,
         },
         p2pTrades, ctmTrades, gasOrders,
-        withdrawals, deposits,
+        withdrawals, deposits, depositAddresses,
         paymentMethods: user.paymentMethods,
         savedAddresses: user.savedAddresses,
         kycSubmissions: user.kycSubmissions,

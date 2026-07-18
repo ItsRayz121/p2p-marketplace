@@ -21,6 +21,7 @@ import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
+import { runEvmDepositPoller } from '../jobs/evmDepositPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
@@ -293,6 +294,16 @@ export function startWorkers() {
     .catch((err) => logger.error({ err }, 'Failed to schedule Aptos deposit poller'))
 
   createWorker(QUEUE_NAMES.APTOS_DEPOSIT_POLLER, async () => { await runAptosDepositPoller() }, { max: 1, duration: 60_000 })
+
+  // EVM USER deposit poller — Moralis-independent backstop. Scans ERC20
+  // Transfer logs to per-user deposit addresses via RPC and feeds hits through
+  // the same idempotent processDepositEvent pipeline the webhook uses, so a
+  // paused/broken Moralis stream can no longer silently swallow deposits.
+  queues.evmDepositPoller
+    .add('poll', {}, { repeat: { every: 2 * 60_000 }, jobId: 'evm-deposit-poller-repeatable' })
+    .catch((err) => logger.error({ err }, 'Failed to schedule EVM deposit poller'))
+
+  createWorker(QUEUE_NAMES.EVM_DEPOSIT_POLLER, async () => { await runEvmDepositPoller() }, { max: 1, duration: 60_000 })
 
   // Hot-wallet deposit poller — runs every 2 minutes, detects direct balance
   // increases (top-ups) even when Moralis webhooks don't fire.

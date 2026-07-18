@@ -209,6 +209,49 @@ export function parseErc20Transfers(
   return results
 }
 
+/**
+ * eth_getLogs over an explicit block range. `address` may be a single contract
+ * or a list; `topics` follows the standard positional-filter shape (null =
+ * wildcard, array = OR). Callers must keep the range small enough for public
+ * RPCs (≤ MAX_LOG_SCAN_BLOCKS) and page through larger gaps themselves.
+ */
+export async function getLogs(
+  rpcUrl: string,
+  chain: string,
+  params: {
+    fromBlock: bigint
+    toBlock: bigint
+    address?: string | string[]
+    topics?: Array<string | string[] | null>
+  },
+): Promise<Array<EvmTxLog & { blockNumber: bigint }>> {
+  const raw = await rpcCall<Array<{
+    address?: string
+    topics?: string[]
+    data?: string
+    transactionHash?: string
+    logIndex?: string
+    blockNumber?: string
+  }>>(rpcUrl, chain, 'eth_getLogs', [
+    {
+      fromBlock: '0x' + params.fromBlock.toString(16),
+      toBlock: '0x' + params.toBlock.toString(16),
+      ...(params.address ? { address: params.address } : {}),
+      ...(params.topics ? { topics: params.topics } : {}),
+    },
+  ])
+  return (raw ?? [])
+    .filter((l) => !!l.transactionHash && !!l.blockNumber)
+    .map((l) => ({
+      address: (l.address ?? '').toLowerCase(),
+      topics: l.topics ?? [],
+      data: l.data ?? '0x',
+      transactionHash: l.transactionHash!,
+      logIndex: l.logIndex ?? '0x0',
+      blockNumber: BigInt(l.blockNumber!),
+    }))
+}
+
 export async function getTransactionByHash(
   rpcUrl: string,
   chain: string,

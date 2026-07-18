@@ -17,6 +17,7 @@
     "wallet:bootstrap": "tsx src/scripts/walletBootstrap.ts",
     "gas:encrypt-mnemonic": "tsx src/scripts/encryptGasMnemonic.ts",
     "moralis:backfill": "prisma generate && tsx src/scripts/moralisBackfill.ts",
+    "deposits:rescan": "tsx src/scripts/rescanEvmDeposit.ts",
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "streaks:backfill": "tsx src/scripts/backfillTradeStreaks.ts",
     "support:merge-conversations": "tsx src/scripts/mergeSupportConversations.ts",
