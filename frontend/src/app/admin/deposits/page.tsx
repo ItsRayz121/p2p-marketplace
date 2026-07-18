@@ -105,6 +105,13 @@ export default function DepositsPage() {
 
   const limit = 20
 
+  // Detection-path liveness (Moralis webhook vs RPC poller backstop).
+  const [health, setHealth] = useState<any | null>(null)
+  const fetchHealth = useCallback(async () => {
+    try { setHealth(await adminApi.getDepositDetectionHealth()) } catch { /* banner is best-effort */ }
+  }, [])
+  usePolling(fetchHealth, 60_000)
+
   const fetchDeposits = useCallback(async () => {
     try {
       const params: Record<string, string | number | undefined> = { page, limit }
@@ -189,6 +196,30 @@ export default function DepositsPage() {
           On-chain crypto deposits credited to user balances — pending, credited, and rejected
         </p>
       </div>
+
+      {/* Detection-path liveness: stale Moralis + healthy poller = stream broken,
+          backstop carrying detection. */}
+      {health && (() => {
+        const moralisAt = health.moralisLastWebhookAt ? new Date(health.moralisLastWebhookAt) : null
+        const moralisAgeH = moralisAt ? (Date.now() - moralisAt.getTime()) / 3_600_000 : null
+        const pollerAt = health.evmPoller?.at ? new Date(health.evmPoller.at) : null
+        const pollerAgeMin = pollerAt ? (Date.now() - pollerAt.getTime()) / 60_000 : null
+        const pollerStale = pollerAgeMin === null || pollerAgeMin > 10
+        const moralisStale = moralisAgeH === null || moralisAgeH > 24
+        return (
+          <div className={`rounded-xl border px-4 py-3 text-sm ${pollerStale ? 'border-danger/40 bg-danger/5' : moralisStale ? 'border-warning/40 bg-warning/5' : 'border-border bg-surface'}`}>
+            <p className="font-medium text-text-primary">Deposit detection health</p>
+            <p className="text-xs text-text-muted mt-1">
+              Moralis webhook: {moralisAt ? `last delivery ${fmtDateTime(health.moralisLastWebhookAt)}` : 'no delivery recorded yet'}
+              {moralisStale && ' — stale; the RPC poller is the active detection path'}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              RPC poller (backstop): {pollerAt ? `last tick ${fmtDateTime(health.evmPoller.at)}` : 'no heartbeat yet'}
+              {pollerStale && ' — NOT RUNNING; deposits may go undetected, check workers'}
+            </p>
+          </div>
+        )
+      })()}
 
       {/* Status filter tabs */}
       <div className="admin-toolbar gap-1 p-1 bg-surface rounded-xl border border-border max-w-full">

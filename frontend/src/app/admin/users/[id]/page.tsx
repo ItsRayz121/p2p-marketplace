@@ -3,6 +3,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
+import { toast } from '@/lib/toast'
 import { fmtDate, fmtDateTime, fmtNumber } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -74,6 +75,12 @@ function explorerLinksFor(chainFamily: string, address: string): Array<{ label: 
 
 function DepositAddressRow({ addr }: { addr: any }) {
   const [copied, setCopied] = useState(false)
+  const [balances, setBalances] = useState<any[] | null>(null)
+  const [loadingBalances, setLoadingBalances] = useState(false)
+  const [sweepTarget, setSweepTarget] = useState<{
+    chain: string; chainName: string; asset: string; symbol: string; balance: string
+  } | null>(null)
+
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(addr.address)
@@ -81,31 +88,114 @@ function DepositAddressRow({ addr }: { addr: any }) {
       setTimeout(() => setCopied(false), 1500)
     } catch { /* clipboard unavailable */ }
   }
+
+  const loadBalances = async () => {
+    setLoadingBalances(true)
+    try {
+      const res = await adminApi.getDepositAddressBalances(addr.id)
+      setBalances(res.balances)
+    } catch (err: any) {
+      toast.error('Balance check failed', err?.message ?? 'Could not read on-chain balances')
+    } finally {
+      setLoadingBalances(false)
+    }
+  }
+
+  const doSweep = async () => {
+    if (!sweepTarget) return
+    try {
+      const res = await adminApi.sweepDepositAddress(addr.id, {
+        chain: sweepTarget.chain,
+        asset: sweepTarget.asset,
+        reason: `Admin sweep of ${sweepTarget.symbol} on ${sweepTarget.chainName} from user profile to platform hot wallet`,
+      })
+      toast.success('Sweep confirmed on-chain', `${res.amount} ${res.symbol} → ${res.destination.slice(0, 10)}… (tx ${res.txHash.slice(0, 12)}…)`)
+      setSweepTarget(null)
+      void loadBalances()
+    } catch (err: any) {
+      toast.error('Sweep failed', err?.message ?? 'Unknown error — nothing was moved')
+      setSweepTarget(null)
+    }
+  }
+
+  const nonzero = (v: string | null | undefined) => !!v && Number(v) > 0
+
   return (
-    <li className="px-5 py-3 text-sm flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <Badge variant="default" size="sm">{addr.chainFamily}</Badge>
-      <span className="font-mono text-xs text-text-primary break-all">{addr.address}</span>
-      <button
-        type="button"
-        onClick={copy}
-        aria-label="Copy address"
-        title="Copy address"
-        className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-alt transition-colors"
-      >
-        {copied ? <Check size={14} /> : <Copy size={14} />}
-      </button>
-      {explorerLinksFor(addr.chainFamily, addr.address).map((l) => (
-        <a
-          key={l.label}
-          href={l.href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+    <li className="px-5 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <Badge variant="default" size="sm">{addr.chainFamily}</Badge>
+        <span className="font-mono text-xs text-text-primary break-all">{addr.address}</span>
+        <button
+          type="button"
+          onClick={copy}
+          aria-label="Copy address"
+          title="Copy address"
+          className="p-1 rounded text-text-muted hover:text-primary hover:bg-surface-alt transition-colors"
         >
-          {l.label} <ExternalLink size={11} />
-        </a>
-      ))}
-      <span className="text-xs text-text-muted ml-auto whitespace-nowrap">since {fmtDate(addr.createdAt)}</span>
+          {copied ? <Check size={14} /> : <Copy size={14} />}
+        </button>
+        {explorerLinksFor(addr.chainFamily, addr.address).map((l) => (
+          <a
+            key={l.label}
+            href={l.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 text-xs text-primary hover:underline"
+          >
+            {l.label} <ExternalLink size={11} />
+          </a>
+        ))}
+        {addr.chainFamily === 'EVM' && (
+          <Button size="sm" variant="secondary" onClick={loadBalances} disabled={loadingBalances}>
+            {loadingBalances ? 'Checking…' : balances ? 'Refresh balances' : 'Check balances'}
+          </Button>
+        )}
+        <span className="text-xs text-text-muted ml-auto whitespace-nowrap">since {fmtDate(addr.createdAt)}</span>
+      </div>
+
+      {balances && (
+        <div className="mt-3 rounded-lg border border-border bg-surface-alt/40 divide-y divide-border">
+          {balances.every((b: any) => !nonzero(b.native) && b.tokens.every((t: any) => !nonzero(t.balance))) && (
+            <p className="px-4 py-2.5 text-xs text-text-muted">No on-chain funds found on this address across the scanned chains.</p>
+          )}
+          {balances.map((b: any) => {
+            const rows: Array<{ asset: string; symbol: string; balance: string }> = []
+            if (nonzero(b.native)) rows.push({ asset: 'native', symbol: b.nativeSymbol, balance: b.native })
+            for (const t of b.tokens) if (nonzero(t.balance)) rows.push({ asset: t.contract, symbol: t.symbol, balance: t.balance })
+            if (rows.length === 0 && !b.error) return null
+            return (
+              <div key={b.chain} className="px-4 py-2.5">
+                <p className="text-xs font-medium text-text-secondary">{b.chainName}</p>
+                {b.error && <p className="text-xs text-warning mt-0.5">{b.error}</p>}
+                {rows.map((r) => (
+                  <div key={r.asset} className="flex items-center justify-between gap-3 mt-1.5">
+                    <span className="text-sm text-text-primary">{fmtNumber(r.balance)} {r.symbol}</span>
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => setSweepTarget({ chain: b.chain, chainName: b.chainName, asset: r.asset, symbol: r.symbol, balance: r.balance })}
+                    >
+                      Sweep to hot wallet
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      <ConfirmModal
+        isOpen={!!sweepTarget}
+        onClose={() => setSweepTarget(null)}
+        onConfirm={doSweep}
+        title="Sweep funds to platform hot wallet?"
+        description={sweepTarget
+          ? `This sends the full ${fmtNumber(sweepTarget.balance)} ${sweepTarget.symbol} on ${sweepTarget.chainName} from this deposit address to the platform's gas hot wallet (an on-chain transaction; token sweeps may auto-fund a small gas top-up first). It does NOT change the user's internal balance — use the deposit rescan to credit them. This cannot be undone.`
+          : ''}
+        confirmLabel="Sweep on-chain"
+        confirmVariant="danger"
+      />
     </li>
   )
 }

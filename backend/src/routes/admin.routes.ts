@@ -19,6 +19,7 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
+import { getDepositAddressBalances, sweepDepositAddress } from '../services/depositSweep.service'
 import { refreshDepositFromRpc } from '../services/depositReconcile.service'
 import { getTransactionByHash, getTransactionReceipt, getBlockNumber } from '../lib/evmRpc'
 import { Prisma } from '@prisma/client'
@@ -2405,6 +2406,89 @@ export async function adminRoutes(app: FastifyInstance) {
       count: failedRows.length,
     })
     return reply.send({ success: true, data: { retried: failedRows.length } })
+  })
+
+  // GET /admin/deposits/detection-health — liveness of every deposit-detection
+  // path in one place: last Moralis webhook delivery, EVM RPC poller heartbeat
+  // (per-chain), Aptos poller heartbeat. A stale Moralis stamp with a healthy
+  // poller means the backstop is carrying detection — investigate the stream.
+  app.get('/admin/deposits/detection-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const [moralisLastWebhookAt, evmPollerRaw, aptosPollerRaw] = await Promise.all([
+      redis.get('moralis_last_webhook_at').catch(() => null),
+      redis.get('evm_deposit_poller_health').catch(() => null),
+      redis.get('poller_heartbeat:APTOS_DEPOSIT').catch(() => null),
+    ])
+    const parse = (raw: string | null) => {
+      if (!raw) return null
+      try { return JSON.parse(raw) as unknown } catch { return raw }
+    }
+    return reply.send({
+      success: true,
+      data: {
+        moralisLastWebhookAt,
+        evmPoller: parse(evmPollerRaw),
+        aptosPoller: parse(aptosPollerRaw),
+      },
+    })
+  })
+
+  // GET /admin/deposit-addresses/:id/balances — live on-chain balances of a
+  // user's EVM deposit address across every configured EVM chain (native +
+  // whitelisted tokens). Read-only; powers the admin sweep UI.
+  app.get('/admin/deposit-addresses/:id/balances', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const row = await db.depositAddress.findUnique({ where: { id } })
+    if (!row) throw Errors.NOT_FOUND('Deposit address')
+    if (row.chainFamily !== 'EVM') {
+      throw new AppError('UNSUPPORTED_FAMILY', 'Balance scan supports EVM deposit addresses only', 400)
+    }
+    const balances = await getDepositAddressBalances(row.address)
+    return reply.send({ success: true, data: { address: row.address, balances } })
+  })
+
+  // POST /admin/deposit-addresses/:id/sweep — move funds sitting on a user's
+  // HD deposit address to a platform-controlled destination (default: the EVM
+  // gas hot wallet). Recovery tool for deposits detection missed — it does NOT
+  // credit the user's internal balance (use deposits rescan for that).
+  // A custom external destination requires super_admin. Heavily audit-logged.
+  app.post('/admin/deposit-addresses/:id/sweep', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const schema = z.object({
+      chain: z.string().min(1),
+      // 'native' or a whitelisted token contract address on that chain.
+      asset: z.string().min(1),
+      destination: z.string().regex(/^0x[a-fA-F0-9]{40}$/).optional(),
+      reason: z.string().min(5).max(500),
+    })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+
+    if (parsed.data.destination && req.user!.role !== 'super_admin') {
+      throw new AppError('SUPER_ADMIN_REQUIRED', 'Only super_admin may sweep to a custom destination (default sweeps go to the gas hot wallet)', 403)
+    }
+
+    const row = await db.depositAddress.findUnique({ where: { id } })
+    if (!row) throw Errors.NOT_FOUND('Deposit address')
+
+    log.warn(
+      { depositAddressId: id, userId: row.userId, adminId: req.user!.id, chain: parsed.data.chain, asset: parsed.data.asset, destination: parsed.data.destination ?? 'hot-wallet', reason: parsed.data.reason },
+      'Admin deposit-address sweep initiated',
+    )
+
+    const result = await sweepDepositAddress({
+      depositAddressId: id,
+      chain: parsed.data.chain,
+      asset: parsed.data.asset,
+      ...(parsed.data.destination ? { destination: parsed.data.destination } : {}),
+    })
+
+    void createAuditLog(req.user!.id, 'DEPOSIT_ADDRESS_SWEPT', 'DepositAddress', id, {
+      userId: row.userId,
+      reason: parsed.data.reason,
+      ...result,
+    })
+
+    return reply.send({ success: true, data: result })
   })
 
   // POST /admin/deposits/rescan — manual reconciliation. The operator pastes

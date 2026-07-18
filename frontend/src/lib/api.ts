@@ -2249,6 +2249,32 @@ export const adminApi = {
     apiRequest<unknown>(`/admin/deposits/${id}/refresh-confirmations`, { method: 'POST' }),
   rejectDeposit: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/deposits/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  getDepositDetectionHealth: () =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    apiRequest<any>('/admin/deposits/detection-health'),
+  getDepositAddressBalances: (id: string) =>
+    apiRequest<{
+      address: string
+      balances: Array<{
+        chain: string
+        chainName: string
+        nativeSymbol: string
+        native: string | null
+        tokens: Array<{ symbol: string; contract: string; decimals: number; balance: string }>
+        error?: string
+      }>
+    }>(`/admin/deposit-addresses/${id}/balances`),
+  sweepDepositAddress: (id: string, data: { chain: string; asset: string; destination?: string; reason: string }) =>
+    apiRequest<{
+      txHash: string
+      chain: string
+      asset: string
+      symbol: string
+      amount: string
+      from: string
+      destination: string
+      gasTopUpTxHash?: string
+    }>(`/admin/deposit-addresses/${id}/sweep`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Withdrawals
   // Backend returns { withdrawals: [...], pagination: { page, limit, total, pages } }

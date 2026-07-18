@@ -336,6 +336,13 @@ export async function webhookRoutes(app: FastifyInstance) {
     )
 
     if (looksLikeMoralis) {
+      // Liveness stamp: lets /admin/deposits/detection-health show how long ago
+      // Moralis last delivered ANYTHING — a stale value is the tell for a
+      // paused/broken stream (the 2026-07-18 silent-failure incident).
+      redis.set('moralis_last_webhook_at', new Date().toISOString()).catch(() => {})
+    }
+
+    if (looksLikeMoralis) {
       // Warn when the incoming streamId doesn't match any configured stream.
       // A single Moralis stream can cover multiple chains (multi-chain stream),
       // so the same ID in several MORALIS_STREAM_ID_* vars is intentional.

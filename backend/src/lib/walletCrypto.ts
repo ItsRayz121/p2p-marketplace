@@ -80,6 +80,35 @@ export function walletCustodyIsConfigured(): boolean {
   return !!env.WALLET_MASTER_KEY && !!env.WALLET_MASTER_SEED_CIPHERTEXT
 }
 
+/**
+ * Derive the private key for a per-user EVM deposit address (same path as
+ * deriveEvmAddress). ONLY for the admin sweep path — recovering funds stranded
+ * on a deposit address when detection missed them. Never log the return value.
+ * The decrypted seed and intermediate buffers are zeroed; the returned hex
+ * string is unavoidably immutable (same trade-off as gasWalletService's
+ * deriveEvmPrivateKeyHex).
+ */
+export function deriveEvmDepositPrivateKeyHex(index: number): `0x${string}` {
+  if (!Number.isInteger(index) || index < 0 || index >= 2 ** 31) {
+    throw new Error('Invalid derivation index')
+  }
+  const seed = decryptMasterSeed()
+  try {
+    const hdkey = HDKey.fromMasterSeed(seed)
+    const child = hdkey.derive(`m/44'/60'/0'/0/${index}`)
+    if (!child.privateKey) {
+      throw new Error('HD derivation produced no private key')
+    }
+    const pk = Buffer.from(child.privateKey)
+    child.privateKey.fill(0)
+    const hex = ('0x' + pk.toString('hex')) as `0x${string}`
+    pk.fill(0)
+    return hex
+  } finally {
+    seed.fill(0)
+  }
+}
+
 // ── Aptos (non-EVM) per-user deposit address derivation ─────────────────────────
 // Aptos coin type 637, SLIP-0010 ed25519 (hardened-only). The per-user index is
 // the final hardened segment, mirroring the EVM scheme (one address per user)
