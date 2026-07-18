@@ -105,15 +105,24 @@ async function getLogsWithFallback(
   urls: string[],
   params: Parameters<typeof getLogs>[2],
 ): Promise<Awaited<ReturnType<typeof getLogs>> | null> {
+  let lastError = ''
   for (const url of urls) {
     try {
       return await getLogs(url, chainId, params)
     } catch (err) {
-      logger.debug({ chainId, url, err: (err as Error).message }, 'evmDepositPoller: getLogs failed — trying next endpoint')
+      lastError = (err as Error).message?.slice(0, 200) ?? 'unknown'
     }
   }
+  // warn (not debug) — this is the diagnosable signal when a chain's cursor
+  // stalls; includes the LAST endpoint's error which is usually representative.
+  logger.warn(
+    { chainId, fromBlock: params.fromBlock.toString(), toBlock: params.toBlock.toString(), lastError },
+    'evmDepositPoller: getLogs failed on every endpoint for this range',
+  )
   return null
 }
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 async function scanChain(
   chain: { id: string; chainId: number; tokens: Array<{ symbol: string; address: string | null; decimals: number }> },
@@ -151,9 +160,17 @@ async function scanChain(
     : currentBlock
 
   const chunkSize = BigInt(Math.max(1, env.MAX_LOG_SCAN_BLOCKS))
-  let anyChunkFailed = false
   let credited = 0
   let detected = 0
+
+  // Chunks are scanned in block order and the cursor advances to the end of the
+  // last CONTIGUOUS successful chunk. On the first failure we stop — never
+  // continue past a failed page (a deposit inside it would be skipped forever).
+  // Partial progress is essential: with all-or-nothing advancement one flaky
+  // page per tick re-runs the whole cold-start window every 2 minutes, which
+  // itself triggers free-RPC throttling (observed on BSC/Polygon in prod).
+  let lastGoodBlock: bigint | null = null
+  let failed = false
 
   for (let start = fromBlock; start <= toBlock; start += chunkSize) {
     const end = start + chunkSize - 1n > toBlock ? toBlock : start + chunkSize - 1n
@@ -163,8 +180,9 @@ async function scanChain(
       address: tokenContracts,
       topics: [TRANSFER_TOPIC, null, toTopics],
     })
-    if (logs === null) { anyChunkFailed = true; continue }
+    if (logs === null) { failed = true; break }
 
+    let chunkProcessingFailed = false
     for (const log of logs) {
       if (log.topics.length < 3) continue
       const from = '0x' + (log.topics[1] ?? '').slice(-40)
@@ -193,27 +211,31 @@ async function scanChain(
         if (result.status === 'credited') credited++
         else if (result.status === 'pending') detected++
       } catch (err) {
-        // A single bad event must not stall the scan; the overlap + the
-        // reconciler pick it up again.
         logger.error({ err, chain: chain.id, txHash: log.transactionHash }, 'evmDepositPoller: processDepositEvent threw')
-        anyChunkFailed = true
+        chunkProcessingFailed = true
       }
     }
+    // A processing throw means an event in THIS chunk wasn't recorded — don't
+    // advance the cursor past it; retry the chunk next tick (idempotent).
+    if (chunkProcessingFailed) { failed = true; break }
+
+    lastGoodBlock = end
+    // Pace requests so a multi-chunk catch-up doesn't trip free-RPC rate limits.
+    if (end < toBlock) await sleep(150)
   }
 
-  // Advance the cursor only when every chunk succeeded — a failed page is
-  // re-scanned next tick instead of being skipped past.
-  if (!anyChunkFailed) {
-    await redis.set(cursorKey, toBlock.toString())
+  if (lastGoodBlock !== null) {
+    await redis.set(cursorKey, lastGoodBlock.toString())
   }
 
+  const scannedTo = lastGoodBlock ?? fromBlock
   return {
-    ok: !anyChunkFailed,
-    scanned: Number(toBlock - fromBlock + 1n),
+    ok: !failed,
+    scanned: lastGoodBlock !== null ? Number(lastGoodBlock - fromBlock + 1n) : 0,
     credited,
     detected,
-    cursor: (anyChunkFailed ? fromBlock : toBlock).toString(),
-    ...(anyChunkFailed ? { error: 'one or more getLogs pages failed — will re-scan' } : {}),
+    cursor: scannedTo.toString(),
+    ...(failed ? { error: `page failed after block ${scannedTo} — resuming there next tick` } : {}),
   }
 }
 
