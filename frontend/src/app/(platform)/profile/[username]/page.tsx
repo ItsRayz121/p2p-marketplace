@@ -369,7 +369,7 @@ export default function TraderProfilePage() {
                       )
                     })}
                 </div>
-                <Link href={`/trade/new?adId=${ad.id}`} className="ml-auto flex-shrink-0">
+                <Link href={`/marketplace/listings/${ad.id}`} className="ml-auto flex-shrink-0">
                   <Button size="sm" variant="secondary">{ad.side === 'sell' ? 'Buy' : 'Sell'}</Button>
                 </Link>
               </div>

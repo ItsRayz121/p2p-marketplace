@@ -142,7 +142,7 @@ export default function FavoritesPage() {
                       {(trader.ads ?? []).map((ad) => (
                         <Link
                           key={ad.id}
-                          href={`/trade/new?adId=${ad.id}`}
+                          href={`/marketplace/listings/${ad.id}`}
                           className={`px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-colors ${
                             ad.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'
                           }`}

@@ -1156,9 +1156,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           ? `Must be a ${usdtMethod} wallet address — the seller will expect the payment from it.`
                           : `Must be your ${ctmUsdtMethodLabel(usdtMethod)} — the seller will expect the transfer from it.`}
                       </p>
-                      {matching.length > 0 && (
+                      {matching.length > 0 ? (
                         <div className="mb-1.5">
-                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to fill:</p>
+                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to select:</p>
                           <div className="flex flex-wrap gap-2">
                             {matching.map((a) => (
                               <button key={a.id} type="button" onClick={() => setUsdtFromAddress(a.address)}
@@ -1168,6 +1168,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                             ))}
                           </div>
                         </div>
+                      ) : (
+                        <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2 mb-1.5">
+                          No saved {ctmUsdtMethodLabel(usdtMethod)} on file — enter it below and save it for one-tap reuse next time.
+                        </p>
                       )}
                       <input
                         type="text"
@@ -1175,6 +1179,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         value={usdtFromAddress}
                         onChange={(e) => setUsdtFromAddress(e.target.value)}
                         className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <SaveAddressInline
+                        address={usdtFromAddress}
+                        coin="USDT"
+                        network={usdtMethod}
+                        noun={ctmUsdtMethodLabel(usdtMethod)}
+                        saved={savedAddresses}
+                        onSaved={(a) => setSavedAddresses((prev) => [a, ...prev])}
                       />
                     </div>
                   )
@@ -1186,9 +1198,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   const matching = savedAddresses.filter((a) => a.network === usdtMethod)
                   return (
                     <div className="mt-2">
-                      {matching.length > 0 && (
+                      {matching.length > 0 ? (
                         <div className="mb-1.5">
-                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to fill:</p>
+                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to select:</p>
                           <div className="flex flex-wrap gap-2">
                             {matching.map((a) => (
                               <button key={a.id} type="button" onClick={() => setUsdtAddress(a.address)}
@@ -1198,6 +1210,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                             ))}
                           </div>
                         </div>
+                      ) : (
+                        <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2 mb-1.5">
+                          No saved {ctmUsdtMethodLabel(usdtMethod)} on file — enter it below and save it for one-tap reuse next time.
+                        </p>
                       )}
                       <input
                         type="text"
@@ -1208,6 +1224,14 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         value={usdtAddress}
                         onChange={(e) => setUsdtAddress(e.target.value)}
                         className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                      <SaveAddressInline
+                        address={usdtAddress}
+                        coin="USDT"
+                        network={usdtMethod}
+                        noun={ctmUsdtMethodLabel(usdtMethod)}
+                        saved={savedAddresses}
+                        onSaved={(a) => setSavedAddresses((prev) => [a, ...prev])}
                       />
                     </div>
                   )
