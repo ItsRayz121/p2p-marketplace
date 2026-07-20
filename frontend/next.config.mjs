@@ -67,7 +67,11 @@ const nextConfig = {
       "connect-src 'self' https: wss:",
       "media-src 'self' blob: https://res.cloudinary.com",
       "worker-src 'self' blob:",
-      "frame-src https://challenges.cloudflare.com https://verify.walletconnect.com https://verify.walletconnect.org",
+      // Blog video embeds must mirror ALLOWED_IFRAME_HOSTNAMES in
+      // backend/src/services/blog.service.ts — the sanitiser strips any iframe
+      // off that list, and this CSP blocks any host missing from this one. Both
+      // lists have to allow a host for an embed to render. Keep them in sync.
+      "frame-src https://challenges.cloudflare.com https://verify.walletconnect.com https://verify.walletconnect.org https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com https://youtube-nocookie.com https://player.vimeo.com https://drive.google.com https://t.me",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
