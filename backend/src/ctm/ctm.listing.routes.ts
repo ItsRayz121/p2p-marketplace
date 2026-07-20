@@ -218,9 +218,11 @@ export async function ctmListingRoutes(app: FastifyInstance) {
       acceptedBuyerPaymentMethodIds: z.array(z.string().min(1)).optional(),
       tokenAmount: z.number().positive(),
       // USDT-as-payment (only for USDT listings): chosen delivery method + (BUY only)
-      // the taker's USDT receiving address. Ignored for PKR listings.
+      // the taker's USDT receiving address + (SELL only) the taker's OWN sending
+      // account for that method. Ignored for PKR listings.
       usdtMethod: z.string().min(1).max(40).optional(),
       usdtAddress: z.string().min(1).max(200).optional(),
+      usdtFromAddress: z.string().min(1).max(200).optional(),
     }).refine((d) => d.usdtMethod || d.paymentMethod || (d.paymentMethods && d.paymentMethods.length > 0), {
       message: 'paymentMethod or paymentMethods is required',
     }).safeParse(req.body)

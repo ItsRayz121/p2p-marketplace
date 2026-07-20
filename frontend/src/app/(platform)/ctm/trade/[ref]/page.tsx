@@ -309,9 +309,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [ratingComment, setRatingComment] = useState('')
   const [ratingTags, setRatingTags] = useState<string[]>([])
   const [ratingError, setRatingError] = useState('')
-  const [platformRating, setPlatformRating] = useState(5)
-  const [platformComment, setPlatformComment] = useState('')
-  const [platformRatingDone, setPlatformRatingDone] = useState(false)
   const [traderRatingDone, setTraderRatingDone] = useState(false)
   // Rating is optional, so the "Trade Completed" card starts COLLAPSED — the trade
   // is already done. The header shows the countdown; tapping expands it to leave
@@ -389,15 +386,15 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     return () => { clearTimeout(timer); clearTimeout(clear) }
   }, [focusDispute, trade])
 
-  // Once both the trader rating and platform feedback are submitted, collapse the
-  // Complete & Rate card automatically (and close the rating panel). MUST stay
-  // above the early returns below — a hook after a conditional return changes the
-  // hook count between renders (React error #310).
+  // Once the trader rating is submitted, collapse the Complete & Rate card
+  // automatically (and close the rating panel). MUST stay above the early
+  // returns below — a hook after a conditional return changes the hook count
+  // between renders (React error #310).
   useEffect(() => {
-    if (traderRatingDone && platformRatingDone) {
+    if (traderRatingDone) {
       setStep4Collapsed(true)
     }
-  }, [traderRatingDone, platformRatingDone])
+  }, [traderRatingDone])
 
   // Auto-open the "Rate the trade" card ONCE when a freshly completed trade still
   // has an open rating window and hasn't been rated — so the rating box is as
@@ -591,8 +588,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     }
   }
 
-  const handlePlatformRate = () => { setPlatformRatingDone(true) }
-
   const handleSelectAccount = async (idx: number) => {
     setSelectingPayment(true)
     try {
@@ -713,6 +708,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     // BUY listings can record more than one pay-from account (lister picked several).
     if (b?.accounts && b.accounts.length > 0) {
       return <div className="space-y-2">{b.accounts.map((acc, i) => <div key={i}>{renderSingleAccount(acc)}</div>)}</div>
+    }
+    // USDT trade: the payer declared the account/wallet they send FROM (their
+    // Binance UID / BEP20 address, matching the payment method) at trade start.
+    if (b?.type === 'usdt') {
+      const isWallet = /^(BEP20|APTOS|ERC20|TRC20)$/i.test(b.method ?? '')
+      return (
+        <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
+          <Row label="Method" value={`USDT ${b.method ?? ''}`} />
+          {b.address && <Row label={isWallet ? 'Sends from address' : 'Sends from UID / account'} value={b.address} mono breakAll copyable />}
+        </div>
+      )
     }
     if (b) {
       return (
@@ -893,25 +899,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               <button onClick={() => setStep4Collapsed(true)} className="flex-1 border border-border py-2 rounded-xl text-sm">Skip</button>
               <button onClick={handleRate} disabled={ratingWindowClosed} className="flex-1 bg-primary text-white py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">Submit Rating</button>
             </div>
-          </>
-        )}
-      </div>
-      <div className="border-t border-border pt-4 space-y-3">
-        <div>
-          <p className="text-sm font-semibold text-text-primary">Rate RupChain platform</p>
-          <p className="text-xs text-text-muted">Share suggestions to improve RupChain.</p>
-        </div>
-        {platformRatingDone ? (
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Platform feedback received. Thank you!</div>
-        ) : (
-          <>
-            <div className="flex gap-2">
-              {[1, 2, 3, 4, 5].map((s) => (
-                <button key={s} onClick={() => setPlatformRating(s)} className={`text-2xl transition-transform hover:scale-110 ${s <= platformRating ? 'text-gold' : 'text-text-muted/30'}`}>★</button>
-              ))}
-            </div>
-            <textarea rows={2} placeholder="Suggestions (optional)" value={platformComment} onChange={(e) => setPlatformComment(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2 text-sm focus:outline-none resize-none" />
-            <button onClick={handlePlatformRate} className="w-full border border-border py-2 rounded-xl text-sm font-medium hover:bg-surface transition-colors">Submit Platform Feedback</button>
           </>
         )}
       </div>

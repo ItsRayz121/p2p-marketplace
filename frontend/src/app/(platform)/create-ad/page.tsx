@@ -680,7 +680,7 @@ function CreateListingPageContent() {
             {savedMethods.length === 0 ? (
               <div className="border border-border rounded-xl p-4 text-center">
                 <p className="text-sm text-text-muted mb-2">No payment methods saved yet.</p>
-                <a href="/payment-methods" className="text-sm text-primary font-medium hover:underline">Add payment methods in Wallet →</a>
+                <a href="/wallet#payment-methods" className="text-sm text-primary font-medium hover:underline">Add payment methods in Wallet →</a>
               </div>
             ) : (
               <div className="space-y-2">

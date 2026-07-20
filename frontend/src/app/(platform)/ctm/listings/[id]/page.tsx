@@ -155,6 +155,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const [usdtMethod, setUsdtMethod] = useState('')
   const [usdtKind, setUsdtKind] = useState<UsdtMethodKind | null>(null) // active method group (Wallet/Blockchain vs Exchange)
   const [usdtAddress, setUsdtAddress] = useState('') // BUY listing: taker's USDT receiving address
+  // SELL listing: the taker PAYS USDT — their OWN sending account for the chosen
+  // method (their Binance UID when paying Binance, their BEP20 address when paying
+  // BEP20, …). A Binance internal transfer can only come from a Binance account,
+  // so the sending account must always match the method.
+  const [usdtFromAddress, setUsdtFromAddress] = useState('')
   // Per-token market estimate (USDT/PKR) for the price header.
   const [marketRate, setMarketRate] = useState<MarketRateToken | null>(null)
   const [bidPrice, setBidPrice] = useState('')
@@ -296,6 +301,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       if (!usdtMethod) { setWizStep(2); setError('Select a USDT payment method'); return }
       // BUY listing (maker pays USDT): the taker (seller) supplies their receiving address.
       if (isBuyListing && !usdtAddress.trim()) { setWizStep(2); setError('Enter your USDT receiving address / UID'); return }
+      // SELL listing (taker pays USDT): the taker must give their OWN sending
+      // account for the SAME method — a Binance transfer can only come from a
+      // Binance account, a BEP20 payment only from a BEP20 wallet.
+      if (!isBuyListing && !usdtFromAddress.trim()) { setWizStep(2); setError(`Enter your ${ctmUsdtMethodLabel(usdtMethod)} you'll send from`); return }
     } else {
       if (isBuyListing && paymentMethodIds.length === 0) { setWizStep(2); setError('Select at least one payment receiving account'); return }
       if (isBuyListing && acceptedBuyerMethodIds.length === 0) { setWizStep(3); setError("Select at least one of the buyer's accounts you'll accept payment from"); return }
@@ -321,9 +330,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
         // For BUY listings: restrict which of the buyer's pay-from accounts the seller accepts
         acceptedBuyerPaymentMethodIds: !railUsdt && isBuyListing ? acceptedBuyerMethodIds : undefined,
         tokenAmount: parseFloat(tokenAmount),
-        // USDT rail: chosen method + (BUY) the taker's receiving address.
+        // USDT rail: chosen method + (BUY) the taker's receiving address
+        // + (SELL) the taker's OWN sending account for that method.
         usdtMethod: railUsdt ? usdtMethod : undefined,
         usdtAddress: railUsdt && isBuyListing ? usdtAddress.trim() : undefined,
+        usdtFromAddress: railUsdt && !isBuyListing ? usdtFromAddress.trim() : undefined,
       })
       router.push(`/ctm/trade/${res.tradeRef}`)
     } catch (err: unknown) {
@@ -433,7 +444,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   const wizMaxT = Math.min(Number(listing.maxOrderTokens), Number(listing.availableAmount))
   const wizStep1Done = wizTokenAmt > 0 && wizTokenAmt >= wizMinT && wizTokenAmt <= wizMaxT
   const wizStep2Done = rail === 'usdt'
-    ? (!!usdtMethod && (isBuyListing ? usdtAddress.trim().length > 0 : true))
+    ? (!!usdtMethod && (isBuyListing ? usdtAddress.trim().length > 0 : usdtFromAddress.trim().length > 0))
     : (isBuyListing ? paymentMethodIds.length > 0 : !!paymentMethodId)
   const sellPkrRail = !isBuyListing && rail === 'pkr'
   // Pay-from is its own step only on the SELL/PKR path; a taker with no saved
@@ -586,9 +597,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                   <p className="text-xs font-semibold text-text-secondary uppercase tracking-wide mb-1.5">PKR</p>
                   <div className="grid grid-cols-2 gap-2">
                     {resolvedMethods.map((m) => (
-                      <span key={m.id} className="flex items-center gap-1.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm">
-                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                        <span className="truncate">{m.label}</span>
+                      <span key={m.id} className="flex flex-col items-start gap-0.5 min-w-0 bg-surface border border-border px-3 py-2 rounded-xl text-sm">
+                        <span className="flex items-center gap-1.5 min-w-0 w-full">
+                          <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                          <span className="truncate">{m.label}</span>
+                        </span>
+                        {m.ref && <span className="text-[11px] text-text-muted truncate w-full">{m.ref}</span>}
                       </span>
                     ))}
                   </div>
@@ -881,7 +895,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
       {!isMine && listing.status === 'active' && (!myActiveBid || (myActiveBid.status === 'accepted_pending_buyer' && new Date(myActiveBid.expiresAt).getTime() <= nowTs)) && (
         <div className="flex gap-3">
           <button
-            onClick={() => { setShowModal(true); setWizStep(1); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds([]); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setTokenAmount(''); setError('') }}
+            onClick={() => { setShowModal(true); setWizStep(1); setRail(hasPkr ? 'pkr' : 'usdt'); setPaymentMethodId(''); setBuyerFromMethodId(''); setPaymentMethodIds([]); setAcceptedBuyerMethodIds([]); setUsdtMethod(''); setUsdtKind(null); setUsdtAddress(''); setUsdtFromAddress(''); setTokenAmount(''); setError('') }}
             className={`flex-1 py-3.5 rounded-xl font-bold text-white transition-colors inline-flex items-center justify-center gap-1.5 ${listing.side === 'sell' ? 'bg-green-600 hover:bg-green-700' : 'bg-red-600 hover:bg-red-700'}`}
           >
             {listing.side === 'sell' ? <ArrowDownLeft size={17} /> : <ArrowUpRight size={17} />}
@@ -1021,10 +1035,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               n={2}
               title={isBuyListing ? "How you'll receive payment" : "How you'll pay"}
               subtitle={rail === 'usdt'
-                ? (usdtMethod ? ctmUsdtMethodLabel(usdtMethod) : 'Choose USDT method')
+                ? (usdtMethod
+                  ? `${ctmUsdtMethodLabel(usdtMethod)}${(isBuyListing ? usdtAddress : usdtFromAddress).trim() ? ` · ${(isBuyListing ? usdtAddress : usdtFromAddress).trim()}` : ''}`
+                  : 'Choose USDT method')
                 : (isBuyListing
                   ? (paymentMethodIds.length ? `${paymentMethodIds.length} account(s)` : 'Choose account(s)')
-                  : (modalPaymentMethods.find((m) => m.id === paymentMethodId)?.label ?? "Choose seller's account"))}
+                  : (() => {
+                      const sel = modalPaymentMethods.find((m) => m.id === paymentMethodId)
+                      return sel ? `${sel.label}${sel.ref ? ` · ${sel.ref}` : ''}` : "Choose seller's account"
+                    })())}
               done={wizStep2Done}
               open={wizStep === 2}
               onClick={() => wizStep1Done && setWizStep(2)}
@@ -1078,7 +1097,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                               onClick={() => {
                                 setUsdtKind(k.key)
                                 // Dropping a pick from the other group avoids submitting a hidden method.
-                                if (usdtMethod && ctmUsdtMethodKind(usdtMethod) !== k.key) { setUsdtMethod(''); setUsdtAddress('') }
+                                if (usdtMethod && ctmUsdtMethodKind(usdtMethod) !== k.key) { setUsdtMethod(''); setUsdtAddress(''); setUsdtFromAddress('') }
                               }}
                               className={`px-3 py-2 rounded-lg border text-xs font-medium text-center transition-colors ${activeKind === k.key ? 'border-primary bg-primary/5 text-primary' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
                               {k.label}
@@ -1090,7 +1109,18 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                           (no ragged/overflowing rows). */}
                       <div className="grid grid-cols-2 gap-2">
                         {shown.map((m) => (
-                          <button type="button" key={m} onClick={() => setUsdtMethod(m)}
+                          <button type="button" key={m}
+                            onClick={() => {
+                              if (m !== usdtMethod) {
+                                // Method changed → the own-account box must match the NEW
+                                // method: auto-fill from the saved address book
+                                // (network === method) or clear it.
+                                const saved = savedAddresses.find((a) => a.network === m)?.address ?? ''
+                                if (isBuyListing) setUsdtAddress(saved)
+                                else setUsdtFromAddress(saved)
+                              }
+                              setUsdtMethod(m)
+                            }}
                             className={`inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border text-sm font-medium text-center transition-colors ${usdtMethod === m ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
                             <EntityLogo {...ctmUsdtMethodLogo(m)} size="xs" className="flex-shrink-0" />
                             {ctmUsdtMethodLabel(m)}
@@ -1108,19 +1138,80 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     <p className="text-xs font-mono bg-surface border border-border rounded-lg px-3 py-2 break-all text-text-primary">{usdtDestFor(usdtMethod)}</p>
                   </div>
                 )}
-                {/* BUY listing: taker (seller) enters their own USDT receiving address */}
-                {isBuyListing && usdtMethod && (
-                  <input
-                    type="text"
-                    // Use the method's own placeholder so an exchange rail asks for a
-                    // UID (e.g. "Your Gate.io UID") and only a wallet rail asks for an
-                    // address — an exchange transfer is UID-based, never an address.
-                    placeholder={ctmUsdtMethod(usdtMethod)?.placeholder ?? `Your ${usdtMethod} receiving UID`}
-                    value={usdtAddress}
-                    onChange={(e) => setUsdtAddress(e.target.value)}
-                    className="mt-2 w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
-                  />
-                )}
+                {/* SELL listing: the taker PAYS USDT — they must give their OWN
+                    sending account for the SAME method (a Binance transfer can
+                    only come from a Binance account; a BEP20 payment only from a
+                    BEP20 wallet). Shown to the seller so they know exactly where
+                    the payment will come from. */}
+                {!isBuyListing && usdtMethod && (() => {
+                  const isWalletKind = ctmUsdtMethodKind(usdtMethod) === 'wallet'
+                  const matching = savedAddresses.filter((a) => a.network === usdtMethod)
+                  return (
+                    <div className="mt-3">
+                      <label className="block text-sm font-medium text-text-primary mb-0.5">
+                        Your {ctmUsdtMethodLabel(usdtMethod)} {isWalletKind ? 'sending address' : ''} (you&apos;ll send from) *
+                      </label>
+                      <p className="text-xs text-text-muted mb-1.5">
+                        {isWalletKind
+                          ? `Must be a ${usdtMethod} wallet address — the seller will expect the payment from it.`
+                          : `Must be your ${ctmUsdtMethodLabel(usdtMethod)} — the seller will expect the transfer from it.`}
+                      </p>
+                      {matching.length > 0 && (
+                        <div className="mb-1.5">
+                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to fill:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {matching.map((a) => (
+                              <button key={a.id} type="button" onClick={() => setUsdtFromAddress(a.address)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${usdtFromAddress === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                                {a.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        placeholder={ctmUsdtMethod(usdtMethod)?.placeholder ?? `Your ${usdtMethod} account / UID`}
+                        value={usdtFromAddress}
+                        onChange={(e) => setUsdtFromAddress(e.target.value)}
+                        className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  )
+                })()}
+                {/* BUY listing: taker (seller) enters their own USDT receiving address —
+                    for the SAME method the buyer pays with, with tap-fill from the
+                    saved address book (network === method). */}
+                {isBuyListing && usdtMethod && (() => {
+                  const matching = savedAddresses.filter((a) => a.network === usdtMethod)
+                  return (
+                    <div className="mt-2">
+                      {matching.length > 0 && (
+                        <div className="mb-1.5">
+                          <p className="text-xs text-text-muted mb-1">Your saved {ctmUsdtMethodLabel(usdtMethod)} — tap to fill:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {matching.map((a) => (
+                              <button key={a.id} type="button" onClick={() => setUsdtAddress(a.address)}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-xs font-medium transition-colors ${usdtAddress === a.address ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-primary hover:border-primary/50'}`}>
+                                {a.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      <input
+                        type="text"
+                        // Use the method's own placeholder so an exchange rail asks for a
+                        // UID (e.g. "Your Gate.io UID") and only a wallet rail asks for an
+                        // address — an exchange transfer is UID-based, never an address.
+                        placeholder={ctmUsdtMethod(usdtMethod)?.placeholder ?? `Your ${usdtMethod} receiving UID`}
+                        value={usdtAddress}
+                        onChange={(e) => setUsdtAddress(e.target.value)}
+                        className="w-full border border-border rounded-xl px-3 py-2.5 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/30"
+                      />
+                    </div>
+                  )
+                })()}
               </div>
             )}
 
@@ -1137,7 +1228,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               )}
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
-                  No saved payment accounts found. <a href="/payment-methods" className="text-primary underline">Add one →</a>
+                  No saved payment accounts found. <a href="/wallet#payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
               {/* SELL flow is single-select → dropdown when the seller has >2 saved
@@ -1165,7 +1256,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     )
                   })}
                   {/* A5: quick add — opens the payment-methods page in a new tab. */}
-                  <AddPaymentMethodLink href="/payment-methods" label="Add account" />
+                  <AddPaymentMethodLink href="/wallet#payment-methods" label="Add account" />
                 </div>
               ) : (
                 <MethodSelect
@@ -1227,7 +1318,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         onChange={setBuyerFromMethodId}
                         placeholder="Select the account you'll pay from…"
                       />
-                      <div className="mt-2"><AddPaymentMethodLink href="/payment-methods" label="Add account" /></div>
+                      <div className="mt-2"><AddPaymentMethodLink href="/wallet#payment-methods" label="Add account" /></div>
                     </div>
                     <button type="button" disabled={!wizPayFromDone} onClick={() => setWizStep(4)}
                       className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50">
@@ -1272,10 +1363,15 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     return (
                       <button type="button" key={m.id}
                         onClick={() => setAcceptedBuyerMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
-                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                        {m.label}
-                        {sel && <span className="ml-0.5 text-xs">✓</span>}
+                        className={`inline-flex flex-col items-start gap-0.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                          {m.label}
+                          {sel && <span className="ml-0.5 text-xs">✓</span>}
+                        </span>
+                        {/* The buyer's account number inside the SAME chip so the seller
+                            knows exactly which account payment will come from. */}
+                        {m.ref && <span className="text-[11px] font-normal text-text-muted">{m.ref}</span>}
                       </button>
                     )
                   })}
@@ -1503,7 +1599,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               </label>
               {isBuyListing && myMethods.length === 0 && (
                 <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">
-                  No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a>
+                  No saved payment accounts. <a href="/wallet#payment-methods" className="text-primary underline">Add one →</a>
                 </p>
               )}
               <div className="flex flex-wrap gap-2 mt-1.5">
@@ -1547,10 +1643,13 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                     return (
                       <button type="button" key={m.id}
                         onClick={() => setConfirmAcceptedBuyerMethodIds((prev) => prev.includes(m.id) ? prev.filter((x) => x !== m.id) : [...prev, m.id])}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
-                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
-                        {m.label}
-                        {sel && <span className="ml-0.5 text-xs">✓</span>}
+                        className={`inline-flex flex-col items-start gap-0.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${sel ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-surface text-text-primary'}`}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.label} size="xs" className="flex-shrink-0" />
+                          {m.label}
+                          {sel && <span className="ml-0.5 text-xs">✓</span>}
+                        </span>
+                        {m.ref && <span className="text-[11px] font-normal text-text-muted">{m.ref}</span>}
                       </button>
                     )
                   })}

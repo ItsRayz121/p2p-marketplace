@@ -3131,7 +3131,7 @@ export const ctmApi = {
   pauseListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/pause`, { method: 'POST' }),
   activateListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/activate`, { method: 'POST' }),
   deleteListing: (id: string) => apiRequest<void>(`/ctm/listings/${id}`, { method: 'DELETE' }),
-  startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; tokenAmount: number; usdtMethod?: string; usdtAddress?: string }) =>
+  startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; tokenAmount: number; usdtMethod?: string; usdtAddress?: string; usdtFromAddress?: string }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/listings/${id}/trade`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Listing bids

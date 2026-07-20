@@ -243,7 +243,7 @@ export default function MyRequestsPage() {
                 {acceptModal.side === 'buy' ? 'Account you’ll pay from *' : 'Account to receive payment *'}
               </label>
               {savedMethods.length === 0 ? (
-                <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">No saved payment accounts. <a href="/payment-methods" className="text-primary underline">Add one →</a></p>
+                <p className="text-xs text-text-muted bg-yellow-500/10 border border-yellow-500/30 rounded-lg px-3 py-2">No saved payment accounts. <a href="/wallet#payment-methods" className="text-primary underline">Add one →</a></p>
               ) : (
                 <select value={acceptPaymentMethodId} onChange={(e) => setAcceptPaymentMethodId(e.target.value)} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface focus:outline-none focus:ring-2 focus:ring-primary/30">
                   <option value="">Select an account…</option>

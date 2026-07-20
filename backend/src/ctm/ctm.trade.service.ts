@@ -736,6 +736,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   // USDT-as-payment (only used when listing.paymentCurrency === 'USDT'):
   usdtMethod?: string   // chosen delivery method (BEP20/Aptos/Binance/…) — must be offered by the listing
   usdtAddress?: string  // BUY listings only: the taker (seller)'s USDT receiving address
+  usdtFromAddress?: string  // SELL listings only: the taker (payer)'s OWN sending account for the chosen method
 }) {
   const listing = await db.ctmListing.findUnique({
     where: { id: listingId },
@@ -799,6 +800,13 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
       const d = dests.find((x) => x.method === method)
       if (!d?.address) throw new AppError('CONFLICT', 'Maker has no USDT address for the selected method', 409)
       usdtAddress = d.address
+      // The taker PAYS USDT → they must declare their OWN sending account for the
+      // SAME method (a Binance internal transfer can only come from a Binance
+      // account; a BEP20 payment only from a BEP20 wallet). Snapshotted below so
+      // the seller knows exactly where the payment will come from.
+      if (!(data.usdtFromAddress ?? '').trim()) {
+        throw new AppError('VALIDATION_ERROR', `Enter your ${method} account / address you'll send from`, 400)
+      }
     }
     // Placeholder id keeps the required `paymentMethod` column non-empty without a
     // PKR PaymentMethod row (there is none for a USDT trade).
@@ -895,9 +903,13 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   //     no longer shows "account details not provided".
   let buyerPaymentSnapshot: Record<string, unknown> | null = null
   if (isUsdtTrade) {
-    // No PKR pay-from account for a USDT trade — the payer's USDT method is implied
-    // by the receive snapshot above.
-    buyerPaymentSnapshot = null
+    // SELL listings: the taker (payer) declared their OWN sending account for the
+    // chosen method — snapshot it so the seller knows exactly where the USDT
+    // payment will come from. BUY listings (maker pays) have no pay-from snapshot.
+    const from = (data.usdtFromAddress ?? '').trim()
+    buyerPaymentSnapshot = !isBuyListing && from
+      ? { type: 'usdt', method: usdtMethod, address: from, label: `USDT ${usdtMethod}` }
+      : null
   } else if (!isBuyListing && data.buyerPaymentMethodId) {
     const buyerPm = await db.paymentMethod.findFirst({
       where: { id: data.buyerPaymentMethodId, userId: buyerId },

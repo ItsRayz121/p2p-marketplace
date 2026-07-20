@@ -19,7 +19,7 @@ const PM_LABELS: Record<string, string> = {
   bank_transfer: 'Bank Transfer',
 }
 
-type ResolvedPaymentMethod = { id: string; type: string; label: string }
+type ResolvedPaymentMethod = { id: string; type: string; label: string; ref?: string }
 
 /**
  * Resolve stored payment-method IDs into human labels for one or more ads in a
@@ -33,7 +33,7 @@ async function resolvePaymentMethodsFor(
   if (allIds.length === 0) return new Map()
   const recs = await db.paymentMethod.findMany({
     where: { id: { in: allIds } },
-    select: { id: true, type: true, bankName: true, hidden: true, isActive: true },
+    select: { id: true, type: true, bankName: true, hidden: true, isActive: true, mobileNumber: true, ibanNumber: true, accountNumber: true },
   })
   const map = new Map<string, ResolvedPaymentMethod>()
   for (const id of allIds) {
@@ -45,7 +45,10 @@ async function resolvePaymentMethodsFor(
     const label = rec.type === 'bank_transfer'
       ? (rec.bankName ?? 'Bank Transfer')
       : (PM_LABELS[rec.type] ?? rec.type)
-    map.set(id, { id, type: rec.type, label })
+    // `ref` = the account's number/IBAN so trade wizards can show WHICH account
+    // a method points at (e.g. "Easypaisa · 0309…"), not just the method name.
+    const ref = rec.mobileNumber ?? rec.accountNumber ?? rec.ibanNumber ?? undefined
+    map.set(id, { id, type: rec.type, label, ...(ref ? { ref } : {}) })
   }
   return map
 }

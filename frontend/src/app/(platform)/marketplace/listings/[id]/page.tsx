@@ -35,7 +35,7 @@ const DELIVERY_LABELS: Record<string, string> = {
   MEXC: 'MEXC',
 }
 
-interface ResolvedPaymentMethod { id: string; type: string; label: string }
+interface ResolvedPaymentMethod { id: string; type: string; label: string; ref?: string }
 
 interface SavedPaymentMethod {
   id: string
@@ -326,11 +326,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
   // If selling to buy ad, show our own payment methods
   const tradePaymentMethods: ResolvedPaymentMethod[] = isSellAd
     ? resolvedMethods
-    : myMethods.map((m) => ({
-        id: m.id,
-        type: m.type,
-        label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
-      }))
+    : myMethods.map((m) => {
+        const ref = m.mobileNumber ?? m.accountNumber ?? m.ibanNumber
+        return {
+          id: m.id,
+          type: m.type,
+          label: m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (METHOD_LABELS[m.type] ?? m.type),
+          ...(ref ? { ref } : {}),
+        }
+      })
 
   // Start-Trade wizard step-completion (mirrors handleInstantTrade validation).
   // The flow is a 4-step ladder — each step carries exactly ONE decision, and the
@@ -490,14 +494,17 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               </p>
               <div className="flex flex-wrap gap-2">
                 {resolvedMethods.map((m) => (
-                  <span key={m.id} className="inline-flex items-center gap-1.5 bg-surface border border-border px-3 py-1 rounded-full text-sm">
-                    <EntityLogo
-                      type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'}
-                      slug={m.label}
-                      size="xs"
-                      className="flex-shrink-0"
-                    />
-                    {m.label}
+                  <span key={m.id} className="inline-flex flex-col items-start gap-0.5 bg-surface border border-border px-3 py-1.5 rounded-xl text-sm">
+                    <span className="inline-flex items-center gap-1.5">
+                      <EntityLogo
+                        type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'}
+                        slug={m.label}
+                        size="xs"
+                        className="flex-shrink-0"
+                      />
+                      {m.label}
+                    </span>
+                    {m.ref && <span className="text-[11px] text-text-muted">{m.ref}</span>}
                   </span>
                 ))}
               </div>
@@ -884,7 +891,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 <WizardStepHeader
                   n={2}
                   title={isSellAd ? "How you'll pay" : "How you'll receive payment"}
-                  subtitle={sel ? sel.label : 'Choose a payment account'}
+                  subtitle={sel ? `${sel.label}${sel.ref ? ` · ${sel.ref}` : ''}` : 'Choose a payment account'}
                   {...(logo ? { subtitleLogo: logo } : {})}
                   done={iwStep2Done}
                   open={iwStep === 2}
@@ -917,18 +924,15 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 </div>
               ) : (
                 // >2 collapses into a dropdown; each row shows the account number
-                // beneath the method name (from your saved accounts).
+                // beneath the method name — both for YOUR accounts and the
+                // seller's (so the payer knows exactly which account to pay to).
                 <MethodSelect
-                  options={tradePaymentMethods.map((m) => {
-                    const saved = isSellAd ? undefined : myMethods.find((x) => x.id === m.id)
-                    const number = saved?.mobileNumber ?? saved?.accountNumber ?? saved?.ibanNumber
-                    return {
-                      id: m.id,
-                      label: m.label,
-                      ...(number ? { sublabel: number } : {}),
-                      logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
-                    }
-                  })}
+                  options={tradePaymentMethods.map((m) => ({
+                    id: m.id,
+                    label: m.label,
+                    ...(m.ref ? { sublabel: m.ref } : {}),
+                    logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                  }))}
                   value={instantPaymentMethod}
                   onChange={setInstantPaymentMethod}
                   placeholder={isSellAd ? "Select the seller's method…" : 'Select your receiving account…'}
@@ -1057,7 +1061,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                       <WizardStepHeader
                         n={3}
                         title="Buyer will pay you via"
-                        subtitle={sel ? sel.label : "Pick one of the buyer's accounts"}
+                        subtitle={sel ? `${sel.label}${sel.ref ? ` · ${sel.ref}` : ''}` : "Pick one of the buyer's accounts"}
                         {...(logo ? { subtitleLogo: logo } : {})}
                         done={iwStep3Done}
                         open={iwStep === 3}
@@ -1073,6 +1077,7 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                               options={resolvedMethods.map((m) => ({
                                 id: m.id,
                                 label: m.label,
+                                ...(m.ref ? { sublabel: m.ref } : {}),
                                 logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
                               }))}
                               value={instantBuyerPayFrom}
@@ -1085,7 +1090,10 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                                 <button type="button" key={m.id} onClick={() => setInstantBuyerPayFrom(instantBuyerPayFrom === m.id ? '' : m.id)}
                                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-colors ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:bg-surface-alt'}`}>
                                   <EntityLogo type={MOBILE_TYPES.includes(m.type) ? 'payment_method' : 'bank'} slug={m.label} size="sm" className="flex-shrink-0" />
-                                  <span className="text-sm font-medium text-text-primary">{m.label}</span>
+                                  <span className="min-w-0">
+                                    <span className="block text-sm font-medium text-text-primary">{m.label}</span>
+                                    {m.ref && <span className="block text-xs text-text-muted">{m.ref}</span>}
+                                  </span>
                                   <div className={`ml-auto w-5 h-5 rounded-full border-2 flex-shrink-0 flex items-center justify-center ${instantBuyerPayFrom === m.id ? 'border-primary bg-primary' : 'border-border'}`}>{instantBuyerPayFrom === m.id && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 12 12"><path d="M2 6l3 3 5-5" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>}</div>
                                 </button>
                               ))}
@@ -1296,16 +1304,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                 </div>
               ) : (
                 <MethodSelect
-                  options={tradePaymentMethods.map((m) => {
-                    const saved = isSellAd ? undefined : myMethods.find((x) => x.id === m.id)
-                    const number = saved?.mobileNumber ?? saved?.accountNumber ?? saved?.ibanNumber
-                    return {
-                      id: m.id,
-                      label: m.label,
-                      ...(number ? { sublabel: number } : {}),
-                      logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
-                    }
-                  })}
+                  options={tradePaymentMethods.map((m) => ({
+                    id: m.id,
+                    label: m.label,
+                    ...(m.ref ? { sublabel: m.ref } : {}),
+                    logo: { type: MOBILE_TYPES.includes(m.type) ? 'payment_method' as const : 'bank' as const, slug: m.label },
+                  }))}
                   value={confirmPaymentMethod}
                   onChange={setConfirmPaymentMethod}
                   placeholder={isSellAd ? "Select the seller's method…" : 'Select your receiving account…'}

@@ -49,13 +49,16 @@ async function resolvePaymentMethods(ids: string[]) {
   if (ids.length === 0) return []
   const methods = await db.paymentMethod.findMany({
     where: { id: { in: ids } },
-    select: { id: true, type: true, accountName: true, bankName: true },
+    select: { id: true, type: true, accountName: true, bankName: true, mobileNumber: true, ibanNumber: true, accountNumber: true },
   })
   return ids.map((id) => {
     const m = methods.find((x) => x.id === id)
     if (!m) return { id, type: 'unknown', label: 'Unknown' }
     const label = m.type === 'bank_transfer' ? (m.bankName ?? 'Bank Transfer') : (PM_LABELS[m.type] ?? m.type)
-    return { id, type: m.type as string, label }
+    // `ref` = the account's number/IBAN so the taker sees WHICH account they'll
+    // pay to / accept from — not just the method name.
+    const ref = m.mobileNumber ?? m.accountNumber ?? m.ibanNumber ?? undefined
+    return { id, type: m.type as string, label, ...(ref ? { ref } : {}), accountName: m.accountName }
   })
 }
 
