@@ -121,7 +121,10 @@ export async function runTradeEscalation(): Promise<void> {
               description: 'Auto-escalated: the seller confirmed payment but did not release within the release window.',
             },
           })
-          await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed' } })
+          // Dispute-resume: remember the rung so the seller can still release and the
+          // buyer still confirm while this auto-dispute is open — a missed release
+          // window is often a timezone gap, not a scam. Completing closes the dispute.
+          await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed', disputeResumeStatus: 'payment_confirmed' } })
         })
         notify(trade.buyerId, 'dispute', 'Trade Escalated', 'The seller did not release in time, so your trade was escalated to a dispute for admin review.', { tradeId: trade.id }, trade.id)
         notify(trade.sellerId, 'dispute', 'Trade Escalated', 'You confirmed payment but did not release in time, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
@@ -161,11 +164,23 @@ export async function runTradeEscalation(): Promise<void> {
       href: '/admin/disputes',
       telegram: true,
     })
-    // Update status to escalated
+    // Update status to escalated. Escalation is an admin takeover, so it also
+    // freezes the step ladder — the parties had 48h to settle it themselves and
+    // didn't, and a human ruling must not race a party settlement (disputeResume.ts).
+    const escalating = await db.dispute.findMany({
+      where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },
+      select: { tradeId: true },
+    })
     await db.dispute.updateMany({
       where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },
       data: { status: 'escalated' },
     })
+    if (escalating.length > 0) {
+      await db.trade.updateMany({
+        where: { id: { in: escalating.map((d) => d.tradeId) } },
+        data: { disputeResumeStatus: null },
+      })
+    }
   }
 
   logger.info(

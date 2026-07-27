@@ -5,6 +5,7 @@ import { ctmApi, walletApi } from '@/lib/api'
 import type { SavedDeliveryAddress } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ctmCurrentStep, ctmFlowOrder, ctmDisputeLock } from '@/lib/ctmSettlementFlow'
+import { ladderStatus, canPartiesStillSettle } from '@/lib/disputeResume'
 import type { CtmFlowAction, CtmFlowActor } from '@/lib/ctmSettlementFlow'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
@@ -191,6 +192,8 @@ type BuyerPaymentSnapshot = SellerPaymentAccount & { accounts?: SellerPaymentAcc
 
 interface Trade {
   id: string; tradeRef: string; displayRef?: string | null; status: string
+  /** Real ladder rung while `status` is parked at `disputed` (see lib/disputeResume). */
+  disputeResumeStatus?: string | null
   tokenAmount: string; fiatAmount: string; pricePerUnit: string; paymentMethod: string
   settlementMethod: string; settlementNote: string; buyerSettlementId?: string
   sellerPaymentSnapshot?: SellerPaymentSnapshot
@@ -460,7 +463,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const payAmountLabel = isUsdtTrade ? usdtAmountLabel : `PKR ${Number(trade.fiatAmount).toLocaleString()}`
   const usdtAmountLabelShort = usdtAmountLabel
   const payAmountLabelShort = payAmountLabel
-  const stepIndex = STATUS_STEPS.indexOf(trade.status)
+  // Dispute-resume: the ladder runs off the REAL rung, not the parked `disputed`
+  // status — so an open dispute no longer kills every step card. Identical to
+  // `trade.status` for every trade that isn't disputed. The status badge, the
+  // dispute banner and the terminal-state checks all still read `trade.status`.
+  const rung = ladderStatus(trade)
+  const partiesCanSettle = canPartiesStillSettle(trade, trade.dispute)
+  const stepIndex = STATUS_STEPS.indexOf(rung)
 
   // ── Flow-aware step model (single source of truth for BOTH flows) ───────────
   // Mirrors the USDT room. The settlement resolver decides who does what next in
@@ -470,7 +479,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   // Defined up here (before the render helpers) so renderSellerAccountBlock can
   // gate the pay-account picker on the real "buyer is paying now" action.
   const takerFirst = !!trade.takerFirst
-  const flowStep = ctmCurrentStep(takerFirst, trade.status)
+  const flowStep = ctmCurrentStep(takerFirst, rung)
   const myRole: CtmFlowActor = isBuyer ? 'buyer' : 'seller'
   const myTurn = !!flowStep && flowStep.actor === myRole
   const isAction = (a: CtmFlowAction) => !!flowStep && flowStep.action === a
@@ -1036,6 +1045,21 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     </div>
                   ))}
                   <p className="text-xs text-red-700 dark:text-red-300">Respond in the chat (Chat tab on mobile), or upload evidence below.</p>
+                </div>
+              )}
+              {/* Dispute-resume: the steps below are still live. Say so — the old
+                  banner read as a dead end, so neither side ever tried to finish. */}
+              {partiesCanSettle && (
+                <div className="mt-3 border-t border-red-500/30 pt-3 text-red-800 dark:text-red-200">
+                  <p className="font-medium">This trade can still be completed.</p>
+                  <p className="mt-1">
+                    The steps below stay open. If the {isBuyer ? 'seller sends the tokens' : 'tokens are sent'} and{' '}
+                    {isBuyer ? 'you' : 'the buyer'} confirm{isBuyer ? '' : 's'} receipt, the trade completes and this
+                    dispute closes automatically — with no ruling against either side.
+                  </p>
+                  <p className="mt-1 text-xs text-red-700 dark:text-red-300">
+                    Once an admin takes the case over, the steps lock until they rule.
+                  </p>
                 </div>
               )}
               {trade.dispute.resolution && <p className="mt-2 text-green-700 dark:text-green-300 font-medium">Resolution: {trade.dispute.resolution}</p>}

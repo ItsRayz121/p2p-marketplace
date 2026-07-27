@@ -108,6 +108,10 @@ enum DisputeResolutionType {
   buyer_wins
   seller_wins
   split
+  // No admin ruling — the parties finished both legs themselves after the dispute
+  // was opened and the trade completed, so the dispute closed on its own. Carries
+  // NO fault: no bond seizure, no points clawback, no winner.
+  settled_by_parties
 }
 
 enum PaymentMethodType {
@@ -688,6 +692,12 @@ model Trade {
   fiatAmount         Decimal     @db.Decimal(14, 2)
   paymentMethod        String
   status               TradeStatus @default(payment_pending)
+  // Dispute-resume: an open dispute parks `status` at `disputed` (so every admin
+  // list/filter/dashboard keeps working unchanged) while THIS column carries the
+  // real ladder rung, letting both parties keep settling. It ADVANCES as they act.
+  // The dispute closes itself as `settled_by_parties` only when the trade actually
+  // COMPLETES — never when the accused merely acts. NULL when not disputed.
+  disputeResumeStatus  TradeStatus?
   paymentProofUrl      String?
   buyerWalletAddress   String      @default("")
   buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
@@ -2635,6 +2645,9 @@ model CtmTrade {
   usdtDeliveryAddress    String?           @db.VarChar(200)
   usdtAmount             Decimal?          @db.Decimal(28, 8)
   status            CtmTradeStatus    @default(awaiting_payment)
+  // Dispute-resume — see the twin field on Trade. `status` stays parked at
+  // `disputed`; this carries the real ladder rung so the parties can still settle.
+  disputeResumeStatus CtmTradeStatus?
   // Taker-first settlement (Phase 1): true when this trade uses the reordered
   // BUY-listing flow (taker sends tokens first, merchant pays second). Stamped at
   // creation from isTakerFirstForMarket('ctm'); false = classic payment-first flow.

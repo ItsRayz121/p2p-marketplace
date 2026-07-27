@@ -15,6 +15,10 @@ import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
 import { stepForAction, flowSteps } from './settlementFlow'
+import {
+  ladderStatus, isResumingUnderDispute, advanceTo, claimRung,
+  assertPartySettleable, settleDisputeOnCompletion,
+} from './disputeResume'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import {
@@ -650,7 +654,11 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   // Load seller info for email — safe outside tx (read-only, non-critical timing)
   const tradeForEmail = await db.trade.findUnique({
     where: { id: tradeId },
-    select: { seller: { select: { email: true, username: true } }, sellerId: true, orderRef: true, coin: true, amount: true, fiatAmount: true, takerFirst: true },
+    select: {
+      seller: { select: { email: true, username: true } }, sellerId: true, orderRef: true,
+      coin: true, amount: true, fiatAmount: true, takerFirst: true,
+      status: true, disputeResumeStatus: true, dispute: { select: { status: true } },
+    },
   })
   if (!tradeForEmail) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
@@ -658,19 +666,22 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   // the flow: classic pending→uploaded (first step); taker-first confirmed→crypto_sent
   // (the maker pays after acknowledging the taker's crypto). Never terminal.
   const step = stepForAction(tradeForEmail.takerFirst, 'send_fiat')
+  // Dispute-resume: a disputed trade keeps its real rung in disputeResumeStatus so
+  // the parties can still settle (disputeResume.ts). No-op for undisputed trades.
+  assertPartySettleable(tradeForEmail, tradeForEmail.dispute)
 
   // Use optimistic updateMany with status guard — prevents two concurrent uploads both succeeding
   const result = await db.trade.updateMany({
-    where: { id: tradeId, buyerId, status: step.from },
-    data: { status: step.to, paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
+    where: { id: tradeId, buyerId, ...claimRung(tradeForEmail, step.from) },
+    data: { ...advanceTo(tradeForEmail, step.to), paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
   })
 
   if (result.count === 0) {
     // Distinguish "not your trade" from "wrong status" with a secondary read
-    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { buyerId: true, status: true } })
+    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { buyerId: true, status: true, disputeResumeStatus: true } })
     if (!check) throw new AppError('NOT_FOUND', 'Trade not found', 404)
     if (check.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Not your trade', 403)
-    throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${check.status}`, 400)
+    throw new AppError('INVALID_STATUS', `Cannot upload proof for trade in status: ${ladderStatus(check)}`, 400)
   }
 
   const updated = await db.trade.findUniqueOrThrow({ where: { id: tradeId } })
@@ -719,15 +730,19 @@ export async function confirmPayment(
   // the ladder depends on the flow: classic uploaded→confirmed (then the seller
   // sends crypto); taker-first crypto_sent→released — the TERMINAL step (the taker
   // confirms the maker's fiat and the trade completes).
-  const pre = await db.trade.findUnique({ where: { id: tradeId }, select: { takerFirst: true, status: true, sellerId: true } })
+  const pre = await db.trade.findUnique({
+    where: { id: tradeId },
+    select: { takerFirst: true, status: true, sellerId: true, disputeResumeStatus: true, dispute: { select: { status: true } } },
+  })
   if (!pre) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (role !== 'admin' && pre.sellerId !== actorId) {
     throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
   }
   const step = stepForAction(pre.takerFirst, 'confirm_fiat')
-  if (pre.status !== step.from) {
-    throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${pre.status}`, 400)
+  if (ladderStatus(pre) !== step.from) {
+    throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${ladderStatus(pre)}`, 400)
   }
+  assertPartySettleable(pre, pre.dispute)
 
   // Taker-first: this is terminal — the seller (taker) confirms the maker's fiat
   // arrived, completing the trade. The maker's crypto was already delivered first.
@@ -742,8 +757,8 @@ export async function confirmPayment(
     : null
 
   const updated = await db.$transaction(async (tx: Tx) => {
-    const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
-      SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
+    const rows = await tx.$queryRaw<Array<{ id: string; status: string; disputeResumeStatus: string | null; sellerId: string; buyerId: string }>>`
+      SELECT id, status, "disputeResumeStatus", "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
     `
     const trade = rows[0]
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
@@ -751,14 +766,14 @@ export async function confirmPayment(
     if (role !== 'admin' && trade.sellerId !== actorId) {
       throw new AppError('FORBIDDEN', 'Only the seller or admin can confirm payment', 403)
     }
-    if (trade.status !== step.from) {
-      throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${trade.status}`, 400)
+    if (ladderStatus(trade) !== step.from) {
+      throw new AppError('INVALID_STATUS', `Cannot confirm payment for trade in status: ${ladderStatus(trade)}`, 400)
     }
 
     return tx.trade.update({
       where: { id: tradeId },
       data: {
-        status: step.to,
+        ...advanceTo(trade, step.to),
         paymentConfirmedAt: new Date(),
         ...(releaseDeadlineAt ? { releaseDeadlineAt } : {}),
       },
@@ -788,7 +803,7 @@ export async function markCryptoSent(
   // before acquiring the DB lock — RPC calls can take several seconds.
   const tradeForVerify = await db.trade.findUnique({
     where: { id: tradeId },
-    select: { id: true, status: true, sellerId: true, coin: true, network: true, amount: true, buyerWalletAddress: true, buyerDeliveryAddress: true, buyerDeliveryMethod: true, takerFirst: true },
+    select: { id: true, status: true, disputeResumeStatus: true, dispute: { select: { status: true } }, sellerId: true, coin: true, network: true, amount: true, buyerWalletAddress: true, buyerDeliveryAddress: true, buyerDeliveryMethod: true, takerFirst: true },
   })
   if (!tradeForVerify) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (tradeForVerify.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
@@ -797,9 +812,13 @@ export async function markCryptoSent(
   // fiat is confirmed); taker-first pending→uploaded (the FIRST step — the taker sends
   // crypto before any fiat moves). Never terminal.
   const cryptoStep = stepForAction(tradeForVerify.takerFirst, 'send_crypto')
-  if (tradeForVerify.status !== cryptoStep.from) {
-    throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${tradeForVerify.status}`, 400)
+  if (ladderStatus(tradeForVerify) !== cryptoStep.from) {
+    throw new AppError('INVALID_STATUS', `Cannot mark crypto sent for trade in status: ${ladderStatus(tradeForVerify)}`, 400)
   }
+  // Dispute-resume: the seller delivering AFTER a dispute was opened is exactly the
+  // case this exists for. It does NOT close the dispute — only the buyer confirming
+  // receipt (which completes the trade) does. See disputeResume.ts.
+  assertPartySettleable(tradeForVerify, tradeForVerify.dispute)
 
   // ── Duplicate hash guard ──────────────────────────────────────────────────────
   // The same on-chain tx can only prove one trade. Block replay before RPC calls.
@@ -900,20 +919,20 @@ export async function markCryptoSent(
 
   // ── Commit to DB ──────────────────────────────────────────────────────────────
   const updated = await db.$transaction(async (tx: Tx) => {
-    const rows = await tx.$queryRaw<Array<{ id: string; status: string; sellerId: string; buyerId: string }>>`
-      SELECT id, status, "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
+    const rows = await tx.$queryRaw<Array<{ id: string; status: string; disputeResumeStatus: string | null; sellerId: string; buyerId: string }>>`
+      SELECT id, status, "disputeResumeStatus", "sellerId", "buyerId" FROM "Trade" WHERE id = ${tradeId} FOR UPDATE
     `
     const trade = rows[0]
     if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
     if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only the seller can mark crypto as sent', 403)
-    if (trade.status !== cryptoStep.from) {
-      throw new AppError('INVALID_STATUS', `Trade status changed concurrently: ${trade.status}`, 400)
+    if (ladderStatus(trade) !== cryptoStep.from) {
+      throw new AppError('INVALID_STATUS', `Trade status changed concurrently: ${ladderStatus(trade)}`, 400)
     }
 
     return tx.trade.update({
       where: { id: tradeId },
       data: {
-        status: cryptoStep.to,
+        ...advanceTo(trade, cryptoStep.to),
         ...(hasHash ? { sellerTxHash: txHashNorm } : {}),
         ...(screenshot ? { sellerDeliveryProofUrl: screenshot } : {}),
         txVerificationStatus: verificationResult.status,
@@ -949,9 +968,14 @@ async function finalizeUsdtTrade(tradeId: string) {
     include: {
       buyer: { select: { email: true, username: true, firstTradeBonusPaid: true } },
       seller: { select: { email: true, username: true } },
+      dispute: { select: { status: true } },
     },
   })
   if (!tradeDetails) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  // Dispute-resume: this trade may be completing with a dispute still open — the
+  // parties settled it themselves. Completing is the ONE thing that closes it.
+  const wasDisputed = isResumingUnderDispute(tradeDetails)
+  let disputeSettled = false
 
   // ── Sanity check (no verification gate) ───────────────────────────────────────
   // The buyer is the authority on whether they received their crypto — they can
@@ -977,22 +1001,27 @@ async function finalizeUsdtTrade(tradeId: string) {
   await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE prevents concurrent release from double-completing
     const [rows] = await tx.$queryRaw<Array<{
-      id: string; status: string; buyerId: string; sellerId: string; fiatAmount: Prisma.Decimal
+      id: string; status: string; disputeResumeStatus: string | null; buyerId: string; sellerId: string; fiatAmount: Prisma.Decimal
     }>>`
-      SELECT id, status, "buyerId", "sellerId", "fiatAmount"
+      SELECT id, status, "disputeResumeStatus", "buyerId", "sellerId", "fiatAmount"
       FROM "Trade"
       WHERE id = ${tradeId}
       FOR UPDATE
     `
     if (!rows) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-    if (rows.status !== 'crypto_sent') {
-      throw new AppError('INVALID_STATUS', `Cannot complete trade in status: ${rows.status}`, 400)
+    if (ladderStatus(rows) !== 'crypto_sent') {
+      throw new AppError('INVALID_STATUS', `Cannot complete trade in status: ${ladderStatus(rows)}`, 400)
     }
 
     await tx.trade.update({
       where: { id: tradeId },
-      data: { status: 'crypto_released', escrowReleased: true, releasedAt: new Date() },
+      data: { ...advanceTo(rows, 'crypto_released', { terminal: true }), escrowReleased: true, releasedAt: new Date() },
     })
+
+    // Close an open dispute as no-fault, inside the SAME tx — the `status: 'open'`
+    // filter is the CAS that keeps an admin ruling and a party settlement mutually
+    // exclusive. No winner, no bond seizure, no clawback; the record survives.
+    if (wasDisputed) disputeSettled = await settleDisputeOnCompletion(tx, 'usdt', tradeId)
 
     // Increment completedSellTrades for seller
     await tx.user.update({
@@ -1033,6 +1062,15 @@ async function finalizeUsdtTrade(tradeId: string) {
   }
 
   await postTradeSystemMessage(tradeId, buyerId, 'Trade complete — both legs have settled. 🎉')
+
+  // The parties settled the dispute themselves — tell both sides and the admin so
+  // nobody keeps working a closed case. The dispute stays on record as escalated.
+  if (disputeSettled) {
+    await postTradeSystemMessage(tradeId, buyerId, 'Dispute closed automatically — both sides delivered and the trade completed. No admin ruling was needed.')
+    notify(tradeDetails.buyerId, 'dispute', 'Dispute Closed — Trade Completed', 'You and your counterparty settled this trade directly, so the dispute closed with no ruling against either side.', { tradeId }, tradeId)
+    notify(tradeDetails.sellerId, 'dispute', 'Dispute Closed — Trade Completed', 'You and your counterparty settled this trade directly, so the dispute closed with no ruling against either side.', { tradeId }, tradeId)
+    createAdminNotif({ category: 'DISPUTE', title: 'Dispute settled by the parties', body: `Trade #${tradeDetails.orderRef} completed after the dispute was opened — closed with no ruling. No action needed.`, href: '/admin/disputes' })
+  }
 
   // Mutual streak — always confirm the running count; celebrate at milestones.
   if (streakResult.count > 0) {
@@ -1075,28 +1113,31 @@ async function finalizeUsdtTrade(tradeId: string) {
 export async function releaseTrade(tradeId: string, buyerId: string) {
   const trade = await db.trade.findUnique({
     where: { id: tradeId },
-    select: { takerFirst: true, status: true, buyerId: true, sellerId: true },
+    select: { takerFirst: true, status: true, disputeResumeStatus: true, dispute: { select: { status: true } }, buyerId: true, sellerId: true },
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can confirm the crypto', 403)
 
   const step = stepForAction(trade.takerFirst, 'confirm_crypto')
-  if (trade.status !== step.from) {
-    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${trade.status}`, 400)
+  if (ladderStatus(trade) !== step.from) {
+    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${ladderStatus(trade)}`, 400)
   }
+  assertPartySettleable(trade, trade.dispute)
 
-  // Classic: terminal — buyer confirms receipt → complete the trade.
+  // Classic: terminal — buyer confirms receipt → complete the trade. This is the
+  // ONLY action that can close an open dispute (see finalizeUsdtTrade): the buyer
+  // confirming receipt is real evidence, unlike the seller's own delivery claim.
   if (step.terminal) return finalizeUsdtTrade(tradeId)
 
   // Taker-first: non-terminal — buyer (maker) acknowledges the taker's crypto
   // arrived; advance to `confirmed` so the maker can now send the PKR payment.
   const result = await db.trade.updateMany({
-    where: { id: tradeId, buyerId, status: step.from },
-    data: { status: step.to },
+    where: { id: tradeId, buyerId, ...claimRung(trade, step.from) },
+    data: advanceTo(trade, step.to),
   })
   if (result.count === 0) {
-    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { status: true } })
-    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${check?.status}`, 400)
+    const check = await db.trade.findUnique({ where: { id: tradeId }, select: { status: true, disputeResumeStatus: true } })
+    throw new AppError('INVALID_STATUS', `Cannot confirm crypto for trade in status: ${check ? ladderStatus(check) : 'unknown'}`, 400)
   }
   await postTradeSystemMessage(tradeId, buyerId, 'Buyer confirmed the crypto was received. Buyer: now send the PKR payment and upload proof within the trade window.')
   notify(trade.sellerId, 'trade', 'Crypto Confirmed', 'The buyer confirmed your crypto arrived and will now send the PKR payment.', { tradeId }, tradeId)
@@ -1255,9 +1296,12 @@ export async function openDispute(
         data: { tradeId, openedById, reason, description },
       })
 
+      // Dispute-resume: park `status` at `disputed` for all admin tooling, but
+      // REMEMBER the ladder rung so both parties can keep settling (disputeResume.ts).
+      // The dispute only closes if the trade actually completes.
       await tx.trade.update({
         where: { id: tradeId },
-        data: { status: 'disputed' },
+        data: { status: 'disputed', disputeResumeStatus: trade.status },
       })
 
       return newDispute

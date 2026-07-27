@@ -26,6 +26,7 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { getTradeStatus } from '@/lib/tradeStatus'
 import { currentStep as flowCurrentStep, flowOrder, disputeLock } from '@/lib/settlementFlow'
+import { ladderStatus, canPartiesStillSettle } from '@/lib/disputeResume'
 import type { FlowAction, FlowActor } from '@/lib/settlementFlow'
 import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
@@ -93,6 +94,8 @@ interface ExtendedTrade extends Trade {
   buyerPaymentSnapshot?: (SellerPaymentAccount & { accounts?: SellerPaymentAccount[] }) | null
   /** Combined completed-trade count between this buyer & seller (USDT + CTM). */
   streakCount?: number
+  /** Real ladder rung while `status` is parked at `disputed` (see lib/disputeResume). */
+  disputeResumeStatus?: string | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -787,7 +790,13 @@ export default function TradePage() {
   if (loading) return <LoadingState message="Loading trade..." />
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={fetchTrade} />
 
-  const currentStep = stepIndex(trade.status)
+  // Dispute-resume: the ladder runs off the REAL rung, not the parked `disputed`
+  // status — so an open dispute no longer kills every step card. Identical to
+  // `trade.status` for every trade that isn't disputed; the status badge, the
+  // dispute banner and the terminal-state checks all still read `trade.status`.
+  const rung = ladderStatus(trade)
+  const partiesCanSettle = canPartiesStillSettle(trade)
+  const currentStep = stepIndex(rung)
 
   // ── Flow-aware step model ──────────────────────────────────────────────────
   // The settlement resolver is the single source of truth for who does what next,
@@ -797,7 +806,7 @@ export default function TradePage() {
   // cards below it. `flowOrder` index === the ladder rung an action lands on, and
   // `currentStep` is that same ladder position, so they compare directly.
   const takerFirst = !!trade.takerFirst
-  const flowStep = flowCurrentStep(takerFirst, trade.status)
+  const flowStep = flowCurrentStep(takerFirst, rung)
   const myRole: FlowActor = isUserBuyer ? 'buyer' : 'seller'
   const myTurn = !!flowStep && flowStep.actor === myRole
   const isAction = (a: FlowAction) => !!flowStep && flowStep.action === a
@@ -976,6 +985,19 @@ export default function TradePage() {
             <div className="bg-danger/10 border border-danger/30 rounded-xl p-4 text-sm">
               <p className="font-semibold text-danger mb-1">Dispute in progress</p>
               <p className="text-text-muted text-xs">Our team is reviewing this trade. Please respond in the chat with any evidence you have.</p>
+              {/* Dispute-resume: the steps below are still live. Say so — the old
+                  banner read as a dead end, so neither side ever tried to finish. */}
+              {partiesCanSettle && (
+                <div className="mt-3 border-t border-danger/30 pt-3 text-xs text-text-secondary">
+                  <p className="font-medium text-text-primary">This trade can still be completed.</p>
+                  <p className="mt-1">
+                    The steps below stay open. If the {isUserBuyer ? 'seller sends the crypto' : 'crypto is sent'} and{' '}
+                    {isUserBuyer ? 'you' : 'the buyer'} confirm{isUserBuyer ? '' : 's'} receipt, the trade completes and
+                    this dispute closes automatically — with no ruling against either side.
+                  </p>
+                  <p className="mt-1 text-text-muted">Once an admin takes the case over, the steps lock until they rule.</p>
+                </div>
+              )}
             </div>
           )}
 

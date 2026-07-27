@@ -12,9 +12,14 @@ import { notify as centralNotify } from '../lib/notify'
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
+import {
+  ladderStatus, isResumingUnderDispute, advanceTo, claimRung,
+  assertPartySettleable, settleDisputeOnCompletion,
+} from '../services/disputeResume'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
@@ -118,7 +123,7 @@ export async function getTradeByRef(tradeRef: string, userId: string, role: stri
 }
 
 export async function uploadPaymentProof(tradeRef: string, buyerId: string, fileUrl: string, fileHash: string) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only buyer can upload payment proof', 403)
   // send_fiat is always the BUYER's action. Its ladder position depends on the flow:
@@ -127,29 +132,33 @@ export async function uploadPaymentProof(tradeRef: string, buyerId: string, file
   // confirmed). Never terminal. Classic == the original literal, so behavior is
   // byte-identical until a market's taker-first readiness flips.
   const step = ctmStepForAction(trade.takerFirst, 'send_fiat')
-  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot upload proof in status: ${trade.status}`, 409)
+  // Dispute-resume: compare against the REAL rung, which for a disputed trade lives
+  // in disputeResumeStatus (see disputeResume.ts). Identical to `status` otherwise.
+  if (ladderStatus(trade) !== step.from) throw new AppError('CONFLICT', `Cannot upload proof in status: ${ladderStatus(trade)}`, 409)
+  assertPartySettleable(trade, trade.dispute)
 
   const duplicate = await db.ctmTradeProof.findFirst({ where: { tradeId: trade.id, fileHash } })
   if (duplicate) throw new AppError('CONFLICT', 'This file has already been uploaded', 409)
 
   const proofDeadlineAt = new Date(Date.now() + 60 * 60 * 1000) // seller has 1h to confirm
 
-  await db.$transaction([
-    db.ctmTrade.update({
-      where: { id: trade.id },
-      data: { status: step.to, paymentProofUrl: fileUrl, paymentProofHash: fileHash, proofDeadlineAt },
-    }),
-    db.ctmTradeProof.create({
+  await db.$transaction(async (tx: Tx) => {
+    const claimed = await tx.ctmTrade.updateMany({
+      where: { id: trade.id, ...claimRung(trade, step.from) },
+      data: { ...advanceTo(trade, step.to), paymentProofUrl: fileUrl, paymentProofHash: fileHash, proofDeadlineAt },
+    })
+    if (claimed.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
+    await tx.ctmTradeProof.create({
       data: { tradeId: trade.id, uploadedBy: buyerId, proofType: 'screenshot', fileUrl, fileHash, description: 'Payment proof' },
-    }),
-  ])
+    })
+  })
 
   await postCtmSystemMessage(trade.id, buyerId, 'Payment proof uploaded. Waiting for the seller to confirm the payment was received.')
   notify(trade.sellerId, 'CTM_PAYMENT_UPLOADED', 'Payment proof uploaded', 'Buyer has uploaded payment proof. Please confirm receipt.', { tradeRef })
 }
 
 export async function confirmPayment(tradeRef: string, sellerId: string) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can confirm payment', 403)
   // confirm_fiat is always the SELLER's action (they receive the PKR). Classic:
@@ -158,19 +167,24 @@ export async function confirmPayment(tradeRef: string, sellerId: string) {
   // fiat, after the taker's crypto already settled first). Classic behavior is
   // byte-identical until readiness flips.
   const step = ctmStepForAction(trade.takerFirst, 'confirm_fiat')
-  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot confirm payment in status: ${trade.status}`, 409)
+  if (ladderStatus(trade) !== step.from) throw new AppError('CONFLICT', `Cannot confirm payment in status: ${ladderStatus(trade)}`, 409)
+  assertPartySettleable(trade, trade.dispute)
 
   // Taker-first: this is terminal — the seller (taker) confirms the maker's fiat
   // arrived and the trade completes (the maker's tokens were already delivered).
   if (step.terminal) return finalizeCtmTrade(tradeRef)
 
-  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: step.to, proofDeadlineAt: null } })
+  const advanced = await db.ctmTrade.updateMany({
+    where: { id: trade.id, ...claimRung(trade, step.from) },
+    data: { ...advanceTo(trade, step.to), proofDeadlineAt: null },
+  })
+  if (advanced.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
   await postCtmSystemMessage(trade.id, sellerId, 'Seller confirmed the payment was received. The seller will now send the tokens.')
   notify(trade.buyerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed', 'Seller confirmed your payment. They will now send the tokens.', { tradeRef })
 }
 
 export async function markSellerTransferring(tradeRef: string, sellerId: string) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can mark transfer started', 403)
   // start_crypto is always the SELLER's action (first of the two crypto-send steps).
@@ -178,11 +192,16 @@ export async function markSellerTransferring(tradeRef: string, sellerId: string)
   // Taker-first: awaiting_payment→payment_uploaded (the FIRST step — the taker sends
   // crypto before any fiat moves). Never terminal.
   const step = ctmStepForAction(trade.takerFirst, 'start_crypto')
-  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot mark transferring in status: ${trade.status}`, 409)
+  if (ladderStatus(trade) !== step.from) throw new AppError('CONFLICT', `Cannot mark transferring in status: ${ladderStatus(trade)}`, 409)
+  assertPartySettleable(trade, trade.dispute)
 
   const proofDeadlineAt = new Date(Date.now() + 2 * 60 * 60 * 1000) // 2h to submit token proof
 
-  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: step.to, proofDeadlineAt } })
+  const advanced = await db.ctmTrade.updateMany({
+    where: { id: trade.id, ...claimRung(trade, step.from) },
+    data: { ...advanceTo(trade, step.to), proofDeadlineAt },
+  })
+  if (advanced.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
   await postCtmSystemMessage(trade.id, sellerId, 'Seller has started sending the tokens.')
   notify(trade.buyerId, 'CTM_SELLER_TRANSFERRING', 'Seller is transferring tokens', 'Seller has started the token transfer. Watch for incoming tokens.', { tradeRef })
 }
@@ -196,7 +215,10 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
 }) {
   const trade = await db.ctmTrade.findUnique({
     where: { tradeRef },
-    include: { token: { select: { symbol: true, network: true, contractAddress: true, settlementType: true } } },
+    include: {
+      token: { select: { symbol: true, network: true, contractAddress: true, settlementType: true } },
+      dispute: { select: { status: true } },
+    },
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.sellerId !== sellerId) throw new AppError('FORBIDDEN', 'Only seller can upload token proof', 403)
@@ -205,7 +227,8 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
   // Taker-first: payment_uploaded→payment_confirmed (the second step — verification
   // rides the action, so it moves to the front of the ladder). Never terminal.
   const step = ctmStepForAction(trade.takerFirst, 'prove_crypto')
-  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot upload token proof in status: ${trade.status}`, 409)
+  if (ladderStatus(trade) !== step.from) throw new AppError('CONFLICT', `Cannot upload token proof in status: ${ladderStatus(trade)}`, 409)
+  assertPartySettleable(trade, trade.dispute)
 
   // ── On-chain verification for txhash proofs on ON_CHAIN settlements ──────────
   let txVerificationStatus: string | undefined
@@ -276,12 +299,13 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
 
   const confirmDeadlineAt = new Date(Date.now() + 30 * 60 * 1000)
 
-  await db.$transaction([
-    db.ctmTrade.update({
-      where: { id: trade.id },
-      data: { status: step.to, confirmDeadlineAt, proofDeadlineAt: null },
-    }),
-    db.ctmTradeProof.create({
+  await db.$transaction(async (tx: Tx) => {
+    const claimed = await tx.ctmTrade.updateMany({
+      where: { id: trade.id, ...claimRung(trade, step.from) },
+      data: { ...advanceTo(trade, step.to), confirmDeadlineAt, proofDeadlineAt: null },
+    })
+    if (claimed.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
+    await tx.ctmTradeProof.create({
       data: {
         tradeId: trade.id,
         uploadedBy: sellerId,
@@ -293,8 +317,8 @@ export async function uploadTokenProof(tradeRef: string, sellerId: string, proof
         txVerificationDetails: (txVerificationDetails as Prisma.InputJsonValue) ?? Prisma.JsonNull,
         description: proofData.description ?? 'Token transfer proof',
       },
-    }),
-  ])
+    })
+  })
 
   await postCtmSystemMessage(trade.id, sellerId, `Seller submitted transfer proof for ${trade.tokenAmount} tokens. Buyer, check your wallet and confirm receipt within 30 minutes.`)
   notify(trade.buyerId, 'CTM_TOKEN_PROOF_SUBMITTED', 'Seller submitted transfer proof', 'Check your wallet and confirm receipt within 30 minutes.', { tradeRef })
@@ -305,6 +329,7 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
     where: { tradeRef },
     include: {
       proofs: { orderBy: { createdAt: 'desc' }, take: 1 },
+      dispute: { select: { status: true } },
     },
   })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
@@ -315,7 +340,8 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   // acknowledgement (the maker confirms the taker's crypto arrived, then pays fiat).
   // Classic byte-identical until a market's taker-first readiness flips.
   const step = ctmStepForAction(trade.takerFirst, 'confirm_crypto')
-  if (trade.status !== step.from) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
+  if (ladderStatus(trade) !== step.from) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${ladderStatus(trade)}`, 409)
+  assertPartySettleable(trade, trade.dispute)
 
   // Verification gate — rides the confirm_crypto action in BOTH flows (the token
   // proof was submitted in the immediately-preceding prove_crypto step). Check the
@@ -347,10 +373,10 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
   if (!step.terminal) {
     const payDeadlineAt = new Date(Date.now() + 60 * 60 * 1000) // maker has 1h to pay + upload proof
     const advanced = await db.ctmTrade.updateMany({
-      where: { id: trade.id, status: step.from },
-      data: { status: step.to, proofDeadlineAt: payDeadlineAt },
+      where: { id: trade.id, ...claimRung(trade, step.from) },
+      data: { ...advanceTo(trade, step.to), proofDeadlineAt: payDeadlineAt },
     })
-    if (advanced.count === 0) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${trade.status}`, 409)
+    if (advanced.count === 0) throw new AppError('CONFLICT', `Cannot confirm receipt in status: ${ladderStatus(trade)}`, 409)
     await postCtmSystemMessage(trade.id, buyerId, 'Buyer confirmed the tokens were received. Buyer: now send the PKR payment and upload proof within the trade window.')
     notify(trade.sellerId, 'CTM_CRYPTO_CONFIRMED', 'Tokens confirmed received', 'The buyer confirmed your tokens arrived and will now send the PKR payment.', { tradeRef })
     return
@@ -373,9 +399,14 @@ export async function confirmReceipt(tradeRef: string, buyerId: string) {
  * the auto-complete job (ctm.jobs.ts).
  */
 async function finalizeCtmTrade(tradeRef: string) {
-  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   const buyerId = trade.buyerId
+  // Dispute-resume: a trade can reach the terminal rung with a dispute still open —
+  // the parties settled it themselves. Completing is the ONE thing that closes such
+  // a dispute (see disputeResume.ts: acting is a self-claim, completing is evidence).
+  const wasDisputed = isResumingUnderDispute(trade)
+  let disputeSettled = false
 
   // Set inside the tx if the seller's merchant tier is auto-promoted on completion;
   // used after commit to notify them.
@@ -389,12 +420,17 @@ async function finalizeCtmTrade(tradeRef: string) {
     // Without this guard both paths would run, double-counting the streak + token /
     // merchant stats. If the row already moved on, abort the whole tx.
     const claimed = await tx.ctmTrade.updateMany({
-      where: { id: trade.id, status: 'proof_submitted' },
-      data: { status: 'completed', completedAt: new Date(), confirmDeadlineAt: null },
+      where: { id: trade.id, ...claimRung(trade, 'proof_submitted') },
+      data: { ...advanceTo(trade, 'completed', { terminal: true }), completedAt: new Date(), confirmDeadlineAt: null },
     })
     if (claimed.count === 0) {
       throw new AppError('CONFLICT', 'This trade was already completed.', 409)
     }
+
+    // Close an open dispute as no-fault, inside the SAME tx — the `status: 'open'`
+    // filter is the CAS that makes an admin ruling and a party settlement mutually
+    // exclusive. No winner, no bond seizure, no points clawback; the row survives.
+    if (wasDisputed) disputeSettled = await settleDisputeOnCompletion(tx, 'ctm', trade.id)
 
     // Update token stats
     await tx.ctmToken.update({
@@ -492,6 +528,16 @@ async function finalizeCtmTrade(tradeRef: string) {
 
   await postCtmSystemMessage(trade.id, buyerId, 'Trade complete — the buyer confirmed receipt of the tokens. 🎉')
 
+  // The parties settled the dispute themselves — tell both sides and the admin so
+  // nobody keeps working a closed case. The dispute stays on record as escalated.
+  if (disputeSettled) {
+    await postCtmSystemMessage(trade.id, buyerId, 'Dispute closed automatically — both sides delivered and the trade completed. No admin ruling was needed.')
+    const meta = { tradeRef, displayRef: trade.displayRef, dispute: true }
+    notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute closed — trade completed', `You and your counterparty settled trade ${refLabel(trade.displayRef)} directly, so the dispute closed with no ruling against either side.`, meta)
+    notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute closed — trade completed', `You and your counterparty settled trade ${refLabel(trade.displayRef)} directly, so the dispute closed with no ruling against either side.`, meta)
+    createAdminNotif({ category: 'DISPUTE', title: 'Dispute settled by the parties', body: `Trade ${refLabel(trade.displayRef)} completed after the dispute was opened — closed with no ruling. No action needed.`, href: '/admin/disputes' })
+  }
+
   // Mutual streak — confirm the running count, celebrate at milestones.
   if (streakResult.count > 0) {
     const streakMsg = streakResult.isMilestone
@@ -537,8 +583,11 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
     )
   }
 
+  // Dispute-resume: park `status` at `disputed` for all admin tooling, but REMEMBER
+  // the ladder rung so both parties can keep settling (disputeResume.ts). The dispute
+  // only closes if the trade actually completes.
   await db.$transaction([
-    db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'disputed' } }),
+    db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'disputed', disputeResumeStatus: trade.status } }),
     db.ctmDispute.create({
       data: {
         tradeId: trade.id,
@@ -595,7 +644,9 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   if (trade.status !== 'disputed') throw new AppError('CONFLICT', 'Trade is not in disputed status', 409)
 
   await db.$transaction([
-    db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'dispute_resolved' } }),
+    // An admin ruling ends the trade — drop the resume rung so nothing can advance
+    // the ladder afterwards.
+    db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'dispute_resolved', disputeResumeStatus: null } }),
     db.ctmDispute.update({
       where: { id: trade.dispute.id },
       data: {
@@ -648,6 +699,12 @@ export async function adminAddDisputeMessage(adminId: string, tradeRef: string, 
   const msg = await db.ctmDisputeMessage.create({
     data: { disputeId: trade.dispute.id, senderId: adminId, message },
   })
+
+  // Admin takeover freezes the step ladder: an admin working the case and the
+  // parties settling it themselves must never both land (disputeResume.ts). We clear
+  // the resume rung rather than touching dispute.status so the admin "open disputes"
+  // queue and its filters are unaffected.
+  await db.ctmTrade.update({ where: { id: trade.id }, data: { disputeResumeStatus: null } })
 
   await db.auditLog.create({
     data: { actorId: adminId, action: 'CTM_DISPUTE_MESSAGE', targetType: 'CtmTrade', targetId: trade.id, metadata: { tradeRef, message } as JsonValue },

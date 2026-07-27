@@ -119,7 +119,10 @@ export async function runCtmProofDeadline() {
       const escalated = await db.$transaction(async (tx) => {
         const existing = await tx.ctmDispute.findFirst({ where: { tradeId: trade.id }, select: { id: true } })
         if (existing) return false
-        const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'disputed' } })
+        // Dispute-resume: remember the rung so the parties can still settle while the
+        // auto-dispute is open — a missed deadline is often just a timezone gap, not
+        // a scam. `status` still parks at `disputed` for admin tooling.
+        const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'disputed', disputeResumeStatus: trade.status } })
         if (claimed.count === 0) return false
         await tx.ctmDispute.create({
           data: {

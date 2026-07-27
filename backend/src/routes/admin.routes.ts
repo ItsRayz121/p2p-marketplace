@@ -1931,6 +1931,11 @@ export async function adminRoutes(app: FastifyInstance) {
     await db.disputeMessage.create({
       data: { disputeId: id, senderId: req.user!.id, message: `[Admin Note] ${parsed.data.note}` },
     })
+    // Admin takeover freezes the step ladder: an admin working the case and the
+    // parties settling it themselves must never both land (disputeResume.ts). We
+    // clear the resume rung rather than touching dispute.status so the admin
+    // "open disputes" queue and its filters are unaffected.
+    await db.trade.update({ where: { id: dispute.tradeId }, data: { disputeResumeStatus: null } })
     await createAuditLog(req.user!.id, 'DISPUTE_NOTE_ADDED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
   })
@@ -1982,7 +1987,9 @@ export async function adminRoutes(app: FastifyInstance) {
       // Move the trade to its terminal "dispute_resolved" state so it stops showing
       // as "Disputed" forever (and the reduced concurrency cap lifts). The platform
       // never moves funds — parties settle directly per the ruling.
-      await tx.trade.update({ where: { id: dispute.tradeId }, data: { status: 'dispute_resolved' } })
+      // disputeResumeStatus is cleared too — an admin ruling ends the trade, so the
+      // parties can no longer advance the ladder themselves (disputeResume.ts).
+      await tx.trade.update({ where: { id: dispute.tradeId }, data: { status: 'dispute_resolved', disputeResumeStatus: null } })
       // Increment dispute win/loss counts for both parties
       await tx.tradeStats.upsert({
         where: { userId: winnerId },
