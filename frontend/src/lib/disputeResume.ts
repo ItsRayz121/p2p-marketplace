@@ -38,5 +38,6 @@ export function canPartiesStillSettle(
   dispute?: { status?: string } | null,
 ): boolean {
   if (!isResumingUnderDispute(trade)) return false
-  return !dispute?.status || dispute.status === 'open'
+  // 'escalated' is a 48h TIMEOUT flag, not an admin takeover — settlement stays open.
+  return !dispute?.status || dispute.status === 'open' || dispute.status === 'escalated'
 }

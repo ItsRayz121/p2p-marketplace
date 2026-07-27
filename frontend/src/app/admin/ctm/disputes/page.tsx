@@ -355,8 +355,10 @@ export default function AdminCtmDisputesPage() {
                 {winner === 'dismissed' && (
                   <p className="mt-2 text-xs text-text-secondary bg-surface-alt border border-border rounded-xl p-2.5">
                     Closes the case with <strong>no ruling against either side</strong>. Neither party is penalised — no
-                    bond is seized, no points are clawed back, and no dispute loss is recorded. The dispute stays on
-                    record, and the reduced trade limit lifts for both users.
+                    bond is seized, no points are clawed back, and no dispute loss is recorded. The reduced trade limit
+                    lifts for both users, and <strong>the trade reopens at the step it was on</strong> so they can finish
+                    it normally. The dispute stays on record. Note: a trade can only be disputed once, so if it goes
+                    wrong again they will need to contact support.
                   </p>
                 )}
               </div>

@@ -1032,7 +1032,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               ref={disputeSectionRef}
               className={`bg-red-500/10 border rounded-xl p-4 text-sm transition-shadow ${highlightDispute ? 'border-red-500/50 ring-2 ring-red-400 shadow-lg' : 'border-red-500/30'}`}
             >
-              <p className="font-semibold text-red-800 dark:text-red-300 mb-1">Dispute Open: {trade.dispute.reason.replace(/_/g, ' ')}</p>
+              {/* A resolved dispute stays on the trade for the record, so the header
+                  must not keep shouting "Open" after an admin has closed it. */}
+              <p className="font-semibold text-red-800 dark:text-red-300 mb-1">
+                {trade.dispute.status === 'resolved' ? 'Dispute closed' : 'Dispute Open'}: {trade.dispute.reason.replace(/_/g, ' ')}
+              </p>
               <p className="text-red-700 dark:text-red-300">{trade.dispute.description}</p>
               {/* Admin evidence requests / dispute thread */}
               {trade.dispute.messages && trade.dispute.messages.length > 0 && (

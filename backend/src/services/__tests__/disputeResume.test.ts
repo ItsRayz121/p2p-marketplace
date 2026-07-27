@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   ladderStatus, isResumingUnderDispute, advanceTo, claimRung, assertPartySettleable,
+  restoreAfterNoFaultClose,
 } from '../disputeResume'
 import { AppError } from '../../lib/errors'
 
@@ -53,12 +54,16 @@ describe('disputeResume — a disputed trade keeps its real rung', () => {
 })
 
 describe('disputeResume — admin override always wins', () => {
-  it('allows party settlement only while the dispute is untouched', () => {
+  it('allows party settlement while the dispute is untouched', () => {
     expect(() => assertPartySettleable(disputed, { status: 'open' })).not.toThrow()
   })
 
-  it('freezes the ladder once an admin has taken the case', () => {
-    for (const status of ['under_review', 'escalated', 'awaiting_evidence', 'resolved']) {
+  it('still allows settlement after a 48h TIMEOUT escalation — no admin looked at it', () => {
+    expect(() => assertPartySettleable(disputed, { status: 'escalated' })).not.toThrow()
+  })
+
+  it('freezes the ladder once an admin has actually engaged or ruled', () => {
+    for (const status of ['under_review', 'awaiting_evidence', 'resolved']) {
       expect(() => assertPartySettleable(disputed, { status })).toThrow(AppError)
     }
   })
@@ -69,5 +74,29 @@ describe('disputeResume — admin override always wins', () => {
 
   it('freezes when the dispute record is missing entirely', () => {
     expect(() => assertPartySettleable(disputed, null)).toThrow(AppError)
+  })
+})
+
+describe('disputeResume — a no-fault close hands the trade back', () => {
+  it('reopens the trade at the rung it was parked on', () => {
+    expect(restoreAfterNoFaultClose(disputed, 'dispute_resolved')).toEqual({
+      status: 'payment_uploaded', disputeResumeStatus: null,
+    })
+  })
+
+  it('goes terminal for a legacy dispute whose rung was never recorded', () => {
+    expect(restoreAfterNoFaultClose(frozen, 'dispute_resolved')).toEqual({
+      status: 'dispute_resolved', disputeResumeStatus: null,
+    })
+  })
+
+  it('goes terminal when the trade row is missing', () => {
+    expect(restoreAfterNoFaultClose(null, 'dispute_resolved').status).toBe('dispute_resolved')
+  })
+
+  it('never resurrects a trade that had already left `disputed`', () => {
+    // e.g. force-released to completed while the dispute was still open.
+    const completed = { status: 'crypto_released', disputeResumeStatus: 'crypto_sent' }
+    expect(restoreAfterNoFaultClose(completed, 'dispute_resolved').status).toBe('dispute_resolved')
   })
 })

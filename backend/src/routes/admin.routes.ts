@@ -142,6 +142,7 @@ async function createAuditLog(
 import { notify } from '../lib/notify'
 import { mergeVerifiedFromKyc } from '../services/socialLinks.service'
 import { computeModerationStatus, recordModerationAction, notifyModeration, moderationStatusLabel } from '../lib/moderation'
+import { restoreAfterNoFaultClose } from '../services/disputeResume'
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
 
@@ -1903,10 +1904,35 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!dispute) throw Errors.NOT_FOUND('Dispute')
     if (dispute.status === 'resolved') throw new AppError('ALREADY_RESOLVED', 'Dispute is already resolved', 400)
 
-    await db.dispute.update({
-      where: { id },
-      data: { status: 'resolved', resolution: parsed.data.note, resolvedAt: new Date(), resolvedBy: req.user!.id },
+    const trade = await db.trade.findUnique({
+      where: { id: dispute.tradeId },
+      select: { status: true, disputeResumeStatus: true },
     })
+
+    await db.$transaction([
+      db.dispute.update({
+        where: { id },
+        data: {
+          status: 'resolved',
+          resolutionType: 'dismissed',
+          resolution: parsed.data.note,
+          resolvedAt: new Date(),
+          resolvedBy: req.user!.id,
+        },
+      }),
+      // Hand the trade back to its parties. Closing with no winner used to resolve
+      // the dispute and leave the TRADE parked at `disputed` forever — the ladder
+      // frozen (the dispute is no longer `open`) and no ruling to act on, so it could
+      // never be completed or closed. Deadlines are cleared so the escalation job
+      // does not immediately re-dispute what was just deliberately dismissed.
+      db.trade.update({
+        where: { id: dispute.tradeId },
+        data: {
+          ...restoreAfterNoFaultClose(trade, 'dispute_resolved'),
+          releaseDeadlineAt: null,
+        },
+      }),
+    ])
     await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     // Closed without a winner = no fault assigned → return the maker's bond

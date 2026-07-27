@@ -164,23 +164,16 @@ export async function runTradeEscalation(): Promise<void> {
       href: '/admin/disputes',
       telegram: true,
     })
-    // Update status to escalated. Escalation is an admin takeover, so it also
-    // freezes the step ladder — the parties had 48h to settle it themselves and
-    // didn't, and a human ruling must not race a party settlement (disputeResume.ts).
-    const escalating = await db.dispute.findMany({
-      where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },
-      select: { tradeId: true },
-    })
+    // Update status to escalated — an admin-visibility flag, NOT an admin takeover.
+    // It fires precisely BECAUSE nobody has looked at the case for 48h, so it must
+    // not freeze the step ladder: that would leave the trade both neglected AND
+    // unfinishable. Only real admin engagement (posting in the dispute thread)
+    // freezes it — see disputeResume.ts. Mirrors runCtmDisputeEscalation, which
+    // likewise only flags.
     await db.dispute.updateMany({
       where: { status: { in: ['open', 'under_review'] }, createdAt: { lt: disputeBefore } },
       data: { status: 'escalated' },
     })
-    if (escalating.length > 0) {
-      await db.trade.updateMany({
-        where: { id: { in: escalating.map((d) => d.tradeId) } },
-        data: { disputeResumeStatus: null },
-      })
-    }
   }
 
   logger.info(

@@ -44,8 +44,16 @@ export interface ResumableTrade {
   disputeResumeStatus?: string | null
 }
 
-/** A dispute may only be settled by the parties while it is still untouched. */
-export const PARTY_SETTLEABLE_DISPUTE_STATUS = 'open'
+/**
+ * Dispute states in which the parties may still settle the trade themselves.
+ *
+ * `escalated` is included deliberately: it is set by a 48h TIMEOUT job, which fires
+ * precisely because no admin has looked at the case. Freezing there would leave the
+ * trade both neglected and unfinishable — the worst of both. What freezes the ladder
+ * is real admin ENGAGEMENT (an admin posting in the dispute thread), which clears
+ * disputeResumeStatus outright, and a ruling, which sets `resolved`.
+ */
+export const PARTY_SETTLEABLE_DISPUTE_STATUSES = ['open', 'escalated'] as const
 
 /**
  * The rung this trade is REALLY on. Identical to `status` for every trade that
@@ -112,13 +120,39 @@ export function assertPartySettleable(
       409,
     )
   }
-  if (!dispute || dispute.status !== PARTY_SETTLEABLE_DISPUTE_STATUS) {
+  if (!dispute || !(PARTY_SETTLEABLE_DISPUTE_STATUSES as readonly string[]).includes(dispute.status)) {
     throw new AppError(
       'DISPUTE_UNDER_ADMIN_REVIEW',
       'An admin has taken over this dispute, so the trade is locked until they rule on it. Please reply in the dispute thread.',
       409,
     )
   }
+}
+
+/**
+ * Hand a trade back to its parties after a NO-FAULT close (an admin dismissal, or
+ * the USDT "close without winner"). Returns the `data` patch for the trade row.
+ *
+ * A no-fault close says "there was no real problem here" — so the trade must go
+ * back to being a normal, finishable trade. Without this it stays parked at
+ * `disputed` with its dispute already resolved, which is a dead end: the ladder is
+ * frozen (assertPartySettleable rejects a non-open dispute) and there is no ruling
+ * to act on either. The trade could never be completed OR closed.
+ *
+ * Deadlines are cleared rather than refreshed: the original ones are long past, and
+ * re-arming them would have the escalation job immediately try to re-dispute a trade
+ * whose dispute was just deliberately dismissed.
+ *
+ * Legacy fallback — a trade disputed before dispute-resume shipped has no recorded
+ * rung, so there is nothing to hand back. Those go terminal (`dispute_resolved`)
+ * instead, which is at least honest, rather than sitting in `disputed` forever.
+ */
+export function restoreAfterNoFaultClose<S extends string>(
+  trade: { status: string; disputeResumeStatus?: S | null } | null | undefined,
+  legacyTerminalStatus: S,
+): { status: S; disputeResumeStatus: null } {
+  const rung = trade && trade.status === 'disputed' ? trade.disputeResumeStatus : null
+  return { status: rung ?? legacyTerminalStatus, disputeResumeStatus: null }
 }
 
 /**

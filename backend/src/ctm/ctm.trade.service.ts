@@ -17,7 +17,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcu
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
 import {
-  ladderStatus, advanceTo, claimRung,
+  ladderStatus, advanceTo, claimRung, restoreAfterNoFaultClose,
   assertPartySettleable, settleDisputeOnCompletion,
 } from '../services/disputeResume'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
@@ -666,10 +666,17 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
 
   const ruling = CTM_RULING[data.winner]
 
+  // A dismissal is a no-fault close, so the trade goes BACK to its real rung and the
+  // parties can finish it normally — that is what "neither party is affected" means.
+  // Every other ruling is a decision about an unfinished trade, so it ends the trade
+  // at `dispute_resolved` and the parties settle per the ruling. Deadlines are
+  // cleared on a dismissal so the escalation job doesn't immediately re-dispute it.
+  const tradePatch = data.winner === 'dismissed'
+    ? { ...restoreAfterNoFaultClose(trade, 'dispute_resolved'), proofDeadlineAt: null, confirmDeadlineAt: null }
+    : { status: 'dispute_resolved' as const, disputeResumeStatus: null }
+
   await db.$transaction([
-    // An admin ruling ends the trade — drop the resume rung so nothing can advance
-    // the ladder afterwards.
-    db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'dispute_resolved', disputeResumeStatus: null } }),
+    db.ctmTrade.update({ where: { id: trade.id }, data: tradePatch }),
     db.ctmDispute.update({
       where: { id: trade.dispute.id },
       data: {
@@ -710,7 +717,7 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   // "Winner: dismissed" would read as a ruling — the whole point of a dismissal is
   // that nobody lost, so say that plainly to both sides.
   const outcomeLine = data.winner === 'dismissed'
-    ? 'The dispute was dismissed — no ruling was made against either side, and neither party is penalised.'
+    ? 'The dispute was dismissed — no ruling was made against either side, neither party is penalised, and the trade is open again so you can finish it normally.'
     : data.winner === 'split'
     ? 'Both sides share responsibility — settle the agreed split directly.'
     : `Ruling in favour of the ${data.winner}.`
