@@ -340,10 +340,26 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
       // CAS guard: bump the streak only on a genuine transition INTO completed. A
       // re-run on an already-completed trade — or a race with the auto-complete job /
       // buyer confirm — claims 0 rows and skips the increment, so it can't double-count.
-      const claimed = await tx.ctmTrade.updateMany({ where: { tradeRef: ref, status: { not: 'completed' } }, data: { status: 'completed', completedAt: new Date() } })
+      // disputeResumeStatus is cleared alongside: this endpoint can force-complete a
+      // DISPUTED trade, and leaving a stale resume rung on a completed trade would be
+      // a dangling artifact (disputeResume.ts).
+      const claimed = await tx.ctmTrade.updateMany({ where: { tradeRef: ref, status: { not: 'completed' } }, data: { status: 'completed', completedAt: new Date(), disputeResumeStatus: null } })
       if (claimed.count > 0) {
         await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
         await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
+        // Force-completing a disputed trade must also close the dispute. Without
+        // this the CtmDispute row stays `open` forever, which keeps the reduced
+        // concurrency cap (tradeConcurrency.service keys off the dispute record,
+        // not the trade status) stuck on BOTH parties permanently.
+        await tx.ctmDispute.updateMany({
+          where: { tradeId: trade.id, status: { not: 'resolved' } },
+          data: {
+            status: 'resolved',
+            resolution: 'Closed by an admin force-completing the trade.',
+            resolvedAt: new Date(),
+            resolvedBy: req.user!.id,
+          },
+        })
       }
     })
     await db.auditLog.create({

@@ -17,7 +17,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcu
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
 import {
-  ladderStatus, isResumingUnderDispute, advanceTo, claimRung,
+  ladderStatus, advanceTo, claimRung,
   assertPartySettleable, settleDisputeOnCompletion,
 } from '../services/disputeResume'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
@@ -405,7 +405,6 @@ async function finalizeCtmTrade(tradeRef: string) {
   // Dispute-resume: a trade can reach the terminal rung with a dispute still open —
   // the parties settled it themselves. Completing is the ONE thing that closes such
   // a dispute (see disputeResume.ts: acting is a self-claim, completing is evidence).
-  const wasDisputed = isResumingUnderDispute(trade)
   let disputeSettled = false
 
   // Set inside the tx if the seller's merchant tier is auto-promoted on completion;
@@ -430,7 +429,9 @@ async function finalizeCtmTrade(tradeRef: string) {
     // Close an open dispute as no-fault, inside the SAME tx — the `status: 'open'`
     // filter is the CAS that makes an admin ruling and a party settlement mutually
     // exclusive. No winner, no bond seizure, no points clawback; the row survives.
-    if (wasDisputed) disputeSettled = await settleDisputeOnCompletion(tx, 'ctm', trade.id)
+    // Called unconditionally: a cheap no-op when there is no open dispute, and that
+    // avoids trusting a pre-transaction read of the dispute state.
+    disputeSettled = await settleDisputeOnCompletion(tx, 'ctm', trade.id)
 
     // Update token stats
     await tx.ctmToken.update({

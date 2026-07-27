@@ -16,7 +16,7 @@ import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
 import { stepForAction, flowSteps } from './settlementFlow'
 import {
-  ladderStatus, isResumingUnderDispute, advanceTo, claimRung,
+  ladderStatus, advanceTo, claimRung,
   assertPartySettleable, settleDisputeOnCompletion,
 } from './disputeResume'
 import { getBondConfig, lockMakerBondTx, releaseMakerBond } from './makerBond.service'
@@ -974,7 +974,6 @@ async function finalizeUsdtTrade(tradeId: string) {
   if (!tradeDetails) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   // Dispute-resume: this trade may be completing with a dispute still open — the
   // parties settled it themselves. Completing is the ONE thing that closes it.
-  const wasDisputed = isResumingUnderDispute(tradeDetails)
   let disputeSettled = false
 
   // ── Sanity check (no verification gate) ───────────────────────────────────────
@@ -1021,7 +1020,9 @@ async function finalizeUsdtTrade(tradeId: string) {
     // Close an open dispute as no-fault, inside the SAME tx — the `status: 'open'`
     // filter is the CAS that keeps an admin ruling and a party settlement mutually
     // exclusive. No winner, no bond seizure, no clawback; the record survives.
-    if (wasDisputed) disputeSettled = await settleDisputeOnCompletion(tx, 'usdt', tradeId)
+    // Called unconditionally: it is a cheap no-op when there is no open dispute, and
+    // that avoids trusting a pre-transaction read of the dispute state.
+    disputeSettled = await settleDisputeOnCompletion(tx, 'usdt', tradeId)
 
     // Increment completedSellTrades for seller
     await tx.user.update({
