@@ -112,6 +112,10 @@ enum DisputeResolutionType {
   // was opened and the trade completed, so the dispute closed on its own. Carries
   // NO fault: no bond seizure, no points clawback, no winner.
   settled_by_parties
+  // Admin closed the case without ruling against anyone (misunderstanding, opened
+  // in error, both sides made whole off-platform). Same no-fault guarantees as
+  // settled_by_parties, but admin-initiated. NEITHER party is affected.
+  dismissed
 }
 
 enum PaymentMethodType {

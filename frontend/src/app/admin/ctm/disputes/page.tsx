@@ -29,7 +29,7 @@ function fmtDt(iso: string) {
 
 // Quick-pick resolution notes for CTM disputes, split by ruling. CTM settlement
 // is manual (platform moves no tokens), so these read as rulings/guidance.
-const CTM_RESOLUTION_TEMPLATES: Record<'buyer' | 'seller' | 'split', string[]> = {
+const CTM_RESOLUTION_TEMPLATES: Record<'buyer' | 'seller' | 'split' | 'dismissed', string[]> = {
   buyer: [
     'Buyer paid the agreed PKR but the seller did not deliver the tokens. Ruling in the buyer’s favour — seller to deliver the tokens or refund. Settle manually.',
     'Tokens delivered did not match the agreed amount/token. Ruling in the buyer’s favour based on the evidence.',
@@ -41,6 +41,11 @@ const CTM_RESOLUTION_TEMPLATES: Record<'buyer' | 'seller' | 'split', string[]> =
   split: [
     'Both parties share responsibility (e.g. partial delivery / partial payment). Recommend a proportional settlement to be arranged manually.',
   ],
+  dismissed: [
+    'Dispute opened by mistake or resolved between the parties before review. Closed with no fault on either side.',
+    'A misunderstanding rather than a breach — both sides acted in good faith. Closed with no ruling against either party.',
+    'Insufficient evidence to rule either way, and no loss reported by either side. Closed without fault.',
+  ],
 }
 
 export default function AdminCtmDisputesPage() {
@@ -50,7 +55,7 @@ export default function AdminCtmDisputesPage() {
   const [detail, setDetail] = useState<any | null>(null)
   const [tradeMessages, setTradeMessages] = useState<any[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
-  const [winner, setWinner] = useState<'buyer' | 'seller' | 'split'>('buyer')
+  const [winner, setWinner] = useState<'buyer' | 'seller' | 'split' | 'dismissed'>('buyer')
   const [resolution, setResolution] = useState('')
   const [ackSettled, setAckSettled] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -196,8 +201,10 @@ export default function AdminCtmDisputesPage() {
         footer={
           <div className="flex gap-3">
             <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">Cancel</button>
-            <button onClick={handleResolve} disabled={submitting || !resolution.trim() || !ackSettled} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
-              {submitting ? 'Recording…' : `Record ruling: ${winner}`}
+            {/* A dismissal moves nothing and rules against nobody, so the manual-
+                settlement acknowledgment doesn't apply and isn't required. */}
+            <button onClick={handleResolve} disabled={submitting || !resolution.trim() || (winner !== 'dismissed' && !ackSettled)} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
+              {submitting ? 'Recording…' : winner === 'dismissed' ? 'Dismiss dispute (no fault)' : `Record ruling: ${winner}`}
             </button>
           </div>
         }
@@ -337,14 +344,21 @@ export default function AdminCtmDisputesPage() {
             <div className="border-t border-border pt-4 space-y-3">
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">Ruling</label>
-                <div className="flex gap-2">
-                  {(['buyer', 'seller', 'split'] as const).map((w) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {(['buyer', 'seller', 'split', 'dismissed'] as const).map((w) => (
                     <button key={w} type="button" onClick={() => setWinner(w)}
-                      className={`flex-1 py-2 rounded-xl border text-sm font-medium transition-colors ${winner === w ? 'border-primary bg-primary text-white' : 'border-border text-text-primary hover:bg-surface-alt'}`}>
-                      {w === 'buyer' ? `In favour of ${buyerName}` : w === 'seller' ? `In favour of ${sellerName}` : 'Split'}
+                      className={`py-2 px-2 rounded-xl border text-sm font-medium transition-colors ${winner === w ? 'border-primary bg-primary text-white' : 'border-border text-text-primary hover:bg-surface-alt'}`}>
+                      {w === 'buyer' ? `In favour of ${buyerName}` : w === 'seller' ? `In favour of ${sellerName}` : w === 'split' ? 'Split' : 'Dismiss (no fault)'}
                     </button>
                   ))}
                 </div>
+                {winner === 'dismissed' && (
+                  <p className="mt-2 text-xs text-text-secondary bg-surface-alt border border-border rounded-xl p-2.5">
+                    Closes the case with <strong>no ruling against either side</strong>. Neither party is penalised — no
+                    bond is seized, no points are clawed back, and no dispute loss is recorded. The dispute stays on
+                    record, and the reduced trade limit lifts for both users.
+                  </p>
+                )}
               </div>
 
               <div>
@@ -362,14 +376,17 @@ export default function AdminCtmDisputesPage() {
                   className="w-full border border-border rounded-xl px-3 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary resize-none" />
               </div>
 
-              {/* Manual-settlement acknowledgment — escrow release is NOT automated */}
-              <label className="flex items-start gap-2 text-xs text-text-secondary bg-warning/10 border border-warning/30 rounded-xl p-3 cursor-pointer">
-                <input type="checkbox" checked={ackSettled} onChange={(e) => setAckSettled(e.target.checked)} className="mt-0.5" />
-                <span>
-                  I understand this records the ruling and updates the trade status only — it does <strong>not</strong> move
-                  any tokens or funds. I confirm the agreed tokens/refund have been (or will be) settled manually.
-                </span>
-              </label>
+              {/* Manual-settlement acknowledgment — escrow release is NOT automated.
+                  Hidden for a dismissal: nothing is owed, so there is nothing to settle. */}
+              {winner !== 'dismissed' && (
+                <label className="flex items-start gap-2 text-xs text-text-secondary bg-warning/10 border border-warning/30 rounded-xl p-3 cursor-pointer">
+                  <input type="checkbox" checked={ackSettled} onChange={(e) => setAckSettled(e.target.checked)} className="mt-0.5" />
+                  <span>
+                    I understand this records the ruling and updates the trade status only — it does <strong>not</strong> move
+                    any tokens or funds. I confirm the agreed tokens/refund have been (or will be) settled manually.
+                  </span>
+                </label>
+              )}
             </div>
           </div>
         )}

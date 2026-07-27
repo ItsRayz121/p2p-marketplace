@@ -635,14 +635,36 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
   void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'cancelled' })
 }
 
+/**
+ * Ruling → what gets recorded. `winner` is a two-value enum (buyer|seller), so the
+ * no-winner rulings MUST store null there and carry the outcome in resolutionType.
+ * Writing 'split' into `winner` was a runtime Prisma failure — the Split button in
+ * the admin modal could never save.
+ *
+ * `dismissed` is the no-fault close: an admin ends the case without ruling against
+ * anyone (misunderstanding, opened in error, both sides already made whole).
+ * NEITHER party is affected — no bond seizure, no points clawback, no win/loss.
+ */
+const CTM_RULING: Record<'buyer' | 'seller' | 'split' | 'dismissed', {
+  winner: 'buyer' | 'seller' | null
+  resolutionType: 'buyer_wins' | 'seller_wins' | 'split' | 'dismissed'
+}> = {
+  buyer:     { winner: 'buyer',  resolutionType: 'buyer_wins' },
+  seller:    { winner: 'seller', resolutionType: 'seller_wins' },
+  split:     { winner: null,     resolutionType: 'split' },
+  dismissed: { winner: null,     resolutionType: 'dismissed' },
+}
+
 export async function adminResolveDispute(adminId: string, tradeRef: string, data: {
-  winner: 'buyer' | 'seller' | 'split'
+  winner: 'buyer' | 'seller' | 'split' | 'dismissed'
   resolution: string
 }) {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: true } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (!trade.dispute) throw new AppError('NOT_FOUND', 'No dispute found for this trade', 404)
   if (trade.status !== 'disputed') throw new AppError('CONFLICT', 'Trade is not in disputed status', 409)
+
+  const ruling = CTM_RULING[data.winner]
 
   await db.$transaction([
     // An admin ruling ends the trade — drop the resume rung so nothing can advance
@@ -652,7 +674,8 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
       where: { id: trade.dispute.id },
       data: {
         status: 'resolved',
-        winner: data.winner as never,
+        winner: ruling.winner,
+        resolutionType: ruling.resolutionType,
         resolution: data.resolution,
         resolvedBy: adminId,
         resolvedAt: new Date(),
@@ -669,10 +692,11 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   }).catch(() => {})
 
   // Maker collateral bond (Phase 5): seize to the winner if the maker lost, else
-  // release. 'split' returns the bond. The helper looks up the maker from the
-  // BondHold, so we just pass the winning/losing user ids.
-  const winnerUserId = data.winner === 'buyer' ? trade.buyerId : data.winner === 'seller' ? trade.sellerId : null
-  const loserUserId  = data.winner === 'buyer' ? trade.sellerId : data.winner === 'seller' ? trade.buyerId : null
+  // release. 'split' and 'dismissed' have no loser, so the bond is simply returned
+  // and no points are clawed back — nobody is penalised. The helper looks up the
+  // maker from the BondHold, so we just pass the winning/losing user ids.
+  const winnerUserId = ruling.winner === 'buyer' ? trade.buyerId : ruling.winner === 'seller' ? trade.sellerId : null
+  const loserUserId  = ruling.winner === 'buyer' ? trade.sellerId : ruling.winner === 'seller' ? trade.buyerId : null
   await resolveBondOnDispute({ tradeType: 'ctm', tradeId: trade.id, loserId: loserUserId, winnerId: winnerUserId })
     .catch((err) => logger.error({ err, tradeId: trade.id }, 'Failed to resolve maker bond on CTM dispute'))
 
@@ -683,8 +707,16 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
       .catch((err) => logger.error({ err, tradeId: trade.id }, 'Failed to claw back airdrop points on CTM dispute'))
   }
 
-  notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
-  notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. Winner: ${data.winner}.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
+  // "Winner: dismissed" would read as a ruling — the whole point of a dismissal is
+  // that nobody lost, so say that plainly to both sides.
+  const outcomeLine = data.winner === 'dismissed'
+    ? 'The dispute was dismissed — no ruling was made against either side, and neither party is penalised.'
+    : data.winner === 'split'
+    ? 'Both sides share responsibility — settle the agreed split directly.'
+    : `Ruling in favour of the ${data.winner}.`
+  const body = `Dispute on trade ${refLabel(trade.displayRef)} has been resolved. ${outcomeLine}`
+  notify(trade.buyerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', body, { tradeRef, displayRef: trade.displayRef, dispute: true })
+  notify(trade.sellerId, 'CTM_DISPUTE_RESOLVED', 'Dispute resolved', body, { tradeRef, displayRef: trade.displayRef, dispute: true })
 }
 
 /**

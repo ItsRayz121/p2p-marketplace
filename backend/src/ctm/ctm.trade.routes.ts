@@ -50,7 +50,8 @@ const rateSchema = z.object({
 })
 
 const resolveDisputeSchema = z.object({
-  winner: z.enum(['buyer', 'seller', 'split']),
+  // 'dismissed' = close with no fault on either side (see CTM_RULING).
+  winner: z.enum(['buyer', 'seller', 'split', 'dismissed']),
   resolution: z.string().min(10).max(2000),
 })
 
