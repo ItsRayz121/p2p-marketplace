@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   // PgBouncer setup (Railway):
   //   1. Set DATABASE_URL to PgBouncer URL (port 6543) + ?pgbouncer=true&connection_limit=1
   //   2. Add DIRECT_DATABASE_URL env var pointing to direct Postgres (port 5432)
@@ -164,7 +164,7 @@ enum CollateralStatus {
 }
 
 enum WithdrawalStatus {
-  email_pending // awaiting user email confirmation before balance deduction
+  email_pending   // awaiting user email confirmation before balance deduction
   pending
   first_approved
   approved
@@ -250,24 +250,24 @@ enum GasCustomRequestStatus {
 }
 
 enum GasLedgerEntryType {
-  order_payment // user USDT payment received into hot wallet
-  gas_delivery // native gas sent to user
-  delivery_refund // native gas refunded to user (failed delivery)
-  refill_hot_from_treasury // treasury â†’ hot wallet transfer
-  drain_hot_to_treasury // hot wallet â†’ treasury (emergency drain)
-  platform_fee // platform fee collected from user withdrawals (stays in hot wallet)
-  platform_fee_sweep // accumulated platform fees swept from hot wallet → treasury wallet
-  external_hot_wallet_deposit // direct native-token send to hot wallet (e.g. admin top-up)
-  platform_revenue_withdrawal // platform-owned funds withdrawn from hot wallet → external wallet
+  order_payment        // user USDT payment received into hot wallet
+  gas_delivery         // native gas sent to user
+  delivery_refund      // native gas refunded to user (failed delivery)
+  refill_hot_from_treasury  // treasury â†’ hot wallet transfer
+  drain_hot_to_treasury     // hot wallet â†’ treasury (emergency drain)
+  platform_fee         // platform fee collected from user withdrawals (stays in hot wallet)
+  platform_fee_sweep   // accumulated platform fees swept from hot wallet → treasury wallet
+  external_hot_wallet_deposit  // direct native-token send to hot wallet (e.g. admin top-up)
+  platform_revenue_withdrawal  // platform-owned funds withdrawn from hot wallet → external wallet
 }
 
 enum GasRefillRequestStatus {
-  pending_approval // waiting for admin approval (when approval mode is on)
-  approved // admin approved, waiting for execution
-  executing // tx in-flight
-  completed // tx confirmed
-  failed // tx failed, see failureReason
-  cancelled // cancelled by admin before execution
+  pending_approval  // waiting for admin approval (when approval mode is on)
+  approved          // admin approved, waiting for execution
+  executing         // tx in-flight
+  completed         // tx confirmed
+  failed            // tx failed, see failureReason
+  cancelled         // cancelled by admin before execution
 }
 
 enum RateAlertDirection {
@@ -376,12 +376,12 @@ enum CtmMerchantTier {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model User {
-  id           String  @id @default(cuid())
-  email        String  @unique
-  fullName     String
-  username     String  @unique
-  passwordHash String
-  googleId     String? @unique
+  id            String    @id @default(cuid())
+  email         String    @unique
+  fullName      String
+  username      String    @unique
+  passwordHash  String
+  googleId      String?   @unique
 
   // ── Telegram Mini App identity ──
   // telegramId is the numeric Telegram user id (stored as BigInt — ids exceed
@@ -398,19 +398,19 @@ model User {
   // ban trigger. Cleared automatically when they next /start the bot.
   telegramBlockedAt DateTime?
 
-  role         UserRole @default(user)
-  intendedRole String   @default("user")
+  role          UserRole  @default(user)
+  intendedRole  String    @default("user")
 
-  kycStatus KycStatus @default(none)
-  kycLevel  KycLevel  @default(none)
+  kycStatus     KycStatus @default(none)
+  kycLevel      KycLevel  @default(none)
 
-  referralCode String  @unique @default(cuid())
-  referredById String?
-  referredBy   User?   @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
-  referrals    User[]  @relation("Referrals")
+  referralCode  String    @unique @default(cuid())
+  referredById  String?
+  referredBy    User?     @relation("Referrals", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals     User[]    @relation("Referrals")
 
-  twoFaEnabled Boolean @default(false)
-  twoFaSecret  String?
+  twoFaEnabled  Boolean   @default(false)
+  twoFaSecret   String?
 
   avatarUrl         String?
   usernameChangedAt DateTime?
@@ -425,32 +425,32 @@ model User {
   withdrawalLockedUntil DateTime?
   withdrawalLockReason  String?   @db.VarChar(200)
 
-  isEmailVerified Boolean @default(false)
-  isSuspended     Boolean @default(false)
-  isBanned        Boolean @default(false)
-  suspendReason   String?
+  isEmailVerified        Boolean @default(false)
+  isSuspended            Boolean @default(false)
+  isBanned               Boolean @default(false)
+  suspendReason          String?
 
   // ── Moderation framework (Admin Audit Phase 1) ──
   // isBanned/isSuspended remain the authoritative enforcement flags (read by
   // auth middleware + login). The fields below add duration + classification.
-  suspendedUntil   DateTime? // when a suspension auto-lifts (null = until manually lifted)
-  bannedUntil      DateTime? // when a TEMPORARY ban auto-lifts (null + isBanned = permanent)
-  banType          String? // "temporary" | "permanent" (set when isBanned)
-  underReview      Boolean   @default(false) // flagged for review; informational, does not block access
-  moderationReason String?   @db.VarChar(1000) // current active reason (ban or suspend)
+  suspendedUntil         DateTime?          // when a suspension auto-lifts (null = until manually lifted)
+  bannedUntil            DateTime?          // when a TEMPORARY ban auto-lifts (null + isBanned = permanent)
+  banType                String?            // "temporary" | "permanent" (set when isBanned)
+  underReview            Boolean  @default(false)  // flagged for review; informational, does not block access
+  moderationReason       String?  @db.VarChar(1000) // current active reason (ban or suspend)
 
-  dailyBuyUsed    Decimal   @default(0) @db.Decimal(14, 2)
-  dailyBuyReset   DateTime?
-  monthlyBuyUsed  Decimal   @default(0) @db.Decimal(14, 2)
-  monthlyBuyReset DateTime?
-  dailyBuyLimit   Decimal   @default(50000) @db.Decimal(14, 2)
-  dailySellLimit  Decimal   @default(50000) @db.Decimal(14, 2)
+  dailyBuyUsed           Decimal @default(0) @db.Decimal(14, 2)
+  dailyBuyReset          DateTime?
+  monthlyBuyUsed         Decimal @default(0) @db.Decimal(14, 2)
+  monthlyBuyReset        DateTime?
+  dailyBuyLimit          Decimal @default(50000) @db.Decimal(14, 2)
+  dailySellLimit         Decimal @default(50000) @db.Decimal(14, 2)
 
   // Non-custodial anti-griefing: incremented when the user abandons a trade
   // (auto-cancelled for non-payment); tradeCooldownUntil blocks starting a new
   // trade until it elapses. Only enforced when noncustodial_p2p_enabled is ON.
-  tradeAbandonCount  Int       @default(0)
-  tradeCooldownUntil DateTime?
+  tradeAbandonCount      Int       @default(0)
+  tradeCooldownUntil     DateTime?
 
   completedSellTrades    Int     @default(0)
   firstTradeBonusPaid    Boolean @default(false)
@@ -460,24 +460,24 @@ model User {
   // muting this NEVER suppresses trade/money/security alerts.
   announcementsEnabled   Boolean @default(true)
 
-  socialLinks       Json    @default("{}")
-  socialLinksPublic Boolean @default(false)
+  socialLinks            Json    @default("{}")
+  socialLinksPublic      Boolean @default(false)
 
-  termsAcceptedAt DateTime?
-  termsVersion    String?
+  termsAcceptedAt        DateTime?
+  termsVersion           String?
 
-  registrationIp String?
-  country        String? // geo-IP country name (from registrationIp)
-  countryCode    String? // ISO 3166-1 alpha-2 (e.g. "PK")
+  registrationIp         String?
+  country                String?                    // geo-IP country name (from registrationIp)
+  countryCode            String?                    // ISO 3166-1 alpha-2 (e.g. "PK")
 
-  lastSeenAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  lastSeenAt             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
 
   // Relations â€” onDelete rules are explicit (no implicit RESTRICT surprises)
   wallets                Wallet[]
-  trades                 Trade[]                    @relation("TradeBuyer")
-  sellTrades             Trade[]                    @relation("TradeSeller")
+  trades                 Trade[]             @relation("TradeBuyer")
+  sellTrades             Trade[]             @relation("TradeSeller")
   ads                    Ad[]
   instantBuyOrders       InstantBuyOrder[]
   kycSubmissions         KycSubmission[]
@@ -485,8 +485,8 @@ model User {
   savedAddresses         SavedAddress[]
   withdrawals            Withdrawal[]
   collateralLocks        CollateralLock[]
-  referralRewardsGiven   ReferralReward[]           @relation("ReferralRewardsGiven")
-  referralRewardsEarned  ReferralReward[]           @relation("ReferralRewardsEarned")
+  referralRewardsGiven   ReferralReward[]    @relation("ReferralRewardsGiven")
+  referralRewardsEarned  ReferralReward[]    @relation("ReferralRewardsEarned")
   notifications          Notification[]
   pushSubscriptions      PushSubscription[]
   sessions               Session[]
@@ -495,11 +495,11 @@ model User {
   fraudFlags             FraudFlag[]
   rateAlerts             RateAlert[]
   savedTerms             SavedTerms[]
-  adminNotes             AdminNote[]                @relation("AdminNoteTarget")
-  moderationActions      ModerationAction[]         @relation("ModerationActionTarget")
-  moderatorActions       ModerationAction[]         @relation("ModerationActionModerator")
-  appeals                Appeal[]                   @relation("AppealUser")
-  appealsReviewed        Appeal[]                   @relation("AppealReviewer")
+  adminNotes             AdminNote[]         @relation("AdminNoteTarget")
+  moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
+  moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
+  appeals                Appeal[]            @relation("AppealUser")
+  appealsReviewed        Appeal[]            @relation("AppealReviewer")
   auditLogs              AuditLog[]
   gasFeeOrders           GasFeeOrder[]
   merchantApiKeys        MerchantApiKey[]
@@ -510,26 +510,26 @@ model User {
   trustedDevices         TrustedDevice[]
   ctmTokenRequests       CtmTokenRequest[]
   ctmMerchantProfile     CtmMerchantProfile?
-  ctmBuyTrades           CtmTrade[]                 @relation("CtmTradeBuyer")
-  ctmSellTrades          CtmTrade[]                 @relation("CtmTradeSeller")
-  ctmRequests            CtmRequest[]               @relation("CtmRequestUser")
-  ctmBids                CtmBid[]                   @relation("CtmBidder")
-  ctmListingBids         CtmListingBid[]            @relation("CtmListingBidder")
-  adBids                 AdBid[]                    @relation("AdBidder")
-  favorites              UserFavorite[]             @relation("FavoritingUser")
-  favoritedBy            UserFavorite[]             @relation("FavoritedTrader")
+  ctmBuyTrades           CtmTrade[]            @relation("CtmTradeBuyer")
+  ctmSellTrades          CtmTrade[]            @relation("CtmTradeSeller")
+  ctmRequests            CtmRequest[]          @relation("CtmRequestUser")
+  ctmBids                CtmBid[]              @relation("CtmBidder")
+  ctmListingBids         CtmListingBid[]       @relation("CtmListingBidder")
+  adBids                 AdBid[]               @relation("AdBidder")
+  favorites              UserFavorite[]         @relation("FavoritingUser")
+  favoritedBy            UserFavorite[]         @relation("FavoritedTrader")
   supportConversations   SupportConversation[]
-  announcementsSent      Announcement[]             @relation("AnnouncementsSent")
+  announcementsSent      Announcement[]          @relation("AnnouncementsSent")
   announcementDismissals AnnouncementDismissal[]
-  gasReferralCodes       GasReferralCode[]          @relation("GasRefCodeOwner")
-  gasReferralAsReferred  GasReferral?               @relation("GasReferredUser")
-  gasReferralsAsReferrer GasReferral[]              @relation("GasReferrerUser")
-  gasReferralAccruals    GasReferralAccrual[]       @relation("GasReferrerAccrual")
-  gasAffiliate           GasAffiliate?              @relation("GasAffiliateUser")
-  tradeStreaksAsA        TradeStreak[]              @relation("StreakUserA")
-  tradeStreaksAsB        TradeStreak[]              @relation("StreakUserB")
-  chatThreadsAsA         ChatThread[]               @relation("ChatThreadUserA")
-  chatThreadsAsB         ChatThread[]               @relation("ChatThreadUserB")
+  gasReferralCodes       GasReferralCode[]       @relation("GasRefCodeOwner")
+  gasReferralAsReferred  GasReferral?            @relation("GasReferredUser")
+  gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
+  gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
+  gasAffiliate           GasAffiliate?           @relation("GasAffiliateUser")
+  tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
+  tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
+  chatThreadsAsA         ChatThread[]            @relation("ChatThreadUserA")
+  chatThreadsAsB         ChatThread[]            @relation("ChatThreadUserB")
 
   @@index([email])
   @@index([username])
@@ -537,16 +537,16 @@ model User {
 }
 
 model Wallet {
-  id             String  @id @default(cuid())
+  id             String   @id @default(cuid())
   userId         String
-  user           User    @relation(fields: [userId], references: [id], onDelete: Restrict)
+  user           User     @relation(fields: [userId], references: [id], onDelete: Restrict)
   coin           String
   network        String
-  balance        Decimal @default(0) @db.Decimal(18, 8)
-  lockedBalance  Decimal @default(0) @db.Decimal(18, 8)
+  balance        Decimal  @default(0) @db.Decimal(18, 8)
+  lockedBalance  Decimal  @default(0) @db.Decimal(18, 8)
   depositAddress String?
 
-  transactions Transaction[]
+  transactions   Transaction[]
 
   @@unique([userId, coin, network], name: "userId_coin_network")
   @@index([userId])
@@ -574,37 +574,37 @@ model Transaction {
 // Tier 3 ($500â€“$2000): pending â†’ first_approved â†’ approved (2 admins)
 // Tier 4 (>$2000): on_hold â†’ admin reviews â†’ pending â†’ tier 3 flow
 model Withdrawal {
-  id                  String           @id @default(cuid())
-  orderRef            String           @unique
-  userId              String
-  user                User             @relation(fields: [userId], references: [id], onDelete: Restrict)
-  coin                String
-  network             String
-  amount              Decimal          @db.Decimal(18, 8)
-  fee                 Decimal          @default(0) @db.Decimal(18, 8)
-  toAddress           String
-  status              WithdrawalStatus @default(pending)
-  tier                Int              @default(3)
-  riskScore           Int              @default(0)
-  riskFlags           String[]         @default([])
-  amountUsd           Decimal?         @db.Decimal(18, 2)
-  txHash              String?
-  firstApprovedBy     String?
-  secondApprovedBy    String?
-  rejectedBy          String?
-  rejectionReason     String?          @db.VarChar(500)
-  adminNote           String?          @db.VarChar(500)
-  onHoldBy            String?
-  onHoldReason        String?          @db.VarChar(500)
-  riskOverride        Boolean          @default(false)
-  riskOverrideBy      String?
-  riskOverrideNote    String?          @db.VarChar(500)
+  id               String           @id @default(cuid())
+  orderRef         String           @unique
+  userId           String
+  user             User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin             String
+  network          String
+  amount           Decimal          @db.Decimal(18, 8)
+  fee              Decimal          @default(0) @db.Decimal(18, 8)
+  toAddress        String
+  status           WithdrawalStatus @default(pending)
+  tier             Int              @default(3)
+  riskScore        Int              @default(0)
+  riskFlags        String[]         @default([])
+  amountUsd        Decimal?         @db.Decimal(18, 2)
+  txHash           String?
+  firstApprovedBy  String?
+  secondApprovedBy String?
+  rejectedBy       String?
+  rejectionReason  String?          @db.VarChar(500)
+  adminNote        String?          @db.VarChar(500)
+  onHoldBy         String?
+  onHoldReason     String?          @db.VarChar(500)
+  riskOverride     Boolean          @default(false)
+  riskOverrideBy   String?
+  riskOverrideNote String?          @db.VarChar(500)
   // Email confirmation channel support â€” extensible to 'telegram' later
-  confirmationChannel String           @default("email")
-  confirmationSentAt  DateTime?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  completedAt         DateTime?
+  confirmationChannel  String   @default("email")
+  confirmationSentAt   DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  completedAt      DateTime?
 
   @@index([userId, status])
   @@index([status])
@@ -614,24 +614,24 @@ model Withdrawal {
 // Single-row config for withdrawal tier thresholds and risk rules.
 // id is always 1; use upsert to create or update.
 model WithdrawalTierConfig {
-  id                       Int      @id @default(1)
-  tier1MaxUsd              Decimal  @default(200) @db.Decimal(10, 2)
-  tier2MaxUsd              Decimal  @default(500) @db.Decimal(10, 2)
-  tier3MaxUsd              Decimal  @default(2000) @db.Decimal(10, 2)
-  autoApproveEnabled       Boolean  @default(true)
-  firstWithdrawalReview    Boolean  @default(true)
-  newWalletReview          Boolean  @default(true)
-  velocityWindowMins       Int      @default(60)
-  velocityMaxCount         Int      @default(3)
+  id                    Int      @id @default(1)
+  tier1MaxUsd           Decimal  @default(200)  @db.Decimal(10, 2)
+  tier2MaxUsd           Decimal  @default(500)  @db.Decimal(10, 2)
+  tier3MaxUsd           Decimal  @default(2000) @db.Decimal(10, 2)
+  autoApproveEnabled    Boolean  @default(true)
+  firstWithdrawalReview Boolean  @default(true)
+  newWalletReview       Boolean  @default(true)
+  velocityWindowMins    Int      @default(60)
+  velocityMaxCount      Int      @default(3)
   // JSON map of coin â†’ USD price used to bucket withdrawals into tiers.
   // Example: {"USDT":1,"BNB":600,"ETH":3000,"BTC":60000}
-  coinPricesUsd            Json     @default("{\"USDT\":1,\"USDC\":1,\"BNB\":600,\"ETH\":3000,\"BTC\":60000}")
+  coinPricesUsd         Json     @default("{\"USDT\":1,\"USDC\":1,\"BNB\":600,\"ETH\":3000,\"BTC\":60000}")
   // Phase 1 / Phase 3 security knobs
-  emailConfirmationEnabled Boolean  @default(true)
-  emailConfirmationTtlMins Int      @default(15) // how long the confirm link is valid
-  addressActivationHours   Int      @default(24) // delay before a new trusted address is usable
-  updatedAt                DateTime @updatedAt
-  updatedBy                String?
+  emailConfirmationEnabled  Boolean @default(true)
+  emailConfirmationTtlMins  Int     @default(15)   // how long the confirm link is valid
+  addressActivationHours    Int     @default(24)   // delay before a new trusted address is usable
+  updatedAt             DateTime @updatedAt
+  updatedBy             String?
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -639,103 +639,103 @@ model WithdrawalTierConfig {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model Ad {
-  id                     String    @id @default(cuid())
-  userId                 String
-  user                   User      @relation(fields: [userId], references: [id], onDelete: Restrict)
-  side                   AdSide
-  coin                   String
-  network                String
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Restrict)
+  side            AdSide
+  coin            String
+  network         String
   // Multi-network support: a wallet-delivery ad may offer more than one on-chain
   // network (e.g. BEP20 + Aptos). `network` stays as the primary/first network for
   // back-compat; `networks` holds the full set. Empty = legacy ad → treat as [network].
-  networks               String[]  @default([])
-  priceType              PriceType @default(fixed)
-  price                  Decimal   @db.Decimal(14, 2)
-  floatOffset            Decimal   @default(0) @db.Decimal(6, 4)
-  totalAmount            Decimal   @db.Decimal(18, 8)
-  availableAmount        Decimal   @db.Decimal(18, 8)
-  lockedAmount           Decimal   @default(0) @db.Decimal(18, 8)
-  minOrder               Decimal   @db.Decimal(14, 2)
-  maxOrder               Decimal   @db.Decimal(14, 2)
-  paymentMethods         String[]
-  tokenDeliveryTypes     String[]
-  settlementMethod       String?   @db.VarChar(500)
+  networks        String[]  @default([])
+  priceType       PriceType @default(fixed)
+  price           Decimal   @db.Decimal(14, 2)
+  floatOffset     Decimal   @default(0) @db.Decimal(6, 4)
+  totalAmount     Decimal   @db.Decimal(18, 8)
+  availableAmount Decimal   @db.Decimal(18, 8)
+  lockedAmount    Decimal   @default(0) @db.Decimal(18, 8)
+  minOrder        Decimal   @db.Decimal(14, 2)
+  maxOrder        Decimal   @db.Decimal(14, 2)
+  paymentMethods     String[]
+  tokenDeliveryTypes String[]
+  settlementMethod   String?   @db.VarChar(500)
   // Multi-method receiving (BUY ads): one destination per offered network/exchange,
   // e.g. [{ method:'wallet_blockchain', network:'BEP20', address:'0x…' },
   //       { method:'binance', network:null, address:'12345678' }]. `settlementMethod`
   // stays as the primary (first) destination's address for back-compat. Empty/null =
   // legacy single-destination ad → use settlementMethod.
   settlementDestinations Json?
-  tradeWindow            Int       @default(30)
-  terms                  String    @default("") @db.VarChar(2000)
-  status                 AdStatus  @default(active)
-  lastPriceUpdate        DateTime  @default(now())
-  createdAt              DateTime  @default(now())
-  updatedAt              DateTime  @updatedAt
+  tradeWindow       Int       @default(30)
+  terms             String    @default("") @db.VarChar(2000)
+  status            AdStatus  @default(active)
+  lastPriceUpdate DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
-  trades Trade[]
-  bids   AdBid[]
+  trades          Trade[]
+  bids            AdBid[]
 
   @@index([side, coin, status])
   @@index([userId])
 }
 
 model Trade {
-  id                     String       @id @default(cuid())
-  orderRef               String       @unique
-  adId                   String
-  ad                     Ad           @relation(fields: [adId], references: [id], onDelete: Restrict)
-  buyerId                String
-  buyer                  User         @relation("TradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
-  sellerId               String
-  seller                 User         @relation("TradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
-  coin                   String
-  network                String
-  amount                 Decimal      @db.Decimal(18, 8)
-  price                  Decimal      @db.Decimal(14, 2)
-  fiatAmount             Decimal      @db.Decimal(14, 2)
-  paymentMethod          String
-  status                 TradeStatus  @default(payment_pending)
+  id                 String      @id @default(cuid())
+  orderRef           String      @unique
+  adId               String
+  ad                 Ad          @relation(fields: [adId], references: [id], onDelete: Restrict)
+  buyerId            String
+  buyer              User        @relation("TradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  sellerId           String
+  seller             User        @relation("TradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  coin               String
+  network            String
+  amount             Decimal     @db.Decimal(18, 8)
+  price              Decimal     @db.Decimal(14, 2)
+  fiatAmount         Decimal     @db.Decimal(14, 2)
+  paymentMethod        String
+  status               TradeStatus @default(payment_pending)
   // Dispute-resume: an open dispute parks `status` at `disputed` (so every admin
   // list/filter/dashboard keeps working unchanged) while THIS column carries the
   // real ladder rung, letting both parties keep settling. It ADVANCES as they act.
   // The dispute closes itself as `settled_by_parties` only when the trade actually
   // COMPLETES — never when the accused merely acts. NULL when not disputed.
-  disputeResumeStatus    TradeStatus?
-  paymentProofUrl        String?
-  buyerWalletAddress     String       @default("")
-  buyerDeliveryMethod    String? // 'blockchain' | 'email' | 'username' | 'internal'
-  buyerDeliveryAddress   String? // the receiving address / email / username
-  sellerTxHash           String?      @unique
+  disputeResumeStatus  TradeStatus?
+  paymentProofUrl      String?
+  buyerWalletAddress   String      @default("")
+  buyerDeliveryMethod  String?     // 'blockchain' | 'email' | 'username' | 'internal'
+  buyerDeliveryAddress String?     // the receiving address / email / username
+  sellerTxHash         String?   @unique
   sellerDeliveryProofUrl String? // optional screenshot of the crypto transfer (manual/exchange-UID delivery, or supplemental proof alongside a tx hash)
-  txVerificationStatus   String? // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
-  txVerificationDetails  Json? // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
-  sellerPaymentSnapshot  Json? // { type, label, accountName, mobileNumber?, bankName?, ibanNumber?, accountNumber? } — locked at trade creation so the buyer's pay-to account is immutable for disputes
-  buyerPaymentSnapshot   Json? // buy ads only: the buyer/lister's pay-FROM account(s) declared at ad creation, so the seller sees where PKR will arrive from. Single account or { accounts: [...] }.
-  escrowReleased         Boolean      @default(false)
+  txVerificationStatus String?   // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
+  txVerificationDetails Json?    // { chain, rpcChecked, txStatus, expectedReceiver, actualReceiver, expectedAmount, actualAmount, confirmations, tokenContract, verifiedAt }
+  sellerPaymentSnapshot Json?    // { type, label, accountName, mobileNumber?, bankName?, ibanNumber?, accountNumber? } — locked at trade creation so the buyer's pay-to account is immutable for disputes
+  buyerPaymentSnapshot  Json?    // buy ads only: the buyer/lister's pay-FROM account(s) declared at ad creation, so the seller sees where PKR will arrive from. Single account or { accounts: [...] }.
+  escrowReleased     Boolean     @default(false)
   // Taker-first settlement (Phase 1): true when this trade uses the reordered
   // BUY-ad flow (taker sends crypto first, merchant pays second). Stamped at
   // creation from isTakerFirstForMarket('usdt'); false = classic fiat-first flow.
-  takerFirst             Boolean      @default(false)
-  cancelledBy            String?
-  cancelReason           String?
-  cancelledAt            DateTime?
-  expiresAt              DateTime
-  paymentUploadedAt      DateTime? // set when buyer uploads payment proof
-  paymentConfirmedAt     DateTime? // set when seller confirms payment received
-  releasedAt             DateTime? // set when trade completes (crypto_released) — anchor for the rating window
+  takerFirst         Boolean     @default(false)
+  cancelledBy        String?
+  cancelReason       String?
+  cancelledAt        DateTime?
+  expiresAt          DateTime
+  paymentUploadedAt  DateTime?   // set when buyer uploads payment proof
+  paymentConfirmedAt DateTime?   // set when seller confirms payment received
+  releasedAt         DateTime?   // set when trade completes (crypto_released) — anchor for the rating window
   // Non-custodial release window: when the seller confirms payment, they must
   // release within this deadline or the trade auto-escalates to a dispute.
   // Only set when noncustodial_p2p_enabled is ON.
-  releaseDeadlineAt      DateTime?
-  createdAt              DateTime     @default(now())
-  updatedAt              DateTime     @updatedAt
-  adBidId                String?      @unique
-  adBid                  AdBid?       @relation(fields: [adBidId], references: [id], onDelete: SetNull)
+  releaseDeadlineAt  DateTime?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+  adBidId            String?     @unique
+  adBid              AdBid?      @relation(fields: [adBidId], references: [id], onDelete: SetNull)
 
-  messages TradeMessage[]
-  dispute  Dispute?
-  ratings  TradeRating[]
+  messages           TradeMessage[]
+  dispute            Dispute?
+  ratings            TradeRating[]
 
   @@index([buyerId, status])
   @@index([sellerId, status])
@@ -781,23 +781,23 @@ model TradeMessage {
 }
 
 model Dispute {
-  id             String                 @id @default(cuid())
-  tradeId        String                 @unique
-  trade          Trade                  @relation(fields: [tradeId], references: [id], onDelete: Restrict)
+  id             String                @id @default(cuid())
+  tradeId        String                @unique
+  trade          Trade                 @relation(fields: [tradeId], references: [id], onDelete: Restrict)
   openedById     String
   reason         String
-  description    String                 @db.VarChar(5000)
-  status         DisputeStatus          @default(open)
-  resolution     String?                @db.VarChar(2000)
+  description    String                @db.VarChar(5000)
+  status         DisputeStatus         @default(open)
+  resolution     String?               @db.VarChar(2000)
   winner         DisputeWinner?
   resolutionType DisputeResolutionType?
   escalatedAt    DateTime?
   resolvedAt     DateTime?
   resolvedBy     String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
 
-  messages DisputeMessage[]
+  messages       DisputeMessage[]
 
   @@index([status])
 }
@@ -835,30 +835,30 @@ model TradeRating {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model InstantBuyOrder {
-  id                 String             @id @default(cuid())
-  orderRef           String             @unique
-  userId             String
-  user               User               @relation(fields: [userId], references: [id], onDelete: Restrict)
-  coin               String
-  network            String
-  paymentMode        PaymentMode
-  fiatAmount         Decimal?           @db.Decimal(14, 2)
-  coinAmount         Decimal            @db.Decimal(18, 8)
-  rate               Decimal            @db.Decimal(14, 2)
-  fee                Decimal            @db.Decimal(14, 4)
-  status             InstantBuyStatus   @default(payment_pending)
-  verificationStatus VerificationStatus @default(pending_layer1)
-  paymentProofUrl    String?
-  paymentProofHash   String?
-  incomingTxHash     String?
-  toAddress          String
-  quoteExpiresAt     DateTime
-  rejectionReason    String?            @db.VarChar(500)
-  ocrConfidence      Int?
-  ocrExtractedAmount Decimal?           @db.Decimal(14, 2)
-  resubmitCount      Int                @default(0)
-  createdAt          DateTime           @default(now())
-  updatedAt          DateTime           @updatedAt
+  id                   String             @id @default(cuid())
+  orderRef             String             @unique
+  userId               String
+  user                 User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  coin                 String
+  network              String
+  paymentMode          PaymentMode
+  fiatAmount           Decimal?           @db.Decimal(14, 2)
+  coinAmount           Decimal            @db.Decimal(18, 8)
+  rate                 Decimal            @db.Decimal(14, 2)
+  fee                  Decimal            @db.Decimal(14, 4)
+  status               InstantBuyStatus   @default(payment_pending)
+  verificationStatus   VerificationStatus @default(pending_layer1)
+  paymentProofUrl      String?
+  paymentProofHash     String?
+  incomingTxHash       String?
+  toAddress            String
+  quoteExpiresAt       DateTime
+  rejectionReason      String?            @db.VarChar(500)
+  ocrConfidence        Int?
+  ocrExtractedAmount   Decimal?           @db.Decimal(14, 2)
+  resubmitCount        Int                @default(0)
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@index([userId, status])
   @@index([orderRef])
@@ -941,16 +941,16 @@ model PaymentMethod {
 }
 
 model SavedAddress {
-  id      String  @id @default(cuid())
-  userId  String
-  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  coin    String
-  network String
-  address String
-  label   String
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  coin      String
+  network   String
+  address   String
+  label     String
   // User-hidden (reversible) — excluded from trade delivery/tap-to-fill pickers
   // but still visible in Wallet management so it can be un-hidden.
-  hidden  Boolean @default(false)
+  hidden    Boolean  @default(false)
 
   @@unique([userId, coin, network, address])
   @@index([userId])
@@ -960,17 +960,17 @@ model SavedAddress {
 // Newly-added addresses have a 24h activation delay before they can be used.
 // Withdrawals to non-whitelisted addresses raise the NEW_WALLET risk flag.
 model TrustedWithdrawalAddress {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
-  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   coin        String
   network     String
   address     String
-  label       String    @db.VarChar(100)
-  activatesAt DateTime // addedAt + activationHours
-  addedAt     DateTime  @default(now())
+  label       String   @db.VarChar(100)
+  activatesAt DateTime                    // addedAt + activationHours
+  addedAt     DateTime @default(now())
   lastUsedAt  DateTime?
-  removedAt   DateTime? // soft-delete
+  removedAt   DateTime?                   // soft-delete
 
   @@unique([userId, coin, network, address])
   @@index([userId])
@@ -986,11 +986,11 @@ model TrustedDevice {
   id          String    @id @default(cuid())
   userId      String
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  tokenHash   String    @unique // sha256 of the random cookie token
-  fingerprint String // sha256 of the user-agent (device binding)
+  tokenHash   String    @unique          // sha256 of the random cookie token
+  fingerprint String                     // sha256 of the user-agent (device binding)
   label       String?   @db.VarChar(200) // human-readable UA summary for the device list
-  ip          String? // IP at enrolment
-  lastIp      String? // IP at most recent use
+  ip          String?                    // IP at enrolment
+  lastIp      String?                    // IP at most recent use
   createdAt   DateTime  @default(now())
   lastUsedAt  DateTime  @default(now())
   expiresAt   DateTime
@@ -1020,22 +1020,22 @@ model CollateralLock {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model Merchant {
-  id            String         @id @default(cuid())
-  userId        String         @unique
-  user          User           @relation(fields: [userId], references: [id], onDelete: Restrict)
-  businessName  String
-  status        MerchantStatus @default(pending)
-  spreadBps     Int            @default(0)
-  approvedAt    DateTime?
-  rank          MerchantRank   @default(bronze)
-  rankUpdatedAt DateTime?
-  disputeRate   Decimal        @default(0) @db.Decimal(6, 4)
-  socialLinks   Json           @default("{}")
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                  String         @id @default(cuid())
+  userId              String         @unique
+  user                User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  businessName        String
+  status              MerchantStatus @default(pending)
+  spreadBps           Int            @default(0)
+  approvedAt          DateTime?
+  rank                MerchantRank   @default(bronze)
+  rankUpdatedAt       DateTime?
+  disputeRate         Decimal        @default(0) @db.Decimal(6, 4)
+  socialLinks         Json           @default("{}")
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
 
-  inventory  MerchantInventory[]
-  ctmProfile CtmMerchantProfile?
+  inventory           MerchantInventory[]
+  ctmProfile          CtmMerchantProfile?
 }
 
 model MerchantInventory {
@@ -1121,7 +1121,7 @@ model Announcement {
   telegramFailed Int      @default(0)
   createdAt      DateTime @default(now())
 
-  dismissals AnnouncementDismissal[]
+  dismissals     AnnouncementDismissal[]
 
   @@index([isActive, createdAt])
 }
@@ -1147,26 +1147,26 @@ model AnnouncementDismissal {
 // never self-hosted. The SEO fields drive <head> meta tags + Article JSON-LD so
 // the post is discoverable by Google and citable by AI answer engines.
 model BlogPost {
-  id                String  @id @default(cuid())
-  slug              String  @unique
-  title             String
-  excerpt           String?
-  bodyHtml          String
+  id              String    @id @default(cuid())
+  slug            String    @unique
+  title           String
+  excerpt         String?
+  bodyHtml        String
   coverImageUrl     String?
   coverImageAlt     String?
   coverImageCaption String?
 
-  status       String    @default("draft") // draft | published
-  publishedAt  DateTime?
-  scheduledFor DateTime?
+  status          String    @default("draft") // draft | published
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
 
-  tags        String[] @default([])
-  category    String?
-  subcategory String?
+  tags            String[]  @default([])
+  category        String?
+  subcategory     String?
 
   // Denormalized authorship — no FK, so we don't touch the User relation graph.
-  authorId   String?
-  authorName String  @default("RupChain")
+  authorId        String?
+  authorName      String    @default("RupChain")
 
   // SEO fields (all optional; sensible fallbacks computed at render time).
   metaTitle       String?
@@ -1174,13 +1174,13 @@ model BlogPost {
   focusKeyword    String?
   ogImageUrl      String?
   canonicalUrl    String?
-  noindex         Boolean @default(false)
+  noindex         Boolean   @default(false)
 
-  viewCount      Int @default(0)
-  readingMinutes Int @default(1)
+  viewCount       Int       @default(0)
+  readingMinutes  Int       @default(1)
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([status, publishedAt])
   @@index([category])
@@ -1192,7 +1192,7 @@ model BlogPost {
 model NewsletterSubscriber {
   id        String   @id @default(cuid())
   email     String   @unique
-  source    String? // e.g. "blog", "blog:<slug>"
+  source    String?  // e.g. "blog", "blog:<slug>"
   // Signup geo — best-effort, captured once at opt-in for email-marketing
   // segmentation. Null for rows created before this was added, or when the
   // client IP could not be geolocated.
@@ -1227,7 +1227,7 @@ model SupportMessage {
   id             String              @id @default(cuid())
   conversationId String
   conversation   SupportConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender         String // "user" | "admin" | "system"
+  sender         String              // "user" | "admin" | "system"
   senderId       String?
   body           String
   // Optional image attachment (Cloudinary URL). A message may carry an image with
@@ -1237,7 +1237,7 @@ model SupportMessage {
   // attachmentUrl) is RETAINED for admin / dispute review; regular users see a
   // "message was deleted" tombstone in its place. Never hard-deleted.
   deletedAt      DateTime?
-  rating         Int? // 1=bad 2=okay 3=great — only on sender="system" satisfaction messages
+  rating         Int?                // 1=bad 2=okay 3=great — only on sender="system" satisfaction messages
   // Structured message kind. "text" (default) is a plain chat bubble. "refund_request"
   // is an admin-issued prompt that renders as a refund-destination form in the user's
   // chat (metadata: { orderRef, chain, paymentNetwork }). "refund_response" is the
@@ -1263,12 +1263,12 @@ model PushSubscription {
 }
 
 model EmailLog {
-  id       String   @id @default(cuid())
-  userId   String?
-  template String
-  toEmail  String
-  status   String   @default("sent")
-  sentAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  userId    String?
+  template  String
+  toEmail   String
+  status    String   @default("sent")
+  sentAt    DateTime @default(now())
 
   @@index([userId])
 }
@@ -1317,14 +1317,14 @@ enum AdminNotifCategory {
 }
 
 model AdminNotification {
-  id        String             @id @default(cuid())
+  id        String               @id @default(cuid())
   category  AdminNotifCategory
   title     String
   body      String
   href      String?
-  isRead    Boolean            @default(false)
-  metadata  Json               @default("{}")
-  createdAt DateTime           @default(now())
+  isRead    Boolean              @default(false)
+  metadata  Json                 @default("{}")
+  createdAt DateTime             @default(now())
 
   @@index([isRead, createdAt])
   @@index([category, createdAt])
@@ -1359,13 +1359,13 @@ model AuditLog {
 }
 
 model AdminNote {
-  id            String   @id @default(cuid())
-  targetUserId  String
-  targetUser    User     @relation("AdminNoteTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
-  authorAdminId String
-  note          String   @db.VarChar(2000)
-  isInternal    Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  id             String   @id @default(cuid())
+  targetUserId   String
+  targetUser     User     @relation("AdminNoteTarget", fields: [targetUserId], references: [id], onDelete: Restrict)
+  authorAdminId  String
+  note           String   @db.VarChar(2000)
+  isInternal     Boolean  @default(true)
+  createdAt      DateTime @default(now())
 
   @@index([targetUserId])
 }
@@ -1373,18 +1373,18 @@ model AdminNote {
 // Immutable record of every moderation action taken against a user.
 // One row per action (suspend, ban, unban, restore, reset-trust, review toggle).
 model ModerationAction {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   targetUserId   String
-  targetUser     User      @relation("ModerationActionTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
-  moderatorId    String? // null = system action (e.g. automatic expiry)
-  moderator      User?     @relation("ModerationActionModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
-  action         String // suspend | ban_temporary | ban_permanent | unsuspend | unban | restore_access | reset_trust | start_review | end_review | auto_unsuspend | auto_unban
-  reason         String    @db.VarChar(1000)
-  previousStatus String // computed moderation status before the action
-  newStatus      String // computed moderation status after the action
-  durationLabel  String? // human label e.g. "7 Days" / "Permanent" / "Custom"
+  targetUser     User     @relation("ModerationActionTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+  moderatorId    String?  // null = system action (e.g. automatic expiry)
+  moderator      User?    @relation("ModerationActionModerator", fields: [moderatorId], references: [id], onDelete: SetNull)
+  action         String   // suspend | ban_temporary | ban_permanent | unsuspend | unban | restore_access | reset_trust | start_review | end_review | auto_unsuspend | auto_unban
+  reason         String   @db.VarChar(1000)
+  previousStatus String   // computed moderation status before the action
+  newStatus      String   // computed moderation status after the action
+  durationLabel  String?  // human label e.g. "7 Days" / "Permanent" / "Custom"
   expiresAt      DateTime? // when the applied restriction auto-lifts (null = permanent / N/A)
-  createdAt      DateTime  @default(now())
+  createdAt      DateTime @default(now())
 
   @@index([targetUserId, createdAt])
   @@index([moderatorId])
@@ -1397,7 +1397,7 @@ model Appeal {
   userId        String
   user          User         @relation("AppealUser", fields: [userId], references: [id], onDelete: Cascade)
   status        AppealStatus @default(pending)
-  subjectStatus String // moderation status being appealed (suspended / temporarily_banned / permanently_banned)
+  subjectStatus String       // moderation status being appealed (suspended / temporarily_banned / permanently_banned)
   explanation   String       @db.VarChar(2000)
   evidenceUrls  String[]     @default([])
   reviewedById  String?
@@ -1412,15 +1412,15 @@ model Appeal {
 }
 
 model FraudFlag {
-  id          String          @id @default(cuid())
-  userId      String
-  user        User            @relation(fields: [userId], references: [id], onDelete: Restrict)
-  reason      String
-  severity    FraudSeverity   @default(low)
-  status      FraudFlagStatus @default(open)
-  reviewedAt  DateTime?
-  actionTaken String?
-  createdAt   DateTime        @default(now())
+  id           String          @id @default(cuid())
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  reason       String
+  severity     FraudSeverity   @default(low)
+  status       FraudFlagStatus @default(open)
+  reviewedAt   DateTime?
+  actionTaken  String?
+  createdAt    DateTime        @default(now())
 
   @@index([userId, status])
   @@index([severity, status])
@@ -1428,11 +1428,11 @@ model FraudFlag {
 
 // AML: sanctioned entities list â€” checked on KYC and withdrawals
 model SanctionedEntity {
-  id         String   @id @default(cuid())
-  nameHash   String   @unique
-  listSource String
-  addedAt    DateTime @default(now())
-  notes      String?
+  id          String   @id @default(cuid())
+  nameHash    String   @unique
+  listSource  String
+  addedAt     DateTime @default(now())
+  notes       String?
 
   @@index([nameHash])
 }
@@ -1442,22 +1442,22 @@ model SanctionedEntity {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model TradeStats {
-  id                 String      @id @default(cuid())
-  userId             String      @unique
-  user               User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  totalTrades        Int         @default(0)
-  completedTrades    Int         @default(0)
-  cancelledTrades    Int         @default(0)
-  completionRate     Decimal     @default(0) @db.Decimal(5, 4)
-  avgRating          Decimal     @default(0) @db.Decimal(3, 2)
-  totalReviews       Int         @default(0)
-  totalVolumePKR     Decimal     @default(0) @db.Decimal(18, 2)
-  trustScore         Int         @default(0)
+  id               String      @id @default(cuid())
+  userId           String      @unique
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalTrades      Int         @default(0)
+  completedTrades  Int         @default(0)
+  cancelledTrades  Int         @default(0)
+  completionRate   Decimal     @default(0) @db.Decimal(5, 4)
+  avgRating        Decimal     @default(0) @db.Decimal(3, 2)
+  totalReviews     Int         @default(0)
+  totalVolumePKR   Decimal     @default(0) @db.Decimal(18, 2)
+  trustScore       Int         @default(0)
   badge              TraderBadge @default(new)
   badgeLabel         String      @default("New Trader")
   badgeOverride      Boolean     @default(false)
-  avgResponseMinutes Int? // median seller response time in minutes (null = not enough data)
-  avgReleaseMinutes  Int? // median time from payment_confirmed to crypto_released (null = not enough data)
+  avgResponseMinutes Int?        // median seller response time in minutes (null = not enough data)
+  avgReleaseMinutes  Int?        // median time from payment_confirmed to crypto_released (null = not enough data)
   disputesWon        Int         @default(0)
   disputesLost       Int         @default(0)
   lastUpdated        DateTime    @updatedAt
@@ -1484,7 +1484,7 @@ model UserFavorite {
 // ──────────────────────────────────────────────────────────────────────────────
 model TradeStreak {
   id           String   @id @default(cuid())
-  userAId      String // always the smaller of the two ids
+  userAId      String   // always the smaller of the two ids
   userA        User     @relation("StreakUserA", fields: [userAId], references: [id], onDelete: Cascade)
   userBId      String
   userB        User     @relation("StreakUserB", fields: [userBId], references: [id], onDelete: Cascade)
@@ -1510,7 +1510,7 @@ model TradeStreak {
 
 model ChatThread {
   id            String              @id @default(cuid())
-  userAId       String // always the smaller of the two ids
+  userAId       String              // always the smaller of the two ids
   userA         User                @relation("ChatThreadUserA", fields: [userAId], references: [id], onDelete: Cascade)
   userBId       String
   userB         User                @relation("ChatThreadUserB", fields: [userBId], references: [id], onDelete: Cascade)
@@ -1530,7 +1530,7 @@ model ChatThreadMessage {
   id            String     @id @default(cuid())
   threadId      String
   thread        ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  senderId      String // the author's user id ("" for platform/system lines)
+  senderId      String     // the author's user id ("" for platform/system lines)
   body          String     @db.VarChar(2000)
   attachmentUrl String?
   // Soft delete: retracted by its author. Row is retained; the counterparty sees a
@@ -1548,9 +1548,9 @@ model TradeEpisode {
   id         String     @id @default(cuid())
   threadId   String
   thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
-  market     String // 'usdt' | 'ctm'
-  tradeId    String // Trade.id or CtmTrade.id
-  tradeRef   String // orderRef / displayRef for display + deep-linking
+  market     String     // 'usdt' | 'ctm'
+  tradeId    String     // Trade.id or CtmTrade.id
+  tradeRef   String     // orderRef / displayRef for display + deep-linking
   outcome    String     @default("active") // active | completed | cancelled | expired | disputed
   fiatAmount Decimal?   @db.Decimal(14, 2)
   startedAt  DateTime   @default(now())
@@ -1599,67 +1599,67 @@ model SavedTerms {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model GasFeeOrder {
-  id               String          @id @default(cuid())
-  orderRef         String          @unique
-  userId           String?
-  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
-  merchantApiKeyId String?
-  merchantApiKey   MerchantApiKey? @relation(fields: [merchantApiKeyId], references: [id], onDelete: SetNull)
-  ipAddress        String?
-  riskScore        Int? // 0-100; set by gas.risk.ts on order creation
+  id                  String            @id @default(cuid())
+  orderRef            String            @unique
+  userId              String?
+  user                User?             @relation(fields: [userId], references: [id], onDelete: SetNull)
+  merchantApiKeyId    String?
+  merchantApiKey      MerchantApiKey?   @relation(fields: [merchantApiKeyId], references: [id], onDelete: SetNull)
+  ipAddress           String?
+  riskScore           Int?              // 0-100; set by gas.risk.ts on order creation
 
-  chain            GasChain
-  tier             GasFeeTier? // nullable: new custom-amount orders skip fixed tiers
-  gasTokenConfigId String?
-  gasTokenConfig   GasTokenConfig? @relation(fields: [gasTokenConfigId], references: [id], onDelete: SetNull)
-  gasAmountNative  Decimal         @db.Decimal(18, 8)
-  gasAmountUSD     Decimal         @db.Decimal(10, 4)
-  priceAtOrder     Decimal         @db.Decimal(18, 8)
+  chain               GasChain
+  tier                GasFeeTier?       // nullable: new custom-amount orders skip fixed tiers
+  gasTokenConfigId    String?
+  gasTokenConfig      GasTokenConfig?   @relation(fields: [gasTokenConfigId], references: [id], onDelete: SetNull)
+  gasAmountNative     Decimal           @db.Decimal(18, 8)
+  gasAmountUSD        Decimal           @db.Decimal(10, 4)
+  priceAtOrder        Decimal           @db.Decimal(18, 8)
 
-  paymentCoin           String    @default("USDT")
-  paymentNetwork        String
-  paymentAmount         Decimal   @db.Decimal(10, 4)
+  paymentCoin          String            @default("USDT")
+  paymentNetwork       String
+  paymentAmount        Decimal           @db.Decimal(10, 4)
   // Platform margin component of paymentAmount, recorded immutably at creation
   // (paymentAmount = gasAmountUSD base cost + platformMarginUsdt margin). This is
   // the ONLY pool that promo discounts / referral rewards may ever draw from.
   // Nullable for back-compat: orders created before the promo system have it null.
-  platformMarginUsdt    Decimal?  @db.Decimal(10, 4)
+  platformMarginUsdt   Decimal?          @db.Decimal(10, 4)
   // Discount applied to the margin at creation (>= 0, never exceeds the margin),
   // already baked into paymentAmount. Default 0 = no discount (current behavior).
-  discountUsdt          Decimal   @default(0) @db.Decimal(10, 4)
-  promoCodeId           String? // set when a promo code was applied (Phase 1)
-  gasFreeCodeId         String? // set when a KOL free-gas code was applied (100% free: base + margin)
+  discountUsdt         Decimal           @default(0) @db.Decimal(10, 4)
+  promoCodeId          String?           // set when a promo code was applied (Phase 1)
+  gasFreeCodeId        String?           // set when a KOL free-gas code was applied (100% free: base + margin)
   // Affiliate buyer auto-discount snapshot (Phase 5) — the portion of discountUsdt that
   // came from the buyer's affiliate link, plus the referrer's display name at order time.
   // Lets the checkout/tracking screens show "X% off courtesy of <referrer>" after refresh.
-  affiliateDiscountUsdt Decimal   @default(0) @db.Decimal(10, 4)
+  affiliateDiscountUsdt Decimal          @default(0) @db.Decimal(10, 4)
   affiliateReferrer     String?
   // true = an admin-issued free-gas delivery: paymentAmount is 0 and the platform
   // funds the FULL cost (base + margin). The order is created already in
   // payment_detected so it routes straight to the normal delivery worker.
-  isFreeGrant           Boolean   @default(false)
-  trackingToken         String?   @unique // guest order privacy token (192-bit hex)
-  paymentTxHash         String?   @unique
-  paymentSenderAddress  String?
-  paymentProofUrl       String?
-  paymentVerifiedAt     DateTime?
-  verifiedAmount        Decimal?  @db.Decimal(10, 4)
-  verifiedAsset         String?
+  isFreeGrant          Boolean           @default(false)
+  trackingToken        String?           @unique  // guest order privacy token (192-bit hex)
+  paymentTxHash        String?           @unique
+  paymentSenderAddress String?
+  paymentProofUrl      String?
+  paymentVerifiedAt    DateTime?
+  verifiedAmount       Decimal?          @db.Decimal(10, 4)
+  verifiedAsset        String?
   verifiedConfirmations Int?
-  pkrPaymentMethod      String?
-  pkrAmount             Decimal?  @db.Decimal(12, 2)
+  pkrPaymentMethod     String?
+  pkrAmount            Decimal?          @db.Decimal(12, 2)
 
-  toAddress         String
-  fromHotWallet     String?
-  deliveryTxHash    String?
-  deliveryConfirmed Boolean @default(false)
+  toAddress           String
+  fromHotWallet       String?
+  deliveryTxHash      String?
+  deliveryConfirmed   Boolean           @default(false)
 
-  refundTxHash           String?
-  refundAmount           Decimal?  @db.Decimal(10, 4)
+  refundTxHash        String?
+  refundAmount        Decimal?          @db.Decimal(10, 4)
   // When set (on a delivery-failed order), the moment after which the user may
   // request an immediate refund. Before this, the system keeps retrying delivery
   // and the UI shows a countdown. See lib/gas/gas.refundWindow.ts.
-  refundEligibleAt       DateTime?
+  refundEligibleAt    DateTime?
   // Refund destination the user supplied via the in-chat refund-address form (see
   // support refund_request/refund_response). Used to pre-fill the admin manual
   // refund modal — critical for PKR-paid orders that have no on-chain payer to
@@ -1667,26 +1667,26 @@ model GasFeeOrder {
   suggestedRefundAddress String?
   suggestedRefundNetwork String?
 
-  status        GasFeeOrderStatus @default(created)
-  failureReason String?
-  retryCount    Int               @default(0)
-  expiresAt     DateTime
+  status              GasFeeOrderStatus @default(created)
+  failureReason       String?
+  retryCount          Int               @default(0)
+  expiresAt           DateTime
 
-  cancelledAt  DateTime?
-  cancelReason String?
+  cancelledAt         DateTime?
+  cancelReason        String?
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  deliveredAt DateTime?
-  refundedAt  DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  deliveredAt         DateTime?
+  refundedAt          DateTime?
 
-  ledgerEntries      GasLedgerEntry[]
-  flaggedOrder       GasFlaggedOrder?
-  promoCode          GasPromoCode?          @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
-  promoRedemption    GasPromoRedemption?
-  gasFreeCode        GasFreeCode?           @relation(fields: [gasFreeCodeId], references: [id], onDelete: SetNull)
-  freeCodeRedemption GasFreeCodeRedemption?
-  referralAccrual    GasReferralAccrual?
+  ledgerEntries       GasLedgerEntry[]
+  flaggedOrder        GasFlaggedOrder?
+  promoCode           GasPromoCode?       @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  promoRedemption     GasPromoRedemption?
+  gasFreeCode         GasFreeCode?        @relation(fields: [gasFreeCodeId], references: [id], onDelete: SetNull)
+  freeCodeRedemption  GasFreeCodeRedemption?
+  referralAccrual     GasReferralAccrual?
 
   @@index([status, expiresAt])
   @@index([userId])
@@ -1701,7 +1701,7 @@ model GasFeeOrder {
 // before they may place another gas order (see lib/gas/gas.cancellation.ts).
 model GasCancellationEvent {
   id        String   @id @default(cuid())
-  identity  String // "user:<id>" or "ip:<addr>"
+  identity  String   // "user:<id>" or "ip:<addr>"
   userId    String?
   ipAddress String?
   orderId   String
@@ -1719,27 +1719,27 @@ model GasCancellationEvent {
 // order still pays the base cost and is never a loss. See lib/gas/gas.promo.ts.
 // ────────────────────────────────────────────────────────────────────────────
 model GasPromoCode {
-  id                 String    @id @default(cuid())
-  code               String    @unique // stored UPPERCASE; matched case-insensitively
-  ownerLabel         String // KOL / campaign name (admin reference)
+  id                 String   @id @default(cuid())
+  code               String   @unique           // stored UPPERCASE; matched case-insensitively
+  ownerLabel         String                      // KOL / campaign name (admin reference)
   // Ordered redemption tiers consumed first-come: [{ maxRedemptions:int, discountPct:number }].
   // discountPct is a % of the order's platform margin (0-100). Once all tier slots are
   // used, defaultDiscountPct applies to everyone after.
-  tiers              Json      @default("[]")
-  defaultDiscountPct Float     @default(0)
+  tiers              Json     @default("[]")
+  defaultDiscountPct Float    @default(0)
   // Lifetime cap on margin (USDT) this code may give away. Auto-disables when reached.
   marginBudgetUsdt   Float
-  marginSpentUsdt    Float     @default(0)
-  totalRedemptions   Int       @default(0) // also the next slot index (optimistic-lock key)
-  perUserLimit       Int       @default(1) // max redemptions per identity (user or IP)
-  minOrderUsd        Float     @default(0) // min order value (pre-discount) to qualify
+  marginSpentUsdt    Float    @default(0)
+  totalRedemptions   Int      @default(0)        // also the next slot index (optimistic-lock key)
+  perUserLimit       Int      @default(1)        // max redemptions per identity (user or IP)
+  minOrderUsd        Float    @default(0)        // min order value (pre-discount) to qualify
   expiresAt          DateTime?
-  isActive           Boolean   @default(true) // admin kill switch
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  isActive           Boolean  @default(true)     // admin kill switch
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
 
-  redemptions GasPromoRedemption[]
-  orders      GasFeeOrder[]
+  redemptions        GasPromoRedemption[]
+  orders             GasFeeOrder[]
 
   @@index([isActive])
 }
@@ -1751,14 +1751,14 @@ model GasPromoRedemption {
   id           String       @id @default(cuid())
   promoCodeId  String
   promoCode    GasPromoCode @relation(fields: [promoCodeId], references: [id], onDelete: Cascade)
-  identity     String // "user:<id>" or "ip:<addr>"
+  identity     String        // "user:<id>" or "ip:<addr>"
   userId       String?
-  orderId      String       @unique
-  order        GasFeeOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  discountUsdt Decimal      @db.Decimal(10, 4)
-  marginUsdt   Decimal      @db.Decimal(10, 4) // margin the discount was computed against
-  tierIndex    Int // tier slot used; -1 = default tier
-  createdAt    DateTime     @default(now())
+  orderId      String        @unique
+  order        GasFeeOrder   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  discountUsdt Decimal       @db.Decimal(10, 4)
+  marginUsdt   Decimal       @db.Decimal(10, 4)  // margin the discount was computed against
+  tierIndex    Int                                // tier slot used; -1 = default tier
+  createdAt    DateTime      @default(now())
 
   @@index([promoCodeId])
   @@index([identity])
@@ -1776,27 +1776,27 @@ model GasPromoRedemption {
 // free-grant order. See lib/gas/gas.freeCode.ts.
 // ────────────────────────────────────────────────────────────────────────────
 model GasFreeCode {
-  id               String    @id @default(cuid())
-  code             String    @unique // stored UPPERCASE; matched case-insensitively
-  kolLabel         String // KOL / campaign name (admin reference)
-  gasTokenConfigId String // which token+chain this code is valid for (plain ref)
-  slotLimit        Int // total first-come redemptions allowed
-  redeemedCount    Int       @default(0) // also the next slot index (optimistic-lock key)
+  id               String   @id @default(cuid())
+  code             String   @unique           // stored UPPERCASE; matched case-insensitively
+  kolLabel         String                      // KOL / campaign name (admin reference)
+  gasTokenConfigId String                      // which token+chain this code is valid for (plain ref)
+  slotLimit        Int                          // total first-come redemptions allowed
+  redeemedCount    Int      @default(0)        // also the next slot index (optimistic-lock key)
   // Lifetime cap on TOTAL order cost (base + margin, USDT) this code may give away.
   // Auto-disables when reached, even if slots remain.
   budgetUsdt       Float
-  spentUsdt        Float     @default(0)
-  perUserLimit     Int       @default(1) // max redemptions per identity (user or IP)
-  minOrderUsd      Float     @default(0) // min order value (pre-discount) to qualify
-  maxOrderUsd      Float? // optional cap on a single free order's value
+  spentUsdt        Float    @default(0)
+  perUserLimit     Int      @default(1)        // max redemptions per identity (user or IP)
+  minOrderUsd      Float    @default(0)        // min order value (pre-discount) to qualify
+  maxOrderUsd      Float?                       // optional cap on a single free order's value
   expiresAt        DateTime?
-  isActive         Boolean   @default(true) // admin kill switch; also auto-flips off on exhaustion
+  isActive         Boolean  @default(true)     // admin kill switch; also auto-flips off on exhaustion
   createdById      String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  redemptions GasFreeCodeRedemption[]
-  orders      GasFeeOrder[]
+  redemptions      GasFreeCodeRedemption[]
+  orders           GasFeeOrder[]
 
   @@index([isActive])
 }
@@ -1805,15 +1805,15 @@ model GasFreeCode {
 // row is created in lock-step with the order; the code's counters are advanced
 // atomically at reservation time (see gas.freeCode.ts reserveFreeCode).
 model GasFreeCodeRedemption {
-  id         String      @id @default(cuid())
-  freeCodeId String
-  freeCode   GasFreeCode @relation(fields: [freeCodeId], references: [id], onDelete: Cascade)
-  identity   String // "user:<id>" or "ip:<addr>"
-  userId     String?
-  orderId    String      @unique
-  order      GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  amountUsdt Decimal     @db.Decimal(10, 4) // full order cost waived (base + margin)
-  createdAt  DateTime    @default(now())
+  id           String      @id @default(cuid())
+  freeCodeId   String
+  freeCode     GasFreeCode @relation(fields: [freeCodeId], references: [id], onDelete: Cascade)
+  identity     String       // "user:<id>" or "ip:<addr>"
+  userId       String?
+  orderId      String       @unique
+  order        GasFeeOrder  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  amountUsdt   Decimal      @db.Decimal(10, 4)  // full order cost waived (base + margin)
+  createdAt    DateTime     @default(now())
 
   @@index([freeCodeId])
   @@index([identity])
@@ -1828,27 +1828,27 @@ model GasFreeCodeRedemption {
 // See lib/gas/gas.referral.ts. Display-only until Phase 5 adds withdrawal.
 // ────────────────────────────────────────────────────────────────────────────
 model GasReferralCode {
-  id              String    @id @default(cuid())
-  code            String    @unique // stored UPPERCASE
+  id              String   @id @default(cuid())
+  code            String   @unique          // stored UPPERCASE
   ownerId         String
-  owner           User      @relation("GasRefCodeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  referralPct     Float     @default(5) // commission %: % of gross margin paid to the owner
+  owner           User     @relation("GasRefCodeOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  referralPct     Float    @default(5)       // commission %: % of gross margin paid to the owner
   // Affiliate split (Phase 5). When the owner is an approved affiliate, a buyer bound to
   // this code gets userDiscountPct% of the margin off automatically, and the owner earns
   // referralPct% of the margin. Invariant enforced at write time:
   // userDiscountPct + referralPct <= GasAffiliate.maxMarginPct <= 100.
-  userDiscountPct Float     @default(0) // % of margin auto-discounted to the bound buyer
-  label           String? // affiliate-facing nickname for this link
-  isActive        Boolean   @default(true)
+  userDiscountPct Float    @default(0)       // % of margin auto-discounted to the bound buyer
+  label           String?                    // affiliate-facing nickname for this link
+  isActive        Boolean  @default(true)
   // Soft-delete for self-service custom links. When set, the link is hidden from the
   // owner's manage list + excluded from the active-link cap, and stops carrying a buyer
   // discount — but it STILL resolves to its owner (old shared links never break) and
   // any existing bindings keep accruing commission. The base (oldest) code is never deleted.
   deletedAt       DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  referrals GasReferral[]
+  referrals       GasReferral[]
 
   @@index([ownerId])
 }
@@ -1863,13 +1863,13 @@ model GasAffiliate {
   userId             String    @unique
   user               User      @relation("GasAffiliateUser", fields: [userId], references: [id], onDelete: Cascade)
   status             String    @default("pending") // pending | approved | rejected
-  socials            Json? // submitted social-media handles/links
-  applicantNote      String? // optional message from the applicant
+  socials            Json?                          // submitted social-media handles/links
+  applicantNote      String?                        // optional message from the applicant
   rejectionReason    String?
-  maxMarginPct       Float     @default(20) // admin cap: total margin % the affiliate may allocate (discount + commission)
-  minUserDiscountPct Float     @default(0) // admin floor: minimum buyer discount % per link
-  maxLinks           Int       @default(2) // admin cap: how many affiliate links the user may create
-  reviewedById       String? // admin who approved/rejected (no FK; audit only)
+  maxMarginPct       Float     @default(20)         // admin cap: total margin % the affiliate may allocate (discount + commission)
+  minUserDiscountPct Float     @default(0)          // admin floor: minimum buyer discount % per link
+  maxLinks           Int       @default(2)          // admin cap: how many affiliate links the user may create
+  reviewedById       String?                        // admin who approved/rejected (no FK; audit only)
   reviewedAt         DateTime?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
@@ -1879,14 +1879,14 @@ model GasAffiliate {
 
 // First-touch binding: a referred user maps to exactly one referrer, permanently.
 model GasReferral {
-  id         String          @id @default(cuid())
-  referredId String          @unique
-  referred   User            @relation("GasReferredUser", fields: [referredId], references: [id], onDelete: Cascade)
-  referrerId String
-  referrer   User            @relation("GasReferrerUser", fields: [referrerId], references: [id], onDelete: Cascade)
-  codeId     String
-  code       GasReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
-  createdAt  DateTime        @default(now())
+  id          String          @id @default(cuid())
+  referredId  String          @unique
+  referred    User            @relation("GasReferredUser", fields: [referredId], references: [id], onDelete: Cascade)
+  referrerId  String
+  referrer    User            @relation("GasReferrerUser", fields: [referrerId], references: [id], onDelete: Cascade)
+  codeId      String
+  code        GasReferralCode @relation(fields: [codeId], references: [id], onDelete: Cascade)
+  createdAt   DateTime        @default(now())
 
   @@index([referrerId])
 }
@@ -1895,17 +1895,17 @@ model GasReferral {
 // order reaches 'delivered' (terminal success; delivered orders are never refunded),
 // so a failed/refunded order never pays commission.
 model GasReferralAccrual {
-  id         String      @id @default(cuid())
-  referrerId String
-  referrer   User        @relation("GasReferrerAccrual", fields: [referrerId], references: [id], onDelete: Cascade)
-  referredId String
-  orderId    String      @unique
-  order      GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  marginUsdt Decimal     @db.Decimal(10, 4) // realized margin the % was taken on
-  amountUsdt Decimal     @db.Decimal(10, 4)
-  pct        Float
-  status     String      @default("available") // available | withdrawn | reversed
-  createdAt  DateTime    @default(now())
+  id          String      @id @default(cuid())
+  referrerId  String
+  referrer    User        @relation("GasReferrerAccrual", fields: [referrerId], references: [id], onDelete: Cascade)
+  referredId  String
+  orderId     String      @unique
+  order       GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  marginUsdt  Decimal     @db.Decimal(10, 4)  // realized margin the % was taken on
+  amountUsdt  Decimal     @db.Decimal(10, 4)
+  pct         Float
+  status      String      @default("available") // available | withdrawn | reversed
+  createdAt   DateTime    @default(now())
 
   @@index([referrerId, status])
 }
@@ -1918,23 +1918,23 @@ model GasReferralAccrual {
 // winners × amount no matter how many enter. See gasFee.routes giveaway endpoints.
 // ────────────────────────────────────────────────────────────────────────────
 model GasGiveawayCampaign {
-  id               String    @id @default(cuid())
-  code             String    @unique // KOL code entrants type; stored UPPERCASE
-  kolLabel         String // KOL / campaign name (shown to entrants)
-  thumbnailUrl     String? // optional banner shown on the public entry page
-  gasTokenConfigId String // which token winners receive (plain ref)
-  amountNative     Decimal   @db.Decimal(18, 8) // fixed gas amount each winner gets
-  winnerCount      Int // target number of winners
-  drawnCount       Int       @default(0)
+  id               String   @id @default(cuid())
+  code             String   @unique          // KOL code entrants type; stored UPPERCASE
+  kolLabel         String                      // KOL / campaign name (shown to entrants)
+  thumbnailUrl     String?                     // optional banner shown on the public entry page
+  gasTokenConfigId String                      // which token winners receive (plain ref)
+  amountNative     Decimal  @db.Decimal(18, 8) // fixed gas amount each winner gets
+  winnerCount      Int                          // target number of winners
+  drawnCount       Int      @default(0)
   entryDeadline    DateTime?
-  requireKyc       Boolean   @default(true) // require KYC1 to enter
-  status           String    @default("open") // open | drawn | closed
-  isActive         Boolean   @default(true) // kill switch
+  requireKyc       Boolean  @default(true)      // require KYC1 to enter
+  status           String   @default("open")    // open | drawn | closed
+  isActive         Boolean  @default(true)       // kill switch
   createdById      String?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  entries GasGiveawayEntry[]
+  entries          GasGiveawayEntry[]
 
   @@index([isActive, status])
 }
@@ -1943,14 +1943,14 @@ model GasGiveawayEntry {
   id               String              @id @default(cuid())
   campaignId       String
   campaign         GasGiveawayCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  userId           String // entrant (plain ref)
+  userId           String                                  // entrant (plain ref)
   email            String?
   receivingAddress String
   status           String              @default("entered") // entered | won | not_selected
-  orderId          String? // free-gas order created on win (plain ref)
+  orderId          String?                                 // free-gas order created on win (plain ref)
   createdAt        DateTime            @default(now())
 
-  @@unique([campaignId, userId]) // one entry per user per campaign
+  @@unique([campaignId, userId])      // one entry per user per campaign
   @@index([campaignId, status])
 }
 
@@ -1960,36 +1960,36 @@ model GasGiveawayEntry {
 // export; the CREATOR distributes the reward themselves — no platform funds are
 // ever moved here (that stays exclusive to GasGiveawayCampaign, admin-only).
 model PromoGiveaway {
-  id              String    @id @default(cuid())
-  code            String    @unique // shareable entry code (UPPERCASE)
-  title           String // shown to entrants
-  description     String? // details / reward description
-  thumbnailUrl    String?
-  tasks           Json? // [{ id, label, url, required }]
-  addressLabel    String? // e.g. "USDT BEP20 wallet address"
-  resultsSheetUrl String? // creator-uploaded proof sheet (public transparency)
-  winnerCount     Int       @default(0) // target winners (ignored when rewardAll)
-  rewardAll       Boolean   @default(false) // everyone who entered wins
-  requireKyc      Boolean   @default(false)
+  id            String               @id @default(cuid())
+  code          String               @unique             // shareable entry code (UPPERCASE)
+  title         String                                    // shown to entrants
+  description   String?                                   // details / reward description
+  thumbnailUrl  String?
+  tasks         Json?                                     // [{ id, label, url, required }]
+  addressLabel  String?                                   // e.g. "USDT BEP20 wallet address"
+  resultsSheetUrl String?                                 // creator-uploaded proof sheet (public transparency)
+  winnerCount   Int                  @default(0)          // target winners (ignored when rewardAll)
+  rewardAll     Boolean              @default(false)      // everyone who entered wins
+  requireKyc    Boolean              @default(false)
   // Off-platform reward metadata (display-only — no funds move). Lets the creator
   // spell out what winners receive: amount + token + chain (chain may be a custom
   // "Other" value not in the platform's gas list).
-  rewardAmount    String? // e.g. "500" or "0.5"
-  rewardToken     String? // token symbol / title, e.g. "USDT", "PKR"
-  rewardChain     String? // chain label, e.g. "BEP20", "TRON", or custom
+  rewardAmount  String?                                   // e.g. "500" or "0.5"
+  rewardToken   String?                                   // token symbol / title, e.g. "USDT", "PKR"
+  rewardChain   String?                                   // chain label, e.g. "BEP20", "TRON", or custom
   // Optional entrant fields the creator can collect at entry time.
-  collectName     Boolean   @default(false) // ask entrant for a name / username
-  collectWhatsapp Boolean   @default(false) // ask entrant for a WhatsApp number
-  entryDeadline   DateTime?
-  status          String    @default("open") // open | closed
-  isActive        Boolean   @default(true) // admin kill switch
-  createdById     String // creator (affiliate or admin) — plain ref
-  createdByRole   String // snapshot: affiliate | admin | super_admin
-  createdByName   String? // snapshot display name for admin oversight
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  collectName   Boolean              @default(false)      // ask entrant for a name / username
+  collectWhatsapp Boolean            @default(false)      // ask entrant for a WhatsApp number
+  entryDeadline DateTime?
+  status        String               @default("open")     // open | closed
+  isActive      Boolean              @default(true)       // admin kill switch
+  createdById   String                                    // creator (affiliate or admin) — plain ref
+  createdByRole String                                    // snapshot: affiliate | admin | super_admin
+  createdByName String?                                   // snapshot display name for admin oversight
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
 
-  entries PromoGiveawayEntry[]
+  entries       PromoGiveawayEntry[]
 
   @@index([isActive, status])
   @@index([createdById])
@@ -1999,18 +1999,18 @@ model PromoGiveawayEntry {
   id               String        @id @default(cuid())
   giveawayId       String
   giveaway         PromoGiveaway @relation(fields: [giveawayId], references: [id], onDelete: Cascade)
-  userId           String // entrant (plain ref)
-  username         String? // snapshot for CSV export
+  userId           String                              // entrant (plain ref)
+  username         String?                             // snapshot for CSV export
   email            String?
-  entrantName      String? // optional name/username the entrant supplied
-  whatsapp         String? // optional WhatsApp number the entrant supplied
+  entrantName      String?                             // optional name/username the entrant supplied
+  whatsapp         String?                             // optional WhatsApp number the entrant supplied
   receivingAddress String
-  ackTasks         Json? // task ids the entrant confirmed
-  status           String        @default("entered") // entered | pending | sent | rejected
-  note             String? // creator note — required justification when rejected
+  ackTasks         Json?                               // task ids the entrant confirmed
+  status           String        @default("entered")   // entered | pending | sent | rejected
+  note             String?                             // creator note — required justification when rejected
   createdAt        DateTime      @default(now())
 
-  @@unique([giveawayId, userId]) // one entry per user per giveaway
+  @@unique([giveawayId, userId])     // one entry per user per giveaway
   @@index([giveawayId, status])
 }
 
@@ -2018,7 +2018,7 @@ model GasHotWallet {
   id                   String    @id @default(cuid())
   chain                GasChain
   address              String
-  hdIndex              Int       @default(0) // BIP44 child index for this wallet
+  hdIndex              Int       @default(0)   // BIP44 child index for this wallet
   weight               Int       @default(100) // load-balancing weight; higher = preferred
   isActive             Boolean   @default(true)
   lastBalanceRefreshAt DateTime?
@@ -2033,84 +2033,84 @@ model GasHotWallet {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model GasChainConfig {
-  id                 String   @id @default(cuid())
-  name               String // "TRON", "BNB Smart Chain", "Ethereum"
-  slug               String   @unique // "TRON", "BSC", "ETH", "BASE", "ARB", "MATIC", "OP", "SOL", "TON", "SUI"
-  symbol             String // "TRX", "BNB", "ETH"
-  logoUrl            String?
-  category           String // "tron" | "bnb" | "ethereum" | "solana" | "ton" | "sui"
-  networkLabel       String // "TRC20", "BEP20", "ERC20", "Solana", "TON", "SUI"
-  addressType        String // "TRC20" | "EVM" | "SOL" | "TON" | "SUI" â€” maps to frontend regex
-  explorerBase       String?
-  backendChainId     String? // Maps to GasChain enum value. Null = not yet deliverable.
-  platformFeeUsdt    Float    @default(0.25) // Default platform fee (USDT) â€” used when token has no override
-  alertThresholdUsd  Float? // Auto-alert below this USD wallet balance; null = no alert
-  pauseThresholdUsd  Float? // Auto-pause new orders below this USD balance; null = no pause
-  defaultMinAmount   Decimal? @db.Decimal(18, 8) // Default min amount for tokens under this chain
-  defaultMaxUsdValue Decimal? @db.Decimal(10, 4) // Default max USD value for tokens under this chain
-  isActive           Boolean  @default(true)
-  isVisibleToUsers   Boolean  @default(true) // false = hidden from all user-facing APIs and UI
+  id             String           @id @default(cuid())
+  name           String           // "TRON", "BNB Smart Chain", "Ethereum"
+  slug           String           @unique // "TRON", "BSC", "ETH", "BASE", "ARB", "MATIC", "OP", "SOL", "TON", "SUI"
+  symbol         String           // "TRX", "BNB", "ETH"
+  logoUrl        String?
+  category       String           // "tron" | "bnb" | "ethereum" | "solana" | "ton" | "sui"
+  networkLabel   String           // "TRC20", "BEP20", "ERC20", "Solana", "TON", "SUI"
+  addressType    String           // "TRC20" | "EVM" | "SOL" | "TON" | "SUI" â€” maps to frontend regex
+  explorerBase   String?
+  backendChainId    String?          // Maps to GasChain enum value. Null = not yet deliverable.
+  platformFeeUsdt   Float            @default(0.25) // Default platform fee (USDT) â€” used when token has no override
+  alertThresholdUsd Float?           // Auto-alert below this USD wallet balance; null = no alert
+  pauseThresholdUsd Float?           // Auto-pause new orders below this USD balance; null = no pause
+  defaultMinAmount  Decimal?         @db.Decimal(18, 8) // Default min amount for tokens under this chain
+  defaultMaxUsdValue Decimal?        @db.Decimal(10, 4) // Default max USD value for tokens under this chain
+  isActive          Boolean          @default(true)
+  isVisibleToUsers  Boolean          @default(true)  // false = hidden from all user-facing APIs and UI
   // true = removed from the main admin list into an "Archived" section. Implies
   // hidden from users; kept (not deleted) so it can be unarchived or removed later.
-  isArchived         Boolean  @default(false)
+  isArchived        Boolean          @default(false)
   // Feature readiness state: inactive | testing | beta | stable
   // inactive = hidden from public UI; stable = fully operational
-  readinessState     String   @default("inactive")
-  displayOrder       Int      @default(0)
+  readinessState    String           @default("inactive")
+  displayOrder   Int              @default(0)
 
   // ── Operational / chain-registry fields ───────────────────────────────────
   // chainType drives dispatch in fee calculator, balance monitor, and payment poller.
   // Values: "EVM" | "APTOS" | "TRON" | "SOLANA" | "TON" | "SUI" | "CUSTOM"
-  chainType              String   @default("EVM")
+  chainType             String           @default("EVM")
   // Primary and fallback RPC URLs for balance fetching and fee estimation.
-  rpcUrl                 String?
-  rpcUrlFallback         String?
+  rpcUrl                String?
+  rpcUrlFallback        String?
   // How network fee is estimated. Values: "EVM_RPC" | "APTOS_API" | "TRON_API" | "SOLANA_API" | "TON_API" | "FIXED" | "CUSTOM"
-  feeMethod              String   @default("EVM_RPC")
-  fixedFeeUsd            Decimal? @db.Decimal(10, 6)
+  feeMethod             String           @default("EVM_RPC")
+  fixedFeeUsd           Decimal?         @db.Decimal(10, 6)
   // CoinGecko ID for native token price feed (e.g. "aptos", "binancecoin", "tron").
-  coingeckoId            String?
+  coingeckoId           String?
   // This chain can receive USDT payments from users.
-  isPaymentEnabled       Boolean  @default(false)
+  isPaymentEnabled      Boolean          @default(false)
   // Override deposit address for USDT payments; null = derive from mnemonic.
   depositAddressOverride String?
   // USDT contract address on this chain (for payment detection).
-  usdtContractAddress    String?
-  usdtDecimals           Int      @default(6)
+  usdtContractAddress   String?
+  usdtDecimals          Int              @default(6)
 
-  tokens    GasTokenConfig[]
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
+  tokens         GasTokenConfig[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 }
 
 model GasTokenConfig {
-  id               String         @id @default(cuid())
-  chainConfigId    String
-  chain            GasChainConfig @relation(fields: [chainConfigId], references: [id], onDelete: Cascade)
-  name             String // "TRX", "BNB", "USDT (TRC20)"
-  symbol           String // "TRX", "BNB", "USDT"
-  tokenType        String // "native" | "token"
-  contractAddress  String?
-  logoUrl          String?
-  priceSymbol      String // “TRX”, “BNB”, “ETH” — Redis rate key for pricing
-  coingeckoId      String? // CoinGecko ID override; null = use chain-level coingeckoId
-  platformFeeUsdt  Float? // Override; null = inherit from parent chain default
-  minAmount        Decimal?       @db.Decimal(18, 8) // Override; null = inherit from parent chain default
-  maxUsdValue      Decimal?       @db.Decimal(10, 4) // Override; null = inherit from parent chain default
-  presetAmounts    Json // number[] e.g. [10, 50, 100, 200]
-  isActive         Boolean        @default(true)
-  isVisibleToUsers Boolean        @default(true) // false = hidden from user-facing APIs and dropdowns
+  id              String         @id @default(cuid())
+  chainConfigId   String
+  chain           GasChainConfig @relation(fields: [chainConfigId], references: [id], onDelete: Cascade)
+  name            String         // "TRX", "BNB", "USDT (TRC20)"
+  symbol          String         // "TRX", "BNB", "USDT"
+  tokenType       String         // "native" | "token"
+  contractAddress String?
+  logoUrl         String?
+  priceSymbol     String         // “TRX”, “BNB”, “ETH” — Redis rate key for pricing
+  coingeckoId     String?        // CoinGecko ID override; null = use chain-level coingeckoId
+  platformFeeUsdt Float?         // Override; null = inherit from parent chain default
+  minAmount       Decimal?       @db.Decimal(18, 8) // Override; null = inherit from parent chain default
+  maxUsdValue     Decimal?       @db.Decimal(10, 4) // Override; null = inherit from parent chain default
+  presetAmounts   Json           // number[] e.g. [10, 50, 100, 200]
+  isActive        Boolean        @default(true)
+  isVisibleToUsers Boolean       @default(true)  // false = hidden from user-facing APIs and dropdowns
   // true = removed from the main admin list into an "Archived" section. Implies
   // hidden from users; kept (not deleted) so it can be unarchived or removed later.
-  isArchived       Boolean        @default(false)
+  isArchived      Boolean        @default(false)
   // Non-native token delivery (real funds) — orderable only when this is true AND
   // the chain family has a delivery implementation. Default false: must be flipped
   // by a super-admin after the hot wallet is funded with the token + native gas.
-  deliveryLive     Boolean        @default(false)
-  displayOrder     Int            @default(0)
-  orders           GasFeeOrder[]
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  deliveryLive    Boolean        @default(false)
+  displayOrder    Int            @default(0)
+  orders          GasFeeOrder[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 
   @@index([chainConfigId, isActive])
 }
@@ -2124,15 +2124,15 @@ model GasTokenConfig {
 // derivation index is a monotonic counter â€” see PlatformConfig key
 // `next_evm_derivation_index` for allocation.
 model DepositAddress {
-  id              String   @id @default(cuid())
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Restrict)
-  chainFamily     String // 'EVM' for now; 'TRON' | 'TON' | 'SUI' later
-  address         String
-  derivationIndex Int
-  createdAt       DateTime @default(now())
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Restrict)
+  chainFamily      String   // 'EVM' for now; 'TRON' | 'TON' | 'SUI' later
+  address          String
+  derivationIndex  Int
+  createdAt        DateTime @default(now())
 
-  subscriptions MoralisStreamSubscription[]
+  subscriptions    MoralisStreamSubscription[]
 
   @@unique([userId, chainFamily])
   @@unique([address])
@@ -2145,18 +2145,18 @@ model DepositAddress {
 // the address into each chain's Moralis Stream. Idempotent: the unique
 // constraint prevents duplicate enqueueing for the same address/chain.
 model MoralisStreamSubscription {
-  id               String         @id @default(cuid())
-  depositAddressId String
-  depositAddress   DepositAddress @relation(fields: [depositAddressId], references: [id], onDelete: Cascade)
-  chain            String // matches ChainConfig.id ('ethereum', 'bsc', â€¦)
-  streamId         String? // null until the operator sets MORALIS_STREAM_ID_<CHAIN>
-  status           String         @default("pending") // pending | subscribed | failed | skipped
-  attempts         Int            @default(0)
-  lastError        String?
-  lastAttemptAt    DateTime?
-  subscribedAt     DateTime?
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id                 String          @id @default(cuid())
+  depositAddressId   String
+  depositAddress     DepositAddress  @relation(fields: [depositAddressId], references: [id], onDelete: Cascade)
+  chain              String          // matches ChainConfig.id ('ethereum', 'bsc', â€¦)
+  streamId           String?         // null until the operator sets MORALIS_STREAM_ID_<CHAIN>
+  status             String          @default("pending") // pending | subscribed | failed | skipped
+  attempts           Int             @default(0)
+  lastError          String?
+  lastAttemptAt      DateTime?
+  subscribedAt       DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
 
   @@unique([depositAddressId, chain])
   @@index([status])
@@ -2168,23 +2168,23 @@ model MoralisStreamSubscription {
 // `creditedAt` flips once confirmations meet the chain threshold and we move
 // the funds into the user's internal Wallet balance.
 model Deposit {
-  id                    String    @id @default(cuid())
-  txHash                String
-  chain                 String // matches ChainConfig.id (ethereum, bsc, ...)
-  asset                 String // ERC20 contract address or 'native'
-  symbol                String // resolved symbol (USDT, USDC, ETH, ...)
-  fromAddress           String
-  toAddress             String
-  amount                Decimal   @db.Decimal(38, 18)
-  confirmations         Int       @default(0)
-  userId                String?
-  user                  User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  walletId              String?
+  id                   String   @id @default(cuid())
+  txHash               String
+  chain                String   // matches ChainConfig.id (ethereum, bsc, ...)
+  asset                String   // ERC20 contract address or 'native'
+  symbol               String   // resolved symbol (USDT, USDC, ETH, ...)
+  fromAddress          String
+  toAddress            String
+  amount               Decimal  @db.Decimal(38, 18)
+  confirmations        Int      @default(0)
+  userId               String?
+  user                 User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  walletId             String?
   creditedTransactionId String?
-  status                String    @default("detected") // detected | credited | rejected
-  rejectionReason       String?
-  detectedAt            DateTime  @default(now())
-  creditedAt            DateTime?
+  status               String   @default("detected") // detected | credited | rejected
+  rejectionReason      String?
+  detectedAt           DateTime @default(now())
+  creditedAt           DateTime?
 
   @@unique([txHash, chain, asset])
   @@index([toAddress])
@@ -2198,17 +2198,17 @@ model Deposit {
 // exactly-once, mirroring the Deposit detected→credited pattern. walletId pins
 // the exact USDT wallet the bond is locked in, so release/seize are unambiguous.
 model BondHold {
-  id         String    @id @default(cuid())
-  tradeType  String // 'usdt' | 'ctm'
-  tradeId    String
-  makerId    String
-  maker      User      @relation("BondHoldMaker", fields: [makerId], references: [id], onDelete: Restrict)
-  walletId   String
-  amount     Decimal   @db.Decimal(18, 8) // USDT bond amount
-  status     String    @default("held") // held | released | seized
-  victimId   String? // counterparty credited on seize
-  createdAt  DateTime  @default(now())
-  resolvedAt DateTime?
+  id          String    @id @default(cuid())
+  tradeType   String    // 'usdt' | 'ctm'
+  tradeId     String
+  makerId     String
+  maker       User      @relation("BondHoldMaker", fields: [makerId], references: [id], onDelete: Restrict)
+  walletId    String
+  amount      Decimal   @db.Decimal(18, 8) // USDT bond amount
+  status      String    @default("held")   // held | released | seized
+  victimId    String?                       // counterparty credited on seize
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
 
   @@unique([tradeType, tradeId])
   @@index([makerId])
@@ -2223,23 +2223,23 @@ model BondHold {
 // Key format: mpak_{keyId}_{secret}
 // Only `keyId` and a bcrypt hash of `secret` are stored.
 model MerchantApiKey {
-  id     String @id @default(cuid())
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  keyId     String @unique // short unique token embedded in the key for O(1) lookup
-  keyHash   String // bcrypt hash of the secret portion
-  keyPrefix String // first 14 chars of full key â€” display only
-  name      String // "My App Integration"
+  keyId       String   @unique  // short unique token embedded in the key for O(1) lookup
+  keyHash     String            // bcrypt hash of the secret portion
+  keyPrefix   String            // first 14 chars of full key â€” display only
+  name        String            // "My App Integration"
 
-  isActive   Boolean   @default(true)
-  rateLimit  Int       @default(60) // max requests per minute
-  lastUsedAt DateTime?
+  isActive    Boolean  @default(true)
+  rateLimit   Int      @default(60)   // max requests per minute
+  lastUsedAt  DateTime?
 
-  webhookUrl    String? // POST target for order status callbacks
-  webhookSecret String? // HMAC-SHA256 signing secret for callbacks
+  webhookUrl     String?   // POST target for order status callbacks
+  webhookSecret  String?   // HMAC-SHA256 signing secret for callbacks
 
-  createdAt DateTime @default(now())
+  createdAt   DateTime @default(now())
 
   gasOrders       GasFeeOrder[]
   merchantAccount GasMerchantAccount?
@@ -2249,19 +2249,19 @@ model MerchantApiKey {
 }
 
 model GasCustomRequest {
-  id             String                 @id @default(cuid())
+  id             String                  @id @default(cuid())
   blockchainName String
   token          String
   amount         String?
   purpose        String
-  urgency        String                 @default("normal")
+  urgency        String                  @default("normal")
   details        String?
   contactEmail   String?
   ipAddress      String?
-  status         GasCustomRequestStatus @default(pending)
+  status         GasCustomRequestStatus  @default(pending)
   adminNotes     String?
-  createdAt      DateTime               @default(now())
-  updatedAt      DateTime               @updatedAt
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
 
   @@index([status])
   @@index([createdAt])
@@ -2275,15 +2275,15 @@ model GasCustomRequest {
 // the same mnemonic as the hot wallet (index 0). Never signs delivery txns.
 model GasTreasuryWallet {
   id                   String    @id @default(cuid())
-  chain                GasChain  @unique // representative chain (TRON or ETH for EVM family)
-  chainFamily          String // 'TRON' | 'EVM'
+  chain                GasChain  @unique  // representative chain (TRON or ETH for EVM family)
+  chainFamily          String    // 'TRON' | 'EVM'
   address              String    @unique
-  derivationIndex      Int // 100 = TRON treasury, 101 = EVM treasury
+  derivationIndex      Int                // 100 = TRON treasury, 101 = EVM treasury
   isActive             Boolean   @default(true)
   lastBalanceRefreshAt DateTime?
   createdAt            DateTime  @default(now())
 
-  refillRequests GasRefillRequest[]
+  refillRequests       GasRefillRequest[]
 
   @@index([chainFamily, isActive])
 }
@@ -2294,25 +2294,25 @@ model GasTreasuryWallet {
 
 // Append-only. Never update a row â€” write a new corrective entry instead.
 model GasLedgerEntry {
-  id              String             @id @default(cuid())
-  entryType       GasLedgerEntryType
-  chain           GasChain
+  id             String               @id @default(cuid())
+  entryType      GasLedgerEntryType
+  chain          GasChain
   // nativeAmount: positive = inflow to hot wallet; negative = outflow
-  nativeAmount    Decimal            @db.Decimal(28, 10)
-  nativeSymbol    String // "TRX", "BNB", "ETH", etc.
-  tokenSymbol     String? // "USDT" for ERC20 payments; null for native-only entries
-  tokenAmount     Decimal?           @db.Decimal(28, 10)
-  usdAmount       Decimal            @db.Decimal(18, 6)
-  txHash          String?
-  fromAddress     String?
-  toAddress       String?
-  sourceKey       String?            @unique
-  relatedOrderId  String?
-  relatedOrder    GasFeeOrder?       @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
+  nativeAmount   Decimal              @db.Decimal(28, 10)
+  nativeSymbol   String               // "TRX", "BNB", "ETH", etc.
+  tokenSymbol    String?              // "USDT" for ERC20 payments; null for native-only entries
+  tokenAmount    Decimal?             @db.Decimal(28, 10)
+  usdAmount      Decimal              @db.Decimal(18, 6)
+  txHash         String?
+  fromAddress    String?
+  toAddress      String?
+  sourceKey      String?              @unique
+  relatedOrderId String?
+  relatedOrder   GasFeeOrder?         @relation(fields: [relatedOrderId], references: [id], onDelete: SetNull)
   relatedRefillId String?
-  relatedRefill   GasRefillRequest?  @relation(fields: [relatedRefillId], references: [id], onDelete: SetNull)
-  notes           String?            @db.VarChar(500)
-  createdAt       DateTime           @default(now())
+  relatedRefill  GasRefillRequest?    @relation(fields: [relatedRefillId], references: [id], onDelete: SetNull)
+  notes          String?              @db.VarChar(500)
+  createdAt      DateTime             @default(now())
 
   @@index([chain, entryType])
   @@index([txHash])
@@ -2327,17 +2327,17 @@ model GasLedgerEntry {
 
 // Per-chain thresholds that drive auto-refill. One row per GasChain.
 model GasRefillThreshold {
-  id                 String   @id @default(cuid())
-  chain              GasChain @unique
+  id                  String    @id @default(cuid())
+  chain               GasChain  @unique
   // Trigger a refill when hot wallet native balance falls below this amount
-  triggerBelowNative Decimal  @db.Decimal(18, 8)
+  triggerBelowNative  Decimal   @db.Decimal(18, 8)
   // After a refill, target this native balance (what to refill TO)
-  refillTargetNative Decimal  @db.Decimal(18, 8)
+  refillTargetNative  Decimal   @db.Decimal(18, 8)
   // Max single-transfer size (safety cap on each refill tx)
-  maxRefillNative    Decimal  @db.Decimal(18, 8)
-  isEnabled          Boolean  @default(true)
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  maxRefillNative     Decimal   @db.Decimal(18, 8)
+  isEnabled           Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@index([isEnabled])
 }
@@ -2346,32 +2346,32 @@ model GasRefillThreshold {
 //                             â†˜ cancelled
 //                                        â†˜ failed (retriable)
 model GasRefillRequest {
-  id             String                 @id @default(cuid())
-  chain          GasChain
-  fromWalletId   String
-  fromWallet     GasTreasuryWallet      @relation(fields: [fromWalletId], references: [id], onDelete: Restrict)
-  fromAddress    String
-  toAddress      String // hot wallet address
-  nativeAmount   Decimal                @db.Decimal(18, 8)
-  nativeSymbol   String
-  usdAmount      Decimal                @db.Decimal(18, 6)
-  status         GasRefillRequestStatus @default(pending_approval)
+  id              String                  @id @default(cuid())
+  chain           GasChain
+  fromWalletId    String
+  fromWallet      GasTreasuryWallet       @relation(fields: [fromWalletId], references: [id], onDelete: Restrict)
+  fromAddress     String
+  toAddress       String                  // hot wallet address
+  nativeAmount    Decimal                 @db.Decimal(18, 8)
+  nativeSymbol    String
+  usdAmount       Decimal                 @db.Decimal(18, 6)
+  status          GasRefillRequestStatus  @default(pending_approval)
   // Set when hot-wallet balance that triggered this refill was sampled
-  triggerBalance Decimal?               @db.Decimal(18, 8)
+  triggerBalance  Decimal?                @db.Decimal(18, 8)
 
-  approvedAt    DateTime?
-  approvedBy    String? // admin userId
-  cancelledAt   DateTime?
-  cancelledBy   String?
-  executedAt    DateTime?
-  completedAt   DateTime?
-  txHash        String?
-  failureReason String?   @db.VarChar(500)
-  retryCount    Int       @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  approvedAt      DateTime?
+  approvedBy      String?                 // admin userId
+  cancelledAt     DateTime?
+  cancelledBy     String?
+  executedAt      DateTime?
+  completedAt     DateTime?
+  txHash          String?
+  failureReason   String?                 @db.VarChar(500)
+  retryCount      Int                     @default(0)
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
-  ledgerEntries GasLedgerEntry[]
+  ledgerEntries   GasLedgerEntry[]
 
   @@index([chain, status])
   @@index([status])
@@ -2383,14 +2383,14 @@ model GasRefillRequest {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model GasReconciliationRun {
-  id               String                         @id @default(cuid())
-  ranAt            DateTime                       @default(now())
+  id               String   @id @default(cuid())
+  ranAt            DateTime @default(now())
   chain            GasChain?
-  totalOrders      Int                            @default(0)
-  ordersChecked    Int                            @default(0)
-  discrepancyCount Int                            @default(0)
-  status           String // running | complete | failed
-  notes            String?                        @db.VarChar(1000)
+  totalOrders      Int      @default(0)
+  ordersChecked    Int      @default(0)
+  discrepancyCount Int      @default(0)
+  status           String   // running | complete | failed
+  notes            String?  @db.VarChar(1000)
   discrepancies    GasReconciliationDiscrepancy[]
 
   @@index([status])
@@ -2398,16 +2398,16 @@ model GasReconciliationRun {
 }
 
 model GasReconciliationDiscrepancy {
-  id          String               @id @default(cuid())
+  id          String   @id @default(cuid())
   runId       String
   run         GasReconciliationRun @relation(fields: [runId], references: [id], onDelete: Cascade)
   orderId     String?
-  type        String // delivery_tx_not_found | amount_mismatch | payment_not_on_chain | stuck_sending
-  description String               @db.VarChar(1000)
+  type        String   // delivery_tx_not_found | amount_mismatch | payment_not_on_chain | stuck_sending
+  description String   @db.VarChar(1000)
   resolvedAt  DateTime?
   resolvedBy  String?
-  adminNote   String?              @db.VarChar(500)
-  createdAt   DateTime             @default(now())
+  adminNote   String?  @db.VarChar(500)
+  createdAt   DateTime @default(now())
 
   @@index([runId])
   @@index([orderId])
@@ -2419,16 +2419,16 @@ model GasReconciliationDiscrepancy {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model GasFlaggedOrder {
-  id         String      @id @default(cuid())
-  orderId    String      @unique
-  order      GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  reasons    String // JSON array: ["HIGH_DEST_FREQUENCY", ...]
-  riskScore  Int // 0â€“100
-  status     String      @default("pending_review") // pending_review | reviewed_ok | reviewed_blocked
-  reviewedBy String?
-  reviewedAt DateTime?
-  adminNote  String?     @db.VarChar(500)
-  createdAt  DateTime    @default(now())
+  id          String      @id @default(cuid())
+  orderId     String      @unique
+  order       GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reasons     String      // JSON array: ["HIGH_DEST_FREQUENCY", ...]
+  riskScore   Int         // 0â€“100
+  status      String      @default("pending_review") // pending_review | reviewed_ok | reviewed_blocked
+  reviewedBy  String?
+  reviewedAt  DateTime?
+  adminNote   String?     @db.VarChar(500)
+  createdAt   DateTime    @default(now())
 
   @@index([status])
   @@index([riskScore])
@@ -2440,37 +2440,37 @@ model GasFlaggedOrder {
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 model GasMerchantAccount {
-  id              String                  @id @default(cuid())
+  id              String   @id @default(cuid())
   name            String
-  apiKeyId        String                  @unique
-  apiKey          MerchantApiKey          @relation(fields: [apiKeyId], references: [id], onDelete: Restrict)
-  commissionRate  Decimal                 @default(0) @db.Decimal(5, 4) // 0.0000â€“1.0000
-  settlementCycle String                  @default("weekly") // daily | weekly | monthly
-  payoutAddress   String? // USDT TRC20 for auto-payout
-  isActive        Boolean                 @default(true)
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
+  apiKeyId        String   @unique
+  apiKey          MerchantApiKey @relation(fields: [apiKeyId], references: [id], onDelete: Restrict)
+  commissionRate  Decimal  @default(0) @db.Decimal(5, 4) // 0.0000â€“1.0000
+  settlementCycle String   @default("weekly")            // daily | weekly | monthly
+  payoutAddress   String?                                // USDT TRC20 for auto-payout
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
   settlements     GasMerchantSettlement[]
 
   @@index([isActive])
 }
 
 model GasMerchantSettlement {
-  id               String             @id @default(cuid())
+  id               String              @id @default(cuid())
   merchantId       String
-  merchant         GasMerchantAccount @relation(fields: [merchantId], references: [id], onDelete: Restrict)
+  merchant         GasMerchantAccount  @relation(fields: [merchantId], references: [id], onDelete: Restrict)
   periodStart      DateTime
   periodEnd        DateTime
-  orderCount       Int                @default(0)
-  grossRevenueUsd  Decimal            @db.Decimal(18, 6)
-  platformFeeUsd   Decimal            @db.Decimal(18, 6)
-  merchantShareUsd Decimal            @db.Decimal(18, 6)
-  status           String             @default("pending") // pending | approved | paid
+  orderCount       Int                 @default(0)
+  grossRevenueUsd  Decimal             @db.Decimal(18, 6)
+  platformFeeUsd   Decimal             @db.Decimal(18, 6)
+  merchantShareUsd Decimal             @db.Decimal(18, 6)
+  status           String              @default("pending") // pending | approved | paid
   payoutTxHash     String?
   paidAt           DateTime?
-  adminNote        String?            @db.VarChar(500)
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  adminNote        String?             @db.VarChar(500)
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
 
   @@index([merchantId, status])
   @@index([status])
@@ -2581,46 +2581,46 @@ model CtmMerchantProfile {
 }
 
 model CtmListing {
-  id                         String             @id @default(cuid())
-  listingRef                 String             @unique @default(cuid())
-  merchantProfileId          String
-  merchantProfile            CtmMerchantProfile @relation(fields: [merchantProfileId], references: [id], onDelete: Restrict)
-  tokenId                    String
-  token                      CtmToken           @relation(fields: [tokenId], references: [id], onDelete: Restrict)
-  side                       AdSide
-  settlementType             CtmSettlementType
-  priceType                  PriceType          @default(fixed)
-  pricePerUnit               Decimal            @db.Decimal(14, 2)
-  totalAmount                Decimal            @db.Decimal(28, 8)
-  availableAmount            Decimal            @db.Decimal(28, 8)
-  lockedAmount               Decimal            @default(0) @db.Decimal(28, 8)
-  minOrderPkr                Decimal?           @db.Decimal(14, 2)
-  maxOrderPkr                Decimal?           @db.Decimal(14, 2)
-  minOrderTokens             Decimal            @db.Decimal(28, 8)
-  maxOrderTokens             Decimal            @db.Decimal(28, 8)
-  settlementMethod           String             @db.VarChar(100)
-  tokenDeliveryType          String?            @db.VarChar(20)
-  settlementNote             String             @db.VarChar(1000)
-  paymentMethods             String[]
+  id                String             @id @default(cuid())
+  listingRef        String             @unique @default(cuid())
+  merchantProfileId String
+  merchantProfile   CtmMerchantProfile @relation(fields: [merchantProfileId], references: [id], onDelete: Restrict)
+  tokenId           String
+  token             CtmToken           @relation(fields: [tokenId], references: [id], onDelete: Restrict)
+  side              AdSide
+  settlementType    CtmSettlementType
+  priceType         PriceType          @default(fixed)
+  pricePerUnit      Decimal            @db.Decimal(14, 2)
+  totalAmount       Decimal            @db.Decimal(28, 8)
+  availableAmount   Decimal            @db.Decimal(28, 8)
+  lockedAmount      Decimal            @default(0) @db.Decimal(28, 8)
+  minOrderPkr       Decimal?           @db.Decimal(14, 2)
+  maxOrderPkr       Decimal?           @db.Decimal(14, 2)
+  minOrderTokens    Decimal            @db.Decimal(28, 8)
+  maxOrderTokens    Decimal            @db.Decimal(28, 8)
+  settlementMethod  String             @db.VarChar(100)
+  tokenDeliveryType String?            @db.VarChar(20)
+  settlementNote    String             @db.VarChar(1000)
+  paymentMethods    String[]
   // USDT-as-payment (flag+ready gated — see ctm/ctm.usdtPayment.ts). Default
   // "PKR" keeps every existing + new listing PKR-only unless the feature is
   // deliberately enabled, so these columns are inert until then.
-  paymentCurrency            String             @default("PKR") @db.VarChar(10)
+  paymentCurrency   String             @default("PKR") @db.VarChar(10)
   // Selected USDT delivery methods (BEP20 / Aptos / Binance / OKX / …) when
   // paymentCurrency = USDT; empty for PKR listings.
-  usdtPaymentMethods         String[]           @default([])
+  usdtPaymentMethods String[]          @default([])
   // Maker's USDT receive points for a SELL listing: [{ method, address, label }].
   usdtSettlementDestinations Json?
-  tradeWindowMins            Int                @default(45)
-  terms                      String             @default("") @db.VarChar(2000)
-  status                     CtmListingStatus   @default(active)
-  requiresProof              Boolean            @default(true)
-  proofInstructions          String?            @db.VarChar(500)
-  expiresAt                  DateTime?
-  createdAt                  DateTime           @default(now())
-  updatedAt                  DateTime           @updatedAt
-  trades                     CtmTrade[]
-  listingBids                CtmListingBid[]
+  tradeWindowMins   Int                @default(45)
+  terms             String             @default("") @db.VarChar(2000)
+  status            CtmListingStatus   @default(active)
+  requiresProof     Boolean            @default(true)
+  proofInstructions String?            @db.VarChar(500)
+  expiresAt         DateTime?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  trades            CtmTrade[]
+  listingBids       CtmListingBid[]
 
   @@index([tokenId, side, status])
   @@index([merchantProfileId])
@@ -2651,92 +2651,92 @@ model CtmRequest {
 }
 
 model CtmBid {
-  id                   String     @id @default(cuid())
-  requestId            String
-  request              CtmRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
-  bidderId             String
-  bidder               User       @relation("CtmBidder", fields: [bidderId], references: [id], onDelete: Restrict)
-  pricePerUnit         Decimal    @db.Decimal(14, 2)
-  totalPkr             Decimal    @db.Decimal(14, 2)
-  message              String?    @db.VarChar(300)
+  id           String     @id @default(cuid())
+  requestId    String
+  request      CtmRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  bidderId     String
+  bidder       User       @relation("CtmBidder", fields: [bidderId], references: [id], onDelete: Restrict)
+  pricePerUnit Decimal    @db.Decimal(14, 2)
+  totalPkr     Decimal    @db.Decimal(14, 2)
+  message      String?    @db.VarChar(300)
   // Payment details captured at bid time so a request→trade has real account info
   // (previously a request trade had none → "account details not provided").
   // paymentMethods: the bidder's saved PaymentMethod id(s) — their PKR receiving
   //   account when the bidder is the seller. buyerSettlementId / buyerPaymentMethodId
   //   are set when the bidder is the BUYER (token receiving address + pay-from account).
   paymentMethods       String[]
-  buyerSettlementId    String?    @db.VarChar(500)
-  buyerPaymentMethodId String?    @db.VarChar(100)
-  status               String     @default("pending")
-  expiresAt            DateTime
-  createdAt            DateTime   @default(now())
+  buyerSettlementId    String?   @db.VarChar(500)
+  buyerPaymentMethodId String?   @db.VarChar(100)
+  status       String     @default("pending")
+  expiresAt    DateTime
+  createdAt    DateTime   @default(now())
 
   @@index([requestId, status])
   @@index([bidderId])
 }
 
 model CtmTrade {
-  id                    String            @id @default(cuid())
-  tradeRef              String            @unique @default(cuid())
-  displayRef            String?           @unique
-  listingId             String?
-  listing               CtmListing?       @relation(fields: [listingId], references: [id], onDelete: Restrict)
-  requestId             String?           @unique
-  request               CtmRequest?       @relation("CtmRequestTrade", fields: [requestId], references: [id], onDelete: Restrict)
-  buyerId               String
-  buyer                 User              @relation("CtmTradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
-  sellerId              String
-  seller                User              @relation("CtmTradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
-  tokenId               String
-  token                 CtmToken          @relation(fields: [tokenId], references: [id])
-  settlementType        CtmSettlementType
-  tokenAmount           Decimal           @db.Decimal(28, 8)
-  pricePerUnit          Decimal           @db.Decimal(14, 2)
-  fiatAmount            Decimal           @db.Decimal(14, 2)
-  paymentMethod         String
-  paymentProofUrl       String?
-  paymentProofHash      String?
-  settlementMethod      String            @db.VarChar(100)
-  buyerSettlementId     String?           @db.VarChar(500)
-  sellerPaymentSnapshot Json?
-  buyerPaymentSnapshot  Json?
+  id                String            @id @default(cuid())
+  tradeRef          String            @unique @default(cuid())
+  displayRef        String?           @unique
+  listingId         String?
+  listing           CtmListing?       @relation(fields: [listingId], references: [id], onDelete: Restrict)
+  requestId         String?           @unique
+  request           CtmRequest?       @relation("CtmRequestTrade", fields: [requestId], references: [id], onDelete: Restrict)
+  buyerId           String
+  buyer             User              @relation("CtmTradeBuyer", fields: [buyerId], references: [id], onDelete: Restrict)
+  sellerId          String
+  seller            User              @relation("CtmTradeSeller", fields: [sellerId], references: [id], onDelete: Restrict)
+  tokenId           String
+  token             CtmToken          @relation(fields: [tokenId], references: [id])
+  settlementType    CtmSettlementType
+  tokenAmount       Decimal           @db.Decimal(28, 8)
+  pricePerUnit      Decimal           @db.Decimal(14, 2)
+  fiatAmount        Decimal           @db.Decimal(14, 2)
+  paymentMethod          String
+  paymentProofUrl        String?
+  paymentProofHash       String?
+  settlementMethod       String            @db.VarChar(100)
+  buyerSettlementId      String?           @db.VarChar(500)
+  sellerPaymentSnapshot  Json?
+  buyerPaymentSnapshot   Json?
   // USDT-as-payment (flag+ready gated). Default "PKR" so existing trades are
   // untouched. When "USDT", the buyer pays the seller in USDT via usdtDeliveryMethod
   // (BEP20/Aptos/exchange) to usdtDeliveryAddress; usdtAmount is the USDT owed.
-  paymentCurrency       String            @default("PKR") @db.VarChar(10)
-  usdtDeliveryMethod    String?           @db.VarChar(40)
-  usdtDeliveryAddress   String?           @db.VarChar(200)
-  usdtAmount            Decimal?          @db.Decimal(28, 8)
-  status                CtmTradeStatus    @default(awaiting_payment)
+  paymentCurrency        String            @default("PKR") @db.VarChar(10)
+  usdtDeliveryMethod     String?           @db.VarChar(40)
+  usdtDeliveryAddress    String?           @db.VarChar(200)
+  usdtAmount             Decimal?          @db.Decimal(28, 8)
+  status            CtmTradeStatus    @default(awaiting_payment)
   // Dispute-resume — see the twin field on Trade. `status` stays parked at
   // `disputed`; this carries the real ladder rung so the parties can still settle.
-  disputeResumeStatus   CtmTradeStatus?
+  disputeResumeStatus CtmTradeStatus?
   // Taker-first settlement (Phase 1): true when this trade uses the reordered
   // BUY-listing flow (taker sends tokens first, merchant pays second). Stamped at
   // creation from isTakerFirstForMarket('ctm'); false = classic payment-first flow.
-  takerFirst            Boolean           @default(false)
-  proofDeadlineAt       DateTime?
-  confirmDeadlineAt     DateTime?
-  expiresAt             DateTime
-  cancelledBy           String?
-  cancelReason          String?
-  cancelledAt           DateTime?
-  completedAt           DateTime?
-  escrowAddress         String?           @db.VarChar(200)
-  escrowAmount          Decimal?          @db.Decimal(28, 8)
-  escrowCurrency        String?           @db.VarChar(20)
-  escrowTxHash          String?           @db.VarChar(200)
-  escrowConfirmedAt     DateTime?
-  platformFeePkr        Decimal?          @db.Decimal(14, 4)
-  platformFeeUsdt       Decimal?          @db.Decimal(14, 6)
-  createdAt             DateTime          @default(now())
-  updatedAt             DateTime          @updatedAt
-  listingBidId          String?           @unique
-  listingBid            CtmListingBid?    @relation(fields: [listingBidId], references: [id], onDelete: SetNull)
-  proofs                CtmTradeProof[]
-  messages              CtmTradeMessage[]
-  dispute               CtmDispute?
-  ratings               CtmTradeRating[]
+  takerFirst        Boolean           @default(false)
+  proofDeadlineAt   DateTime?
+  confirmDeadlineAt DateTime?
+  expiresAt         DateTime
+  cancelledBy       String?
+  cancelReason      String?
+  cancelledAt       DateTime?
+  completedAt       DateTime?
+  escrowAddress     String?           @db.VarChar(200)
+  escrowAmount      Decimal?          @db.Decimal(28, 8)
+  escrowCurrency    String?           @db.VarChar(20)
+  escrowTxHash      String?           @db.VarChar(200)
+  escrowConfirmedAt DateTime?
+  platformFeePkr    Decimal?          @db.Decimal(14, 4)
+  platformFeeUsdt   Decimal?          @db.Decimal(14, 6)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  listingBidId      String?           @unique
+  listingBid        CtmListingBid?    @relation(fields: [listingBidId], references: [id], onDelete: SetNull)
+  proofs            CtmTradeProof[]
+  messages          CtmTradeMessage[]
+  dispute           CtmDispute?
+  ratings           CtmTradeRating[]
 
   @@index([buyerId, status])
   @@index([sellerId, status])
@@ -2745,44 +2745,44 @@ model CtmTrade {
 }
 
 model CtmListingBid {
-  id                   String     @id @default(cuid())
+  id                   String      @id @default(cuid())
   listingId            String
-  listing              CtmListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listing              CtmListing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
   bidderId             String
-  bidder               User       @relation("CtmListingBidder", fields: [bidderId], references: [id], onDelete: Restrict)
-  pricePerUnit         Decimal    @db.Decimal(14, 2)
-  tokenAmount          Decimal    @db.Decimal(28, 8)
-  fiatAmount           Decimal    @db.Decimal(14, 2)
-  message              String?    @db.VarChar(300)
-  paymentMethod        String?    @db.VarChar(100)
+  bidder               User        @relation("CtmListingBidder", fields: [bidderId], references: [id], onDelete: Restrict)
+  pricePerUnit         Decimal     @db.Decimal(14, 2)
+  tokenAmount          Decimal     @db.Decimal(28, 8)
+  fiatAmount           Decimal     @db.Decimal(14, 2)
+  message              String?     @db.VarChar(300)
+  paymentMethod        String?     @db.VarChar(100)
   paymentMethods       String[]
-  buyerSettlementId    String?    @db.VarChar(500)
-  buyerPaymentMethodId String?    @db.VarChar(100)
-  status               String     @default("pending")
+  buyerSettlementId    String?     @db.VarChar(500)
+  buyerPaymentMethodId String?     @db.VarChar(100)
+  status               String      @default("pending")
   expiresAt            DateTime
   trade                CtmTrade?
-  createdAt            DateTime   @default(now())
-  updatedAt            DateTime   @updatedAt
+  createdAt            DateTime    @default(now())
+  updatedAt            DateTime    @updatedAt
 
   @@index([listingId, status])
   @@index([bidderId])
 }
 
 model CtmTradeProof {
-  id                    String       @id @default(cuid())
-  tradeId               String
-  trade                 CtmTrade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
-  uploadedBy            String
-  proofType             CtmProofType
-  fileUrl               String?
-  fileHash              String?
-  txHash                String?
-  txVerificationStatus  String? // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
+  id              String       @id @default(cuid())
+  tradeId         String
+  trade           CtmTrade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  uploadedBy      String
+  proofType       CtmProofType
+  fileUrl         String?
+  fileHash        String?
+  txHash          String?
+  txVerificationStatus String?  // verified | failed | mismatch_receiver | mismatch_amount | reverted | not_found | rpc_error | pending | skipped
   txVerificationDetails Json?
-  description           String?      @db.VarChar(500)
-  isAdminReviewed       Boolean      @default(false)
-  adminNote             String?      @db.VarChar(500)
-  createdAt             DateTime     @default(now())
+  description     String?      @db.VarChar(500)
+  isAdminReviewed Boolean      @default(false)
+  adminNote       String?      @db.VarChar(500)
+  createdAt       DateTime     @default(now())
 
   @@index([tradeId])
   @@index([txHash])
@@ -2965,10 +2965,10 @@ model AirdropSeason {
 // kept in sync inside the same transaction as every ledger write so leaderboards /
 // summaries never have to SUM the whole ledger.
 model AirdropAccount {
-  id          String  @id @default(cuid())
+  id          String   @id @default(cuid())
   userId      String
   seasonId    String
-  totalPoints Decimal @default(0) @db.Decimal(18, 4)
+  totalPoints Decimal  @default(0) @db.Decimal(18, 4)
 
   // ── Streak state (Phase 3) ──
   streakCount    Int       @default(0) // current consecutive-active-day streak
@@ -2979,8 +2979,8 @@ model AirdropAccount {
   preBreakStreak Int       @default(0) // streak value just before the last break (restore target)
   repairsUsed    Int       @default(0) // repairs consumed this season
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([userId, seasonId])
   @@index([seasonId, totalPoints])
@@ -3004,3 +3004,5 @@ model AirdropLedger {
   @@index([seasonId, createdAt])
   @@index([pairKey])
 }
+
+
