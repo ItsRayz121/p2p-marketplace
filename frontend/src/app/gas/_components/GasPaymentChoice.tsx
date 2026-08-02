@@ -10,6 +10,7 @@ export function GasPaymentChoice() {
   const {
     selectedChain, selectedToken, setPhase,
     methodsLoading, computedUsd, promoApplied, effectiveUsd, effectivePkr, affiliateDiscountUsd,
+    freeCodeApplied, handleClaimFreeCode, creatingCrypto, cryptoError,
   } = useGasCtx()
   const discounted = !!promoApplied || affiliateDiscountUsd > 0
 
@@ -45,7 +46,22 @@ export function GasPaymentChoice() {
 
       {methodsLoading && <LoadingState message="Loading payment options..." />}
 
-      {!methodsLoading && (
+      {/* A free-code order has nothing to pay — skip the PKR-vs-crypto choice
+          entirely and let the redeemer claim the fixed gift with one tap. */}
+      {!methodsLoading && freeCodeApplied && (
+        <div className="space-y-2">
+          <button
+            onClick={handleClaimFreeCode}
+            disabled={creatingCrypto}
+            className="w-full flex items-center justify-center gap-2 p-4 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-sm shadow-card transition-colors disabled:opacity-60"
+          >
+            {creatingCrypto ? 'Claiming…' : `🎉 Get ${freeCodeApplied.amountNative} ${selectedToken.symbol} — FREE`}
+          </button>
+          {cryptoError && <p className="text-sm text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{cryptoError}</p>}
+        </div>
+      )}
+
+      {!methodsLoading && !freeCodeApplied && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <button
             onClick={() => setPhase(PHASE.PKR_METHOD)}

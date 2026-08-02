@@ -322,6 +322,28 @@ export default function GasPage() {
     finally { setCreatingCrypto(false) }
   }
 
+  // A free-code order has nothing to pay, so there is no payment method to pick —
+  // claim it directly on the "Choose How You Want to Pay" screen with one button.
+  // Routed through the crypto order path (no PKR method to ask for either); the
+  // network only matters for a real payment, so it's picked automatically —
+  // BEP20 when configured, else Aptos, which is always available.
+  async function handleClaimFreeCode() {
+    if (!selectedToken || !freeCodeApplied) return
+    setCreatingCrypto(true); setCryptoError('')
+    try {
+      const network: 'BEP20' | 'APTOS' = cryptoMethods?.bep20?.address ? 'BEP20' : 'APTOS'
+      const o = await gasApi.createCryptoOrder({
+        tokenConfigId: selectedToken.id, amount: parseFloat(amount),
+        toAddress: address, paymentNetwork: network,
+        idempotencyKey: `${idempKeyRef.current}_crypto`,
+        freeCode: freeCodeApplied.code,
+      })
+      setOrder(o); setPollErrCount(0)
+      setPhase(PHASE.PROCESSING)
+    } catch (e: unknown) { setCryptoError(e instanceof Error ? e.message : 'Failed to claim free gas') }
+    finally { setCreatingCrypto(false) }
+  }
+
   // Restore an in-progress crypto order so the user lands back on the EXACT payment
   // screen they left (QR + countdown / processing) instead of a read-only summary.
   // Two entry points:
@@ -513,7 +535,7 @@ export default function GasPage() {
     qrFailed, setQrFailed, paymentSent, setPaymentSent,
     verifyOpen, setVerifyOpen, verifyTxHash, setVerifyTxHash,
     verifying, verifyError, verifySuccess,
-    handleCreateCryptoOrder, handleVerifyPayment, pollOrder,
+    handleCreateCryptoOrder, handleVerifyPayment, pollOrder, handleClaimFreeCode,
     cancelling, cancelError, cancelPreview, cancelResult, loadCancelPreview, handleCancelOrder,
     requestingRefund, refundReqError, handleRequestRefund,
     order, setOrder, pollErrCount, setPollErrCount,

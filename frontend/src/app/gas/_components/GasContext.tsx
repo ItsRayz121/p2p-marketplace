@@ -115,6 +115,9 @@ export interface GasFlowCtx {
   handleVerifyPayment: () => Promise<void>
   pollOrder: () => Promise<void>
 
+  // Free-code claim (no payment method choice — nothing is being paid)
+  handleClaimFreeCode: () => Promise<void>
+
   // Cancellation
   cancelling: boolean
   cancelError: string
