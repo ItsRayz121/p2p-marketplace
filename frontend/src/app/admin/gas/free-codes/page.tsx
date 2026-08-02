@@ -44,6 +44,17 @@ export default function GasFreeCodesPage() {
   const [tokensLoading, setTokensLoading] = useState(false)
   const selectedTokenObj = tokens.find((t) => t.id === form.tokenConfigId) ?? null
 
+  // Per-user USDT value of the gift amount, reported live by GasAmountConverter.
+  const [usdPerUnit, setUsdPerUnit] = useState<number | null>(null)
+  // Once the admin edits the budget box directly, stop overwriting it.
+  const [budgetTouched, setBudgetTouched] = useState(false)
+
+  useEffect(() => {
+    if (budgetTouched || usdPerUnit == null || !(form.slotLimit > 0)) return
+    const auto = Number((usdPerUnit * form.slotLimit).toFixed(2))
+    setForm((f) => (f.budgetUsdt === auto ? f : { ...f, budgetUsdt: auto }))
+  }, [usdPerUnit, form.slotLimit, budgetTouched])
+
   const load = useCallback(async () => {
     setLoading(true); setError(null)
     try {
@@ -95,7 +106,7 @@ export default function GasFreeCodesPage() {
         ...(form.expiresAt ? { expiresAt: new Date(form.expiresAt).toISOString() } : {}),
       })
       toast.success(`Free code ${form.code.toUpperCase()} created`)
-      setForm(blankForm()); setShowCreate(false)
+      setForm(blankForm()); setShowCreate(false); setBudgetTouched(false); setUsdPerUnit(null)
       void load()
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : 'Failed to create code')
@@ -222,6 +233,7 @@ export default function GasFreeCodesPage() {
             symbol={selectedTokenObj?.symbol}
             placeholder="0.00001"
             hint="Every redeemer gets exactly this much — they don't choose an amount."
+            onUsdValueChange={setUsdPerUnit}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -229,7 +241,15 @@ export default function GasFreeCodesPage() {
               <input type="number" min={1} value={form.slotLimit} onChange={(e) => setForm({ ...form, slotLimit: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
             </label>
             <label className="text-xs font-semibold text-text-primary">USDT budget
-              <input type="number" min={0} value={form.budgetUsdt} onChange={(e) => setForm({ ...form, budgetUsdt: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
+              <input type="number" min={0} value={form.budgetUsdt} onChange={(e) => { setBudgetTouched(true); setForm({ ...form, budgetUsdt: Number(e.target.value) }) }} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
+              {budgetTouched && usdPerUnit != null && (
+                <button type="button" onClick={() => setBudgetTouched(false)} className="mt-1 text-[11px] text-primary hover:underline">
+                  Reset to auto ({fmt(Number((usdPerUnit * form.slotLimit).toFixed(2)))} for {form.slotLimit} slots)
+                </button>
+              )}
+              {!budgetTouched && usdPerUnit != null && (
+                <span className="mt-1 block text-[11px] text-text-muted">Auto = per-user USDT value × slots.</span>
+              )}
             </label>
             <label className="text-xs font-semibold text-text-primary">Per-user limit
               <input type="number" min={1} value={form.perUserLimit} onChange={(e) => setForm({ ...form, perUserLimit: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
@@ -241,7 +261,7 @@ export default function GasFreeCodesPage() {
 
           <div className="flex gap-2">
             <Button size="sm" variant="primary" onClick={create} disabled={saving}>{saving ? 'Creating…' : 'Create Code'}</Button>
-            <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setForm(blankForm()) }}>Cancel</Button>
+            <Button size="sm" variant="ghost" onClick={() => { setShowCreate(false); setForm(blankForm()); setBudgetTouched(false); setUsdPerUnit(null) }}>Cancel</Button>
           </div>
         </div>
       )}

@@ -16,6 +16,7 @@ export function GasAmountConverter({
   invalid,
   hint,
   placeholder = '0.01',
+  onUsdValueChange,
 }: {
   value: string
   onChange: (native: string) => void
@@ -25,6 +26,8 @@ export function GasAmountConverter({
   invalid?: boolean
   hint?: React.ReactNode
   placeholder?: string
+  /** Fires with the live per-unit USD value (null while no price/amount) so a parent can derive other fields from it. */
+  onUsdValueChange?: (usd: number | null) => void
 }) {
   const [usdPrice, setUsdPrice] = useState<number | null>(null)
   const [usdText, setUsdText] = useState('')
@@ -52,6 +55,11 @@ export function GasAmountConverter({
       setUsdText('')
     }
   }, [value, usdPrice, usdFocused, nativeNum])
+
+  useEffect(() => {
+    onUsdValueChange?.(usdPrice && nativeNum > 0 ? nativeNum * usdPrice : null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [usdPrice, nativeNum])
 
   function onUsdChange(v: string) {
     setUsdText(v)
