@@ -46,7 +46,7 @@ const STRUCTURED_KEYS = new Set([
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
   'maker_bond_enabled', 'maker_bond_ratio_pct', 'maker_bond_min_usdt',
-  'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled', 'promo_giveaway_enabled',
+  'gas_promo_enabled', 'gas_referral_enabled', 'gas_giveaway_enabled', 'gas_free_grant_enabled', 'gas_free_code_enabled', 'promo_giveaway_enabled',
   'usdt_price_margin_pct', 'ctm_price_margin_pct',
   'usdt_bid_margin_pct', 'ctm_bid_margin_pct',
   'max_concurrent_trades', 'max_concurrent_trades_with_dispute', 'trade_limit_bypass_user_ids',
@@ -253,6 +253,7 @@ export default function ConfigPage() {
   const [affiliateFlag, setAffiliateFlag] = useState(false)
   const [giveawayFlag, setGiveawayFlag] = useState(false)
   const [freeGrantFlag, setFreeGrantFlag] = useState(false)
+  const [freeCodeFlag, setFreeCodeFlag] = useState(false)
   const [promoGiveawayFlag, setPromoGiveawayFlag] = useState(false)
   const [mktSaving, setMktSaving] = useState(false)
 
@@ -382,6 +383,7 @@ export default function ConfigPage() {
       setGiveawayFlag(m['gas_giveaway_enabled'] === 'true')
       setPromoGiveawayFlag(m['promo_giveaway_enabled'] === 'true')
       setFreeGrantFlag(m['gas_free_grant_enabled'] === 'true')
+      setFreeCodeFlag(m['gas_free_code_enabled'] === 'true')
       setCtmUsdtFlag(m['ctm_usdt_payment_enabled'] === 'true')
       setMessagingFlag(m['messaging_inbox_enabled'] === 'true')
       setAdminEmailFlag(m['admin_email_notifs_enabled'] === 'true')
@@ -547,6 +549,7 @@ export default function ConfigPage() {
         { key: 'gas_affiliate_enabled', value: affiliateFlag ? 'true' : 'false' },
         { key: 'gas_giveaway_enabled', value: giveawayFlag ? 'true' : 'false' },
         { key: 'gas_free_grant_enabled', value: freeGrantFlag ? 'true' : 'false' },
+        { key: 'gas_free_code_enabled', value: freeCodeFlag ? 'true' : 'false' },
         { key: 'promo_giveaway_enabled', value: promoGiveawayFlag ? 'true' : 'false' },
       ])
       showToast('Marketing & Growth settings saved. Takes effect within ~15s.')
@@ -744,8 +747,8 @@ export default function ConfigPage() {
         open={mktOpen}
         onToggle={() => setMktOpen((v) => !v)}
         badge={
-          (promoFlag || referralFlag || giveawayFlag || freeGrantFlag || promoGiveawayFlag)
-            ? <Badge variant="success" size="sm">{[promoFlag, referralFlag, giveawayFlag, freeGrantFlag, promoGiveawayFlag].filter(Boolean).length} ON</Badge>
+          (promoFlag || referralFlag || giveawayFlag || freeGrantFlag || freeCodeFlag || promoGiveawayFlag)
+            ? <Badge variant="success" size="sm">{[promoFlag, referralFlag, giveawayFlag, freeGrantFlag, freeCodeFlag, promoGiveawayFlag].filter(Boolean).length} ON</Badge>
             : <Badge variant="outline" size="sm">All OFF</Badge>
         }
       >
@@ -785,6 +788,14 @@ export default function ConfigPage() {
             <div>
               <p className="text-sm font-medium text-text-primary">Giveaways <span className="font-mono text-xs text-text-muted">gas_giveaway_enabled</span></p>
               <p className="text-xs text-text-muted mt-0.5">Lets users enter KOL giveaway campaigns and lets admins draw winners (Marketing → Giveaways). Campaigns can be created while OFF, but entry &amp; draw are blocked until ON.</p>
+            </div>
+          </label>
+
+          <label className="flex items-start gap-3 rounded-xl border border-amber-500/40 bg-amber-500/5 p-3 cursor-pointer hover:bg-amber-500/10 transition-colors">
+            <input type="checkbox" checked={freeCodeFlag} onChange={(e) => setFreeCodeFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">KOL free-gas codes <span className="font-mono text-xs text-text-muted">gas_free_code_enabled</span></p>
+              <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">⚠️ Self-serve codes (Marketing → Free-Gas Codes) that waive the ENTIRE order cost — real on-chain funds at the platform&apos;s expense — for one restricted token/chain, capped by a slot count and a USDT budget you set per code. Applies instantly at checkout, no admin draw needed.</p>
             </div>
           </label>
 

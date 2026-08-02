@@ -95,6 +95,12 @@ export default function GasPage() {
   const [promoApplied, setPromoApplied]   = useState<{ code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string } | null>(null)
   const [promoError, setPromoError]       = useState('')
   const [promoChecking, setPromoChecking] = useState(false)
+  // ── KOL free-gas code (100% free — box only renders when the feature flag is live) ──
+  const [freeCodeEnabled, setFreeCodeEnabled] = useState(false)
+  const [freeCode, setFreeCode]               = useState('')
+  const [freeCodeApplied, setFreeCodeApplied] = useState<{ code: string; kolLabel: string; slotsLeft: number; budgetLeftUsdt: number; message: string } | null>(null)
+  const [freeCodeError, setFreeCodeError]     = useState('')
+  const [freeCodeChecking, setFreeCodeChecking] = useState(false)
   // Affiliate buyer auto-discount preview (margin-only, fetched for the logged-in buyer).
   const [affiliateQuote, setAffiliateQuote] = useState<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(null)
 
@@ -144,7 +150,7 @@ export default function GasPage() {
 
   useEffect(() => {
     gasApi.getChains()
-      .then(({ chains: c, promoEnabled: pe, referralEnabled: re }) => { setChains(c); setPromoEnabled(!!pe); setReferralEnabled(!!re) })
+      .then(({ chains: c, promoEnabled: pe, referralEnabled: re, freeCodeEnabled: fe }) => { setChains(c); setPromoEnabled(!!pe); setReferralEnabled(!!re); setFreeCodeEnabled(!!fe) })
       .catch((e: Error) => setChainsError(e.message || 'Failed to load chains'))
       .finally(() => setChainsLoading(false))
   }, [])
@@ -152,6 +158,7 @@ export default function GasPage() {
   // Any change to the order parameters invalidates a previously-applied promo, so it
   // is re-validated server-side (the source of truth) before it can affect the price.
   useEffect(() => { setPromoApplied(null); setPromoError('') }, [amount, selectedToken?.id])
+  useEffect(() => { setFreeCodeApplied(null); setFreeCodeError('') }, [amount, selectedToken?.id])
 
   // Fetch the logged-in buyer's affiliate auto-discount for the selected token so the
   // checkout breakdown can surface it. No-op for guests / unbound users (returns null).
@@ -237,6 +244,21 @@ export default function GasPage() {
 
   function clearPromo() { setPromoApplied(null); setPromoCode(''); setPromoError('') }
 
+  async function applyFreeCode() {
+    if (!selectedToken || !freeCode.trim() || !(parseFloat(amount) > 0)) return
+    setFreeCodeChecking(true); setFreeCodeError(''); setFreeCodeApplied(null)
+    try {
+      const res = await gasApi.previewFreeCode({
+        freeCode: freeCode.trim(), tokenConfigId: selectedToken.id, amount: parseFloat(amount),
+      })
+      setFreeCodeApplied(res)
+    } catch (e: unknown) {
+      setFreeCodeError(e instanceof Error ? e.message : 'Invalid code')
+    } finally { setFreeCodeChecking(false) }
+  }
+
+  function clearFreeCode() { setFreeCodeApplied(null); setFreeCode(''); setFreeCodeError('') }
+
   async function handleCreatePkrOrder() {
     if (!selectedToken || !selectedChain || !selectedPkrMethod) return
     setCreatingPkr(true); setPkrError('')
@@ -245,9 +267,12 @@ export default function GasPage() {
         tokenConfigId: selectedToken.id, amount: parseFloat(amount),
         toAddress: address, pkrPaymentMethod: selectedPkrMethod,
         idempotencyKey: `${idempKeyRef.current}_pkr`,
-        ...(promoApplied ? { promoCode: promoApplied.code } : {}),
+        ...(freeCodeApplied ? { freeCode: freeCodeApplied.code } : promoApplied ? { promoCode: promoApplied.code } : {}),
       })
-      setOrder(o); setPollErrCount(0); setPhase(PHASE.PKR_PROOF)
+      setOrder(o); setPollErrCount(0)
+      // A free-code order is created already delivering (no payment step) — skip
+      // straight to the processing/tracking screen instead of the PKR proof screen.
+      setPhase(o.isFreeGrant ? PHASE.PROCESSING : PHASE.PKR_PROOF)
     } catch (e: unknown) { setPkrError(e instanceof Error ? e.message : 'Failed to create order') }
     finally { setCreatingPkr(false) }
   }
@@ -279,10 +304,17 @@ export default function GasPage() {
         tokenConfigId: selectedToken.id, amount: parseFloat(amount),
         toAddress: address, paymentNetwork: selectedCryptoNetwork,
         idempotencyKey: `${idempKeyRef.current}_crypto`,
-        ...(promoApplied ? { promoCode: promoApplied.code } : {}),
+        ...(freeCodeApplied ? { freeCode: freeCodeApplied.code } : promoApplied ? { promoCode: promoApplied.code } : {}),
       })
-      setOrder(o); setPollErrCount(0); setQrFailed(false); setPaymentSent(false); setPhase(PHASE.CRYPTO_QR)
-      try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* storage unavailable */ }
+      setOrder(o); setPollErrCount(0); setQrFailed(false); setPaymentSent(false)
+      if (o.isFreeGrant) {
+        // A free-code order is created already delivering (no payment/QR step) —
+        // skip straight to the processing/tracking screen.
+        setPhase(PHASE.PROCESSING)
+      } else {
+        setPhase(PHASE.CRYPTO_QR)
+        try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* storage unavailable */ }
+      }
     } catch (e: unknown) { setCryptoError(e instanceof Error ? e.message : 'Failed to create order') }
     finally { setCreatingCrypto(false) }
   }
@@ -487,6 +519,7 @@ export default function GasPage() {
     affiliateDiscountUsd, affiliateQuote,
     isPkrOrder, explorerBase, chainGroups, getPkrDetails,
     promoEnabled, promoCode, setPromoCode, promoApplied, promoError, promoChecking, applyPromo, clearPromo,
+    freeCodeEnabled, freeCode, setFreeCode, freeCodeApplied, freeCodeError, freeCodeChecking, applyFreeCode, clearFreeCode,
   }
 
   // ── Render ─────────────────────────────────────────────────────────────────

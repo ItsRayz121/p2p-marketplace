@@ -4,6 +4,7 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useGasCtx, PHASE } from './GasContext'
 import { ChainLogo, CardHeader } from './GasPrimitives'
 import { GasPromoField, GasAffiliateApplied } from './GasPromo'
+import { GasFreeCodeField } from './GasFreeCode'
 
 export function GasPaymentChoice() {
   const {
@@ -36,8 +37,10 @@ export function GasPaymentChoice() {
         <span className="bg-green-500/15 text-green-700 dark:text-green-300 rounded-full px-2.5 py-1 font-bold whitespace-nowrap flex-shrink-0">≈ PKR {effectivePkr.toFixed(0)}</span>
       </div>
 
-      {/* Affiliate auto-discount (if the buyer came via an affiliate link) + promo code. */}
+      {/* Affiliate auto-discount (if the buyer came via an affiliate link) + promo code
+          + KOL free-gas code (mutually exclusive with the promo code). */}
       <GasAffiliateApplied />
+      <GasFreeCodeField />
       <GasPromoField />
 
       {methodsLoading && <LoadingState message="Loading payment options..." />}

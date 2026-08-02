@@ -15,10 +15,13 @@ export function GasPromoField() {
   const {
     promoEnabled, promoCode, setPromoCode, promoApplied,
     promoError, promoChecking, applyPromo, clearPromo,
+    freeCodeApplied,
   } = useGasCtx()
   const [open, setOpen] = useState(false)
 
-  if (!promoEnabled) return null
+  // A free code (100% off) makes a margin-only promo discount moot — hide this
+  // field while one is applied so the two can't be mixed in the same order.
+  if (!promoEnabled || freeCodeApplied) return null
 
   return (
     <div className="rounded-xl border border-border bg-surface-alt/50 p-3.5">

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader, PaymentNetworkLogo } from './GasPrimitives'
 import { GasPromoField, GasAffiliateApplied } from './GasPromo'
+import { GasFreeCodeField } from './GasFreeCode'
 
 export function GasCryptoNetworkStep() {
   const {
@@ -29,8 +30,10 @@ export function GasCryptoNetworkStep() {
         )}
       </div>
 
-      {/* Affiliate auto-discount + promo code — both discount the order created below. */}
+      {/* Affiliate auto-discount + promo code + KOL free-gas code — all apply to the
+          order created below (free code is mutually exclusive with the promo code). */}
       <GasAffiliateApplied />
+      <GasFreeCodeField />
       <GasPromoField />
 
       <div className="space-y-3">

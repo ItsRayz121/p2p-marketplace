@@ -55,6 +55,16 @@ export const FLAGS = {
    */
   GAS_GIVEAWAY: 'gas_giveaway_enabled',
   /**
+   * KOL "100% free gas" codes (self-serve, instant). When ON, a code created by an
+   * admin can be applied directly at checkout: unlike a promo code (margin-only),
+   * it waives the ENTIRE order cost (base + margin) for one restricted token/chain,
+   * capped by a first-come slot count and a lifetime USDT budget — whichever is hit
+   * first auto-ends the giveaway. No admin draw/send step; the order is created
+   * already delivering, same as an admin free-grant. OFF (default) = the free-code
+   * field on order creation and the admin CRUD/preview endpoints are rejected.
+   */
+  GAS_FREE_CODE: 'gas_free_code_enabled',
+  /**
    * Self-service affiliate program (Phase 5, extends gas referrals). When ON, a user
    * can apply to become an affiliate (submitting social profiles); a super-admin
    * approves and sets margin caps. Approved affiliates' referral links BOTH auto-

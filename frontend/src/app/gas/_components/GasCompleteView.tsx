@@ -3,6 +3,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { useGasCtx } from './GasContext'
 import { explorerUrl } from './GasPrimitives'
+import { GasFreeCodeApplied } from './GasFreeCode'
 
 export function GasCompleteView() {
   const { order, selectedToken, selectedChain, explorerBase, isPkrOrder, user, resetFlow } = useGasCtx()
@@ -18,6 +19,8 @@ export function GasCompleteView() {
         <p className="text-xl font-bold text-text-primary">Order Completed!</p>
         <p className="text-sm text-text-muted mt-1">Your gas fee order has been processed successfully.</p>
       </div>
+
+      <GasFreeCodeApplied />
 
       <div className="bg-surface-alt rounded-xl p-4 text-left space-y-2.5 text-xs">
         <div className="flex justify-between"><span className="text-text-muted">Amount Received</span><span className="font-bold text-text-primary">{order.gasAmountNative} {order.nativeSymbol ?? selectedToken?.symbol}</span></div>

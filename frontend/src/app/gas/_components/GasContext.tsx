@@ -165,6 +165,16 @@ export interface GasFlowCtx {
   applyPromo: () => Promise<void>
   clearPromo: () => void
 
+  // KOL free-gas code (100% free — base + margin, self-serve, slot + budget capped)
+  freeCodeEnabled: boolean
+  freeCode: string
+  setFreeCode: (v: string) => void
+  freeCodeApplied: { code: string; kolLabel: string; slotsLeft: number; budgetLeftUsdt: number; message: string } | null
+  freeCodeError: string
+  freeCodeChecking: boolean
+  applyFreeCode: () => Promise<void>
+  clearFreeCode: () => void
+
   // Helpers
   getPkrDetails: () => { label: string; value: string | null | undefined }[] | null
 }

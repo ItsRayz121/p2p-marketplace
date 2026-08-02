@@ -5249,6 +5249,141 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: updated })
   })
 
+  // ── Gas KOL free codes (100%-free, self-serve, slot + budget capped) ────────
+  // Unlike a promo code, waives the ENTIRE order cost (base + margin) — real
+  // funds at the platform's expense — for ONE restricted token/chain. Only takes
+  // effect when flag gas_free_code_enabled is ON (enforced in gas.freeCode.ts).
+
+  const freeCodeCreateSchema = z.object({
+    code:             z.string().trim().min(2).max(40),
+    kolLabel:         z.string().trim().min(1).max(120),
+    gasTokenConfigId: z.string().min(1),
+    slotLimit:        z.number().int().positive().max(100000),
+    budgetUsdt:       z.number().positive(),
+    perUserLimit:     z.number().int().min(1).max(1000).default(1),
+    minOrderUsd:      z.number().min(0).default(0),
+    maxOrderUsd:      z.number().positive().optional(),
+    expiresAt:        z.string().datetime().optional(),
+  })
+  const freeCodeUpdateSchema = z.object({
+    kolLabel:     z.string().trim().min(1).max(120).optional(),
+    slotLimit:    z.number().int().positive().max(100000).optional(),
+    budgetUsdt:   z.number().positive().optional(),
+    perUserLimit: z.number().int().min(1).max(1000).optional(),
+    minOrderUsd:  z.number().min(0).optional(),
+    maxOrderUsd:  z.number().positive().nullable().optional(),
+    expiresAt:    z.string().datetime().nullable().optional(),
+    isActive:     z.boolean().optional(),
+  })
+
+  // GET /admin/gas/free-codes — list with live slot/budget usage
+  app.get('/admin/gas/free-codes', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const codes = await db.gasFreeCode.findMany({
+      orderBy: { createdAt: 'desc' },
+      include: { _count: { select: { redemptions: true } } },
+    })
+    const tokenCfgs = await db.gasTokenConfig.findMany({
+      where: { id: { in: codes.map((c) => c.gasTokenConfigId) } },
+      include: { chain: true },
+    })
+    const tokenMap = new Map(tokenCfgs.map((t) => [t.id, t]))
+    const data = codes.map((c) => {
+      const t = tokenMap.get(c.gasTokenConfigId)
+      return {
+        id: c.id,
+        code: c.code,
+        kolLabel: c.kolLabel,
+        gasTokenConfigId: c.gasTokenConfigId,
+        tokenSymbol: t?.symbol ?? null,
+        chainName: t?.chain.name ?? null,
+        slotLimit: c.slotLimit,
+        redeemedCount: c.redeemedCount,
+        slotsRemaining: Math.max(0, c.slotLimit - c.redeemedCount),
+        budgetUsdt: c.budgetUsdt,
+        spentUsdt: c.spentUsdt,
+        budgetRemainingUsdt: Math.max(0, c.budgetUsdt - c.spentUsdt),
+        perUserLimit: c.perUserLimit,
+        minOrderUsd: c.minOrderUsd,
+        maxOrderUsd: c.maxOrderUsd,
+        expiresAt: c.expiresAt,
+        isActive: c.isActive,
+        redemptionRows: c._count.redemptions,
+        createdAt: c.createdAt,
+      }
+    })
+    return reply.send({ success: true, data })
+  })
+
+  // GET /admin/gas/free-codes/:id/redemptions — per-code redemption history
+  app.get('/admin/gas/free-codes/:id/redemptions', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const rows = await db.gasFreeCodeRedemption.findMany({
+      where: { freeCodeId: id },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      include: { order: { select: { orderRef: true, gasAmountNative: true, status: true, toAddress: true } } },
+    })
+    return reply.send({ success: true, data: rows })
+  })
+
+  // POST /admin/gas/free-codes — create a code (super-admin: it gives away real funds)
+  app.post('/admin/gas/free-codes', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const parsed = freeCodeCreateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const p = parsed.data
+    const code = p.code.toUpperCase()
+
+    const existing = await db.gasFreeCode.findUnique({ where: { code } })
+    if (existing) throw new AppError('CONFLICT', `Free code '${code}' already exists`, 409)
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.gasTokenConfigId } })
+    if (!tokenCfg) throw Errors.NOT_FOUND('Gas token')
+
+    const created = await db.gasFreeCode.create({
+      data: {
+        code,
+        kolLabel: p.kolLabel,
+        gasTokenConfigId: p.gasTokenConfigId,
+        slotLimit: p.slotLimit,
+        budgetUsdt: p.budgetUsdt,
+        perUserLimit: p.perUserLimit,
+        minOrderUsd: p.minOrderUsd,
+        ...(p.maxOrderUsd !== undefined ? { maxOrderUsd: p.maxOrderUsd } : {}),
+        ...(p.expiresAt ? { expiresAt: new Date(p.expiresAt) } : {}),
+        createdById: req.user!.id,
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_FREE_CODE_CREATE', 'GasFreeCode', created.id, { code, slotLimit: p.slotLimit, budgetUsdt: p.budgetUsdt, gasTokenConfigId: p.gasTokenConfigId }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.code(201).send({ success: true, data: created })
+  })
+
+  // PATCH /admin/gas/free-codes/:id — edit terms / kill switch (super-admin).
+  // The code string and token/chain restriction are immutable once created.
+  app.patch('/admin/gas/free-codes/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = freeCodeUpdateSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const p = parsed.data
+
+    const existing = await db.gasFreeCode.findUnique({ where: { id } })
+    if (!existing) throw Errors.NOT_FOUND('Free code')
+
+    const updated = await db.gasFreeCode.update({
+      where: { id },
+      data: {
+        ...(p.kolLabel !== undefined ? { kolLabel: p.kolLabel } : {}),
+        ...(p.slotLimit !== undefined ? { slotLimit: p.slotLimit } : {}),
+        ...(p.budgetUsdt !== undefined ? { budgetUsdt: p.budgetUsdt } : {}),
+        ...(p.perUserLimit !== undefined ? { perUserLimit: p.perUserLimit } : {}),
+        ...(p.minOrderUsd !== undefined ? { minOrderUsd: p.minOrderUsd } : {}),
+        ...(p.maxOrderUsd !== undefined ? { maxOrderUsd: p.maxOrderUsd } : {}),
+        ...(p.expiresAt !== undefined ? { expiresAt: p.expiresAt ? new Date(p.expiresAt) : null } : {}),
+        ...(p.isActive !== undefined ? { isActive: p.isActive } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_FREE_CODE_UPDATE', 'GasFreeCode', id, { changes: p }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: updated })
+  })
+
   // ── Gas referrals (KOL income overview + controls) ─────────────────────────
 
   // GET /admin/gas/referrals — referrers ranked by total accrued, with status totals

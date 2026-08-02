@@ -1689,6 +1689,9 @@ export interface GasOrder {
   platformMarginUsdt?: string | null
   affiliateDiscountUsdt?: string | null
   affiliateReferrer?: string | null
+  discountUsdt?: string
+  freeCode?: string | null
+  isFreeGrant?: boolean
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
@@ -1762,22 +1765,25 @@ export interface GasNetworkFee {
 
 export const gasApi = {
   getChains: () =>
-    apiRequest<{ chains: GasChain[]; promoEnabled?: boolean; referralEnabled?: boolean }>('/gas-fee/chains'),
+    apiRequest<{ chains: GasChain[]; promoEnabled?: boolean; referralEnabled?: boolean; freeCodeEnabled?: boolean }>('/gas-fee/chains'),
 
   getChainTokens: (chainSlug: string) =>
     apiRequest<GasTokensResponse>(`/gas-fee/chains/${chainSlug}/tokens`),
 
-  createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string; promoCode?: string }) =>
+  createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string; promoCode?: string; freeCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
 
-  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'nayapay' | 'sadapay'; idempotencyKey?: string; promoCode?: string }) =>
+  createPkrOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; pkrPaymentMethod: 'bank_transfer' | 'easypaisa' | 'jazzcash' | 'nayapay' | 'sadapay'; idempotencyKey?: string; promoCode?: string; freeCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/pkr', { method: 'POST', body: JSON.stringify(data) }),
 
-  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string; promoCode?: string }) =>
+  createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string; promoCode?: string; freeCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/crypto', { method: 'POST', body: JSON.stringify(data) }),
 
   previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
+
+  previewFreeCode: (data: { freeCode: string; tokenConfigId: string; amount: number }) =>
+    apiRequest<{ valid: boolean; code: string; kolLabel: string; gasTokenConfigId: string; amountUsdt: number; slotsLeft: number; budgetLeftUsdt: number; message: string }>('/gas-fee/free-code/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   getReferralSummary: () =>
     apiRequest<{ enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
@@ -2687,6 +2693,25 @@ export const adminApi = {
   }) => apiRequest<unknown>('/admin/gas/promo-codes', { method: 'POST', body: JSON.stringify(data) }),
   updateGasPromoCode: (id: string, data: Record<string, unknown>) =>
     apiRequest<unknown>(`/admin/gas/promo-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // ── Gas KOL free codes (100%-free, self-serve, slot + budget capped) ────────
+  getGasFreeCodes: () =>
+    apiRequest<Array<{
+      id: string; code: string; kolLabel: string; gasTokenConfigId: string
+      tokenSymbol: string | null; chainName: string | null
+      slotLimit: number; redeemedCount: number; slotsRemaining: number
+      budgetUsdt: number; spentUsdt: number; budgetRemainingUsdt: number
+      perUserLimit: number; minOrderUsd: number; maxOrderUsd: number | null
+      expiresAt: string | null; isActive: boolean; redemptionRows: number; createdAt: string
+    }>>('/admin/gas/free-codes'),
+  getGasFreeCodeRedemptions: (id: string) =>
+    apiRequest<Array<{ id: string; identity: string; amountUsdt: string; createdAt: string; order: { orderRef: string; gasAmountNative: string; status: string; toAddress: string } | null }>>(`/admin/gas/free-codes/${id}/redemptions`),
+  createGasFreeCode: (data: {
+    code: string; kolLabel: string; gasTokenConfigId: string
+    slotLimit: number; budgetUsdt: number; perUserLimit: number; minOrderUsd: number; maxOrderUsd?: number; expiresAt?: string
+  }) => apiRequest<unknown>('/admin/gas/free-codes', { method: 'POST', body: JSON.stringify(data) }),
+  updateGasFreeCode: (id: string, data: Record<string, unknown>) =>
+    apiRequest<unknown>(`/admin/gas/free-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // Admin-issued free-gas delivery (platform funds base + margin; flag-gated)
   freeGasDeliver: (data: { tokenConfigId: string; amount: number; toAddress: string; userId?: string; note?: string }) =>

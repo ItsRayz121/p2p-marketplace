@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
 import { useGasCtx, PHASE } from './GasContext'
 import { ProcessingTimeline, RefundTimeline } from './GasPrimitives'
+import { GasFreeCodeApplied } from './GasFreeCode'
 
 // Live mm:ss countdown to the moment the refund button unlocks. Returns the
 // remaining whole seconds (0 once eligible), re-rendering every second.
@@ -80,6 +81,7 @@ export function GasProcessingView() {
         <p className="text-sm font-bold text-text-primary">{title}</p>
         <p className="text-xs text-text-muted mt-0.5">Order #{order.orderRef}</p>
       </div>
+      <GasFreeCodeApplied />
       {isAwaiting ? (
         <AwaitingRefundView />
       ) : isRefund ? (

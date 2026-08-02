@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE, PKR_METHOD_META, type PkrMethodKey } from './GasContext'
 import { CardHeader, PkrMethodIcon, pkrIsConfigured } from './GasPrimitives'
 import { GasPromoField } from './GasPromo'
+import { GasFreeCodeField } from './GasFreeCode'
 
 export function GasPkrMethodStep() {
   const {
@@ -53,7 +54,8 @@ export function GasPkrMethodStep() {
         })}
       </div>
 
-      {/* Promo code — flag-gated; applying here discounts the order created below. */}
+      {/* KOL free-gas code + promo code — flag-gated; applying here changes the order created below. */}
+      <GasFreeCodeField />
       <GasPromoField />
 
       {selectedPkrMethod && (
