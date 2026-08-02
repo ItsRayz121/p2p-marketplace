@@ -40,6 +40,7 @@ import {
   releaseFreeCodeReservation,
   previewFreeCode,
   freeCodeIdentity,
+  isFreeCodeEligibleForUser,
   type FreeCodeResolution,
 } from '../lib/gas/gas.freeCode'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
@@ -79,14 +80,16 @@ async function reserveOrderPromo(
 async function reserveOrderFreeCode(
   freeCode: string | undefined,
   gasTokenConfigId: string,
-  orderUsd: number,
+  nativeUsdRate: number,
+  platformFeeUsdt: number,
+  userId: string | null,
   identity: string,
 ): Promise<FreeCodeResolution | null> {
   if (!freeCode) return null
   if (!(await isFlagEnabled(FLAGS.GAS_FREE_CODE))) {
     throw new AppError('FREE_CODE_DISABLED', 'Free-gas codes are not available right now.', 400)
   }
-  return reserveFreeCode({ code: freeCode, gasTokenConfigId, orderUsd, identity })
+  return reserveFreeCode({ code: freeCode, gasTokenConfigId, nativeUsdRate, platformFeeUsdt, userId, identity })
 }
 
 // Affiliate buyer auto-discount for an order. Fills the margin REMAINING after any promo
@@ -267,7 +270,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
   // ── GET /api/gas-fee/chains — DB-driven list ───────────────────────────────
 
-  app.get('/gas-fee/chains', async (_req, reply) => {
+  app.get('/gas-fee/chains', { preHandler: [optionalAuth] }, async (req, reply) => {
     const dbChains = await db.gasChainConfig.findMany({
       where: { isVisibleToUsers: true, isArchived: false },
       orderBy: { displayOrder: 'asc' },
@@ -330,10 +333,13 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     // Surface the promo/referral master switches so the UI only renders those
     // entry points when live (default OFF = hidden, production unchanged).
+    // freeCodeEnabled here means "should THIS caller see the code box" — flag ON,
+    // logged in, AND this would be their first-ever gas order — so the box
+    // genuinely never appears again once a user has placed one order.
     const [promoEnabled, referralEnabled, freeCodeEnabled] = await Promise.all([
       isFlagEnabled(FLAGS.GAS_PROMO),
       isFlagEnabled(FLAGS.GAS_REFERRAL),
-      isFlagEnabled(FLAGS.GAS_FREE_CODE),
+      isFreeCodeEligibleForUser(req.user?.id ?? null),
     ])
 
     return reply.send({ success: true, data: { chains: visibleChains, promoEnabled, referralEnabled, freeCodeEnabled } })
@@ -701,8 +707,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // step entirely and routes straight to the delivery worker, same trick as an
     // admin free-grant order (issueFreeGasOrder).
     const freeIdent = freeCodeIdentity(userId, clientIp)
-    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, paymentAmount, freeIdent)
+    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, nativeUsdRate, platformFeeUsdt, userId, freeIdent)
     if (freeRes) {
+      // The code's own fixed amount is what gets delivered — NOT whatever the
+      // user typed in the amount step (that field doesn't apply to a free code).
+      const freeGasAmountUSD = freeRes.amountNative * nativeUsdRate
       const freeOrder = await (async () => {
         try {
           return await db.gasFeeOrder.create({
@@ -714,8 +723,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
               chain:           dbChainEnum,
               tier:            null,
               gasTokenConfigId: tokenCfg.id,
-              gasAmountNative: amount,
-              gasAmountUSD,
+              gasAmountNative: freeRes.amountNative,
+              gasAmountUSD:    freeGasAmountUSD,
               priceAtOrder:   nativeUsdRate,
               paymentCoin:    'USDT',
               paymentNetwork:  legacyChainConfig.networkLabel,
@@ -755,7 +764,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           chain:           freeOrder.chain,
           status:          freeOrder.status,
           expiresAt:       freeOrder.expiresAt.toISOString(),
-          gasValueUsd:     gasAmountUSD.toFixed(4),
+          gasValueUsd:     freeGasAmountUSD.toFixed(4),
           platformFeeUsdt: platformFeeUsdt.toFixed(4),
           discountUsdt:    freeRes.amountUsdt.toFixed(4),
           freeCode:        freeRes.code,
@@ -1266,8 +1275,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // exclusive with promo/affiliate/airdrop discounts (nothing left to discount).
     // No PKR payment is needed at all; the order routes straight to delivery.
     const freeIdent = freeCodeIdentity(userId, req.ip ?? 'unknown')
-    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, paymentAmountUsd, freeIdent)
+    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, nativeUsdRate, platformFeeUsdt, userId, freeIdent)
     if (freeRes) {
+      // The code's own fixed amount is what gets delivered — NOT whatever the
+      // user typed in the amount step (that field doesn't apply to a free code).
+      const freeGasAmountUSD = freeRes.amountNative * nativeUsdRate
       const freeOrder = await (async () => {
         try {
           return await db.gasFeeOrder.create({
@@ -1278,8 +1290,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
               ipAddress:        req.ip ?? 'unknown',
               chain:            dbChainEnum,
               gasTokenConfigId: tokenCfg.id,
-              gasAmountNative:  amount,
-              gasAmountUSD,
+              gasAmountNative:  freeRes.amountNative,
+              gasAmountUSD:     freeGasAmountUSD,
               priceAtOrder:     nativeUsdRate,
               paymentCoin:      'PKR',
               paymentNetwork:   pkrPaymentMethod.toUpperCase(),
@@ -1322,7 +1334,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           chain:           freeOrder.chain,
           status:          freeOrder.status,
           expiresAt:       freeOrder.expiresAt.toISOString(),
-          gasValueUsd:     gasAmountUSD.toFixed(4),
+          gasValueUsd:     freeGasAmountUSD.toFixed(4),
           platformFeeUsdt: platformFeeUsdt.toFixed(4),
           discountUsdt:    freeRes.amountUsdt.toFixed(4),
           freeCode:        freeRes.code,
@@ -1561,8 +1573,11 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     // exclusive with promo/affiliate/airdrop discounts (nothing left to discount).
     // No unique-amount assignment needed either — paymentAmount is always 0.
     const freeIdent = freeCodeIdentity(userId, clientIp)
-    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, baseCharge, freeIdent)
+    const freeRes = await reserveOrderFreeCode(freeCode, tokenCfg.id, nativeUsdRate, platformFeeUsdt, userId, freeIdent)
     if (freeRes) {
+      // The code's own fixed amount is what gets delivered — NOT whatever the
+      // user typed in the amount step (that field doesn't apply to a free code).
+      const freeGasAmountUSD = freeRes.amountNative * nativeUsdRate
       const freeOrder = await (async () => {
         try {
           return await db.gasFeeOrder.create({
@@ -1573,8 +1588,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
               ipAddress:        clientIp,
               chain:            dbChainEnum,
               gasTokenConfigId: tokenCfg.id,
-              gasAmountNative:  amount,
-              gasAmountUSD,
+              gasAmountNative:  freeRes.amountNative,
+              gasAmountUSD:     freeGasAmountUSD,
               priceAtOrder:     nativeUsdRate,
               paymentCoin:      'USDT',
               paymentNetwork,
@@ -1600,7 +1615,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       if (idempKey) await redis.setex(`idem:gasfee:crypto:${idempKey}`, 86400, freeOrder.id)
       await queues.gasFee.add('deliver', { orderId: freeOrder.id }, { priority: 1 })
       flagIfRisky(freeOrder, clientIp).catch(() => {})
-      logger.info({ orderId: freeOrder.id, paymentNetwork, gasAmountNative: amount }, 'Free-code crypto gas order created')
+      logger.info({ orderId: freeOrder.id, paymentNetwork, gasAmountNative: freeRes.amountNative }, 'Free-code crypto gas order created')
 
       return reply.code(201).send({
         success: true,
@@ -1615,7 +1630,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           chain:           freeOrder.chain,
           status:          freeOrder.status,
           expiresAt:       freeOrder.expiresAt.toISOString(),
-          gasValueUsd:     gasAmountUSD.toFixed(4),
+          gasValueUsd:     freeGasAmountUSD.toFixed(4),
           platformFeeUsdt: platformFeeUsdt.toFixed(4),
           discountUsdt:    freeRes.amountUsdt.toFixed(4),
           freeCode:        freeRes.code,
@@ -1741,30 +1756,32 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   })
 
   // ── POST /gas-fee/free-code/preview — validate a KOL free code (no reserve) ──
-  // Cosmetic preview for the payment page: reports whether the code matches the
-  // selected token/chain and has slots/budget left. The real waiver is re-validated
-  // and reserved server-side at order creation, so a tampered preview grants nothing.
+  // Cosmetic preview for the payment page: reports the fixed gas amount this code
+  // gives, whether it matches the selected token/chain, and slots/budget left. The
+  // real waiver is re-validated and reserved server-side at order creation, so a
+  // tampered preview grants nothing.
   const freeCodePreviewSchema = z.object({
     freeCode:      z.string().trim().min(1).max(40),
     tokenConfigId: z.string().min(1),
-    amount:        z.number().positive(),
   })
   app.post('/gas-fee/free-code/preview', { preHandler: [optionalAuth] }, async (req, reply) => {
     const parsed = freeCodePreviewSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    const { freeCode, tokenConfigId, amount } = parsed.data
+    const { freeCode, tokenConfigId } = parsed.data
 
     const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
     if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
     const resolved = resolveTokenConfig(tokenCfg, tokenCfg.chain)
     const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
     if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
-    const gasAmountUSD = amount * nativeUsdRate
-    const marginUsdt   = resolved.platformFeeUsdt
-    const orderUsd     = Math.round((gasAmountUSD + marginUsdt) * 100) / 100
 
-    const identity = freeCodeIdentity(req.user?.id ?? null, req.ip ?? 'unknown')
-    const preview = await previewFreeCode({ code: freeCode, gasTokenConfigId: tokenConfigId, orderUsd, identity })
+    const userId = req.user?.id ?? null
+    const identity = freeCodeIdentity(userId, req.ip ?? 'unknown')
+    const preview = await previewFreeCode({
+      code: freeCode, gasTokenConfigId: tokenConfigId,
+      nativeUsdRate, platformFeeUsdt: resolved.platformFeeUsdt,
+      userId, identity,
+    })
     return reply.send({ success: true, data: preview })
   })
 

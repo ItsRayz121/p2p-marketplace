@@ -1767,28 +1767,31 @@ model GasPromoRedemption {
 // ────────────────────────────────────────────────────────────────────────────
 // GAS FREE CODES (KOL "100% free" giveaway codes — self-serve, instant, capped)
 // Unlike GasPromoCode (margin-only discount), a free code waives the ENTIRE order
-// cost (base + margin) — the platform genuinely pays for the gas. Restricted to
-// ONE specific token/chain (gasTokenConfigId), capped by a first-come slot count
-// (slotLimit) AND a lifetime USDT budget (budgetUsdt) — whichever is hit first
-// auto-disables the code. Applied directly at checkout (no admin draw/send step,
-// unlike GasGiveawayCampaign) — the resulting order is created already in
-// payment_detected so it routes straight to delivery, same trick as an admin
-// free-grant order. See lib/gas/gas.freeCode.ts.
+// cost (base + margin) — the platform genuinely pays for the gas. Each redemption
+// gives a FIXED native gas amount (amountNative, e.g. 0.00001 BNB) — the user does
+// not choose the amount; it is set once by the admin and identical for every
+// redeemer. Restricted to ONE specific token/chain (gasTokenConfigId), capped by
+// a first-come slot count (slotLimit) AND a lifetime USDT budget (budgetUsdt) —
+// whichever is hit first auto-disables the code. Requires login and is available
+// ONLY on a user's first-ever gas order (see gas.freeCode.ts assertFirstGasOrder) —
+// the checkout UI hides the code box entirely once that's no longer true. Applied
+// directly at checkout (no admin draw/send step, unlike GasGiveawayCampaign) — the
+// resulting order is created already in payment_detected so it routes straight to
+// delivery, same trick as an admin free-grant order. See lib/gas/gas.freeCode.ts.
 // ────────────────────────────────────────────────────────────────────────────
 model GasFreeCode {
   id               String   @id @default(cuid())
   code             String   @unique           // stored UPPERCASE; matched case-insensitively
   kolLabel         String                      // KOL / campaign name (admin reference)
   gasTokenConfigId String                      // which token+chain this code is valid for (plain ref)
+  amountNative     Decimal  @db.Decimal(18, 8) // fixed gas amount every redeemer receives
   slotLimit        Int                          // total first-come redemptions allowed
   redeemedCount    Int      @default(0)        // also the next slot index (optimistic-lock key)
   // Lifetime cap on TOTAL order cost (base + margin, USDT) this code may give away.
   // Auto-disables when reached, even if slots remain.
   budgetUsdt       Float
   spentUsdt        Float    @default(0)
-  perUserLimit     Int      @default(1)        // max redemptions per identity (user or IP)
-  minOrderUsd      Float    @default(0)        // min order value (pre-discount) to qualify
-  maxOrderUsd      Float?                       // optional cap on a single free order's value
+  perUserLimit     Int      @default(1)        // max redemptions per identity (moot in practice — first-order gate already limits to 1 lifetime redemption per user)
   expiresAt        DateTime?
   isActive         Boolean  @default(true)     // admin kill switch; also auto-flips off on exhaustion
   createdById      String?

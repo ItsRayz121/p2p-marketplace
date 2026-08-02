@@ -98,7 +98,7 @@ export default function GasPage() {
   // ── KOL free-gas code (100% free — box only renders when the feature flag is live) ──
   const [freeCodeEnabled, setFreeCodeEnabled] = useState(false)
   const [freeCode, setFreeCode]               = useState('')
-  const [freeCodeApplied, setFreeCodeApplied] = useState<{ code: string; kolLabel: string; slotsLeft: number; budgetLeftUsdt: number; message: string } | null>(null)
+  const [freeCodeApplied, setFreeCodeApplied] = useState<{ code: string; kolLabel: string; amountNative: number; slotsLeft: number; budgetLeftUsdt: number; message: string } | null>(null)
   const [freeCodeError, setFreeCodeError]     = useState('')
   const [freeCodeChecking, setFreeCodeChecking] = useState(false)
   // Affiliate buyer auto-discount preview (margin-only, fetched for the logged-in buyer).
@@ -158,7 +158,10 @@ export default function GasPage() {
   // Any change to the order parameters invalidates a previously-applied promo, so it
   // is re-validated server-side (the source of truth) before it can affect the price.
   useEffect(() => { setPromoApplied(null); setPromoError('') }, [amount, selectedToken?.id])
-  useEffect(() => { setFreeCodeApplied(null); setFreeCodeError('') }, [amount, selectedToken?.id])
+  // Free-code eligibility only depends on the selected chain/token (the gift
+  // amount is fixed by the code, not by whatever the user typed) — so, unlike
+  // promo, this does NOT reset when `amount` changes.
+  useEffect(() => { setFreeCodeApplied(null); setFreeCodeError('') }, [selectedToken?.id])
 
   // Fetch the logged-in buyer's affiliate auto-discount for the selected token so the
   // checkout breakdown can surface it. No-op for guests / unbound users (returns null).
@@ -245,11 +248,11 @@ export default function GasPage() {
   function clearPromo() { setPromoApplied(null); setPromoCode(''); setPromoError('') }
 
   async function applyFreeCode() {
-    if (!selectedToken || !freeCode.trim() || !(parseFloat(amount) > 0)) return
+    if (!selectedToken || !freeCode.trim()) return
     setFreeCodeChecking(true); setFreeCodeError(''); setFreeCodeApplied(null)
     try {
       const res = await gasApi.previewFreeCode({
-        freeCode: freeCode.trim(), tokenConfigId: selectedToken.id, amount: parseFloat(amount),
+        freeCode: freeCode.trim(), tokenConfigId: selectedToken.id,
       })
       setFreeCodeApplied(res)
     } catch (e: unknown) {

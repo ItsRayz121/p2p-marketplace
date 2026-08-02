@@ -3,19 +3,22 @@ import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { useGasCtx } from './GasContext'
 
-// KOL "100% free gas" code entry — waives the ENTIRE order cost (base + margin),
-// unlike a promo code which only ever discounts the platform margin. Rendered on
-// every screen that runs BEFORE order creation (mirrors GasPromoField), so the
-// waiver can still apply to the order about to be created. Hidden entirely unless
-// the gas_free_code_enabled flag is ON, or while a promo code is applied (the two
-// are mutually exclusive — a free order has nothing left to discount).
+// KOL "100% free gas" code entry — waives the ENTIRE order cost (base + margin)
+// and gives a FIXED gas amount set by the KOL (e.g. 0.00001 BNB), not whatever
+// amount the user typed above — unlike a promo code which only ever discounts
+// the platform margin on the user's own chosen amount. Rendered on every screen
+// that runs BEFORE order creation (mirrors GasPromoField). Hidden entirely
+// unless the caller is eligible (flag ON, logged in, first-ever gas order — see
+// /gas-fee/chains freeCodeEnabled, which encodes per-user eligibility, not just
+// the flag) — so this box genuinely never appears again after a user's first
+// order — or while a promo code is applied (the two are mutually exclusive).
 //
 // Collapsed by default into a "Have a KOL free-gas code?" dropdown.
 export function GasFreeCodeField() {
   const {
     freeCodeEnabled, freeCode, setFreeCode, freeCodeApplied,
     freeCodeError, freeCodeChecking, applyFreeCode, clearFreeCode,
-    promoApplied,
+    promoApplied, selectedToken,
   } = useGasCtx()
   const [open, setOpen] = useState(false)
 
@@ -62,10 +65,10 @@ export function GasFreeCodeField() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-bold text-amber-700 dark:text-amber-300">
-              🎉 Code {freeCodeApplied.code} applied — this order is 100% FREE
+              🎉 Code {freeCodeApplied.code} applied — you&apos;ll receive {freeCodeApplied.amountNative} {selectedToken?.symbol ?? ''} FREE
             </p>
             <p className="text-xs text-text-muted mt-0.5">
-              Courtesy of {freeCodeApplied.kolLabel}
+              Courtesy of {freeCodeApplied.kolLabel} · this is fixed by the code — the amount you entered above doesn&apos;t apply
               {freeCodeApplied.slotsLeft > 0 ? ` · ${freeCodeApplied.slotsLeft} ${freeCodeApplied.slotsLeft === 1 ? 'slot' : 'slots'} left` : ''}
             </p>
           </div>
@@ -86,7 +89,7 @@ export function GasFreeCodeApplied() {
   return (
     <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2">
       <p className="text-xs font-semibold text-amber-700 dark:text-amber-300">
-        🎉 {order.freeCode ? `Code ${order.freeCode} applied — ` : ''}this order is 100% FREE
+        🎉 {order.freeCode ? `Code ${order.freeCode} applied — ` : ''}you received {order.gasAmountNative} {order.nativeSymbol ?? ''} FREE
       </p>
       <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
         The platform covered the full gas cost — no payment was needed.

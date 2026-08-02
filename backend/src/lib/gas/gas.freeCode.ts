@@ -4,11 +4,20 @@
  * Unlike a promo code (gas.promo.ts), which may only ever discount the platform
  * MARGIN, a free code waives the ENTIRE order cost (base gas + margin) — the
  * platform genuinely pays for the gas, the same way an admin free-grant does
- * (see issueFreeGasOrder in gasFee.routes.ts). It exists to let a KOL hand out a
- * code where the first N people to apply it get gas for free, restricted to one
+ * (see issueFreeGasOrder in gasFee.routes.ts). Each redemption gives a FIXED
+ * native gas amount (e.g. 0.00001 BNB) set once by the admin — the user does not
+ * choose the amount. It exists to let a KOL hand out a code where the first N
+ * people to apply it each get that fixed amount for free, restricted to one
  * specific token/chain, capped by BOTH a slot count and a lifetime USDT budget —
  * whichever is hit first auto-disables the code so later applicants see it as
  * ended and fall back to a normal (margin-only) promo code.
+ *
+ * Two hard anti-abuse rules, enforced server-side regardless of what the client
+ * sends: (1) must be logged in — guests can never redeem; (2) only available on
+ * a user's first-ever gas order, of any kind — once they have ANY prior GasFeeOrder
+ * row, every future redemption attempt is rejected. The checkout UI hides the
+ * code box entirely once a user is no longer eligible (see /gas-fee/chains
+ * freeCodeEnabled), but this module is the actual enforcement.
  *
  * Concurrency mirrors gas.promo.ts exactly: reservation advances redeemedCount
  * and spentUsdt atomically using an optimistic-lock updateMany guarded on the
@@ -19,6 +28,7 @@
  * back. Reservation only happens when flag gas_free_code_enabled is ON.
  */
 import { db } from '../prisma'
+import type { Prisma } from '@prisma/client'
 import { AppError } from '../errors'
 import { logger } from '../logger'
 import { isFlagEnabled, FLAGS } from '../../services/platformFlags.service'
@@ -26,7 +36,8 @@ import { isFlagEnabled, FLAGS } from '../../services/platformFlags.service'
 export interface FreeCodeResolution {
   freeCodeId: string
   code: string
-  amountUsdt: number // full order cost waived (base + margin)
+  amountNative: number // fixed gas amount given (native units, e.g. BNB)
+  amountUsdt: number    // full order cost waived (base + margin), in USD
 }
 
 export interface FreeCodePreview {
@@ -34,6 +45,7 @@ export interface FreeCodePreview {
   code: string
   kolLabel: string
   gasTokenConfigId: string
+  amountNative: number
   amountUsdt: number
   slotsLeft: number
   budgetLeftUsdt: number
@@ -56,19 +68,18 @@ type FreeCodeRow = {
   code: string
   kolLabel: string
   gasTokenConfigId: string
+  amountNative: Prisma.Decimal
   slotLimit: number
   redeemedCount: number
   budgetUsdt: number
   spentUsdt: number
   perUserLimit: number
-  minOrderUsd: number
-  maxOrderUsd: number | null
   expiresAt: Date | null
   isActive: boolean
 }
 
 /** Reasons a code can't be applied — mapped to user-facing messages. */
-function validateApplicable(row: FreeCodeRow | null, tokenConfigId: string, orderUsd: number): asserts row is FreeCodeRow {
+function validateApplicable(row: FreeCodeRow | null, tokenConfigId: string): asserts row is FreeCodeRow {
   if (!row) {
     throw new AppError('FREE_CODE_INVALID', 'This code is not valid.', 400)
   }
@@ -84,11 +95,21 @@ function validateApplicable(row: FreeCodeRow | null, tokenConfigId: string, orde
   if (row.redeemedCount >= row.slotLimit || row.spentUsdt >= row.budgetUsdt) {
     throw new AppError('FREE_CODE_ENDED', 'This giveaway has ended.', 400)
   }
-  if (orderUsd < row.minOrderUsd) {
-    throw new AppError('FREE_CODE_MIN_ORDER', `This code requires a minimum order of $${row.minOrderUsd.toFixed(2)}.`, 400)
+}
+
+/**
+ * Hard eligibility gate: must be logged in, and this must be the user's first
+ * gas order EVER (any chain, any payment method, any status). Throws a clear
+ * AppError otherwise. Shared by the preview and reserve paths so neither can be
+ * bypassed by skipping straight to order creation.
+ */
+export async function assertFreeCodeEligible(userId: string | null): Promise<void> {
+  if (!userId) {
+    throw new AppError('FREE_CODE_LOGIN_REQUIRED', 'Log in to redeem this code.', 401)
   }
-  if (row.maxOrderUsd != null && orderUsd > row.maxOrderUsd) {
-    throw new AppError('FREE_CODE_MAX_ORDER', `This code covers orders up to $${row.maxOrderUsd.toFixed(2)}.`, 400)
+  const priorOrders = await db.gasFeeOrder.count({ where: { userId } })
+  if (priorOrders > 0) {
+    throw new AppError('FREE_CODE_NOT_FIRST_ORDER', 'This code is only available on your first gas order.', 400)
   }
 }
 
@@ -97,64 +118,77 @@ async function countUserRedemptions(freeCodeId: string, identity: string): Promi
 }
 
 /**
- * Read-only preview: validate a code against the selected token and report
- * slots/budget left for the checkout UI, WITHOUT consuming a slot. Throws
- * AppError with a clear message when the code can't be applied so the FE can
- * surface it inline (and fall back to a normal promo code).
+ * Read-only preview: validate a code against the selected token and report the
+ * fixed amount + slots/budget left for the checkout UI, WITHOUT consuming a
+ * slot. Throws AppError with a clear message when the code can't be applied so
+ * the FE can surface it inline (and fall back to a normal promo code).
  */
 export async function previewFreeCode(args: {
   code: string
   gasTokenConfigId: string
-  orderUsd: number
+  nativeUsdRate: number
+  platformFeeUsdt: number
+  userId: string | null
   identity: string
 }): Promise<FreeCodePreview> {
   if (!(await isFlagEnabled(FLAGS.GAS_FREE_CODE))) {
     throw new AppError('FREE_CODE_DISABLED', 'Free-gas codes are not available right now.', 400)
   }
+  await assertFreeCodeEligible(args.userId)
+
   const code = normalizeFreeCode(args.code)
   const row = await db.gasFreeCode.findUnique({ where: { code } })
-  validateApplicable(row, args.gasTokenConfigId, args.orderUsd)
+  validateApplicable(row, args.gasTokenConfigId)
 
   const used = await countUserRedemptions(row.id, args.identity)
   if (used >= row.perUserLimit) {
     throw new AppError('FREE_CODE_LIMIT', 'You have already used this code.', 400)
   }
 
+  const amountNative = Number(row.amountNative)
+  const amountUsdt = round2(amountNative * args.nativeUsdRate + args.platformFeeUsdt)
+
   return {
     valid: true,
     code: row.code,
     kolLabel: row.kolLabel,
     gasTokenConfigId: row.gasTokenConfigId,
-    amountUsdt: round2(args.orderUsd),
+    amountNative,
+    amountUsdt,
     slotsLeft: row.slotLimit - row.redeemedCount,
     budgetLeftUsdt: round2(row.budgetUsdt - row.spentUsdt),
-    message: `Code ${row.code} applied — this order is 100% FREE`,
+    message: `Code ${row.code} applied — you'll receive ${amountNative} free`,
   }
 }
 
 /**
  * Atomically reserve a slot + budget for this code and return the resolved
- * waiver. MUST be paired with recordRedemption() (after the order is created)
- * and releaseReservation() (if order creation fails). Only call when the flag
- * is ON.
+ * waiver (including the fixed native amount to actually deliver). MUST be
+ * paired with recordRedemption() (after the order is created) and
+ * releaseReservation() (if order creation fails). Only call when the flag is ON.
  */
 export async function reserveFreeCode(args: {
   code: string
   gasTokenConfigId: string
-  orderUsd: number
+  nativeUsdRate: number
+  platformFeeUsdt: number
+  userId: string | null
   identity: string
 }): Promise<FreeCodeResolution> {
+  await assertFreeCodeEligible(args.userId)
   const code = normalizeFreeCode(args.code)
-  const orderCost = round2(args.orderUsd)
 
   for (let attempt = 0; attempt < MAX_RESERVE_ATTEMPTS; attempt++) {
     const row = await db.gasFreeCode.findUnique({ where: { code } })
-    validateApplicable(row, args.gasTokenConfigId, args.orderUsd)
+    validateApplicable(row, args.gasTokenConfigId)
 
     const used = await countUserRedemptions(row.id, args.identity)
     if (used >= row.perUserLimit) {
       throw new AppError('FREE_CODE_LIMIT', 'You have already used this code.', 400)
     }
+
+    const amountNative = Number(row.amountNative)
+    const orderCost = round2(amountNative * args.nativeUsdRate + args.platformFeeUsdt)
     if (row.spentUsdt + orderCost > row.budgetUsdt) {
       throw new AppError('FREE_CODE_ENDED', 'This giveaway has ended.', 400)
     }
@@ -178,7 +212,7 @@ export async function reserveFreeCode(args: {
     })
 
     if (reserved.count === 1) {
-      return { freeCodeId: row.id, code: row.code, amountUsdt: orderCost }
+      return { freeCodeId: row.id, code: row.code, amountNative, amountUsdt: orderCost }
     }
     // Contention — another redemption landed first; re-read and recompute.
   }
@@ -224,7 +258,22 @@ export async function releaseFreeCodeReservation(resolution: FreeCodeResolution)
 /**
  * Identity string for per-user limits + redemption attribution. Mirrors the
  * promo/cancellation identity convention: authenticated → user:<id>, guest → ip:<addr>.
+ * Free codes always require login (see assertFreeCodeEligible), so this will
+ * always resolve to the user:<id> form in practice.
  */
 export function freeCodeIdentity(userId: string | null, ip: string | undefined): string {
   return userId ? `user:${userId}` : `ip:${ip ?? 'unknown'}`
+}
+
+/**
+ * Whether the CALLER (identified by userId) is even a candidate for a free code
+ * right now — flag ON, logged in, and no prior gas order. Used by /gas-fee/chains
+ * to decide whether to show the code box on the checkout screen at all, so it
+ * genuinely "never appears again" after a user's first order. Never throws.
+ */
+export async function isFreeCodeEligibleForUser(userId: string | null): Promise<boolean> {
+  if (!(await isFlagEnabled(FLAGS.GAS_FREE_CODE))) return false
+  if (!userId) return false
+  const priorOrders = await db.gasFeeOrder.count({ where: { userId } })
+  return priorOrders === 0
 }

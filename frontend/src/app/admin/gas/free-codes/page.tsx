@@ -8,6 +8,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
+import { GasAmountConverter } from '@/components/admin/GasAmountConverter'
 import { ArrowLeft, RefreshCw, Plus } from 'lucide-react'
 
 type FreeCode = Awaited<ReturnType<typeof adminApi.getGasFreeCodes>>[number]
@@ -17,11 +18,10 @@ const blankForm = () => ({
   kolLabel: '',
   chainId: '',
   tokenConfigId: '',
+  amountNative: '',
   slotLimit: 20,
   budgetUsdt: 20,
   perUserLimit: 1,
-  minOrderUsd: 0,
-  maxOrderUsd: '',
   expiresAt: '',
 })
 
@@ -42,6 +42,7 @@ export default function GasFreeCodesPage() {
   const [chains, setChains] = useState<AdminGasChain[]>([])
   const [tokens, setTokens] = useState<AdminGasToken[]>([])
   const [tokensLoading, setTokensLoading] = useState(false)
+  const selectedTokenObj = tokens.find((t) => t.id === form.tokenConfigId) ?? null
 
   const load = useCallback(async () => {
     setLoading(true); setError(null)
@@ -78,8 +79,8 @@ export default function GasFreeCodesPage() {
   }
 
   async function create() {
-    if (!form.code.trim() || !form.kolLabel.trim() || !form.tokenConfigId) {
-      toast.error('Code, KOL label and a chain/token are required'); return
+    if (!form.code.trim() || !form.kolLabel.trim() || !form.tokenConfigId || !(Number(form.amountNative) > 0)) {
+      toast.error('Code, KOL label, a chain/token and a gift amount are required'); return
     }
     setSaving(true)
     try {
@@ -87,11 +88,10 @@ export default function GasFreeCodesPage() {
         code: form.code.trim().toUpperCase(),
         kolLabel: form.kolLabel.trim(),
         gasTokenConfigId: form.tokenConfigId,
+        amountNative: Number(form.amountNative),
         slotLimit: form.slotLimit,
         budgetUsdt: form.budgetUsdt,
         perUserLimit: form.perUserLimit,
-        minOrderUsd: form.minOrderUsd,
-        ...(form.maxOrderUsd ? { maxOrderUsd: Number(form.maxOrderUsd) } : {}),
         ...(form.expiresAt ? { expiresAt: new Date(form.expiresAt).toISOString() } : {}),
       })
       toast.success(`Free code ${form.code.toUpperCase()} created`)
@@ -134,6 +134,23 @@ export default function GasFreeCodesPage() {
     }
   }
 
+  async function bumpAmount(c: FreeCode) {
+    const raw = window.prompt(`New fixed gift amount (${c.tokenSymbol ?? 'native'}) for ${c.code}. Currently ${c.amountNative}. Only affects FUTURE redemptions.`, c.amountNative)
+    if (raw == null) return
+    const next = Number(raw)
+    if (!(next > 0)) { toast.error('Amount must be a positive number'); return }
+    setBusyId(c.id)
+    try {
+      await adminApi.updateGasFreeCode(c.id, { amountNative: next })
+      toast.success(`${c.code} gift amount updated`)
+      void load()
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : 'Failed to update amount')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   async function bumpSlots(c: FreeCode) {
     const raw = window.prompt(`New total slot limit for ${c.code}. Currently ${c.slotLimit} (redeemed ${c.redeemedCount}).`, String(c.slotLimit))
     if (raw == null) return
@@ -157,7 +174,7 @@ export default function GasFreeCodesPage() {
         <button onClick={() => router.push('/admin/gas')} className="p-2 rounded-lg hover:bg-surface-alt"><ArrowLeft className="w-4 h-4" /></button>
         <div className="flex-1">
           <h1 className="text-lg font-bold text-text-primary">KOL Free-Gas Codes</h1>
-          <p className="text-xs text-text-muted">100% free — real on-chain funds at the platform&apos;s expense, restricted to one chain/token, capped by slots + a USDT budget. Active only when <code>gas_free_code_enabled</code> is ON.</p>
+          <p className="text-xs text-text-muted">Each redeemer gets a FIXED gas amount for free (real on-chain funds), restricted to one chain/token, capped by slots + a USDT budget. Only available on a user&apos;s first-ever gas order — the code box never shows again after that. Active only when <code>gas_free_code_enabled</code> is ON.</p>
         </div>
         <Button size="sm" variant="ghost" onClick={() => void load()}><RefreshCw className="w-4 h-4" /></Button>
         {isSuperAdmin && (
@@ -197,7 +214,17 @@ export default function GasFreeCodesPage() {
           </div>
           <p className="text-[11px] text-text-muted">This code will ONLY be redeemable for the exact chain + token selected above.</p>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <GasAmountConverter
+            label="Gift amount per user"
+            value={form.amountNative}
+            onChange={(v) => setForm({ ...form, amountNative: v })}
+            priceSymbol={selectedTokenObj?.priceSymbol}
+            symbol={selectedTokenObj?.symbol}
+            placeholder="0.00001"
+            hint="Every redeemer gets exactly this much — they don't choose an amount."
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <label className="text-xs font-semibold text-text-primary">Slots (first N free)
               <input type="number" min={1} value={form.slotLimit} onChange={(e) => setForm({ ...form, slotLimit: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
             </label>
@@ -206,9 +233,6 @@ export default function GasFreeCodesPage() {
             </label>
             <label className="text-xs font-semibold text-text-primary">Per-user limit
               <input type="number" min={1} value={form.perUserLimit} onChange={(e) => setForm({ ...form, perUserLimit: Number(e.target.value) })} className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
-            </label>
-            <label className="text-xs font-semibold text-text-primary">Max order $ (optional)
-              <input type="number" min={0} value={form.maxOrderUsd} onChange={(e) => setForm({ ...form, maxOrderUsd: e.target.value })} placeholder="No cap" className="mt-1 w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
             </label>
           </div>
           <label className="text-xs font-semibold text-text-primary block">Expires (optional)
@@ -246,10 +270,11 @@ export default function GasFreeCodesPage() {
                         {!c.isActive ? 'Disabled' : expired ? 'Expired' : ended ? 'Ended' : 'Active'}
                       </Badge>
                     </div>
-                    <p className="text-xs text-text-muted mt-0.5">{c.kolLabel} · {c.tokenSymbol ?? '—'} on {c.chainName ?? '—'}</p>
+                    <p className="text-xs text-text-muted mt-0.5">{c.kolLabel} · {c.amountNative} {c.tokenSymbol ?? '—'} on {c.chainName ?? '—'}</p>
                   </div>
                   {isSuperAdmin && (
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 flex-wrap">
+                      <Button size="sm" variant="ghost" onClick={() => bumpAmount(c)} disabled={busyId === c.id}>Edit Amount</Button>
                       <Button size="sm" variant="ghost" onClick={() => bumpSlots(c)} disabled={busyId === c.id}>Edit Slots</Button>
                       <Button size="sm" variant="ghost" onClick={() => bumpBudget(c)} disabled={busyId === c.id}>Edit Budget</Button>
                       <Button size="sm" variant={c.isActive ? 'secondary' : 'primary'} onClick={() => toggleActive(c)} disabled={busyId === c.id}>
@@ -274,8 +299,8 @@ export default function GasFreeCodesPage() {
                       <div className={`h-full ${budgetPct >= 100 ? 'bg-danger' : 'bg-primary'}`} style={{ width: `${budgetPct}%` }} />
                     </div>
                   </div>
-                  <div><p className="text-text-muted">Per-user limit</p><p className="font-semibold text-text-primary">{c.perUserLimit}</p></div>
-                  <div><p className="text-text-muted">Max order</p><p className="font-semibold text-text-primary">{c.maxOrderUsd != null ? fmt(c.maxOrderUsd) : 'No cap'}</p></div>
+                  <div><p className="text-text-muted">Gift amount</p><p className="font-semibold text-text-primary">{c.amountNative} {c.tokenSymbol ?? ''}</p></div>
+                  <div><p className="text-text-muted">Eligibility</p><p className="font-semibold text-text-primary">1st order only</p></div>
                 </div>
               </div>
             )

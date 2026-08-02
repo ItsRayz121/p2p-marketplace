@@ -5258,20 +5258,18 @@ export async function adminRoutes(app: FastifyInstance) {
     code:             z.string().trim().min(2).max(40),
     kolLabel:         z.string().trim().min(1).max(120),
     gasTokenConfigId: z.string().min(1),
+    amountNative:     z.number().positive(), // fixed gas amount every redeemer receives, e.g. 0.00001 BNB
     slotLimit:        z.number().int().positive().max(100000),
     budgetUsdt:       z.number().positive(),
     perUserLimit:     z.number().int().min(1).max(1000).default(1),
-    minOrderUsd:      z.number().min(0).default(0),
-    maxOrderUsd:      z.number().positive().optional(),
     expiresAt:        z.string().datetime().optional(),
   })
   const freeCodeUpdateSchema = z.object({
     kolLabel:     z.string().trim().min(1).max(120).optional(),
+    amountNative: z.number().positive().optional(),
     slotLimit:    z.number().int().positive().max(100000).optional(),
     budgetUsdt:   z.number().positive().optional(),
     perUserLimit: z.number().int().min(1).max(1000).optional(),
-    minOrderUsd:  z.number().min(0).optional(),
-    maxOrderUsd:  z.number().positive().nullable().optional(),
     expiresAt:    z.string().datetime().nullable().optional(),
     isActive:     z.boolean().optional(),
   })
@@ -5296,6 +5294,7 @@ export async function adminRoutes(app: FastifyInstance) {
         gasTokenConfigId: c.gasTokenConfigId,
         tokenSymbol: t?.symbol ?? null,
         chainName: t?.chain.name ?? null,
+        amountNative: c.amountNative.toString(),
         slotLimit: c.slotLimit,
         redeemedCount: c.redeemedCount,
         slotsRemaining: Math.max(0, c.slotLimit - c.redeemedCount),
@@ -5303,8 +5302,6 @@ export async function adminRoutes(app: FastifyInstance) {
         spentUsdt: c.spentUsdt,
         budgetRemainingUsdt: Math.max(0, c.budgetUsdt - c.spentUsdt),
         perUserLimit: c.perUserLimit,
-        minOrderUsd: c.minOrderUsd,
-        maxOrderUsd: c.maxOrderUsd,
         expiresAt: c.expiresAt,
         isActive: c.isActive,
         redemptionRows: c._count.redemptions,
@@ -5335,24 +5332,29 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const existing = await db.gasFreeCode.findUnique({ where: { code } })
     if (existing) throw new AppError('CONFLICT', `Free code '${code}' already exists`, 409)
-    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.gasTokenConfigId } })
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: p.gasTokenConfigId }, include: { chain: true } })
     if (!tokenCfg) throw Errors.NOT_FOUND('Gas token')
+    // Catch a misconfigured (too-small) gift amount at creation time rather than
+    // letting it silently fail delivery on the first redemption.
+    const effectiveMinAmount = Number(tokenCfg.minAmount ?? tokenCfg.chain.defaultMinAmount ?? 0)
+    if (effectiveMinAmount > 0 && p.amountNative < effectiveMinAmount) {
+      throw new AppError('VALIDATION_ERROR', `Amount must be at least ${effectiveMinAmount} ${tokenCfg.symbol} on ${tokenCfg.chain.name}.`, 400)
+    }
 
     const created = await db.gasFreeCode.create({
       data: {
         code,
         kolLabel: p.kolLabel,
         gasTokenConfigId: p.gasTokenConfigId,
+        amountNative: p.amountNative,
         slotLimit: p.slotLimit,
         budgetUsdt: p.budgetUsdt,
         perUserLimit: p.perUserLimit,
-        minOrderUsd: p.minOrderUsd,
-        ...(p.maxOrderUsd !== undefined ? { maxOrderUsd: p.maxOrderUsd } : {}),
         ...(p.expiresAt ? { expiresAt: new Date(p.expiresAt) } : {}),
         createdById: req.user!.id,
       },
     })
-    await createAuditLog(req.user!.id, 'GAS_FREE_CODE_CREATE', 'GasFreeCode', created.id, { code, slotLimit: p.slotLimit, budgetUsdt: p.budgetUsdt, gasTokenConfigId: p.gasTokenConfigId }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_FREE_CODE_CREATE', 'GasFreeCode', created.id, { code, amountNative: p.amountNative, slotLimit: p.slotLimit, budgetUsdt: p.budgetUsdt, gasTokenConfigId: p.gasTokenConfigId }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: created })
   })
 
@@ -5371,11 +5373,10 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: {
         ...(p.kolLabel !== undefined ? { kolLabel: p.kolLabel } : {}),
+        ...(p.amountNative !== undefined ? { amountNative: p.amountNative } : {}),
         ...(p.slotLimit !== undefined ? { slotLimit: p.slotLimit } : {}),
         ...(p.budgetUsdt !== undefined ? { budgetUsdt: p.budgetUsdt } : {}),
         ...(p.perUserLimit !== undefined ? { perUserLimit: p.perUserLimit } : {}),
-        ...(p.minOrderUsd !== undefined ? { minOrderUsd: p.minOrderUsd } : {}),
-        ...(p.maxOrderUsd !== undefined ? { maxOrderUsd: p.maxOrderUsd } : {}),
         ...(p.expiresAt !== undefined ? { expiresAt: p.expiresAt ? new Date(p.expiresAt) : null } : {}),
         ...(p.isActive !== undefined ? { isActive: p.isActive } : {}),
       },

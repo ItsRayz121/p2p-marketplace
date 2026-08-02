@@ -169,7 +169,7 @@ export interface GasFlowCtx {
   freeCodeEnabled: boolean
   freeCode: string
   setFreeCode: (v: string) => void
-  freeCodeApplied: { code: string; kolLabel: string; slotsLeft: number; budgetLeftUsdt: number; message: string } | null
+  freeCodeApplied: { code: string; kolLabel: string; amountNative: number; slotsLeft: number; budgetLeftUsdt: number; message: string } | null
   freeCodeError: string
   freeCodeChecking: boolean
   applyFreeCode: () => Promise<void>

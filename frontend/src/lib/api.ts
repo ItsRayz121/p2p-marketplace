@@ -1782,8 +1782,8 @@ export const gasApi = {
   previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
 
-  previewFreeCode: (data: { freeCode: string; tokenConfigId: string; amount: number }) =>
-    apiRequest<{ valid: boolean; code: string; kolLabel: string; gasTokenConfigId: string; amountUsdt: number; slotsLeft: number; budgetLeftUsdt: number; message: string }>('/gas-fee/free-code/preview', { method: 'POST', body: JSON.stringify(data) }),
+  previewFreeCode: (data: { freeCode: string; tokenConfigId: string }) =>
+    apiRequest<{ valid: boolean; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: number; amountUsdt: number; slotsLeft: number; budgetLeftUsdt: number; message: string }>('/gas-fee/free-code/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   getReferralSummary: () =>
     apiRequest<{ enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
@@ -2699,16 +2699,17 @@ export const adminApi = {
     apiRequest<Array<{
       id: string; code: string; kolLabel: string; gasTokenConfigId: string
       tokenSymbol: string | null; chainName: string | null
+      amountNative: string
       slotLimit: number; redeemedCount: number; slotsRemaining: number
       budgetUsdt: number; spentUsdt: number; budgetRemainingUsdt: number
-      perUserLimit: number; minOrderUsd: number; maxOrderUsd: number | null
+      perUserLimit: number
       expiresAt: string | null; isActive: boolean; redemptionRows: number; createdAt: string
     }>>('/admin/gas/free-codes'),
   getGasFreeCodeRedemptions: (id: string) =>
     apiRequest<Array<{ id: string; identity: string; amountUsdt: string; createdAt: string; order: { orderRef: string; gasAmountNative: string; status: string; toAddress: string } | null }>>(`/admin/gas/free-codes/${id}/redemptions`),
   createGasFreeCode: (data: {
-    code: string; kolLabel: string; gasTokenConfigId: string
-    slotLimit: number; budgetUsdt: number; perUserLimit: number; minOrderUsd: number; maxOrderUsd?: number; expiresAt?: string
+    code: string; kolLabel: string; gasTokenConfigId: string; amountNative: number
+    slotLimit: number; budgetUsdt: number; perUserLimit: number; expiresAt?: string
   }) => apiRequest<unknown>('/admin/gas/free-codes', { method: 'POST', body: JSON.stringify(data) }),
   updateGasFreeCode: (id: string, data: Record<string, unknown>) =>
     apiRequest<unknown>(`/admin/gas/free-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
