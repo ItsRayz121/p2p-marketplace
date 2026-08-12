@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { ctmApi, marketplaceApi } from '@/lib/api'
 import type { RecentTrade, MarketRateToken } from '@/lib/api'
@@ -14,6 +14,8 @@ import { ctmUsdtMethodLabel, ctmUsdtMethodLogo } from '@/lib/ctmUsdtMethods'
 import { MerchantProfileModal } from '@/components/ctm/MerchantProfileModal'
 import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
+import { CardDownloadButton } from '@/components/ui/CardDownloadButton'
+import { buildOfferFilename } from '@/lib/cardImageExport'
 import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { toast } from '@/lib/toast'
@@ -252,8 +254,11 @@ function ListingRow({
 
   const openProfile = () => onViewMerchant(user.id)
 
+  const cardRef = useRef<HTMLDivElement>(null)
+  const buildFilename = useCallback(() => buildOfferFilename(sym, displayName), [sym, displayName])
+
   return (
-    <div className={`bg-surface shadow-card border border-border rounded-xl p-3 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
+    <div ref={cardRef} className={`bg-surface shadow-card border border-border rounded-xl p-3 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
       {/* ── Desktop / tablet layout (unchanged) ── */}
       <div className="hidden sm:flex sm:flex-row sm:items-center gap-3">
 
@@ -335,6 +340,7 @@ function ListingRow({
                 <p className="text-xs text-text-muted">{sym}</p>
               </div>
             </Link>
+            <CardDownloadButton cardRef={cardRef} buildFilename={buildFilename} className="ml-1" />
             <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
               {isSell ? 'BUY' : 'SELL'}
             </span>
@@ -464,9 +470,12 @@ function ListingRow({
               <BadgeChip badge={badge} />
             </div>
           </div>
-          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
-            {isSell ? 'BUY' : 'SELL'}
-          </span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <CardDownloadButton cardRef={cardRef} buildFilename={buildFilename} />
+            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+              {isSell ? 'BUY' : 'SELL'}
+            </span>
+          </div>
         </div>
 
         {/* Row 2: trust metrics + activity */}

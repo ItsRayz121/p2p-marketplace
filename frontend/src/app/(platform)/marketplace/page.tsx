@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { marketplaceApi } from '@/lib/api'
 import type { MarketplaceAd } from '@/lib/api'
@@ -13,6 +13,8 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
+import { CardDownloadButton } from '@/components/ui/CardDownloadButton'
+import { buildOfferFilename } from '@/lib/cardImageExport'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History, Search, X, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
@@ -111,8 +113,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
     username: ad.seller?.username,
   })
 
+  const cardRef = useRef<HTMLDivElement>(null)
+  const buildFilename = useCallback(() => buildOfferFilename(ad.coin, sellerName), [ad.coin, sellerName])
+
   return (
-    <div className={`bg-surface shadow-card border border-border rounded-xl p-4 sm:p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
+    <div ref={cardRef} className={`bg-surface shadow-card border border-border rounded-xl p-4 sm:p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
       {/* ── Desktop / tablet layout (unchanged) ── */}
       <div className="hidden sm:flex sm:flex-row sm:items-center gap-4">
 
@@ -208,6 +213,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
               <p className="font-semibold text-text-primary text-sm leading-tight">{ad.coin}</p>
               <p className="text-xs text-text-muted">{ad.network}</p>
             </div>
+            <CardDownloadButton cardRef={cardRef} buildFilename={buildFilename} className="ml-1" />
             <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
               {userAction}
             </span>
@@ -335,9 +341,12 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
               )}
             </div>
           </div>
-          <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
-            {userAction}
-          </span>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <CardDownloadButton cardRef={cardRef} buildFilename={buildFilename} />
+            <span className={`flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full ${chipCls}`}>
+              {userAction}
+            </span>
+          </div>
         </div>
 
         {/* Row 2: trust metrics + activity */}
