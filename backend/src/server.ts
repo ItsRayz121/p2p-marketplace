@@ -16,6 +16,7 @@ import { db } from './lib/prisma'
 import { logger } from './lib/logger'
 import { env } from './lib/env'
 import { startWorkers } from './queues/workers'
+import { stopAllSweeps } from './queues/scheduler'
 import { validateWalletCustodyAtStartup } from './lib/walletCrypto'
 import { validateGasWalletAtStartup } from './lib/gas/gasWalletService'
 import { reportMoralisStartupStatus } from './lib/moralisStartupCheck'
@@ -108,6 +109,7 @@ async function start() {
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received')
     try {
+      stopAllSweeps()
       if (app) await app.close()
       await disconnectRedis()
       await db.$disconnect()

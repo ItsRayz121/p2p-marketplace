@@ -20,27 +20,11 @@ export const QUEUE_NAMES = {
   RATE_UPDATER: 'rate-updater',
   REFERRAL_PAYOUT: 'referral-payout',
   MORALIS_SUBSCRIBE: 'moralis-subscribe',
-  DEPOSIT_RECONCILE: 'deposit-reconcile',
   GAS_WEBHOOK:              'gas-webhook',
-  GAS_REFILL:               'gas-refill',
   GAS_RECONCILIATION:       'gas-reconciliation',
   GAS_MERCHANT_SETTLEMENT:  'gas-merchant-settlement',
-  CTM_EXPIRY:               'ctm-expiry',
-  CTM_PROOF_DEADLINE:       'ctm-proof-deadline',
   CTM_DISPUTE_ESCALATION:   'ctm-dispute-escalation',
-  CTM_TIER_UPGRADE:         'ctm-tier-upgrade',
-  CTM_ESCROW_MONITOR:       'ctm-escrow-monitor',
-  CTM_INACTIVE_PAUSE:       'ctm-inactive-pause',
-  CTM_BID_EXPIRY:           'ctm-bid-expiry',
-  GAS_PAYMENT_POLLER:               'gas-payment-poller',
-  GAS_HOT_WALLET_DEPOSIT_POLL:      'gas-hot-wallet-deposit-poll',
-  APTOS_DEPOSIT_POLLER:             'aptos-deposit-poller',
-  EVM_DEPOSIT_POLLER:               'evm-deposit-poller',
-  WITHDRAWAL_CONFIRMATION_WATCHER:  'withdrawal-confirmation-watcher',
-  MODERATION_EXPIRY:                'moderation-expiry',
   ANNOUNCEMENT_BROADCAST:           'announcement-broadcast',
-  SUPPORT_IDLE_CLOSE:               'support-idle-close',
-  MEDIA_RETENTION:                  'media-retention',
 } as const
 
 export const queues = {
@@ -58,19 +42,6 @@ export const queues = {
       backoff: { type: 'exponential', delay: 15_000 },
     },
   }),
-  // Reconciler ticks must not stack — if one tick is slow we'd rather skip
-  // overlapping ticks than process the same candidate rows concurrently.
-  // We achieve that via `jobId` on the repeatable job in workers.ts and by
-  // capping attempts at 1 so retries don't double up.
-  gasRefill: new Queue(QUEUE_NAMES.GAS_REFILL, {
-    connection,
-    defaultJobOptions: {
-      ...defaultJobOptions,
-      attempts: 1,  // refill job is idempotent — don't auto-retry on failure
-      removeOnComplete: { count: 100 },
-      removeOnFail:     { count: 200 },
-    },
-  }),
   gasWebhook: new Queue(QUEUE_NAMES.GAS_WEBHOOK, {
     connection,
     defaultJobOptions: {
@@ -80,10 +51,10 @@ export const queues = {
       removeOnFail: { count: 200 },
     },
   }),
-  depositReconcile: new Queue(QUEUE_NAMES.DEPOSIT_RECONCILE, {
-    connection,
-    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
+  // Also serves the admin "trigger reconciliation now" endpoint
+  // (POST /admin/gas/reconciliation/trigger), which enqueues a manual-trigger
+  // job with a `chain` payload rather than running inline — real event-driven
+  // usage, not a pure sweep, so this stays on BullMQ.
   gasReconciliation: new Queue(QUEUE_NAMES.GAS_RECONCILIATION, {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 30 }, removeOnFail: { count: 50 } },
@@ -92,49 +63,11 @@ export const queues = {
     connection,
     defaultJobOptions: { ...defaultJobOptions, attempts: 2, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
   }),
-  ctmExpiry: new Queue(QUEUE_NAMES.CTM_EXPIRY, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  ctmProofDeadline: new Queue(QUEUE_NAMES.CTM_PROOF_DEADLINE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
   ctmDisputeEscalation: new Queue(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, { connection, defaultJobOptions }),
-  ctmTierUpgrade: new Queue(QUEUE_NAMES.CTM_TIER_UPGRADE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  ctmEscrowMonitor: new Queue(QUEUE_NAMES.CTM_ESCROW_MONITOR, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  ctmInactivePause: new Queue(QUEUE_NAMES.CTM_INACTIVE_PAUSE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  ctmBidExpiry: new Queue(QUEUE_NAMES.CTM_BID_EXPIRY, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  gasPaymentPoller: new Queue(QUEUE_NAMES.GAS_PAYMENT_POLLER, {
-    connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  gasHotWalletDepositPoll: new Queue(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, {
-    connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  aptosDepositPoller: new Queue(QUEUE_NAMES.APTOS_DEPOSIT_POLLER, {
-    connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  evmDepositPoller: new Queue(QUEUE_NAMES.EVM_DEPOSIT_POLLER, {
-    connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  withdrawalConfirmationWatcher: new Queue(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, {
-    connection,
-    defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  moderationExpiry: new Queue(QUEUE_NAMES.MODERATION_EXPIRY, {
-    connection,
-    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
   // Broadcast fan-out (bell + throttled Telegram). attempts:1 — a partial resend
   // would double-DM users, so we never auto-retry; failures are logged + alerted.
   announcementBroadcast: new Queue(QUEUE_NAMES.ANNOUNCEMENT_BROADCAST, {
     connection,
     defaultJobOptions: { attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  supportIdleClose: new Queue(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, {
-    connection,
-    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 50 }, removeOnFail: { count: 100 } },
-  }),
-  mediaRetention: new Queue(QUEUE_NAMES.MEDIA_RETENTION, {
-    connection,
-    defaultJobOptions: { ...defaultJobOptions, attempts: 1, removeOnComplete: { count: 20 }, removeOnFail: { count: 50 } },
   }),
 }

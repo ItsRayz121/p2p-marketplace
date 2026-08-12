@@ -2,6 +2,7 @@ import { Worker, type Processor } from 'bullmq'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { QUEUE_NAMES, queues } from './definitions'
+import { scheduleSweep } from './scheduler'
 import { processOcrVerification } from '../jobs/ocrVerification.job'
 import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
@@ -80,10 +81,10 @@ export function startWorkers() {
       logger.error({ err }, 'Failed to schedule trade-escalation repeatable job'),
     )
 
-  // Moderation expiry sweep — auto-lift elapsed suspensions / temp bans (every 60s)
-  queues.moderationExpiry
-    .add('moderation-expiry-sweep', {}, { repeat: { every: 60_000 }, jobId: 'moderation-expiry-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule moderation-expiry repeatable job'))
+  // Moderation expiry sweep — auto-lift elapsed suspensions / temp bans (every 60s).
+  // Plain-interval sweep (see scheduler.ts) — ran with BullMQ attempts:1, so no
+  // retry behavior is lost by moving it off the queue.
+  scheduleSweep('moderation-expiry', runModerationExpiry, 60_000)
 
   // Active workers
   createWorker(QUEUE_NAMES.OCR, async (job) => {
@@ -98,30 +99,16 @@ export function startWorkers() {
     await runTradeEscalation()
   })
 
-  createWorker(QUEUE_NAMES.MODERATION_EXPIRY, async () => {
-    await runModerationExpiry()
-  }, { max: 1, duration: 60_000 })
-
   // Support-chat idle-close sweep — auto-close conversations idle > 10 min so
   // the next user message starts a fresh session divider (every 60s).
-  queues.supportIdleClose
-    .add('support-idle-close-sweep', {}, { repeat: { every: 60_000 }, jobId: 'support-idle-close-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule support idle-close repeatable job'))
-
-  createWorker(QUEUE_NAMES.SUPPORT_IDLE_CLOSE, async () => {
-    await runSupportIdleClose()
-  }, { max: 1, duration: 60_000 })
+  // Plain-interval sweep — ran with BullMQ attempts:1.
+  scheduleSweep('support-idle-close', runSupportIdleClose, 60_000)
 
   // Media-retention sweep — daily. Purges payment proofs + trade-chat images for
   // long-settled trades to reclaim Cloudinary storage. Gated OFF by default
   // (`media_retention_enabled`); KYC media is never touched.
-  queues.mediaRetention
-    .add('media-retention-sweep', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'media-retention-daily-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule media-retention daily job'))
-
-  createWorker(QUEUE_NAMES.MEDIA_RETENTION, async () => {
-    await runMediaRetention()
-  }, { max: 1, duration: 60_000 })
+  // Plain-interval sweep — ran with BullMQ attempts:1.
+  scheduleSweep('media-retention', () => runMediaRetention(), 24 * 60 * 60 * 1000)
 
   // Seed the retention config keys at startup (safe: gated OFF, so this only
   // creates `media_retention_enabled` / `media_retention_days` in Platform Config
@@ -145,14 +132,9 @@ export function startWorkers() {
     .add('monitor-balances', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'gas-monitor-balances-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule gas balance monitor'))
 
-  // Hot-wallet refill check — every 15 minutes
-  queues.gasRefill
-    .add('refill-check', {}, { repeat: { every: 15 * 60 * 1000 }, jobId: 'gas-refill-check-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule gas refill check'))
-
-  createWorker(QUEUE_NAMES.GAS_REFILL, async () => {
-    await runRefillJob()
-  }, { max: 1, duration: 60_000 })
+  // Hot-wallet refill check — every 15 minutes. Plain-interval sweep — ran with
+  // BullMQ attempts:1 (idempotent, no auto-retry on failure).
+  scheduleSweep('gas-refill', runRefillJob, 15 * 60 * 1000)
 
   // Gas fee dispatcher — routes to the correct handler by job name.
   // Rate-limited to 2 concurrent to avoid TRON RPC saturation.
@@ -193,18 +175,8 @@ export function startWorkers() {
 
   // Deposit reconciler: defence-in-depth against missed Moralis Stream events.
   // Repeats every DEPOSIT_RECONCILE_INTERVAL_SECONDS (default 60s).
-  const reconcileIntervalMs = env.DEPOSIT_RECONCILE_INTERVAL_SECONDS * 1000
-  queues.depositReconcile
-    .add('tick', {}, { repeat: { every: reconcileIntervalMs }, jobId: 'deposit-reconcile-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule deposit-reconcile repeatable job'))
-
-  createWorker(
-    QUEUE_NAMES.DEPOSIT_RECONCILE,
-    async () => {
-      await runReconcileTick()
-    },
-    { max: 1, duration: 1000 },
-  )
+  // Plain-interval sweep — ran with BullMQ attempts:1.
+  scheduleSweep('deposit-reconcile', runReconcileTick, env.DEPOSIT_RECONCILE_INTERVAL_SECONDS * 1000)
 
   // Moralis Streams subscriber. Conservative rate limit — Moralis free-tier
   // accepts a few RPS comfortably. If the result says `retryable`, throw so
@@ -222,7 +194,9 @@ export function startWorkers() {
     { max: 3, duration: 1000 }, // 3 req/sec ceiling
   )
 
-  // Gas reconciliation — runs daily at 02:00 UTC (every 24h from first fire)
+  // Gas reconciliation — runs daily at 02:00 UTC (every 24h from first fire).
+  // Also backs the admin "trigger reconciliation now" button, which enqueues
+  // a manual-trigger job with a chain payload — event-driven, stays on BullMQ.
   queues.gasReconciliation
     .add('daily-recon', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'gas-recon-daily-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule gas reconciliation daily job'))
@@ -244,92 +218,52 @@ export function startWorkers() {
     { max: 1, duration: 60_000 },
   )
 
-  // CTM repeatable jobs
-  queues.ctmExpiry
-    .add('ctm-trade-expiry', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-trade-expiry-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM trade expiry job'))
-
-  queues.ctmProofDeadline
-    .add('ctm-proof-deadline', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-proof-deadline-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM proof deadline job'))
+  // CTM repeatable jobs. Expiry/proof-deadline/tier-upgrade/escrow-monitor/
+  // inactive-pause/bid-expiry all ran with BullMQ attempts:1 — plain-interval
+  // sweeps below. Dispute-escalation retains real BullMQ retry/backoff
+  // (default attempts:3), so it stays a Queue+Worker.
+  scheduleSweep('ctm-trade-expiry', runCtmTradeExpiry, 5 * 60 * 1000)
+  scheduleSweep('ctm-proof-deadline', runCtmProofDeadline, 5 * 60 * 1000)
 
   queues.ctmDisputeEscalation
     .add('ctm-dispute-escalation', {}, { repeat: { every: 30 * 60 * 1000 }, jobId: 'ctm-dispute-escalation-repeatable' })
     .catch((err) => logger.error({ err }, 'Failed to schedule CTM dispute escalation job'))
 
-  createWorker(QUEUE_NAMES.CTM_EXPIRY, async () => { await runCtmTradeExpiry() }, { max: 1, duration: 60_000 })
-  createWorker(QUEUE_NAMES.CTM_PROOF_DEADLINE, async () => { await runCtmProofDeadline() }, { max: 1, duration: 60_000 })
   createWorker(QUEUE_NAMES.CTM_DISPUTE_ESCALATION, async () => { await runCtmDisputeEscalation() }, { max: 1, duration: 60_000 })
 
-  queues.ctmTierUpgrade
-    .add('ctm-tier-upgrade', {}, { repeat: { every: 24 * 60 * 60 * 1000 }, jobId: 'ctm-tier-upgrade-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM tier upgrade job'))
-
-  queues.ctmEscrowMonitor
-    .add('ctm-escrow-monitor', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-escrow-monitor-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM escrow monitor job'))
-
-  createWorker(QUEUE_NAMES.CTM_TIER_UPGRADE, async () => { await runCtmMerchantTierUpgrade() }, { max: 1, duration: 120_000 })
-  createWorker(QUEUE_NAMES.CTM_ESCROW_MONITOR, async () => { await runCtmEscrowMonitor() }, { max: 1, duration: 60_000 })
-  createWorker(QUEUE_NAMES.CTM_INACTIVE_PAUSE, async () => { await runCtmInactiveMerchantPause() }, { max: 1, duration: 120_000 })
-
-  queues.ctmInactivePause
-    .add('ctm-inactive-pause', {}, { repeat: { every: 6 * 60 * 60 * 1000 }, jobId: 'ctm-inactive-pause-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM inactive merchant pause job'))
-
-  createWorker(QUEUE_NAMES.CTM_BID_EXPIRY, async () => { await runCtmBidExpiry() }, { max: 1, duration: 60_000 })
-  queues.ctmBidExpiry
-    .add('ctm-bid-expiry', {}, { repeat: { every: 5 * 60 * 1000 }, jobId: 'ctm-bid-expiry-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule CTM bid expiry job'))
+  scheduleSweep('ctm-tier-upgrade', runCtmMerchantTierUpgrade, 24 * 60 * 60 * 1000)
+  scheduleSweep('ctm-escrow-monitor', runCtmEscrowMonitor, 5 * 60 * 1000)
+  scheduleSweep('ctm-inactive-pause', runCtmInactiveMerchantPause, 6 * 60 * 60 * 1000)
+  scheduleSweep('ctm-bid-expiry', runCtmBidExpiry, 5 * 60 * 1000)
 
   // Gas payment poller — fallback RPC-based detection when Moralis misses a webhook.
   // Cadence is operator-tunable via POLLER_INTERVAL_SECONDS (default 60s); it
-  // skips quickly when no pending orders exist.
-  queues.gasPaymentPoller
-    .add('poll', {}, { repeat: { every: env.POLLER_INTERVAL_SECONDS * 1000 }, jobId: 'gas-payment-poller-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule gas payment poller'))
-
-  createWorker(QUEUE_NAMES.GAS_PAYMENT_POLLER, async () => { await runGasPaymentPoller() }, { max: 1, duration: 60_000 })
+  // skips quickly when no pending orders exist. Plain-interval sweep — ran with
+  // BullMQ attempts:1.
+  scheduleSweep('gas-payment-poller', runGasPaymentPoller, env.POLLER_INTERVAL_SECONDS * 1000)
 
   // Aptos USER deposit poller — credits inbound USDT to per-user Aptos deposit
   // addresses (the Aptos analogue of the EVM Moralis stream + reconciler).
-  // Idempotent crediting makes the cadence safe; default 60s.
-  queues.aptosDepositPoller
-    .add('poll', {}, { repeat: { every: env.POLLER_INTERVAL_SECONDS * 1000 }, jobId: 'aptos-deposit-poller-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule Aptos deposit poller'))
-
-  createWorker(QUEUE_NAMES.APTOS_DEPOSIT_POLLER, async () => { await runAptosDepositPoller() }, { max: 1, duration: 60_000 })
+  // Idempotent crediting makes the cadence safe; default 60s. Plain-interval
+  // sweep — ran with BullMQ attempts:1.
+  scheduleSweep('aptos-deposit-poller', runAptosDepositPoller, env.POLLER_INTERVAL_SECONDS * 1000)
 
   // EVM USER deposit poller — Moralis-independent backstop. Scans ERC20
   // Transfer logs to per-user deposit addresses via RPC and feeds hits through
   // the same idempotent processDepositEvent pipeline the webhook uses, so a
   // paused/broken Moralis stream can no longer silently swallow deposits.
-  queues.evmDepositPoller
-    .add('poll', {}, { repeat: { every: 2 * 60_000 }, jobId: 'evm-deposit-poller-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule EVM deposit poller'))
-
-  createWorker(QUEUE_NAMES.EVM_DEPOSIT_POLLER, async () => { await runEvmDepositPoller() }, { max: 1, duration: 60_000 })
+  // Plain-interval sweep — ran with BullMQ attempts:1.
+  scheduleSweep('evm-deposit-poller', runEvmDepositPoller, 2 * 60_000)
 
   // Hot-wallet deposit poller — runs every 2 minutes, detects direct balance
-  // increases (top-ups) even when Moralis webhooks don't fire.
-  queues.gasHotWalletDepositPoll
-    .add('poll', {}, { repeat: { every: 2 * 60_000 }, jobId: 'gas-hw-deposit-poll-repeatable' })
-    .then(() => logger.info({ intervalMs: 2 * 60_000 }, 'Balance-diff poller registered (hot-wallet deposit fallback)'))
-    .catch((err) => logger.error({ err }, 'Failed to schedule hot-wallet deposit poller'))
-
-  createWorker(QUEUE_NAMES.GAS_HOT_WALLET_DEPOSIT_POLL, async () => {
-    await runHotWalletDepositPoller()
-  }, { max: 1, duration: 60_000 })
+  // increases (top-ups) even when Moralis webhooks don't fire. Plain-interval
+  // sweep — ran with BullMQ attempts:1.
+  scheduleSweep('gas-hot-wallet-deposit-poll', runHotWalletDepositPoller, 2 * 60_000)
 
   // Withdrawal confirmation watcher — runs every 2 minutes, checks sent EVM
   // withdrawals for on-chain confirmation and alerts on reverted/stuck txs.
-  queues.withdrawalConfirmationWatcher
-    .add('watch', {}, { repeat: { every: 2 * 60_000 }, jobId: 'withdrawal-confirmation-watcher-repeatable' })
-    .catch((err) => logger.error({ err }, 'Failed to schedule withdrawal confirmation watcher'))
-
-  createWorker(QUEUE_NAMES.WITHDRAWAL_CONFIRMATION_WATCHER, async () => {
-    await runWithdrawalConfirmationWatcher()
-  }, { max: 1, duration: 60_000 })
+  // Plain-interval sweep — ran with BullMQ attempts:1.
+  scheduleSweep('withdrawal-confirmation-watcher', runWithdrawalConfirmationWatcher, 2 * 60_000)
 
   // Announcement broadcast — one job per announcement; concurrency 1 so two
   // broadcasts never contend, and the job self-throttles Telegram internally.
