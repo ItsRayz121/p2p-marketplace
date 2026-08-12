@@ -12,7 +12,8 @@ datasource db {
   //   1. Set DATABASE_URL to PgBouncer URL (port 6543) + ?pgbouncer=true&connection_limit=1
   //   2. Add DIRECT_DATABASE_URL env var pointing to direct Postgres (port 5432)
   //   3. Uncomment: directUrl = env("DIRECT_DATABASE_URL")
-  // Without PgBouncer, Railway's 25-connection limit exhausts under concurrent BullMQ + web load.
+  // Live check 2026-08-12: Railway Postgres max_connections=500, actual usage ~31 (6%).
+  // No pool pressure at current scale — PgBouncer above is optional headroom, not a current need.
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
