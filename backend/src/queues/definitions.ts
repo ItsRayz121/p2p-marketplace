@@ -15,16 +15,10 @@ const defaultJobOptions = {
 export const QUEUE_NAMES = {
   OCR: 'ocr-verification',
   GAS_FEE: 'gas-fee',
-  PUSH_NOTIFICATIONS: 'push-notifications',
   TRADE_ESCALATION: 'trade-escalation',
   BADGE_RECALCULATE: 'badge-recalculate',
-  EMAIL_SENDER: 'email-sender',
   RATE_UPDATER: 'rate-updater',
   REFERRAL_PAYOUT: 'referral-payout',
-  FRAUD_DETECTOR: 'fraud-detector',
-  LEADERBOARD_CACHE: 'leaderboard-cache',
-  MERCHANT_RANK_UPDATER: 'merchant-rank-updater',
-  DATABASE_BACKUP: 'database-backup',
   MORALIS_SUBSCRIBE: 'moralis-subscribe',
   DEPOSIT_RECONCILE: 'deposit-reconcile',
   GAS_WEBHOOK:              'gas-webhook',
@@ -52,16 +46,10 @@ export const QUEUE_NAMES = {
 export const queues = {
   ocr: new Queue(QUEUE_NAMES.OCR, { connection, defaultJobOptions }),
   gasFee: new Queue(QUEUE_NAMES.GAS_FEE, { connection, defaultJobOptions: { ...defaultJobOptions, backoff: { type: 'exponential', delay: 10000 } } }),
-  pushNotifications: new Queue(QUEUE_NAMES.PUSH_NOTIFICATIONS, { connection, defaultJobOptions }),
   tradeEscalation: new Queue(QUEUE_NAMES.TRADE_ESCALATION, { connection, defaultJobOptions }),
   badgeRecalculate: new Queue(QUEUE_NAMES.BADGE_RECALCULATE, { connection, defaultJobOptions }),
-  emailSender: new Queue(QUEUE_NAMES.EMAIL_SENDER, { connection, defaultJobOptions }),
   rateUpdater: new Queue(QUEUE_NAMES.RATE_UPDATER, { connection, defaultJobOptions }),
   referralPayout: new Queue(QUEUE_NAMES.REFERRAL_PAYOUT, { connection, defaultJobOptions }),
-  fraudDetector: new Queue(QUEUE_NAMES.FRAUD_DETECTOR, { connection, defaultJobOptions }),
-  leaderboardCache: new Queue(QUEUE_NAMES.LEADERBOARD_CACHE, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 1 } }),
-  merchantRankUpdater: new Queue(QUEUE_NAMES.MERCHANT_RANK_UPDATER, { connection, defaultJobOptions }),
-  databaseBackup: new Queue(QUEUE_NAMES.DATABASE_BACKUP, { connection, defaultJobOptions: { ...defaultJobOptions, attempts: 2 } }),
   moralisSubscribe: new Queue(QUEUE_NAMES.MORALIS_SUBSCRIBE, {
     connection,
     defaultJobOptions: {

@@ -2,6 +2,7 @@ import { Worker, type Processor } from 'bullmq'
 import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { QUEUE_NAMES, queues } from './definitions'
+import { processOcrVerification } from '../jobs/ocrVerification.job'
 import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
@@ -85,6 +86,10 @@ export function startWorkers() {
     .catch((err) => logger.error({ err }, 'Failed to schedule moderation-expiry repeatable job'))
 
   // Active workers
+  createWorker(QUEUE_NAMES.OCR, async (job) => {
+    await processOcrVerification(job as Parameters<typeof processOcrVerification>[0])
+  })
+
   createWorker(QUEUE_NAMES.RATE_UPDATER, async () => {
     await updateRates()
   })
