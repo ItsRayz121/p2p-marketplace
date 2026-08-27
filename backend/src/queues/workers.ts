@@ -21,6 +21,7 @@ import { createAdminNotif } from '../services/adminNotification.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
+import { runUsdtConfirmReminder, runUsdtConfirmDeadline } from '../jobs/usdtTradeDeadline.job'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
 import { runEvmDepositPoller } from '../jobs/evmDepositPoller.job'
@@ -224,6 +225,12 @@ export function startWorkers() {
   // (default attempts:3), so it stays a Queue+Worker.
   scheduleSweep('ctm-trade-expiry', runCtmTradeExpiry, 5 * 60 * 1000)
   scheduleSweep('ctm-proof-deadline', runCtmProofDeadline, 5 * 60 * 1000)
+
+  // USDT final-confirmation deadline (crypto_sent stuck forever otherwise — see
+  // usdtTradeDeadline.job.ts). Reminder at the halfway point, deadline sweep
+  // matches CTM's 5-minute cadence.
+  scheduleSweep('usdt-confirm-reminder', runUsdtConfirmReminder, 15 * 60 * 1000)
+  scheduleSweep('usdt-confirm-deadline', runUsdtConfirmDeadline, 5 * 60 * 1000)
 
   queues.ctmDisputeEscalation
     .add('ctm-dispute-escalation', {}, { repeat: { every: 30 * 60 * 1000 }, jobId: 'ctm-dispute-escalation-repeatable' })

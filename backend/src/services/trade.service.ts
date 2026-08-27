@@ -32,6 +32,12 @@ import { validateAddressForNetwork } from '../lib/addressValidation'
 import { incrementTradeStreak, getTradeStreak, ordinal } from './tradeStreak.service'
 import { awardTradePointsTx } from './airdrop.service'
 
+// Final-confirmation window: how long the pending confirmer has, once a trade
+// reaches the crypto_sent rung, before usdtTradeDeadline.job steps in. See
+// backend/src/jobs/usdtTradeDeadline.job.ts for the reminder + auto-complete logic.
+export const CONFIRM_WINDOW_HOURS = 24
+const newConfirmDeadline = () => new Date(Date.now() + CONFIRM_WINDOW_HOURS * 60 * 60 * 1000)
+
 // ─── Payment-method resolution ──────────────────────────────────────────────
 // A trade stores `paymentMethod` as the buyer's selection. For current trades
 // that is a PaymentMethod *id* (the buyer picks one of the seller's receiving
@@ -673,7 +679,14 @@ export async function uploadPaymentProof(tradeId: string, buyerId: string, proof
   // Use optimistic updateMany with status guard — prevents two concurrent uploads both succeeding
   const result = await db.trade.updateMany({
     where: { id: tradeId, buyerId, ...claimRung(tradeForEmail, step.from) },
-    data: { ...advanceTo(tradeForEmail, step.to), paymentProofUrl: proofUrl, paymentUploadedAt: new Date() },
+    data: {
+      ...advanceTo(tradeForEmail, step.to),
+      paymentProofUrl: proofUrl,
+      paymentUploadedAt: new Date(),
+      // Taker-first: this step lands on crypto_sent (the maker's fiat, awaiting
+      // the taker's terminal confirm_fiat) — start the final-confirmation clock.
+      ...(step.to === 'crypto_sent' ? { confirmDeadlineAt: newConfirmDeadline() } : {}),
+    },
   })
 
   if (result.count === 0) {
@@ -937,6 +950,9 @@ export async function markCryptoSent(
         ...(screenshot ? { sellerDeliveryProofUrl: screenshot } : {}),
         txVerificationStatus: verificationResult.status,
         txVerificationDetails: verificationResult.details as Prisma.InputJsonValue,
+        // Classic: this step lands on crypto_sent (awaiting the buyer's terminal
+        // confirm_crypto) — start the final-confirmation clock.
+        ...(cryptoStep.to === 'crypto_sent' ? { confirmDeadlineAt: newConfirmDeadline() } : {}),
       },
     })
   })
@@ -961,7 +977,7 @@ export async function markCryptoSent(
  * acting party; this function only re-guards the status under a row lock (so it
  * can be invoked from whichever endpoint is terminal for the trade's flow).
  */
-async function finalizeUsdtTrade(tradeId: string) {
+export async function finalizeUsdtTrade(tradeId: string) {
   // Load buyer/seller details needed for emails/queues — safe to read outside tx
   const tradeDetails = await db.trade.findUnique({
     where: { id: tradeId },
@@ -1014,7 +1030,7 @@ async function finalizeUsdtTrade(tradeId: string) {
 
     await tx.trade.update({
       where: { id: tradeId },
-      data: { ...advanceTo(rows, 'crypto_released', { terminal: true }), escrowReleased: true, releasedAt: new Date() },
+      data: { ...advanceTo(rows, 'crypto_released', { terminal: true }), escrowReleased: true, releasedAt: new Date(), confirmDeadlineAt: null, confirmReminderSentAt: null },
     })
 
     // Close an open dispute as no-fault, inside the SAME tx — the `status: 'open'`

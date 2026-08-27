@@ -729,6 +729,12 @@ model Trade {
   // release within this deadline or the trade auto-escalates to a dispute.
   // Only set when noncustodial_p2p_enabled is ON.
   releaseDeadlineAt  DateTime?
+  // Final-confirmation deadline: set when the trade reaches the crypto_sent rung
+  // (either flow). If the pending confirmer never acts, usdtTradeDeadline.job
+  // auto-completes the trade (trusting a badge-trusted deliverer) or flags it for
+  // admin review. Cleared on completion. Mirrors CTM's confirmDeadlineAt.
+  confirmDeadlineAt      DateTime?
+  confirmReminderSentAt  DateTime? // set once the halfway nudge notification has gone out, so it never resends
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   adBidId            String?     @unique
