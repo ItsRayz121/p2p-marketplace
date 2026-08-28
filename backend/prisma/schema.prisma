@@ -731,10 +731,13 @@ model Trade {
   releaseDeadlineAt  DateTime?
   // Final-confirmation deadline: set when the trade reaches the crypto_sent rung
   // (either flow). If the pending confirmer never acts, usdtTradeDeadline.job
-  // auto-completes the trade (trusting a badge-trusted deliverer) or flags it for
-  // admin review. Cleared on completion. Mirrors CTM's confirmDeadlineAt.
+  // auto-completes the trade once this passes — USDT is non-custodial, so this
+  // only marks status/stats and releases the maker bond; the buyer's protection
+  // is the dispute button (which moves the trade off crypto_sent, out of the
+  // sweep). Cleared on completion. Mirrors CTM's confirmDeadlineAt.
   confirmDeadlineAt      DateTime?
   confirmReminderSentAt  DateTime? // set once the halfway nudge notification has gone out, so it never resends
+  confirmAdminWarnedAt   DateTime? // set once the pre-deadline admin heads-up (non-trusted seller) has gone out, so it never resends
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   adBidId            String?     @unique
