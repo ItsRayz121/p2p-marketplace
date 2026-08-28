@@ -52,6 +52,8 @@ export async function runUsdtConfirmReminder(): Promise<void> {
 
   const due = await db.trade.findMany({
     where: { status: 'crypto_sent', confirmDeadlineAt: { lte: reminderCutoff }, confirmReminderSentAt: null },
+    orderBy: { confirmDeadlineAt: 'asc' },
+    take: 200,
     select: { id: true, orderRef: true, buyerId: true, sellerId: true, takerFirst: true },
   })
 
@@ -97,6 +99,8 @@ export async function runUsdtConfirmAdminWarning(): Promise<void> {
       confirmAdminWarnedAt: null,
       confirmDeadlineAt: { gt: now, lte: warnCutoff },
     },
+    orderBy: { confirmDeadlineAt: 'asc' },
+    take: 200,
     include: {
       buyer: { select: { tradeStats: { select: { badge: true } } } },
       seller: { select: { tradeStats: { select: { badge: true } } } },
@@ -145,8 +149,13 @@ export async function runUsdtConfirmAdminWarning(): Promise<void> {
 export async function runUsdtConfirmDeadline(): Promise<void> {
   const now = new Date()
 
+  // take: cap the batch so a first-deploy backlog (backfilled deadlines) drains
+  // over several ticks instead of firing hundreds of finalizeUsdtTrade calls —
+  // each does a tx + emails + notifications — in one pass. 5-min cadence clears it.
   const due = await db.trade.findMany({
     where: { status: 'crypto_sent', confirmDeadlineAt: { lte: now } },
+    orderBy: { confirmDeadlineAt: 'asc' },
+    take: 100,
     select: { id: true, orderRef: true, buyerId: true, sellerId: true, takerFirst: true },
   })
 
