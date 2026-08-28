@@ -8,6 +8,7 @@ import { createAdminNotif } from '../services/adminNotification.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { closeEpisode } from '../services/chatThread.service'
+import { stepFromStatus } from '../services/settlementFlow'
 
 export async function runTradeEscalation(): Promise<void> {
   const now = new Date()
@@ -128,7 +129,7 @@ export async function runTradeEscalation(): Promise<void> {
         })
         notify(trade.buyerId, 'dispute', 'Trade Escalated', 'The seller did not release in time, so your trade was escalated to a dispute for admin review.', { tradeId: trade.id }, trade.id)
         notify(trade.sellerId, 'dispute', 'Trade Escalated', 'You confirmed payment but did not release in time, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
-        createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — seller did not release in time.`, href: '/admin/disputes' })
+        void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — seller did not release in time.`, href: '/admin/disputes' })
         releaseEscalated++
       } catch (err) {
         logger.error({ err, tradeId: trade.id }, 'Failed to auto-escalate release-timeout trade')
@@ -149,6 +150,59 @@ export async function runTradeEscalation(): Promise<void> {
       href: '/admin/trades',
       telegram: true,
     })
+  }
+
+  // 2b. Auto-escalate payment_uploaded trades stuck for >24h — the first leg was
+  // delivered (classic: buyer paid fiat; taker-first: taker sent crypto) and the
+  // counterparty went dark on the confirm step. Unlike crypto_sent (handled by
+  // usdtTradeDeadline.job with an auto-COMPLETE), the second leg is NOT delivered
+  // here, so completing would be wrong — open a dispute on the waiting party's
+  // behalf instead. Mirrors step 1b's non-custodial release-timeout escalation,
+  // but is flow-agnostic and runs regardless of the non-custodial flag.
+  const uploadedStaleBefore = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+  const staleUploaded = await db.trade.findMany({
+    where: { status: 'payment_uploaded', updatedAt: { lt: uploadedStaleBefore } },
+    take: 200,
+    orderBy: { updatedAt: 'asc' },
+    select: { id: true, buyerId: true, sellerId: true, orderRef: true, takerFirst: true },
+  })
+  let uploadedEscalated = 0
+  for (const trade of staleUploaded) {
+    // Pending step out of payment_uploaded: classic = seller's confirm_fiat,
+    // taker-first = buyer's confirm_crypto. Whoever that actor is went dark.
+    const step = stepFromStatus(trade.takerFirst, 'payment_uploaded')
+    if (!step) continue
+    const missedActorId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+    const openerId = step.actor === 'buyer' ? trade.sellerId : trade.buyerId
+    const reason = step.actor === 'buyer' ? 'buyer_unresponsive' : 'seller_unresponsive'
+    try {
+      await db.$transaction(async (tx) => {
+        const [current] = await tx.$queryRaw<{ status: string }[]>`
+          SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
+        `
+        if (!current || current.status !== 'payment_uploaded') return
+        const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
+        if (existing) return
+        await tx.dispute.create({
+          data: {
+            tradeId: trade.id,
+            openedById: openerId,
+            reason,
+            description: `Auto-escalated: the ${step.actor} did not respond within 24h of payment proof being uploaded.`,
+          },
+        })
+        // Dispute-resume: park status at `disputed` for admin tooling but remember
+        // the rung so both parties can still settle while the dispute is open — a
+        // missed confirm is often a timezone gap, not a scam. Completing closes it.
+        await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed', disputeResumeStatus: 'payment_uploaded' } })
+      })
+      notify(openerId, 'dispute', 'Trade Escalated', `The ${step.actor} did not respond in time, so your trade was escalated to a dispute for admin review.`, { tradeId: trade.id }, trade.id)
+      notify(missedActorId, 'dispute', 'Trade Escalated', 'You did not respond in time after payment proof was uploaded, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
+      void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (no response after upload)', body: `Trade #${trade.orderRef} — the ${step.actor} went dark >24h at payment_uploaded.`, href: '/admin/disputes' })
+      uploadedEscalated++
+    } catch (err) {
+      logger.error({ err, tradeId: trade.id }, 'Failed to auto-escalate stale payment_uploaded trade')
+    }
   }
 
   // 3. Escalate disputes older than 48 hours
@@ -177,7 +231,7 @@ export async function runTradeEscalation(): Promise<void> {
   }
 
   logger.info(
-    { cancelled: stalePending.length, releaseEscalated, awaitingReview, oldDisputes },
+    { cancelled: stalePending.length, releaseEscalated, uploadedEscalated, awaitingReview, oldDisputes },
     'Trade escalation check complete',
   )
 }
