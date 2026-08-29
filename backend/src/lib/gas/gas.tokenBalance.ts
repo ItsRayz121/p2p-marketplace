@@ -167,18 +167,8 @@ async function getSuiTokenBalance(
   owner: string,
   knownDecimals?: number,
 ): Promise<TokenBalanceResult> {
-  const rpc = async (method: string, params: unknown[]) => {
-    const res = await fetch(env.SUI_RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
-      signal: AbortSignal.timeout(10_000),
-    })
-    if (!res.ok) throw new Error(`SUI RPC ${method} HTTP ${res.status}`)
-    const data = await res.json() as { result?: unknown; error?: { message: string } }
-    if (data.error) throw new Error(`SUI RPC error: ${data.error.message}`)
-    return data.result
-  }
+  const { suiRpcCall } = await import('./suiWalletService')
+  const rpc = (method: string, params: unknown[]) => suiRpcCall<unknown>(method, params)
 
   let decimals = knownDecimals
   if (decimals == null) {

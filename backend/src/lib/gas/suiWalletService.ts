@@ -25,6 +25,8 @@
  */
 
 import { env } from '../env'
+import { redis } from '../redis'
+import { logger } from '../logger'
 import { decryptGasSeed, gasWalletIsConfigured } from './gasWalletService'
 import { deriveSlip10Ed25519, ed25519PublicKeyFromSeed } from './nonEvmDerivation'
 import type { RpcHealthResult } from './gas.balance'
@@ -32,6 +34,108 @@ import type { RpcHealthResult } from './gas.balance'
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SUI_SLIP10_PATH = "m/44'/784'/0'/0'/0'"
+
+// Built-in public SUI mainnet JSON-RPC endpoints, tried (in order) after the
+// operator-configured SUI_RPC_URL / SUI_RPC_URL_FALLBACK. All keyless. The
+// Mysten public fullnode alone is not reliable from shared cloud egress IPs
+// (per-IP rate limiting → sustained HTTP 429), which silently froze SUI balance
+// refresh + RPC health for weeks. Failing over across independent providers is
+// the permanent fix.
+const SUI_PUBLIC_FALLBACK_RPCS = [
+  'https://fullnode.mainnet.sui.io',
+  'https://sui-rpc.publicnode.com',
+  'https://sui-mainnet.public.blastapi.io',
+  'https://sui-mainnet-endpoint.blockvision.org',
+  'https://rpc-mainnet.suiscan.xyz',
+  'https://sui-mainnet-rpc.allthatnode.com',
+] as const
+
+/**
+ * Ordered, de-duplicated list of SUI JSON-RPC endpoints to try:
+ *   1. operator primary (SUI_RPC_URL);
+ *   2. operator-supplied extras (SUI_RPC_URL_FALLBACK, comma-separated);
+ *   3. built-in keyless public endpoints (independent providers).
+ * A rate-limited or down primary no longer takes SUI offline — the caller walks
+ * this list until one endpoint answers.
+ */
+export function getSuiRpcEndpoints(): string[] {
+  const extras = (env.SUI_RPC_URL_FALLBACK ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+  const ordered = [env.SUI_RPC_URL, ...extras, ...SUI_PUBLIC_FALLBACK_RPCS]
+  return [...new Set(ordered)]
+}
+
+interface SuiRpcCallOpts {
+  /** Per-request timeout (ms). Default 10s. */
+  timeoutMs?: number
+  /**
+   * JSON-RPC error codes that are a valid "answer" for this method (e.g. -32000
+   * "not found" for a tx lookup) — returned to the caller instead of triggering
+   * failover to the next endpoint.
+   */
+  benignErrorCodes?: number[]
+}
+
+class SuiRpcBenignError extends Error {
+  constructor(public readonly code: number, message: string) {
+    super(message)
+    this.name = 'SuiRpcBenignError'
+  }
+}
+
+/**
+ * Call a SUI JSON-RPC method with automatic failover across getSuiRpcEndpoints().
+ * A network error, timeout, HTTP 429/5xx, or non-benign JSON-RPC error moves on
+ * to the next endpoint. Throws the last error only when every endpoint fails.
+ */
+export async function suiRpcCall<T = unknown>(
+  method: string,
+  params: unknown[],
+  opts: SuiRpcCallOpts = {},
+): Promise<T> {
+  const { timeoutMs = 10_000, benignErrorCodes = [] } = opts
+  const body = JSON.stringify({ jsonrpc: '2.0', id: 1, method, params })
+  let lastErr: unknown
+
+  for (const url of getSuiRpcEndpoints()) {
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+      if (!res.ok) {
+        // 429 / 5xx → try the next provider; 4xx (other) is unlikely to differ
+        // but we still fail over since a bad gateway can masquerade as 400.
+        lastErr = new Error(`SUI RPC ${method} HTTP ${res.status} @ ${url}`)
+        continue
+      }
+      const data = (await res.json()) as { result?: T; error?: { message?: string; code?: number } }
+      if (data.error) {
+        const code = data.error.code ?? 0
+        const msg = data.error.message ?? JSON.stringify(data.error)
+        if (benignErrorCodes.includes(code)) throw new SuiRpcBenignError(code, msg)
+        lastErr = new Error(`SUI RPC ${method} error ${code}: ${msg} @ ${url}`)
+        continue
+      }
+      return data.result as T
+    } catch (err) {
+      if (err instanceof SuiRpcBenignError) throw err
+      lastErr = err
+    }
+  }
+
+  logger.error(
+    { method, err: lastErr instanceof Error ? lastErr.message : String(lastErr) },
+    '[sui-rpc] all endpoints failed',
+  )
+  throw lastErr instanceof Error ? lastErr : new Error(`SUI RPC ${method} failed on all endpoints`)
+}
+
+export { SuiRpcBenignError }
 
 // SUI address regex: 0x + 64 hex chars
 const SUI_ADDR_RE = /^0x[0-9a-fA-F]{64}$/
@@ -147,31 +251,30 @@ export function validateSuiAtStartup(): {
 
 // ── Balance fetching ──────────────────────────────────────────────────────────
 
+const SUI_BALANCE_CACHE_TTL_S = 60
+
 /**
- * Fetch SUI native balance via SUI JSON-RPC.
+ * Fetch SUI native balance via SUI JSON-RPC, failing over across every endpoint
+ * in getSuiRpcEndpoints(). A 60s Redis cache absorbs bursts (admin panel + dry
+ * runs + monitor) so we don't invite rate limiting on the public providers.
  * Returns balance in SUI (not MIST; 1 SUI = 10^9 MIST).
  */
 export async function getSuiBalance(address: string): Promise<number> {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'suix_getBalance',
-    params: [address, '0x2::sui::SUI'],
-  })
-  const res = await fetch(env.SUI_RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!res.ok) throw new Error(`SUI RPC suix_getBalance HTTP ${res.status}`)
-  const data = await res.json() as {
-    result?: { totalBalance?: string }
-    error?: { message: string }
-  }
-  if (data.error) throw new Error(`SUI RPC error: ${data.error.message}`)
-  const mist = parseInt(data.result?.totalBalance ?? '0', 10)
-  return mist / 1e9  // MIST → SUI
+  const cacheKey = `gasbal:sui:${address}`
+  try {
+    const cached = await redis.get(cacheKey)
+    if (cached !== null) return parseFloat(cached)
+  } catch { /* redis miss is non-fatal */ }
+
+  const result = await suiRpcCall<{ totalBalance?: string }>(
+    'suix_getBalance',
+    [address, '0x2::sui::SUI'],
+  )
+  const mist = parseInt(result?.totalBalance ?? '0', 10)
+  const sui = mist / 1e9 // MIST → SUI
+
+  try { await redis.set(cacheKey, String(sui), 'EX', SUI_BALANCE_CACHE_TTL_S) } catch { /* non-fatal */ }
+  return sui
 }
 
 // ── RPC health check ──────────────────────────────────────────────────────────
@@ -179,22 +282,9 @@ export async function getSuiBalance(address: string): Promise<number> {
 export async function checkSuiRpc(): Promise<RpcHealthResult> {
   const start = Date.now()
   try {
-    const res = await fetch(env.SUI_RPC_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'sui_getLatestCheckpointSequenceNumber',
-        params: [],
-      }),
-      signal: AbortSignal.timeout(8_000),
-    })
+    const result = await suiRpcCall<string>('sui_getLatestCheckpointSequenceNumber', [], { timeoutMs: 8_000 })
     const latencyMs = Date.now() - start
-    if (!res.ok) return { reachable: false, latencyMs, error: `HTTP ${res.status}` }
-    const data = await res.json() as { result?: string; error?: { message: string } }
-    if (data.error) return { reachable: false, latencyMs, error: data.error.message }
-    const checkpoint = data.result ? parseInt(data.result, 10) : undefined
+    const checkpoint = result ? parseInt(result, 10) : undefined
     return { reachable: true, latencyMs, ...(checkpoint !== undefined ? { blockNumber: checkpoint } : {}) }
   } catch (err) {
     return { reachable: false, latencyMs: Date.now() - start, error: err instanceof Error ? err.message : String(err) }

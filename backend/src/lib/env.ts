@@ -120,6 +120,11 @@ const envSchema = z.object({
   TON_V4_ENDPOINT_URL: z.string().url().default('https://mainnet-v4.tonhubapi.com'),
   // SUI: SUI Mainnet JSON-RPC node (mysten, Shinami, QuickNode, etc.)
   SUI_RPC_URL: z.string().url().default('https://fullnode.mainnet.sui.io'),
+  // Optional extra SUI RPC endpoints (comma-separated) tried before the built-in
+  // public fallback list. Point this at a dedicated node (Shinami/QuickNode/etc.)
+  // for higher throughput — the Mysten public fullnode is heavily IP-rate-limited
+  // and 429s constantly from shared cloud egress IPs (Railway).
+  SUI_RPC_URL_FALLBACK: z.string().optional(),
   // Aptos Indexer GraphQL endpoint — used by the gas payment poller to detect
   // incoming USDT (fungible-asset) deposits to the Aptos gas wallet.
   APTOS_INDEXER_URL: z.string().url().default('https://api.mainnet.aptoslabs.com/v1/graphql'),

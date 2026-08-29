@@ -84,29 +84,19 @@ async function checkSolanaTxConfirmed(txHash: string): Promise<boolean> {
 // ── SUI confirmation ──────────────────────────────────────────────────────────
 
 async function checkSuiTxConfirmed(txHash: string): Promise<boolean> {
-  const body = JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    method: 'sui_getTransactionBlock',
-    params: [txHash, { showEffects: true }],
-  })
-  const res = await fetch(env.SUI_RPC_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body,
-    signal: AbortSignal.timeout(10_000),
-  })
-  if (!res.ok) throw new Error(`SUI RPC sui_getTransactionBlock HTTP ${res.status}`)
-  const data = await res.json() as {
-    result?: { effects?: { status?: { status?: string } } }
-    error?: { message?: string; code?: number }
+  const { suiRpcCall, SuiRpcBenignError } = await import('./suiWalletService')
+  try {
+    const result = await suiRpcCall<{ effects?: { status?: { status?: string } } }>(
+      'sui_getTransactionBlock',
+      [txHash, { showEffects: true }],
+      { benignErrorCodes: [-32000] }, // -32000 = not found yet
+    )
+    return result?.effects?.status?.status === 'success'
+  } catch (err) {
+    // "not found yet" → return false so the job retries on the next tick
+    if (err instanceof SuiRpcBenignError) return false
+    throw err
   }
-  if (data.error) {
-    // Code -32000 = not found yet — return false so the job retries
-    if (data.error.code === -32000) return false
-    throw new Error(`SUI RPC error: ${data.error.message ?? JSON.stringify(data.error)}`)
-  }
-  return data.result?.effects?.status?.status === 'success'
 }
 
 // ── Aptos confirmation ────────────────────────────────────────────────────────

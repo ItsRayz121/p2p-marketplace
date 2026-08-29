@@ -30,6 +30,7 @@ import {
 import {
   getSuiHotWalletAddress,
   deriveSuiPrivateKeyForDelivery,
+  getSuiRpcEndpoints,
 } from './suiWalletService'
 import { getAptosHotWalletAddress } from './aptosWalletService'
 
@@ -613,8 +614,30 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 
 // ── SUI delivery ──────────────────────────────────────────────────────────────
 
-async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+/**
+ * Run a SUI delivery op against the first RPC endpoint that succeeds, walking
+ * getSuiRpcEndpoints(). A rate-limited / down primary (the Mysten public fullnode
+ * 429s hard from shared cloud IPs) no longer blocks payouts — in practice the
+ * throttled provider fails on the first read (getCoins / dry-run) before anything
+ * is submitted, so failover just picks the next node. The order-level state
+ * machine is the backstop against re-delivery once a digest is recorded.
+ */
+async function withSuiClientFailover<T>(
+  fn: (client: import('@mysten/sui/client').SuiClient) => Promise<T>,
+): Promise<T> {
   const { SuiClient } = await import('@mysten/sui/client')
+  let lastErr: unknown
+  for (const url of getSuiRpcEndpoints()) {
+    try {
+      return await fn(new SuiClient({ url }))
+    } catch (err) {
+      lastErr = err
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('SUI delivery failed on all RPC endpoints')
+}
+
+async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
   const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
   const { Transaction } = await import('@mysten/sui/transactions')
 
@@ -623,20 +646,22 @@ async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
   try {
     privateKeySeed = deriveSuiPrivateKeyForDelivery(seed)
     const keypair = Ed25519Keypair.fromSecretKey(new Uint8Array(privateKeySeed))
-    const client = new SuiClient({ url: env.SUI_RPC_URL })
 
     const mistAmount = BigInt(Math.round(Number(order.gasAmountNative) * 1e9))
-    const tx = new Transaction()
-    const [coin] = tx.splitCoins(tx.gas, [mistAmount])
-    tx.transferObjects([coin], order.toAddress)
 
-    const result = await client.signAndExecuteTransaction({
-      signer: keypair,
-      transaction: tx,
-      requestType: 'WaitForLocalExecution',
-      options: { showEffects: true },
+    return await withSuiClientFailover(async (client) => {
+      const tx = new Transaction()
+      const [coin] = tx.splitCoins(tx.gas, [mistAmount])
+      tx.transferObjects([coin], order.toAddress)
+
+      const result = await client.signAndExecuteTransaction({
+        signer: keypair,
+        transaction: tx,
+        requestType: 'WaitForLocalExecution',
+        options: { showEffects: true },
+      })
+      return result.digest
     })
-    return result.digest
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
@@ -647,7 +672,6 @@ async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 // type (merging when the balance is fragmented), splits off the exact amount and
 // transfers it — gas is paid from the wallet's native SUI coins as usual.
 async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: number): Promise<string> {
-  const { SuiClient } = await import('@mysten/sui/client')
   const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
   const { Transaction } = await import('@mysten/sui/transactions')
 
@@ -660,44 +684,45 @@ async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: n
   try {
     privateKeySeed = deriveSuiPrivateKeyForDelivery(seed)
     const keypair = Ed25519Keypair.fromSecretKey(new Uint8Array(privateKeySeed))
-    const client = new SuiClient({ url: env.SUI_RPC_URL })
     const owner = keypair.getPublicKey().toSuiAddress()
 
-    // Collect coin objects of this type until they cover the amount (largest first
-    // keeps the merge set small; paginate in case holdings are fragmented).
-    const coins: Array<{ coinObjectId: string; balance: bigint }> = []
-    let cursor: string | null | undefined
-    do {
-      const page = await client.getCoins({ owner, coinType, ...(cursor ? { cursor } : {}) })
-      for (const c of page.data) coins.push({ coinObjectId: c.coinObjectId, balance: BigInt(c.balance) })
-      cursor = page.hasNextPage ? page.nextCursor : null
-    } while (cursor)
-    coins.sort((a, b) => (b.balance > a.balance ? 1 : b.balance < a.balance ? -1 : 0))
+    return await withSuiClientFailover(async (client) => {
+      // Collect coin objects of this type until they cover the amount (largest first
+      // keeps the merge set small; paginate in case holdings are fragmented).
+      const coins: Array<{ coinObjectId: string; balance: bigint }> = []
+      let cursor: string | null | undefined
+      do {
+        const page = await client.getCoins({ owner, coinType, ...(cursor ? { cursor } : {}) })
+        for (const c of page.data) coins.push({ coinObjectId: c.coinObjectId, balance: BigInt(c.balance) })
+        cursor = page.hasNextPage ? page.nextCursor : null
+      } while (cursor)
+      coins.sort((a, b) => (b.balance > a.balance ? 1 : b.balance < a.balance ? -1 : 0))
 
-    const picked: string[] = []
-    let covered = 0n
-    for (const c of coins) {
-      picked.push(c.coinObjectId)
-      covered += c.balance
-      if (covered >= amount) break
-    }
-    if (covered < amount) {
-      throw new Error(`deliverSuiToken: hot wallet holds ${covered} base units of ${coinType}, need ${amount}`)
-    }
+      const picked: string[] = []
+      let covered = 0n
+      for (const c of coins) {
+        picked.push(c.coinObjectId)
+        covered += c.balance
+        if (covered >= amount) break
+      }
+      if (covered < amount) {
+        throw new Error(`deliverSuiToken: hot wallet holds ${covered} base units of ${coinType}, need ${amount}`)
+      }
 
-    const tx = new Transaction()
-    const primary = tx.object(picked[0]!)
-    if (picked.length > 1) tx.mergeCoins(primary, picked.slice(1).map((id) => tx.object(id)))
-    const [out] = tx.splitCoins(primary, [amount])
-    tx.transferObjects([out!], order.toAddress)
+      const tx = new Transaction()
+      const primary = tx.object(picked[0]!)
+      if (picked.length > 1) tx.mergeCoins(primary, picked.slice(1).map((id) => tx.object(id)))
+      const [out] = tx.splitCoins(primary, [amount])
+      tx.transferObjects([out!], order.toAddress)
 
-    const result = await client.signAndExecuteTransaction({
-      signer: keypair,
-      transaction: tx,
-      requestType: 'WaitForLocalExecution',
-      options: { showEffects: true },
+      const result = await client.signAndExecuteTransaction({
+        signer: keypair,
+        transaction: tx,
+        requestType: 'WaitForLocalExecution',
+        options: { showEffects: true },
+      })
+      return result.digest
     })
-    return result.digest
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
