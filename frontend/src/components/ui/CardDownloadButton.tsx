@@ -1,11 +1,14 @@
 'use client'
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, X } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { isTelegramMiniApp } from '@/lib/telegram'
 import {
   captureCardAsPngBlob,
   downloadBlob,
+  blobToDataUrl,
   shareCardImage,
+  shareImageInTelegram,
   ShareCancelledError,
 } from '@/lib/cardImageExport'
 
@@ -27,6 +30,10 @@ interface CardDownloadButtonProps {
 export function CardDownloadButton({ cardRef, buildFilename, className }: CardDownloadButtonProps) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  // When set, the generated PNG is shown full-screen so the viewer can
+  // long-press → "Save to Photos". This is the fallback for the Telegram
+  // Mini App WebView, which silently ignores blob/anchor downloads.
+  const [manualSave, setManualSave] = useState<{ src: string; name: string } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -57,6 +64,27 @@ export function CardDownloadButton({ cardRef, buildFilename, className }: CardDo
       try {
         const blob = await captureCardAsPngBlob(node)
         const filename = buildFilename()
+
+        // Telegram Mini App: blob/anchor downloads are a silent no-op in its
+        // WebView, so never claim success from downloadBlob() here. Try a
+        // direct share first; if that isn't available, fall back to a
+        // long-press-to-save preview of the image.
+        if (isTelegramMiniApp()) {
+          try {
+            const result = await shareImageInTelegram(blob, filename)
+            if (result === 'shared') {
+              toast.success('Offer image shared')
+              return
+            }
+          } catch (err) {
+            if (err instanceof ShareCancelledError) return
+            throw err
+          }
+          const src = await blobToDataUrl(blob)
+          setManualSave({ src, name: filename })
+          return
+        }
+
         if (mode === 'share') {
           try {
             const result = await shareCardImage(blob, filename)
@@ -115,6 +143,36 @@ export function CardDownloadButton({ cardRef, buildFilename, className }: CardDo
           >
             Share Image
           </button>
+        </div>
+      )}
+
+      {manualSave && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Save offer image"
+          className="fixed inset-0 z-[300] flex flex-col items-center justify-center gap-4 bg-black/85 p-4 animate-fade-in"
+          onClick={() => setManualSave(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setManualSave(null)}
+            aria-label="Close"
+            className="absolute right-4 top-4 flex items-center justify-center w-9 h-9 rounded-full bg-white/15 text-white hover:bg-white/25 transition-colors"
+          >
+            <X size={20} />
+          </button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={manualSave.src}
+            alt={manualSave.name}
+            onClick={(e) => e.stopPropagation()}
+            className="max-h-[70vh] max-w-full rounded-xl shadow-2xl"
+          />
+          <p className="max-w-xs text-center text-sm font-medium text-white">
+            Press and hold the image, then choose <span className="whitespace-nowrap">“Save to Photos”</span> /
+            <span className="whitespace-nowrap"> “Download image”</span>.
+          </p>
         </div>
       )}
     </div>

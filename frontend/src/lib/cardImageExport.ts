@@ -97,6 +97,48 @@ function canShareFile(file: File): boolean {
 
 export class ShareCancelledError extends Error {}
 
+/** Reads a blob into a `data:` URL — used to show the generated PNG in an
+ * <img> the viewer can long-press to save (the only reliable save path inside
+ * the Telegram Mini App WebView, which ignores `blob:` anchor downloads). */
+export function blobToDataUrl(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('Failed to read image data'))
+    reader.readAsDataURL(blob)
+  })
+}
+
+/**
+ * Telegram's in-app WebView (Android WebView + iOS WKWebView) silently drops
+ * programmatic `blob:`/`data:` anchor downloads — no download manager, no
+ * error — so `downloadBlob()` is a no-op there even though it "succeeds".
+ * This tries the one path Telegram sometimes honors: a direct Web Share API
+ * call with the file (NOT gated on `navigator.canShare`, which reports false
+ * in Telegram even when `share` works). Resolves 'shared' on success, throws
+ * `ShareCancelledError` if the user dismisses the sheet, and resolves
+ * 'needs-manual' when sharing isn't available — the caller then shows the
+ * long-press-to-save preview.
+ */
+export async function shareImageInTelegram(
+  blob: Blob,
+  filename: string,
+): Promise<'shared' | 'needs-manual'> {
+  if (typeof navigator === 'undefined' || typeof navigator.share !== 'function') {
+    return 'needs-manual'
+  }
+  const file = new File([blob], filename, { type: 'image/png' })
+  try {
+    await navigator.share({ files: [file] })
+    return 'shared'
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new ShareCancelledError()
+    }
+    return 'needs-manual'
+  }
+}
+
 /**
  * Shares `blob` via the Web Share API when the browser supports sharing
  * files; otherwise falls back to a direct download. Throws
