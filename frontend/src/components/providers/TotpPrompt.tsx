@@ -34,14 +34,19 @@ export function TotpPrompt() {
   }
 
   return (
+    // pointer-events-auto is REQUIRED: this prompt is frequently triggered by an
+    // API call fired from inside a Radix Dialog (admin confirm modals), and Radix
+    // sets `body { pointer-events: none }` while its modal is open. Without this
+    // override the code field still takes keyboard input but the Confirm button
+    // is dead ("stale button"). z-index sits above Radix's z-50 content.
     <div
-      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 pointer-events-auto"
       onClick={cancel}
       role="dialog"
       aria-modal="true"
     >
       <div
-        className="w-full max-w-sm rounded-2xl bg-surface border border-border shadow-xl p-5 space-y-4"
+        className="w-full max-w-sm rounded-2xl bg-surface border border-border shadow-xl p-5 space-y-4 pointer-events-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="space-y-1">
