@@ -21,6 +21,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
 import { CopyButton } from '@/components/ui/CopyButton'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
@@ -233,6 +234,15 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   const ratingOpen = !ratedAlready && msLeft > 0
   const windowClosed = !ratedAlready && msLeft <= 0
 
+  // Capture the score the user just gave so we can offer a Trustpilot nudge on
+  // the happy path only (4–5★). Null on a reload where we don't know the score —
+  // by design, we only ask right after a good rating, not retroactively.
+  const [justRated, setJustRated] = useState<number | null>(null)
+  const handleRatingSubmit = async (rating: number, comment: string, tags: string[]) => {
+    await onRatingSubmit(rating, comment, tags)
+    setJustRated(rating)
+  }
+
   // Rating is optional, so this card is collapsed by default — the trade is already
   // done. The header still surfaces the countdown chip so the user knows a rating
   // window is open; they tap to expand and leave feedback if they want to.
@@ -300,7 +310,13 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
 
           <div className="border-t border-border pt-4">
             {ratedAlready ? (
-              <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
+              <div className="space-y-3">
+                <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
+                {/* Happy-path only: they just gave 4–5★. Capped once per ~75 days,
+                    dark until NEXT_PUBLIC_TRUSTPILOT_URL is set. In-app rating above
+                    is untouched — this is purely additive. */}
+                {justRated != null && justRated >= 4 && <TrustpilotPrompt surface="trade" />}
+              </div>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3 gap-2">
@@ -314,7 +330,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
                 {/* When the window closes the form stays visible — only submission is
                     blocked (button disabled), so the trade record/details remain. */}
                 <InlineRatingForm
-                  onSubmit={onRatingSubmit}
+                  onSubmit={handleRatingSubmit}
                   actionError={actionError}
                   disabled={windowClosed}
                   disabledNote={windowClosed ? `The ${RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.` : undefined}
