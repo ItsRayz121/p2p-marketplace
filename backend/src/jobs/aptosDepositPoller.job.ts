@@ -24,6 +24,7 @@ import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { walletAptosCustodyIsConfigured } from '../lib/walletCrypto'
 import { creditDetectedDeposit } from '../services/depositWatcher.service'
+import { sweepAptosDeposit } from '../services/aptosDepositSweep.service'
 
 // Native USDT on Aptos (Tether) — fungible-asset metadata address, 6 decimals.
 // Mirrors gasPaymentPoller; overridable via PlatformConfig 'gas_usdt_aptos_asset'.
@@ -253,7 +254,16 @@ export async function runAptosDepositPoller(): Promise<void> {
       if (!(Number(humanAmount) > 0)) continue
 
       try {
-        if (await recordAndCredit({ txHash, asset, toAddress: owner!, userId, humanAmount })) credited++
+        if (await recordAndCredit({ txHash, asset, toAddress: owner!, userId, humanAmount })) {
+          credited++
+          // Sweep the freshly-received USDT off the per-user deposit address into
+          // the Aptos hot wallet so auto-withdrawals have a funded place to pay
+          // from (EVM parity). Fire-and-forget — a failure here is picked up by
+          // the 10-min straggler pass; it must never block the poller tick.
+          void sweepAptosDeposit({ userId, reason: 'post-credit' }).catch((err) =>
+            logger.error({ err, userId, txHash }, 'aptosDepositPoller: post-credit sweep threw'),
+          )
+        }
       } catch (err) {
         logger.error({ err, txHash, userId }, 'aptosDepositPoller: recordAndCredit threw — will retry next tick')
       }

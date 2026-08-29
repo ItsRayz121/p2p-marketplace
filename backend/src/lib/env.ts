@@ -130,6 +130,17 @@ const envSchema = z.object({
   // Low-balance alert floor for the Aptos hot wallet's native APT (gas for USDT
   // refunds). Below this, the balance monitor emails/notifies the admin.
   GAS_APTOS_MIN_APT: z.coerce.number().positive().default(0.05),
+  // Aptos deposit → hot-wallet sweep (aptosDepositSweep.service.ts). Per-user
+  // Aptos deposit addresses hold USDT but no APT for gas, so the sweep first
+  // tops them up with this much APT from the hot wallet before the USDT transfer.
+  // A fungible-asset transfer costs well under 0.001 APT; 0.002 is safe headroom.
+  APTOS_SWEEP_GAS_APT: z.coerce.number().positive().default(0.002),
+  // Don't bother sweeping a deposit address holding less USDT than this (the gas
+  // top-up would cost more than the amount recovered).
+  APTOS_SWEEP_MIN_USDT: z.coerce.number().positive().default(0.01),
+  // Max deposit addresses the straggler sweep processes per run (keeps a single
+  // tick bounded; the rest are picked up on the next run).
+  APTOS_SWEEP_STRAGGLER_BATCH: z.coerce.number().int().positive().default(25),
   // Reconciler tuning. The reconciler scans detected deposits older than
   // `DEPOSIT_RECONCILE_MIN_AGE_SECONDS` every `DEPOSIT_RECONCILE_INTERVAL_SECONDS`.
   DEPOSIT_RECONCILE_INTERVAL_SECONDS: z.coerce.number().int().positive().default(60),

@@ -24,6 +24,7 @@ import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtm
 import { runUsdtConfirmReminder, runUsdtConfirmAdminWarning, runUsdtConfirmDeadline } from '../jobs/usdtTradeDeadline.job'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
+import { runAptosDepositSweepStragglers } from '../jobs/aptosDepositSweep.job'
 import { runEvmDepositPoller } from '../jobs/evmDepositPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
@@ -255,6 +256,14 @@ export function startWorkers() {
   // Idempotent crediting makes the cadence safe; default 60s. Plain-interval
   // sweep — ran with BullMQ attempts:1.
   scheduleSweep('aptos-deposit-poller', runAptosDepositPoller, env.POLLER_INTERVAL_SECONDS * 1000)
+
+  // Aptos deposit → hot-wallet straggler sweep — moves USDT sitting on per-user
+  // Aptos deposit addresses into the hot wallet so auto-withdrawals can pay from
+  // one funded place (EVM parity). The poller fires a per-user sweep right after
+  // each credited deposit; this 10-min pass is the backstop for pre-existing
+  // deposits and any the hook missed. Idempotent + batch-capped. Plain-interval
+  // sweep — ran with BullMQ attempts:1.
+  scheduleSweep('aptos-deposit-sweep', runAptosDepositSweepStragglers, 10 * 60 * 1000)
 
   // EVM USER deposit poller — Moralis-independent backstop. Scans ERC20
   // Transfer logs to per-user deposit addresses via RPC and feeds hits through

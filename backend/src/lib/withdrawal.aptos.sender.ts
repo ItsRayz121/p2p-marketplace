@@ -24,6 +24,8 @@ import { withHotWalletLock } from './hotWalletLock'
 import { getAptosHotWalletAddress } from './gas/aptosWalletService'
 import { getAptosNativeBalance, getAptosUsdtAsset } from './gas/aptosRefund'
 import { sendAptosFungibleAsset, usdtToAptosBaseUnits } from './gas/aptosTransfer'
+import { getHotWalletTokenBalance } from './gas/gas.tokenBalance'
+import { sweepAptosDeposit } from '../services/aptosDepositSweep.service'
 import { finalizeWithdrawalSent } from './withdrawal.finalize'
 
 interface AutoWithdrawal {
@@ -97,6 +99,28 @@ export async function sendAptosWithdrawalOnChain(wd: AutoWithdrawal): Promise<vo
   } catch (err) {
     // Non-fatal: proceed and let the submit fail naturally if gas is truly short.
     log.warn({ err, withdrawalId: wd.id }, 'sendAptosWithdrawalOnChain: APT gas pre-check errored, proceeding anyway')
+  }
+
+  // ── USDT liquidity pre-flight (self-healing) ───────────────────────────────
+  // Aptos deposits credit the user's internal balance but leave the on-chain
+  // USDT on their per-user deposit address — so the hot wallet can be short even
+  // though the platform "has" the funds. If it can't cover this withdrawal,
+  // sweep that user's deposit address into the hot wallet first, then send. A
+  // failure here is non-fatal: the send below still fails-and-alerts if the hot
+  // wallet is genuinely short, and the 10-min straggler sweep is the backstop.
+  try {
+    const assetAddr = await getAptosUsdtAsset()
+    const { balance: hotUsdt } = await getHotWalletTokenBalance('APT', assetAddr, hotAddress, 6)
+    if (hotUsdt < Number(wd.amount)) {
+      log.warn(
+        { withdrawalId: wd.id, hotUsdt, needed: Number(wd.amount) },
+        'sendAptosWithdrawalOnChain: hot wallet short on USDT — sweeping user deposit address first',
+      )
+      const swept = await sweepAptosDeposit({ userId: wd.userId, reason: `withdrawal-preflight:${wd.id}` })
+      log.info({ withdrawalId: wd.id, sweep: swept }, 'sendAptosWithdrawalOnChain: pre-flight sweep result')
+    }
+  } catch (err) {
+    log.warn({ err, withdrawalId: wd.id }, 'sendAptosWithdrawalOnChain: USDT pre-flight sweep errored, proceeding anyway')
   }
 
   // ── Serialize + de-dupe, then broadcast ────────────────────────────────────

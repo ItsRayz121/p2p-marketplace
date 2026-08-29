@@ -147,6 +147,31 @@ export function deriveAptosDepositAddress(index: number): string {
 }
 
 /**
+ * Derive the raw Ed25519 private key (32 bytes) for a per-user Aptos deposit
+ * address — same SLIP-0010 path as deriveAptosDepositAddress, so the key
+ * provably controls the stored address. ONLY for the sweep path
+ * (aptosDepositSweep.service.ts): moving deposited USDT off the per-user
+ * address into the Aptos hot wallet so withdrawals can be paid from one place.
+ *
+ * The returned Buffer is the live private key — the caller MUST zero it in a
+ * finally block. The decrypted master seed is zeroed here. Never log the return
+ * value.
+ */
+export function deriveAptosDepositPrivateKey(index: number): Buffer {
+  if (!Number.isInteger(index) || index < 0 || index >= 2 ** 31) {
+    throw new Error('Invalid derivation index')
+  }
+  const seed = decryptMasterSeed()
+  try {
+    const path = `m/44'/${APTOS_COIN_TYPE}'/0'/0'/${index}'`
+    const { privateKey } = deriveSlip10Ed25519(seed, path)
+    return privateKey // caller responsibility to zero
+  } finally {
+    seed.fill(0)
+  }
+}
+
+/**
  * True when custody is configured AND this Node build can compute sha3-256
  * (required for the Aptos address format). Mirrors validateAptosAtStartup's
  * sha3 guard so we never hand out an unspendable address.
