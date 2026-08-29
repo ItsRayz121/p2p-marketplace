@@ -238,7 +238,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   // the happy path only (4–5★). Null on a reload where we don't know the score —
   // by design, we only ask right after a good rating, not retroactively.
   const [justRated, setJustRated] = useState<number | null>(null)
-  const handleRatingSubmit = async (rating: number, comment: string, tags: string[]) => {
+  const handleRateThenPrompt = async (rating: number, comment: string, tags: string[]) => {
     await onRatingSubmit(rating, comment, tags)
     setJustRated(rating)
   }
@@ -330,7 +330,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
                 {/* When the window closes the form stays visible — only submission is
                     blocked (button disabled), so the trade record/details remain. */}
                 <InlineRatingForm
-                  onSubmit={handleRatingSubmit}
+                  onSubmit={handleRateThenPrompt}
                   actionError={actionError}
                   disabled={windowClosed}
                   disabledNote={windowClosed ? `The ${RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.` : undefined}
