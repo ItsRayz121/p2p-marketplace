@@ -3235,12 +3235,17 @@ export async function adminRoutes(app: FastifyInstance) {
     const txHash = parsed.data.txHash.trim()
     const EVM_TX_RE  = /^0x[0-9a-fA-F]{64}$/
     const TRON_TX_RE = /^[0-9a-fA-F]{64}$/
-    const isTron = withdrawal.network.toUpperCase() === 'TRC20'
+    const net = withdrawal.network.toUpperCase()
+    const isTron = net === 'TRC20'
+    const isAptos = net === 'APTOS'
+    // Aptos tx hashes are 0x + 64 hex — same shape as EVM.
     const validHash = isTron ? TRON_TX_RE.test(txHash) : EVM_TX_RE.test(txHash)
     if (!validHash) {
       const expected = isTron
         ? '64 hex characters (TRON format)'
-        : '0x followed by 64 hex characters (EVM format)'
+        : isAptos
+          ? '0x followed by 64 hex characters (Aptos format)'
+          : '0x followed by 64 hex characters (EVM format)'
       throw new AppError(
         'VALIDATION_ERROR',
         `Invalid transaction hash for ${withdrawal.network}. Expected ${expected}. If you need to send this withdrawal manually, complete the on-chain transfer first, then paste the real transaction hash here.`,

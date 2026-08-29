@@ -165,17 +165,22 @@ async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals:
   try {
     privKey = deriveAptosPrivateKeyForDelivery(seed)
     const account = Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(new Uint8Array(privKey)) })
-    const txn = await aptos.transaction.build.simple({
-      sender: account.accountAddress,
-      data: {
-        function: '0x1::primary_fungible_store::transfer',
-        typeArguments: ['0x1::fungible_asset::Metadata'],
-        functionArguments: [contract, order.toAddress, amount],
-      },
+    // Serialize every send from the shared Aptos hot-wallet account (gas delivery,
+    // gas refunds, user withdrawals) so concurrent sends can't collide on the
+    // account sequence number. Same mutex key the withdrawal sender uses.
+    return await withHotWalletLock('aptos', async () => {
+      const txn = await aptos.transaction.build.simple({
+        sender: account.accountAddress,
+        data: {
+          function: '0x1::primary_fungible_store::transfer',
+          typeArguments: ['0x1::fungible_asset::Metadata'],
+          functionArguments: [contract, order.toAddress, amount],
+        },
+      })
+      const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
+      await aptos.waitForTransaction({ transactionHash: pending.hash })
+      return pending.hash
     })
-    const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
-    await aptos.waitForTransaction({ transactionHash: pending.hash })
-    return pending.hash
   } finally {
     seed.fill(0)
     if (privKey) privKey.fill(0)
@@ -208,16 +213,19 @@ async function deliverAptosNative(order: GasFeeOrder): Promise<string> {
   try {
     privKey = deriveAptosPrivateKeyForDelivery(seed)
     const account = Account.fromPrivateKey({ privateKey: new Ed25519PrivateKey(new Uint8Array(privKey)) })
-    const txn = await aptos.transaction.build.simple({
-      sender: account.accountAddress,
-      data: {
-        function: '0x1::aptos_account::transfer',
-        functionArguments: [order.toAddress, amount],
-      },
+    // Shared Aptos hot-wallet mutex — see deliverAptosToken.
+    return await withHotWalletLock('aptos', async () => {
+      const txn = await aptos.transaction.build.simple({
+        sender: account.accountAddress,
+        data: {
+          function: '0x1::aptos_account::transfer',
+          functionArguments: [order.toAddress, amount],
+        },
+      })
+      const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
+      await aptos.waitForTransaction({ transactionHash: pending.hash })
+      return pending.hash
     })
-    const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
-    await aptos.waitForTransaction({ transactionHash: pending.hash })
-    return pending.hash
   } finally {
     seed.fill(0)
     if (privKey) privKey.fill(0)

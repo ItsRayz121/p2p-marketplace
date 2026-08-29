@@ -62,20 +62,27 @@ interface WithdrawalsResponse {
 
 // ─── Status display helpers ────────────────────────────────────────────────────
 
-type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved,sent,completed' | 'on_hold' | 'rejected,cancelled' | 'all'
+type StatusFilter = 'pending' | 'first_approved' | 'approved' | 'auto_approved' | 'auto_approved,sent,completed' | 'on_hold' | 'rejected,cancelled' | 'all'
 
 const STATUS_TABS: { value: StatusFilter; label: string }[] = [
   { value: 'all',                          label: 'All' },
   { value: 'pending',                       label: 'Pending' },
   { value: 'first_approved',               label: '1st Approved' },
   { value: 'approved',                     label: 'Ready to Send' },
+  { value: 'auto_approved',               label: 'Auto / Sending' },
   { value: 'auto_approved,sent,completed', label: 'Completed' },
   { value: 'on_hold',                      label: 'On Hold' },
   { value: 'rejected,cancelled',           label: 'Rejected' },
 ]
 
-const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
-  if (s === 'auto_approved') return 'success'
+// `auto_approved` means different things depending on whether the on-chain send
+// has actually happened: with a txHash it's a completed auto-send; without one
+// it's still in flight (or stuck). `hasTxHash` splits the two.
+const statusVariant = (
+  s: WithdrawalStatus,
+  hasTxHash = true,
+): 'default' | 'success' | 'warning' | 'danger' | 'outline' => {
+  if (s === 'auto_approved') return hasTxHash ? 'success' : 'warning'
   if (s === 'approved') return 'warning'
   if (s === 'first_approved') return 'default'
   if (s === 'on_hold') return 'danger'
@@ -84,7 +91,8 @@ const statusVariant = (s: WithdrawalStatus): 'default' | 'success' | 'warning' |
   return 'outline'
 }
 
-const statusLabel = (s: WithdrawalStatus): string => {
+const statusLabel = (s: WithdrawalStatus, hasTxHash = true): string => {
+  if (s === 'auto_approved') return hasTxHash ? 'Auto-Sent' : 'Sending…'
   const labels: Record<WithdrawalStatus, string> = {
     pending: 'Pending',
     first_approved: '1 of 2 Approved',
@@ -131,11 +139,16 @@ const EXPLORER_TX_BASE: Record<string, string> = {
   ARBITRUM: 'https://arbiscan.io/tx',
   OPTIMISM: 'https://optimistic.etherscan.io/tx',
   BASE:     'https://basescan.org/tx',
+  APTOS:    'https://explorer.aptoslabs.com/txn',
 }
 
 const explorerTxUrl = (network: string, txHash: string): string => {
   const base = EXPLORER_TX_BASE[network.toUpperCase()]
-  return base ? `${base}/${txHash}` : '#'
+  if (!base) return '#'
+  // Aptos explorer needs an explicit network query param to resolve the hash.
+  return network.toUpperCase() === 'APTOS'
+    ? `${base}/${txHash}?network=mainnet`
+    : `${base}/${txHash}`
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -439,8 +452,8 @@ export default function WithdrawalsPage() {
                       {w.toAddress ? `${w.toAddress.slice(0, 8)}...${w.toAddress.slice(-6)}` : '—'}
                     </td>
                     <td className="px-4 py-3" data-label="Status">
-                      <Badge variant={statusVariant(w.status)} size="sm">
-                        {statusLabel(w.status)}
+                      <Badge variant={statusVariant(w.status, !!w.txHash)} size="sm">
+                        {statusLabel(w.status, !!w.txHash)}
                       </Badge>
                     </td>
                     <td className="px-4 py-3 text-text-secondary text-xs" data-label="Date">
@@ -533,7 +546,7 @@ export default function WithdrawalsPage() {
               </div>
               <div>
                 <p className="text-text-muted">Status</p>
-                <Badge variant={statusVariant(selected.status)}>{statusLabel(selected.status)}</Badge>
+                <Badge variant={statusVariant(selected.status, !!selected.txHash)}>{statusLabel(selected.status, !!selected.txHash)}</Badge>
               </div>
               <div>
                 <p className="text-text-muted">Submitted</p>

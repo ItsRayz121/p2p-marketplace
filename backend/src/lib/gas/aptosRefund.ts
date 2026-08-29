@@ -19,6 +19,7 @@ import { env } from '../env'
 import { db } from '../prisma'
 import { logger } from '../logger'
 import { decryptGasSeed } from './gasWalletService'
+import { withHotWalletLock } from '../hotWalletLock'
 import {
   deriveAptosPrivateKeyForDelivery,
   validateAptosAddress,
@@ -141,20 +142,25 @@ export async function sendAptosUsdtRefund(toAddress: string, amountUsdt: Decimal
       privateKey: new Ed25519PrivateKey(new Uint8Array(privKey)),
     })
 
-    const txn = await aptos.transaction.build.simple({
-      sender: account.accountAddress,
-      data: {
-        function: '0x1::primary_fungible_store::transfer',
-        typeArguments: ['0x1::fungible_asset::Metadata'],
-        functionArguments: [assetAddr, toAddress, amount],
-      },
+    // Serialize with every other send from the shared Aptos hot-wallet account
+    // (gas delivery, user withdrawals) to avoid sequence-number collisions.
+    const hash = await withHotWalletLock('aptos', async () => {
+      const txn = await aptos.transaction.build.simple({
+        sender: account.accountAddress,
+        data: {
+          function: '0x1::primary_fungible_store::transfer',
+          typeArguments: ['0x1::fungible_asset::Metadata'],
+          functionArguments: [assetAddr, toAddress, amount],
+        },
+      })
+
+      const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
+      await aptos.waitForTransaction({ transactionHash: pending.hash })
+      return pending.hash
     })
 
-    const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
-    await aptos.waitForTransaction({ transactionHash: pending.hash })
-
-    logger.info({ toAddress, amount: amount.toString(), txHash: pending.hash }, 'Aptos USDT refund submitted')
-    return pending.hash
+    logger.info({ toAddress, amount: amount.toString(), txHash: hash }, 'Aptos USDT refund submitted')
+    return hash
   } finally {
     seed.fill(0)
     if (privKey) privKey.fill(0)

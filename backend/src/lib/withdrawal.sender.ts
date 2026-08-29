@@ -10,7 +10,6 @@
 import { createWalletClient, http, parseUnits, type Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
-import { db } from './prisma'
 import { env } from './env'
 import {
   decryptGasSeed,
@@ -25,7 +24,8 @@ import { getEvmGasPrice, getTransactionCount } from './evmRpc'
 import { withHotWalletLock } from './hotWalletLock'
 import { getHotWalletBalance } from './gas/gas.balance'
 import type { GasChainId } from './gas/gas.chains'
-import { appendLedgerEntry } from './gas/gas.ledger'
+import { sendAptosWithdrawalOnChain } from './withdrawal.aptos.sender'
+import { finalizeWithdrawalSent } from './withdrawal.finalize'
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -72,17 +72,6 @@ const CHAIN_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
   base:     'BASE',
 }
 
-// Maps withdrawal network label → GasChainId for the platform_fee ledger entry
-const NETWORK_TO_GAS_CHAIN: Partial<Record<string, GasChainId>> = {
-  TRC20:    'TRON',
-  BEP20:    'BSC',
-  ERC20:    'ETHEREUM',
-  BASE:     'BASE',
-  ARBITRUM: 'ARB',
-  OPTIMISM: 'OP',
-  POLYGON:  'MATIC',
-}
-
 // Native symbol per chain slug — used in alert messages
 const CHAIN_NATIVE_SYMBOL: Partial<Record<string, string>> = {
   bsc:      'BNB',
@@ -107,10 +96,16 @@ interface AutoWithdrawal {
 }
 
 export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
+  // Non-EVM dispatch — Aptos has its own sender (fungible-asset transfer, no viem).
+  if (wd.network.toUpperCase() === 'APTOS') {
+    return sendAptosWithdrawalOnChain(wd)
+  }
+
   // Resolve chain config from network label (e.g. "BEP20" → bsc)
   const chainCfg = await getChainByNetworkLabel(wd.network)
   if (!chainCfg) {
     log.warn({ withdrawalId: wd.id, network: wd.network }, 'sendWithdrawalOnChain: unknown network')
+    void alertUnsupportedAutoSend(wd, `network "${wd.network}" is not a known auto-send chain`)
     return
   }
 
@@ -120,6 +115,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
   )
   if (!tokenCfg?.address) {
     log.warn({ withdrawalId: wd.id, coin: wd.coin, chainId: chainCfg.id }, 'sendWithdrawalOnChain: no ERC20 contract for coin')
+    void alertUnsupportedAutoSend(wd, `no ${wd.coin} token contract configured on ${chainCfg.id}`)
     return
   }
 
@@ -127,6 +123,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
   const rpcUrl = getRpcUrl(chainCfg.id)
   if (!viemChain || !rpcUrl) {
     log.warn({ withdrawalId: wd.id, chainId: chainCfg.id }, 'sendWithdrawalOnChain: no viem chain config')
+    void alertUnsupportedAutoSend(wd, `chain "${chainCfg.id}" has no auto-send RPC/config`)
     return
   }
 
@@ -229,76 +226,10 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
   }
   seed.fill(0)
 
-  // Update DB: withdrawal → sent, existing pending Transaction → completed
+  // Update DB: withdrawal → sent, pending Transaction → completed, fee ledgered,
+  // admin notified. Shared with the Aptos sender so behaviour can't drift.
   try {
-    const wallet = await db.wallet.findFirst({
-      where: { userId: wd.userId, coin: wd.coin, network: wd.network },
-      select: { id: true },
-    })
-
-    await db.$transaction(async (tx) => {
-      const locked = await tx.withdrawal.updateMany({
-        where: { id: wd.id, status: 'auto_approved' },
-        data:  { status: 'sent', txHash, completedAt: new Date() },
-      })
-      if (locked.count === 0) return // already processed by admin concurrently
-
-      if (wallet) {
-        // Update the pending transaction record created at withdrawal creation time
-        const pendingTx = await tx.transaction.findFirst({
-          where: {
-            walletId: wallet.id,
-            type:     'withdrawal',
-            status:   'pending',
-            metadata: { path: ['withdrawalId'], equals: wd.id },
-          },
-        })
-        if (pendingTx) {
-          await tx.transaction.update({
-            where: { id: pendingTx.id },
-            data:  { status: 'completed', txHash },
-          })
-        }
-      }
-    })
-
-    log.info({ withdrawalId: wd.id, txHash, coin: wd.coin, network: wd.network }, 'Auto-send withdrawal completed')
-
-    // Record the platform fee in the gas ledger so it shows up in revenue accounting.
-    // The fee stays physically in the hot wallet (only `amount` is sent on-chain, not
-    // amount+fee). This entry makes it traceable and queryable.
-    const feeAmount = Number(wd.fee ?? 0)
-    if (feeAmount > 0) {
-      const gasChain = NETWORK_TO_GAS_CHAIN[wd.network.toUpperCase()]
-      if (gasChain) {
-        void appendLedgerEntry({
-          entryType:   'platform_fee',
-          chain:       gasChain,
-          nativeAmount: 0,                    // no native movement — fee is in token
-          tokenSymbol:  wd.coin.toUpperCase(),
-          tokenAmount:  feeAmount,
-          usdAmount:    feeAmount,            // USDT ≈ 1 USD; adjust per-coin if needed
-          txHash,
-          sourceKey:    `platform_fee:withdrawal:${wd.id}`,
-          notes:        `Withdrawal fee from user ${wd.userId} — withdrawal ${wd.id}`,
-        }).catch((err) => log.error({ err, withdrawalId: wd.id }, 'Failed to write platform_fee ledger entry'))
-      }
-    }
-
-    // Notify admin so completed auto-sends appear in the notifications feed.
-    // Without this the only way to see them is the "Auto-Sent" tab.
-    const userRow = await db.user.findUnique({
-      where: { id: wd.userId },
-      select: { username: true },
-    }).catch(() => null)
-    const userLabel = userRow?.username ?? wd.userId.slice(-8)
-    void createAdminNotif({
-      category: 'WITHDRAWAL',
-      title:    `Withdrawal Sent: ${wd.amount} ${wd.coin}`,
-      body:     `User ${userLabel} auto-withdrawal of ${wd.amount} ${wd.coin} (${wd.network}) sent on-chain. TX: ${txHash.slice(0, 18)}...`,
-      href:     '/admin/withdrawals?tab=sent',
-      metadata: { withdrawalId: wd.id, txHash, coin: wd.coin, amount: String(wd.amount), network: wd.network, userId: wd.userId },
-    })
+    await finalizeWithdrawalSent(wd, txHash)
   } catch (err) {
     // On-chain tx is already broadcast — log the DB failure but don't throw
     log.error({ err, withdrawalId: wd.id, txHash }, 'sendWithdrawalOnChain: DB update failed after successful on-chain send')
@@ -310,4 +241,20 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
       metadata: { withdrawalId: wd.id, txHash },
     })
   }
+}
+
+/**
+ * Alert admins when an auto-approved withdrawal can't be auto-sent because its
+ * network isn't wired into any sender. Without this the row sits in
+ * auto_approved forever with the balance already debited and nobody notified.
+ */
+async function alertUnsupportedAutoSend(wd: AutoWithdrawal, reason: string): Promise<void> {
+  await createAdminNotif({
+    category: 'WITHDRAWAL',
+    title:    'Auto-withdrawal needs manual send — unsupported network',
+    body:     `Withdrawal ${wd.id} (${wd.amount} ${wd.coin} on ${wd.network}) is auto-approved but cannot be auto-sent: ${reason}. Send manually from the hot wallet, then Mark Sent (Manual Fallback) — or Reject to refund the user.`,
+    href:     '/admin/withdrawals',
+    metadata: { withdrawalId: wd.id, network: wd.network, reason },
+    email:    true,
+  }).catch(() => {})
 }

@@ -7,16 +7,25 @@
  *   - If confirmed (status 0x1, >= minConfirmations blocks): update to 'completed'.
  *   - If reverted (status 0x0): alert admin, mark 'on_hold' for manual review.
  *   - If older than MAX_PENDING_HOURS without a receipt: alert admin.
- *   - Non-EVM (TRON etc.): only age-check; no on-chain polling yet.
+ *   - Aptos: polls fungible-asset tx finality directly (success → 'completed',
+ *     failed → 'on_hold' + alert, pending → age-alert).
+ *   - Other non-EVM (TRON etc.): only age-check; no on-chain polling yet.
+ *
+ * Also runs an orphan-recovery pass that re-drives auto-sends stuck in
+ * 'auto_approved' with the balance already debited, and alerts once/day on any
+ * that stay stuck past STUCK_ALERT_AGE_MS.
  */
 
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { getTransactionReceipt, getBlockNumber, EvmRpcError } from '../lib/evmRpc'
 import { getChainByNetworkLabel, getRpcUrl } from '../services/chainRegistry.service'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { recordAuditLog } from '../lib/audit'
 import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
+import { aptosWithdrawalClaimHeld } from '../lib/withdrawal.aptos.sender'
+import { getAptosTxOutcome } from '../lib/gas/aptosTransfer'
 
 // Alert if a sent withdrawal has no receipt after this many hours
 const MAX_PENDING_HOURS = 2
@@ -26,6 +35,10 @@ const MAX_PENDING_HOURS = 2
 // (or a transient gas/RPC skip) can leave the row auto_approved forever with the
 // balance already debited. This age gate avoids racing the original in-flight send.
 const AUTO_SEND_RECOVERY_MIN_AGE_MS = 3 * 60 * 1000
+
+// An auto_approved row with no txHash older than this is genuinely stuck (the
+// initial send AND several recovery passes have failed). Alert admins once/day.
+const STUCK_ALERT_AGE_MS = 15 * 60 * 1000
 
 export async function runWithdrawalConfirmationWatcher(): Promise<void> {
   const cutoff = new Date(Date.now() - MAX_PENDING_HOURS * 3_600_000)
@@ -73,6 +86,13 @@ async function checkWithdrawal(
   staleCutoff: Date,
 ): Promise<void> {
   const txHash = wd.txHash!
+
+  // Aptos: poll fungible-asset tx finality directly (no viem / RPC receipt).
+  if (wd.network.toUpperCase() === 'APTOS') {
+    await checkAptosWithdrawal(wd, staleCutoff)
+    return
+  }
+
   const chain = await getChainByNetworkLabel(wd.network)
 
   if (!chain || chain.family !== 'EVM') {
@@ -148,6 +168,54 @@ async function checkWithdrawal(
 }
 
 /**
+ * Aptos confirmation: the fungible-asset transfer hash is looked up directly on
+ * the fullnode. Deterministic BFT finality — a committed tx is final, so there
+ * is no confirmation count to wait on.
+ *   - success  → withdrawal 'completed'
+ *   - failed   → withdrawal 'on_hold' + admin alert (funds did NOT move)
+ *   - pending  → age-alert only (same 2h threshold as EVM)
+ */
+async function checkAptosWithdrawal(
+  wd: { id: string; orderRef: string; txHash: string | null; network: string; coin: string; amount: object; userId: string; updatedAt: Date },
+  staleCutoff: Date,
+): Promise<void> {
+  const txHash = wd.txHash!
+  const outcome = await getAptosTxOutcome(txHash)
+
+  if (outcome === 'success') {
+    await db.withdrawal.update({
+      where: { id: wd.id, status: 'sent' }, // guard against concurrent update
+      data: { status: 'completed', completedAt: new Date() },
+    })
+    await recordAuditLog(wd.userId, 'WITHDRAWAL_CONFIRMED', 'Withdrawal', wd.id, { txHash, chain: 'aptos' })
+    logger.info({ withdrawalId: wd.id, txHash }, 'withdrawalConfirmationWatcher: Aptos withdrawal confirmed')
+    return
+  }
+
+  if (outcome === 'failed') {
+    logger.error({ withdrawalId: wd.id, txHash }, 'withdrawalConfirmationWatcher: Aptos withdrawal tx FAILED')
+    await db.withdrawal.update({
+      where: { id: wd.id },
+      data: { status: 'on_hold', adminNote: `Aptos TX FAILED on-chain: ${txHash}. Funds did not move. Manual review required — resend or refund.` },
+    })
+    await recordAuditLog(wd.userId, 'WITHDRAWAL_TX_REVERTED', 'Withdrawal', wd.id, { txHash, chain: 'aptos' })
+    await createAdminNotif({
+      category: 'WITHDRAWAL',
+      title: `⚠ Aptos Withdrawal TX Failed — ${wd.orderRef}`,
+      body: `Withdrawal ${wd.orderRef} tx ${txHash.slice(0, 18)}… FAILED on-chain. Funds were NOT sent. Manual review required — resend from the hot wallet or Reject to refund.`,
+      href: `/admin/withdrawals`,
+      metadata: { withdrawalId: wd.id, txHash, chain: 'aptos' },
+    })
+    return
+  }
+
+  // pending — not yet committed
+  if (wd.updatedAt < staleCutoff) {
+    await alertStaleWithdrawal(wd, 'Aptos transaction not yet committed after 2+ hours — check the explorer')
+  }
+}
+
+/**
  * Re-drive auto-send for withdrawals stuck in 'auto_approved'. sendWithdrawalOnChain
  * is idempotent: it claims the row with updateMany({status:'auto_approved'}) before
  * marking it 'sent', so this can never double-broadcast a withdrawal that already
@@ -164,12 +232,14 @@ async function recoverOrphanedAutoSends(): Promise<void> {
     },
     select: {
       id: true,
+      orderRef: true,
       userId: true,
       coin: true,
       network: true,
       amount: true,
       fee: true,
       toAddress: true,
+      createdAt: true,
     },
     orderBy: { createdAt: 'asc' },
     take: 20,
@@ -180,6 +250,27 @@ async function recoverOrphanedAutoSends(): Promise<void> {
   logger.warn({ count: orphans.length }, 'withdrawalConfirmationWatcher: recovering orphaned auto_approved withdrawals')
 
   for (const wd of orphans) {
+    // If an Aptos send is mid-flight (broadcast, awaiting DB finalize) its claim
+    // key is held — don't race a second broadcast against it.
+    if (wd.network.toUpperCase() === 'APTOS' && (await aptosWithdrawalClaimHeld(wd.id).catch(() => false))) {
+      logger.info({ withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: Aptos send in flight, skipping recovery')
+      continue
+    }
+
+    // Genuinely stuck (initial send + earlier recovery passes all failed) → alert
+    // admins once per day so it can't sit invisible with the balance debited.
+    if (Date.now() - wd.createdAt.getTime() > STUCK_ALERT_AGE_MS) {
+      await alertStuckAutoApproved({
+        id: wd.id,
+        orderRef: wd.orderRef,
+        coin: wd.coin,
+        network: wd.network,
+        amount: wd.amount.toString(),
+      }).catch((err) =>
+        logger.error({ err, withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: stuck alert failed'),
+      )
+    }
+
     try {
       await sendWithdrawalOnChain({
         id: wd.id,
@@ -194,6 +285,28 @@ async function recoverOrphanedAutoSends(): Promise<void> {
       logger.error({ err, withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: recovery send threw')
     }
   }
+}
+
+/** Alert admins about a stuck auto_approved withdrawal — deduped to once per 24h. */
+async function alertStuckAutoApproved(wd: {
+  id: string
+  orderRef: string
+  coin: string
+  network: string
+  amount: string
+}): Promise<void> {
+  const flag = `withdrawal:stuck:alerted:${wd.id}`
+  const first = await redis.set(flag, '1', 'EX', 86_400, 'NX')
+  if (first !== 'OK') return // already alerted within the last day
+
+  logger.warn({ withdrawalId: wd.id, orderRef: wd.orderRef }, 'withdrawalConfirmationWatcher: auto_approved withdrawal STUCK')
+  await createAdminNotif({
+    category: 'WITHDRAWAL',
+    title: `Withdrawal Stuck in Sending — ${wd.orderRef}`,
+    body: `Withdrawal ${wd.orderRef} (${wd.amount} ${wd.coin} on ${wd.network}) has been auto-approved with the balance debited but no on-chain send for 15+ minutes. Auto-retry keeps failing. Check admin notifications for the cause, then Mark Sent (Manual Fallback) after sending — or Reject to refund.`,
+    href: `/admin/withdrawals`,
+    metadata: { withdrawalId: wd.id, orderRef: wd.orderRef, network: wd.network },
+  })
 }
 
 async function alertStaleWithdrawal(
