@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 import { CommunityIconLinks } from '@/components/layout/CommunityChannels'
 import { SUPPORT_EMAIL } from '@/lib/contact'
+import { TrustBox } from '@/components/marketing/TrustBox'
 
 export default function Footer() {
   return (
@@ -58,6 +59,12 @@ export default function Footer() {
               <FooterLink href="/terms">Terms of Service</FooterLink>
               <FooterLink href="/privacy">Privacy Policy</FooterLink>
             </nav>
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-6 pb-6 flex justify-center">
+          <div className="w-full max-w-[220px]">
+            <TrustBox variant="reviewCollector" />
           </div>
         </div>
 

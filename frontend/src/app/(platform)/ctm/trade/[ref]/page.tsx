@@ -14,6 +14,7 @@ import { toast } from '@/lib/toast'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { isOpaqueId } from '@/lib/pkPaymentMethods'
 import { supportMailto } from '@/lib/contact'
+import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
 
 /** Never surface an opaque payment-method ID to users — fall back to a label. */
 function prettyMethod(value?: string | null): string {
@@ -313,6 +314,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [ratingTags, setRatingTags] = useState<string[]>([])
   const [ratingError, setRatingError] = useState('')
   const [traderRatingDone, setTraderRatingDone] = useState(false)
+  // True only after the user submits a rating in THIS session (traderRatingDone
+  // also flips true on reload for an already-rated trade). Gates the additive
+  // Trustpilot nudge so it's not re-shown every time an old trade is reopened.
+  const [justRatedThisSession, setJustRatedThisSession] = useState(false)
   // Rating is optional, so the "Trade Completed" card starts COLLAPSED — the trade
   // is already done. The header shows the countdown; tapping expands it to leave
   // feedback. Mirrors the USDT room's collapsed-by-default rating card.
@@ -592,6 +597,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     try {
       await ctmApi.rateTrade(ref, { rating, comment: ratingComment.trim() || undefined, tags: ratingTags.length ? ratingTags : undefined })
       setTraderRatingDone(true)
+      setJustRatedThisSession(true)
     } catch (e: unknown) {
       setRatingError((e as Error).message ?? 'Failed to submit rating')
     }
@@ -874,7 +880,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           )}
         </div>
         {traderRatingDone ? (
-          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
+          <div className="space-y-3">
+            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
+            {/* Additive review nudge — fires only right after rating this session,
+                at any score, capped once per ~75 days. In-app rating untouched. */}
+            {justRatedThisSession && <TrustpilotPrompt surface="trade" />}
+          </div>
         ) : (
           <>
             {ratingError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{ratingError}</div>}

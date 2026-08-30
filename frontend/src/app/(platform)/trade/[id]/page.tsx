@@ -312,10 +312,12 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
             {ratedAlready ? (
               <div className="space-y-3">
                 <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
-                {/* Happy-path only: they just gave 4–5★. Capped once per ~75 days,
-                    dark until NEXT_PUBLIC_TRUSTPILOT_URL is set. In-app rating above
-                    is untouched — this is purely additive. */}
-                {justRated != null && justRated >= 4 && <TrustpilotPrompt surface="trade" />}
+                {/* Shown once the user has rated this trade THIS session, at any
+                    score — not gated on a high rating (Trustpilot's guidelines
+                    prohibit selectively inviting only happy customers). Capped
+                    once per ~75 days. The in-app rating above is untouched — this
+                    is purely additive. */}
+                {justRated != null && <TrustpilotPrompt surface="trade" />}
               </div>
             ) : (
               <>

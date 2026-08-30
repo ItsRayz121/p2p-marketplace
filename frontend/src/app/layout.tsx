@@ -120,6 +120,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <TelegramPolish />
           <ReferralCapture />
         </Providers>
+        {/* Trustpilot TrustBox bootstrap — hydrates any .trustpilot-widget on the
+            page (footer Review Collector, etc.). Loaded once here; the <TrustBox>
+            component re-hydrates itself after client-side navigation. */}
+        <Script
+          src="https://widget.trustpilot.com/bootstrap/v5/tp.widget.bootstrap.min.js"
+          strategy="afterInteractive"
+        />
         <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
         <Script id="gtag-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];

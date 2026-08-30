@@ -2,10 +2,13 @@
 import { useEffect, useState } from 'react'
 import { Star, X } from 'lucide-react'
 
-// Set in Vercel → Settings → Environment Variables to your public Trustpilot
-// review URL (e.g. https://www.trustpilot.com/evaluate/rupchain.com). Until it
-// is set, this component renders nothing.
-const TRUSTPILOT_URL = process.env.NEXT_PUBLIC_TRUSTPILOT_URL
+// Public Trustpilot "write a review" page for rupchain.com. The domain is
+// claimed/verified, so this is stable — the env var only exists as an override
+// (e.g. to point at a locale-specific evaluate URL, or set it to "off" to hide
+// the nudge entirely).
+const ENV_URL = process.env.NEXT_PUBLIC_TRUSTPILOT_URL
+const TRUSTPILOT_URL =
+  ENV_URL === 'off' ? undefined : (ENV_URL || 'https://www.trustpilot.com/evaluate/rupchain.com')
 
 const DISMISS_KEY = 'rc_review_prompt_at'
 // Once per browser per ~75 days (middle of the 60–90 day window). Whether the
@@ -37,7 +40,8 @@ function remember(): void {
  * review-acquisition ask.
  *
  * Rules baked in:
- *   - Hidden entirely until NEXT_PUBLIC_TRUSTPILOT_URL is set.
+ *   - Points at the verified rupchain.com Trustpilot page; set
+ *     NEXT_PUBLIC_TRUSTPILOT_URL="off" to hide it entirely.
  *   - Shown at most once per browser per ~75 days (localStorage timestamp).
  *   - Never gated or incentivised — no reward for reviewing (Trustpilot ToS).
  *   - The caller is responsible for only mounting this on a positive signal.

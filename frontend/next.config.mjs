@@ -58,7 +58,7 @@ const nextConfig = {
       "default-src 'self'",
       // 'unsafe-inline': Next.js inline runtime + theme/telegram boot scripts + JSON-LD.
       // 'unsafe-eval': required by some WalletConnect/wagmi builds.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://telegram.org https://*.telegram.org https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.google-analytics.com",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com https://telegram.org https://*.telegram.org https://us-assets.i.posthog.com https://www.googletagmanager.com https://www.google-analytics.com https://widget.trustpilot.com",
       "style-src 'self' 'unsafe-inline'",
       // Token/chain logos come from many CDNs (see images.remotePatterns) — allow https broadly for img only.
       "img-src 'self' data: blob: https:",
@@ -71,7 +71,7 @@ const nextConfig = {
       // backend/src/services/blog.service.ts — the sanitiser strips any iframe
       // off that list, and this CSP blocks any host missing from this one. Both
       // lists have to allow a host for an embed to render. Keep them in sync.
-      "frame-src https://challenges.cloudflare.com https://verify.walletconnect.com https://verify.walletconnect.org https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com https://youtube-nocookie.com https://player.vimeo.com https://drive.google.com https://t.me",
+      "frame-src https://challenges.cloudflare.com https://verify.walletconnect.com https://verify.walletconnect.org https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com https://youtube-nocookie.com https://player.vimeo.com https://drive.google.com https://t.me https://widget.trustpilot.com",
       "object-src 'none'",
       "base-uri 'self'",
       "form-action 'self'",
