@@ -314,10 +314,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [ratingTags, setRatingTags] = useState<string[]>([])
   const [ratingError, setRatingError] = useState('')
   const [traderRatingDone, setTraderRatingDone] = useState(false)
-  // True only after the user submits a rating in THIS session (traderRatingDone
-  // also flips true on reload for an already-rated trade). Gates the additive
-  // Trustpilot nudge so it's not re-shown every time an old trade is reopened.
-  const [justRatedThisSession, setJustRatedThisSession] = useState(false)
   // Rating is optional, so the "Trade Completed" card starts COLLAPSED — the trade
   // is already done. The header shows the countdown; tapping expands it to leave
   // feedback. Mirrors the USDT room's collapsed-by-default rating card.
@@ -597,7 +593,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     try {
       await ctmApi.rateTrade(ref, { rating, comment: ratingComment.trim() || undefined, tags: ratingTags.length ? ratingTags : undefined })
       setTraderRatingDone(true)
-      setJustRatedThisSession(true)
     } catch (e: unknown) {
       setRatingError((e as Error).message ?? 'Failed to submit rating')
     }
@@ -880,12 +875,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           )}
         </div>
         {traderRatingDone ? (
-          <div className="space-y-3">
-            <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
-            {/* Additive review nudge — fires only right after rating this session,
-                at any score, capped once per ~75 days. In-app rating untouched. */}
-            {justRatedThisSession && <TrustpilotPrompt surface="trade" />}
-          </div>
+          <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-3 text-sm text-green-700 dark:text-green-300">✓ Trader rating submitted.</div>
         ) : (
           <>
             {ratingError && <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 text-sm text-red-700 dark:text-red-300">{ratingError}</div>}
@@ -922,6 +912,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           </>
         )}
       </div>
+
+      {/* Public platform review — a peer to the trader rating above, not a
+          replacement. Self-gates: hidden unless NEXT_PUBLIC_TRUSTPILOT_URL is set,
+          shown at most once per browser per ~75 days, never incentivised. Offered
+          for every completed CTM trade at any in-app score. */}
+      <TrustpilotPrompt surface="trade" />
+
       <button onClick={() => setStep4Collapsed(true)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
     </div>
   )

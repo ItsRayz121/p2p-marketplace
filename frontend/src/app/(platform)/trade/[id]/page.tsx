@@ -234,15 +234,6 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
   const ratingOpen = !ratedAlready && msLeft > 0
   const windowClosed = !ratedAlready && msLeft <= 0
 
-  // Capture the score the user just gave so we can offer a Trustpilot nudge on
-  // the happy path only (4–5★). Null on a reload where we don't know the score —
-  // by design, we only ask right after a good rating, not retroactively.
-  const [justRated, setJustRated] = useState<number | null>(null)
-  const handleRateThenPrompt = async (rating: number, comment: string, tags: string[]) => {
-    await onRatingSubmit(rating, comment, tags)
-    setJustRated(rating)
-  }
-
   // Rating is optional, so this card is collapsed by default — the trade is already
   // done. The header still surfaces the countdown chip so the user knows a rating
   // window is open; they tap to expand and leave feedback if they want to.
@@ -310,15 +301,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
 
           <div className="border-t border-border pt-4">
             {ratedAlready ? (
-              <div className="space-y-3">
-                <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
-                {/* Shown once the user has rated this trade THIS session, at any
-                    score — not gated on a high rating (Trustpilot's guidelines
-                    prohibit selectively inviting only happy customers). Capped
-                    once per ~75 days. The in-app rating above is untouched — this
-                    is purely additive. */}
-                {justRated != null && <TrustpilotPrompt surface="trade" />}
-              </div>
+              <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
             ) : (
               <>
                 <div className="flex items-center justify-between mb-3 gap-2">
@@ -332,7 +315,7 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
                 {/* When the window closes the form stays visible — only submission is
                     blocked (button disabled), so the trade record/details remain. */}
                 <InlineRatingForm
-                  onSubmit={handleRateThenPrompt}
+                  onSubmit={onRatingSubmit}
                   actionError={actionError}
                   disabled={windowClosed}
                   disabledNote={windowClosed ? `The ${RATING_WINDOW_MINUTES}-minute rating window has closed — this trade can no longer be rated.` : undefined}
@@ -340,6 +323,12 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
               </>
             )}
           </div>
+
+          {/* Public platform review — a peer to the counterparty rating above, not
+              a replacement. Self-gates: hidden unless NEXT_PUBLIC_TRUSTPILOT_URL is
+              set, shown at most once per browser per ~75 days, never incentivised.
+              Offered for every completed trade at any in-app score. */}
+          <TrustpilotPrompt surface="trade" />
         </div>
       )}
     </div>
