@@ -11,6 +11,7 @@ import { ArrowDownToLine } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { toast } from '@/lib/toast'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -112,6 +113,20 @@ export default function DepositsPage() {
   }, [])
   usePolling(fetchHealth, 60_000)
 
+  const [aptosSweepBusy, setAptosSweepBusy] = useState(false)
+  const runAptosSweep = async () => {
+    setAptosSweepBusy(true)
+    try {
+      const s = await adminApi.runAptosStragglerSweep()
+      toast.success('Aptos sweep run', `scanned ${s.scanned}, swept ${s.swept} (${s.totalUsdt} USDT), failed ${s.failed}`)
+      void fetchHealth()
+    } catch (err: any) {
+      toast.error('Aptos sweep failed', err?.message ?? 'Unknown error')
+    } finally {
+      setAptosSweepBusy(false)
+    }
+  }
+
   const fetchDeposits = useCallback(async () => {
     try {
       const params: Record<string, string | number | undefined> = { page, limit }
@@ -206,6 +221,11 @@ export default function DepositsPage() {
         const pollerAgeMin = pollerAt ? (Date.now() - pollerAt.getTime()) / 60_000 : null
         const pollerStale = pollerAgeMin === null || pollerAgeMin > 10
         const moralisStale = moralisAgeH === null || moralisAgeH > 24
+        const aptosAt = health.aptosPoller?.at ? new Date(health.aptosPoller.at) : null
+        const aptosStale = !aptosAt || (Date.now() - aptosAt.getTime()) / 60_000 > 10
+        const sweep = health.aptosDepositSweep
+        const sweepAt = sweep?.at ? new Date(sweep.at) : null
+        const sweepStale = !sweepAt || (Date.now() - sweepAt.getTime()) / 60_000 > 20
         return (
           <div className={`rounded-xl border px-4 py-3 text-sm ${pollerStale ? 'border-danger/40 bg-danger/5' : moralisStale ? 'border-warning/40 bg-warning/5' : 'border-border bg-surface'}`}>
             <p className="font-medium text-text-primary">Deposit detection health</p>
@@ -217,6 +237,20 @@ export default function DepositsPage() {
               RPC poller (backstop): {pollerAt ? `last tick ${fmtDateTime(health.evmPoller.at)}` : 'no heartbeat yet'}
               {pollerStale && ' — NOT RUNNING; deposits may go undetected, check workers'}
             </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Aptos deposit poller: {aptosAt ? `last tick ${fmtDateTime(health.aptosPoller.at)}` : 'no heartbeat yet'}
+              {aptosStale && ' — NOT RUNNING; Aptos deposits may go undetected'}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">
+              Aptos deposit→hot-wallet sweep: {sweepAt ? `last run ${fmtDateTime(sweep.at)}` : 'no heartbeat yet'}
+              {sweepAt && typeof sweep?.swept === 'number' ? ` (swept ${sweep.swept}, failed ${sweep.failed ?? 0})` : ''}
+              {sweepStale && ' — NOT RUNNING; Aptos withdrawals may fail with "insufficient balance", check workers'}
+            </p>
+            <div className="mt-2">
+              <Button size="sm" variant="secondary" onClick={runAptosSweep} disabled={aptosSweepBusy}>
+                {aptosSweepBusy ? 'Sweeping…' : 'Run Aptos sweep now'}
+              </Button>
+            </div>
           </div>
         )
       })()}

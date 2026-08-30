@@ -2258,6 +2258,11 @@ export const adminApi = {
   getDepositDetectionHealth: () =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<any>('/admin/deposits/detection-health'),
+  runAptosStragglerSweep: () =>
+    apiRequest<{ scanned: number; swept: number; skipped: number; failed: number; totalUsdt: number }>(
+      '/admin/gas/aptos/sweep-stragglers',
+      { method: 'POST' },
+    ),
   getDepositAddressBalances: (id: string) =>
     apiRequest<{
       address: string

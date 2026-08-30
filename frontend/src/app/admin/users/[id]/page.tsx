@@ -74,12 +74,17 @@ function explorerLinksFor(chainFamily: string, address: string): Array<{ label: 
 }
 
 function DepositAddressRow({ addr }: { addr: any }) {
+  const isAptos = addr.chainFamily === 'APTOS'
+  const canScan = addr.chainFamily === 'EVM' || isAptos
   const [copied, setCopied] = useState(false)
   const [balances, setBalances] = useState<any[] | null>(null)
   const [loadingBalances, setLoadingBalances] = useState(false)
   const [sweepTarget, setSweepTarget] = useState<{
     chain: string; chainName: string; asset: string; symbol: string; balance: string
   } | null>(null)
+  // Aptos sweep is a whole-address USDT → hot-wallet move (no per-asset choice).
+  const [aptosSweepOpen, setAptosSweepOpen] = useState(false)
+  const [aptosSweeping, setAptosSweeping] = useState(false)
 
   const copy = async () => {
     try {
@@ -118,6 +123,29 @@ function DepositAddressRow({ addr }: { addr: any }) {
     }
   }
 
+  const doAptosSweep = async () => {
+    setAptosSweeping(true)
+    try {
+      const res: any = await adminApi.sweepDepositAddress(addr.id, {
+        chain: 'APT',
+        asset: 'USDT',
+        reason: 'Admin sweep of Aptos USDT from user profile to platform hot wallet',
+      })
+      if (res?.status === 'swept') {
+        toast.success('Aptos USDT swept', `${res.usdt} USDT → hot wallet${res.txHash ? ` (tx ${String(res.txHash).slice(0, 12)}…)` : ''}`)
+      } else {
+        toast.info('Nothing swept', `Sweep returned "${res?.status ?? 'unknown'}"${res?.reason ? ` — ${res.reason}` : ''}`)
+      }
+      setAptosSweepOpen(false)
+      void loadBalances()
+    } catch (err: any) {
+      toast.error('Aptos sweep failed', err?.message ?? 'Unknown error — nothing was moved')
+      setAptosSweepOpen(false)
+    } finally {
+      setAptosSweeping(false)
+    }
+  }
+
   const nonzero = (v: string | null | undefined) => !!v && Number(v) > 0
 
   return (
@@ -145,7 +173,7 @@ function DepositAddressRow({ addr }: { addr: any }) {
             {l.label} <ExternalLink size={11} />
           </a>
         ))}
-        {addr.chainFamily === 'EVM' && (
+        {canScan && (
           <Button size="sm" variant="secondary" onClick={loadBalances} disabled={loadingBalances}>
             {loadingBalances ? 'Checking…' : balances ? 'Refresh balances' : 'Check balances'}
           </Button>
@@ -153,7 +181,31 @@ function DepositAddressRow({ addr }: { addr: any }) {
         <span className="text-xs text-text-muted ml-auto whitespace-nowrap">since {fmtDate(addr.createdAt)}</span>
       </div>
 
-      {balances && (
+      {balances && isAptos && (
+        <div className="mt-3 rounded-lg border border-border bg-surface-alt/40 px-4 py-2.5 space-y-1.5">
+          {balances.map((b: any) => (
+            <div key={b.asset} className="flex items-center justify-between gap-3">
+              <span className="text-sm text-text-primary">
+                {b.balance == null ? '—' : fmtNumber(b.balance)} {b.symbol}
+                {b.balance == null && <span className="text-xs text-warning ml-2">read failed</span>}
+              </span>
+              {b.symbol === 'USDT' && nonzero(b.balance) && (
+                <Button size="sm" variant="secondary" onClick={() => setAptosSweepOpen(true)}>
+                  Sweep USDT to hot wallet
+                </Button>
+              )}
+            </div>
+          ))}
+          {balances.every((b: any) => !nonzero(b.balance)) && (
+            <p className="text-xs text-text-muted">No APT or USDT on this address right now.</p>
+          )}
+          <p className="text-[11px] text-text-muted pt-1">
+            USDT sweeps auto-fund a small APT gas top-up from the hot wallet first. Does not change the user&apos;s internal balance.
+          </p>
+        </div>
+      )}
+
+      {balances && !isAptos && (
         <div className="mt-3 rounded-lg border border-border bg-surface-alt/40 divide-y divide-border">
           {balances.every((b: any) => !nonzero(b.native) && b.tokens.every((t: any) => !nonzero(t.balance))) && (
             <p className="px-4 py-2.5 text-xs text-text-muted">No on-chain funds found on this address across the scanned chains.</p>
@@ -194,6 +246,16 @@ function DepositAddressRow({ addr }: { addr: any }) {
           ? `This sends the full ${fmtNumber(sweepTarget.balance)} ${sweepTarget.symbol} on ${sweepTarget.chainName} from this deposit address to the platform's gas hot wallet (an on-chain transaction; token sweeps may auto-fund a small gas top-up first). It does NOT change the user's internal balance — use the deposit rescan to credit them. This cannot be undone.`
           : ''}
         confirmLabel="Sweep on-chain"
+        confirmVariant="danger"
+      />
+
+      <ConfirmModal
+        isOpen={aptosSweepOpen}
+        onClose={() => !aptosSweeping && setAptosSweepOpen(false)}
+        onConfirm={doAptosSweep}
+        title="Sweep this address's USDT to the Aptos hot wallet?"
+        description="This moves the full USDT balance on this Aptos deposit address into the platform's Aptos hot wallet so auto-withdrawals can pay out (an on-chain transaction; it auto-funds a small APT gas top-up from the hot wallet first). It does NOT change the user's internal balance. This cannot be undone."
+        confirmLabel={aptosSweeping ? 'Sweeping…' : 'Sweep on-chain'}
         confirmVariant="danger"
       />
     </li>

@@ -54,6 +54,7 @@ import {
   aptosAddressFromPrivateKeySeed,
 } from '../lib/gas/aptosWalletService'
 import { getAptosNativeBalance, getAptosUsdtAsset } from '../lib/gas/aptosRefund'
+import { getHotWalletTokenBalance } from '../lib/gas/gas.tokenBalance'
 import { withHotWalletLock } from '../lib/hotWalletLock'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
 
@@ -105,7 +106,7 @@ async function makeAptosSdk(): Promise<AptosSdk> {
  * Raw USDT base-unit balance (6 dp) of any Aptos address. Returns 0n when the
  * address has no primary store for the asset yet. Never throws.
  */
-async function readUsdtBaseUnits(
+export async function readUsdtBaseUnits(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   aptos: any,
   owner: string,
@@ -344,6 +345,111 @@ export async function sweepAptosDeposit(opts: {
       /* lock self-expires */
     }
   }
+}
+
+export interface AptosPoolSweepResult {
+  /** Deposit addresses actually swept this call. */
+  sweptAddresses: number
+  /** Total human USDT moved into the hot wallet this call. */
+  totalUsdt: number
+  /** Hot-wallet USDT balance after the sweeps (null if it couldn't be re-read). */
+  hotUsdtAfter: number | null
+  /** True when the hot wallet still can't cover `neededUsdt` after sweeping. */
+  shortfall: boolean
+  /** Machine-readable note when nothing was swept. */
+  reason?: string
+}
+
+/**
+ * Consolidate USDT from the WIDER pool of Aptos per-user deposit addresses into
+ * the hot wallet until it can cover `neededUsdt` (or the pool is exhausted).
+ *
+ * WHY: the per-user pre-flight sweep only drains the withdrawing user's own
+ * deposit address. When their internal balance came from a P2P trade or a
+ * deposit on another chain, that address is empty and the hot wallet stays dry.
+ * On Aptos the hot wallet is never funded directly — its only USDT source is
+ * user deposits — so a withdrawal by such a user can never be paid unless we
+ * pull liquidity from every funded deposit address, the way the shared EVM hot
+ * wallet already works.
+ *
+ * Biggest balances first, so the fewest transactions cover the target. Each
+ * address still goes through `sweepAptosDeposit` (per-address claim lock, APT
+ * gas top-up, derivation proof, ledger entry). Bounded per call.
+ */
+export async function sweepAptosDepositsUntilFunded(opts: {
+  neededUsdt: number
+  reason: string
+  /** Hard cap on addresses touched in one call (default APTOS_SWEEP_STRAGGLER_BATCH). */
+  maxAddresses?: number
+}): Promise<AptosPoolSweepResult> {
+  const empty: AptosPoolSweepResult = { sweptAddresses: 0, totalUsdt: 0, hotUsdtAfter: null, shortfall: true }
+
+  if (!walletAptosCustodyIsConfigured()) return { ...empty, reason: 'custody_unconfigured' }
+  if (!gasWalletIsConfigured()) return { ...empty, reason: 'hot_wallet_unconfigured' }
+  const hotAddress = getAptosHotWalletAddress()
+  if (!hotAddress || !validateAptosAddress(hotAddress)) {
+    return { ...empty, reason: 'hot_wallet_address_unavailable' }
+  }
+
+  const assetAddr = await getAptosUsdtAsset()
+  const readHotUsdt = async (): Promise<number | null> => {
+    try {
+      const { balance } = await getHotWalletTokenBalance('APT', assetAddr, hotAddress, USDT_APTOS_DECIMALS)
+      return balance
+    } catch {
+      return null
+    }
+  }
+
+  const hotBefore = await readHotUsdt()
+  if (hotBefore != null && hotBefore >= opts.neededUsdt) {
+    return { sweptAddresses: 0, totalUsdt: 0, hotUsdtAfter: hotBefore, shortfall: false, reason: 'already_funded' }
+  }
+
+  const cap = Math.max(1, opts.maxAddresses ?? env.APTOS_SWEEP_STRAGGLER_BATCH)
+  const rows = await db.depositAddress.findMany({
+    where: { chainFamily: 'APTOS' },
+    select: { id: true, address: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  if (rows.length === 0) return { ...empty, hotUsdtAfter: hotBefore, reason: 'no_deposit_addresses' }
+
+  const { aptos } = await makeAptosSdk()
+  const minUnits = BigInt(Math.round(env.APTOS_SWEEP_MIN_USDT * 10 ** USDT_APTOS_DECIMALS))
+
+  // Rank funded addresses by balance, biggest first.
+  const funded: Array<{ id: string; units: bigint }> = []
+  for (const r of rows) {
+    let units: bigint
+    try {
+      units = await readUsdtBaseUnits(aptos, normalizeAptosAddr(r.address), assetAddr)
+    } catch {
+      continue // one unreadable address must not abort the scan
+    }
+    if (units >= minUnits) funded.push({ id: r.id, units })
+  }
+  funded.sort((a, b) => (a.units < b.units ? 1 : a.units > b.units ? -1 : 0))
+
+  let sweptAddresses = 0
+  let totalUsdt = 0
+  let runningHot = hotBefore ?? 0
+  for (const f of funded) {
+    if (sweptAddresses >= cap) break
+    if (runningHot >= opts.neededUsdt) break
+
+    const res = await sweepAptosDeposit({ depositAddressId: f.id, reason: opts.reason })
+    if (res.status === 'swept') {
+      sweptAddresses++
+      totalUsdt += res.usdt
+      runningHot += res.usdt
+    }
+    // Gentle spacing so a burst of sweeps doesn't hammer the fullnode.
+    await new Promise((rsv) => setTimeout(rsv, 400))
+  }
+
+  const hotUsdtAfter = await readHotUsdt()
+  const shortfall = hotUsdtAfter == null ? runningHot < opts.neededUsdt : hotUsdtAfter < opts.neededUsdt
+  return { sweptAddresses, totalUsdt, hotUsdtAfter, shortfall }
 }
 
 export interface AptosStragglerSweepSummary {

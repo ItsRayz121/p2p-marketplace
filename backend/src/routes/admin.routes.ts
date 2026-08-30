@@ -2446,10 +2446,11 @@ export async function adminRoutes(app: FastifyInstance) {
   // (per-chain), Aptos poller heartbeat. A stale Moralis stamp with a healthy
   // poller means the backstop is carrying detection — investigate the stream.
   app.get('/admin/deposits/detection-health', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
-    const [moralisLastWebhookAt, evmPollerRaw, aptosPollerRaw] = await Promise.all([
+    const [moralisLastWebhookAt, evmPollerRaw, aptosPollerRaw, aptosSweepRaw] = await Promise.all([
       redis.get('moralis_last_webhook_at').catch(() => null),
       redis.get('evm_deposit_poller_health').catch(() => null),
       redis.get('poller_heartbeat:APTOS_DEPOSIT').catch(() => null),
+      redis.get('poller_heartbeat:APTOS_DEPOSIT_SWEEP').catch(() => null),
     ])
     const parse = (raw: string | null) => {
       if (!raw) return null
@@ -2461,22 +2462,48 @@ export async function adminRoutes(app: FastifyInstance) {
         moralisLastWebhookAt,
         evmPoller: parse(evmPollerRaw),
         aptosPoller: parse(aptosPollerRaw),
+        aptosDepositSweep: parse(aptosSweepRaw),
       },
     })
   })
 
   // GET /admin/deposit-addresses/:id/balances — live on-chain balances of a
-  // user's EVM deposit address across every configured EVM chain (native +
-  // whitelisted tokens). Read-only; powers the admin sweep UI.
+  // user's deposit address. EVM: native + whitelisted tokens across every
+  // configured chain. APTOS: native APT + USDT (fungible asset). Read-only;
+  // powers the admin sweep UI.
   app.get('/admin/deposit-addresses/:id/balances', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
     const row = await db.depositAddress.findUnique({ where: { id } })
     if (!row) throw Errors.NOT_FOUND('Deposit address')
+
+    if (row.chainFamily === 'APTOS') {
+      const [{ getAptosNativeBalance, getAptosUsdtAsset }, { getHotWalletTokenBalance }] = await Promise.all([
+        import('../lib/gas/aptosRefund'),
+        import('../lib/gas/gas.tokenBalance'),
+      ])
+      const assetAddr = await getAptosUsdtAsset()
+      const [apt, usdt] = await Promise.all([
+        getAptosNativeBalance(row.address).catch(() => null),
+        getHotWalletTokenBalance('APT', assetAddr, row.address, 6).then((r) => r.balance).catch(() => null),
+      ])
+      return reply.send({
+        success: true,
+        data: {
+          address: row.address,
+          family: 'APTOS',
+          balances: [
+            { chain: 'APT', asset: 'native', symbol: 'APT', balance: apt },
+            { chain: 'APT', asset: assetAddr, symbol: 'USDT', balance: usdt },
+          ],
+        },
+      })
+    }
+
     if (row.chainFamily !== 'EVM') {
-      throw new AppError('UNSUPPORTED_FAMILY', 'Balance scan supports EVM deposit addresses only', 400)
+      throw new AppError('UNSUPPORTED_FAMILY', 'Balance scan supports EVM and Aptos deposit addresses only', 400)
     }
     const balances = await getDepositAddressBalances(row.address)
-    return reply.send({ success: true, data: { address: row.address, balances } })
+    return reply.send({ success: true, data: { address: row.address, family: 'EVM', balances } })
   })
 
   // POST /admin/deposit-addresses/:id/sweep — move funds sitting on a user's
@@ -2486,6 +2513,38 @@ export async function adminRoutes(app: FastifyInstance) {
   // A custom external destination requires super_admin. Heavily audit-logged.
   app.post('/admin/deposit-addresses/:id/sweep', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
+
+    const row = await db.depositAddress.findUnique({ where: { id } })
+    if (!row) throw Errors.NOT_FOUND('Deposit address')
+
+    // ── Aptos: sweep the address's full USDT balance into the Aptos hot wallet ──
+    // Same money-movement path the automatic post-credit / straggler / withdrawal
+    // pre-flight sweeps use (per-address claim lock, APT gas top-up, derivation
+    // proof, deposit_sweep ledger entry). Destination is always the hot wallet.
+    if (row.chainFamily === 'APTOS') {
+      const aptSchema = z.object({ reason: z.string().min(5).max(500) })
+      const aptParsed = aptSchema.safeParse(req.body)
+      if (!aptParsed.success) {
+        throw new AppError('VALIDATION_ERROR', aptParsed.error.errors[0]?.message ?? 'Invalid input', 400)
+      }
+      log.warn(
+        { depositAddressId: id, userId: row.userId, adminId: req.user!.id, chain: 'APT', reason: aptParsed.data.reason },
+        'Admin deposit-address sweep initiated (Aptos)',
+      )
+      const { sweepAptosDeposit } = await import('../services/aptosDepositSweep.service')
+      const result = await sweepAptosDeposit({ depositAddressId: id, reason: `admin:${aptParsed.data.reason}` })
+      void createAuditLog(req.user!.id, 'DEPOSIT_ADDRESS_SWEPT', 'DepositAddress', id, {
+        userId: row.userId,
+        reason: aptParsed.data.reason,
+        chain: 'APT',
+        ...result,
+      })
+      if (result.status === 'failed') {
+        throw new AppError('SWEEP_FAILED', `Aptos sweep failed: ${result.reason ?? 'unknown'}`, 502)
+      }
+      return reply.send({ success: true, data: result })
+    }
+
     const schema = z.object({
       chain: z.string().min(1),
       // 'native' or a whitelisted token contract address on that chain.
@@ -2499,9 +2558,6 @@ export async function adminRoutes(app: FastifyInstance) {
     if (parsed.data.destination && req.user!.role !== 'super_admin') {
       throw new AppError('SUPER_ADMIN_REQUIRED', 'Only super_admin may sweep to a custom destination (default sweeps go to the gas hot wallet)', 403)
     }
-
-    const row = await db.depositAddress.findUnique({ where: { id } })
-    if (!row) throw Errors.NOT_FOUND('Deposit address')
 
     log.warn(
       { depositAddressId: id, userId: row.userId, adminId: req.user!.id, chain: parsed.data.chain, asset: parsed.data.asset, destination: parsed.data.destination ?? 'hot-wallet', reason: parsed.data.reason },
@@ -2522,6 +2578,18 @@ export async function adminRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true, data: result })
+  })
+
+  // POST /admin/gas/aptos/sweep-stragglers — run the Aptos deposit → hot-wallet
+  // straggler sweep on demand (normally on a ~10-min timer). Walks every per-user
+  // Aptos deposit address and consolidates any USDT it holds into the Aptos hot
+  // wallet, so auto-withdrawals have a funded place to pay from. Idempotent.
+  app.post('/admin/gas/aptos/sweep-stragglers', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    log.warn({ adminId: req.user!.id }, 'Admin-triggered Aptos straggler sweep')
+    const { sweepAllAptosDepositStragglers } = await import('../services/aptosDepositSweep.service')
+    const summary = await sweepAllAptosDepositStragglers()
+    void createAuditLog(req.user!.id, 'APTOS_STRAGGLER_SWEEP_RUN', 'GasWallet', 'aptos', { ...summary })
+    return reply.send({ success: true, data: summary })
   })
 
   // POST /admin/deposits/rescan — manual reconciliation. The operator pastes
