@@ -72,6 +72,13 @@ export const metadata: Metadata = {
     follow: true,
     googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
+  verification: {
+    // Trustpilot domain-ownership check — looks for this meta tag on the
+    // home page <head>. One-time; safe to leave in place after verifying.
+    other: {
+      'trustpilot-one-time-domain-verification-id': '6b1285b6-2bf0-417d-b704-0e4944be86ad',
+    },
+  },
 }
 
 export const viewport: Viewport = {
