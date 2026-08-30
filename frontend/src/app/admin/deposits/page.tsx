@@ -224,8 +224,9 @@ export default function DepositsPage() {
         const aptosAt = health.aptosPoller?.at ? new Date(health.aptosPoller.at) : null
         const aptosStale = !aptosAt || (Date.now() - aptosAt.getTime()) / 60_000 > 10
         const sweep = health.aptosDepositSweep
+        const sweepDisabled = !!sweep?.disabled
         const sweepAt = sweep?.at ? new Date(sweep.at) : null
-        const sweepStale = !sweepAt || (Date.now() - sweepAt.getTime()) / 60_000 > 20
+        const sweepStale = !sweepDisabled && (!sweepAt || (Date.now() - sweepAt.getTime()) / 60_000 > 20)
         return (
           <div className={`rounded-xl border px-4 py-3 text-sm ${pollerStale ? 'border-danger/40 bg-danger/5' : moralisStale ? 'border-warning/40 bg-warning/5' : 'border-border bg-surface'}`}>
             <p className="font-medium text-text-primary">Deposit detection health</p>
@@ -242,13 +243,16 @@ export default function DepositsPage() {
               {aptosStale && ' — NOT RUNNING; Aptos deposits may go undetected'}
             </p>
             <p className="text-xs text-text-muted mt-0.5">
-              Aptos deposit→hot-wallet sweep: {sweepAt ? `last run ${fmtDateTime(sweep.at)}` : 'no heartbeat yet'}
-              {sweepAt && typeof sweep?.swept === 'number' ? ` (swept ${sweep.swept}, failed ${sweep.failed ?? 0})` : ''}
+              Aptos deposit→hot-wallet sweep:{' '}
+              {sweepDisabled
+                ? 'auto-sweep OFF (EVM-parity mode) — deposited USDT stays on user addresses; top up the hot wallet on demand with the button below'
+                : sweepAt ? `last run ${fmtDateTime(sweep.at)}` : 'no heartbeat yet'}
+              {!sweepDisabled && sweepAt && typeof sweep?.swept === 'number' ? ` (swept ${sweep.swept}, failed ${sweep.failed ?? 0})` : ''}
               {sweepStale && ' — NOT RUNNING; Aptos withdrawals may fail with "insufficient balance", check workers'}
             </p>
             <div className="mt-2">
               <Button size="sm" variant="secondary" onClick={runAptosSweep} disabled={aptosSweepBusy}>
-                {aptosSweepBusy ? 'Sweeping…' : 'Run Aptos sweep now'}
+                {aptosSweepBusy ? 'Sweeping…' : 'Consolidate Aptos deposits → hot wallet'}
               </Button>
             </div>
           </div>

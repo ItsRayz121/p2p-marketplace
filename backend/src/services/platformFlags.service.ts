@@ -164,6 +164,22 @@ export const FLAGS = {
    * pushing to main / auto-deploy changes nothing until deliberately flipped.
    */
   CTM_USDT_PAYMENT: 'ctm_usdt_payment_enabled',
+  /**
+   * Aptos deposit → hot-wallet AUTO-sweep. When ON, every credited Aptos USDT
+   * deposit is immediately swept off the user's per-user deposit address into the
+   * Aptos hot wallet, plus a ~10-min straggler pass and a withdrawal pre-flight
+   * pool sweep — so the hot wallet self-funds from deposits.
+   *
+   * OFF (default) = EVM parity: deposited USDT STAYS on the per-user Aptos
+   * deposit address as reserve (exactly like BSC/BEP20, which has no auto-sweep),
+   * and the Aptos hot wallet's USDT is topped up on demand — the admin
+   * "Sweep USDT to hot wallet" button, the "Run Aptos sweep now" button on
+   * /admin/deposits, `npm run aptos:sweep`, or a direct transfer. Withdrawals
+   * ALWAYS pay from the hot wallet either way; this flag only controls HOW the
+   * hot wallet is filled. Flip to "true" to restore full auto-consolidation
+   * without a redeploy.
+   */
+  APTOS_AUTO_SWEEP: 'aptos_auto_sweep_enabled',
 } as const
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]

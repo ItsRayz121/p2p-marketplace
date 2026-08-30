@@ -13,6 +13,7 @@ import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { sweepAllAptosDepositStragglers } from '../services/aptosDepositSweep.service'
+import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 
 const HEARTBEAT_KEY = 'poller_heartbeat:APTOS_DEPOSIT_SWEEP'
 // Alert admins at most once/day if the straggler pass keeps failing addresses.
@@ -28,6 +29,15 @@ async function writeHeartbeat(payload: Record<string, unknown>): Promise<void> {
 }
 
 export async function runAptosDepositSweepStragglers(): Promise<void> {
+  // EVM parity (default): no scheduled auto-sweep. Deposited USDT stays on the
+  // per-user Aptos address; the hot wallet is topped up on demand. The manual
+  // "Run Aptos sweep now" button / `npm run aptos:sweep` call
+  // sweepAllAptosDepositStragglers() directly and are unaffected by this gate.
+  if (!(await isFlagEnabled(FLAGS.APTOS_AUTO_SWEEP))) {
+    await writeHeartbeat({ ok: true, disabled: true, reason: 'aptos_auto_sweep_enabled is off (EVM-parity mode)' })
+    return
+  }
+
   const summary = await sweepAllAptosDepositStragglers()
 
   if (summary.swept > 0) {

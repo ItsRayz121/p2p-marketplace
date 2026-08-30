@@ -26,6 +26,7 @@ import { getAptosNativeBalance, getAptosUsdtAsset } from './gas/aptosRefund'
 import { sendAptosFungibleAsset, usdtToAptosBaseUnits } from './gas/aptosTransfer'
 import { getHotWalletTokenBalance } from './gas/gas.tokenBalance'
 import { sweepAptosDeposit, sweepAptosDepositsUntilFunded } from '../services/aptosDepositSweep.service'
+import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { finalizeWithdrawalSent } from './withdrawal.finalize'
 
 interface AutoWithdrawal {
@@ -66,22 +67,28 @@ async function alertAptosUsdtShortfall(p: {
   need: number
   hotAddress: string
   assetAddr: string
+  autoSweep: boolean
 }): Promise<void> {
   const first = await redis
     .set(`withdrawal:aptos:shortfall:${p.withdrawalId}`, '1', 'EX', SHORTFALL_ALERT_TTL_SEC, 'NX')
     .catch(() => 'OK')
   if (first !== 'OK') return
   const gap = Math.max(0, p.need - p.have)
+  const how = p.autoSweep
+    ? 'even after sweeping every funded deposit address'
+    : 'and Aptos auto-sweep is off (EVM-parity mode)'
+  const fix = p.autoSweep
+    ? `Send at least ${gap.toFixed(2)} USDT (native Tether, FA metadata ${p.assetAddr}, 6 dp) to the Aptos hot wallet ${p.hotAddress}`
+    : `Consolidate the deposited USDT into the hot wallet — /admin/deposits → "Run Aptos sweep now" (or \`npm run aptos:sweep\`), or Admin → Users → the user → Deposit Addresses → "Sweep USDT to hot wallet" — ` +
+      `or send at least ${gap.toFixed(2)} USDT (native Tether, FA metadata ${p.assetAddr}, 6 dp) directly to the Aptos hot wallet ${p.hotAddress}`
   void createAdminNotif({
     category: 'WITHDRAWAL',
     title: 'Aptos hot wallet USDT liquidity shortfall — top-up required',
     body:
       `Withdrawal ${p.withdrawalId} needs ${p.need} USDT on Aptos but the hot wallet holds only ${p.have.toFixed(6)} USDT ` +
-      `even after sweeping every funded deposit address (short by ~${gap.toFixed(6)}). ` +
-      `Send at least ${gap.toFixed(2)} USDT (native Tether, fungible-asset metadata ${p.assetAddr}, 6 dp) to the Aptos hot wallet ${p.hotAddress} — ` +
-      `it retries automatically once funded — or Reject to refund the user.`,
+      `${how} (short by ~${gap.toFixed(6)}). ${fix} — it retries automatically once funded — or Reject to refund the user.`,
     href: '/admin/withdrawals',
-    metadata: { withdrawalId: p.withdrawalId, haveUsdt: p.have, needUsdt: p.need, hotAddress: p.hotAddress },
+    metadata: { withdrawalId: p.withdrawalId, haveUsdt: p.have, needUsdt: p.need, hotAddress: p.hotAddress, autoSweep: p.autoSweep },
     email: true,
   })
 }
@@ -139,19 +146,18 @@ export async function sendAptosWithdrawalOnChain(wd: AutoWithdrawal): Promise<vo
     log.warn({ err, withdrawalId: wd.id }, 'sendAptosWithdrawalOnChain: APT gas pre-check errored, proceeding anyway')
   }
 
-  // ── USDT liquidity pre-flight (self-healing) ───────────────────────────────
-  // Aptos deposits credit the user's internal balance but leave the on-chain
-  // USDT on their per-user deposit address — and the Aptos hot wallet is NEVER
-  // funded directly (unlike EVM), so its only USDT source is user deposits. If
-  // it can't cover this withdrawal:
-  //   1. sweep the withdrawing user's own deposit address (usual source);
-  //   2. still short → sweep the WIDER pool of deposit addresses (covers users
-  //      whose balance came from a trade or another chain — their own Aptos
-  //      address is empty), biggest balances first;
-  //   3. still short → genuine liquidity shortfall: alert with the real reason
-  //      instead of letting the operator see only a raw Move abort.
-  // Every step here is non-fatal: the send below still fails-and-alerts if the
-  // hot wallet is genuinely short, and the 10-min straggler sweep is the backstop.
+  // ── USDT liquidity pre-flight ─────────────────────────────────────────────
+  // Withdrawals pay from the Aptos hot wallet. How that wallet is funded depends
+  // on `aptos_auto_sweep_enabled`:
+  //   • OFF (default, EVM parity): the hot wallet's USDT is topped up on demand
+  //     by the operator (admin "Sweep to hot wallet" button, "Run Aptos sweep
+  //     now", `npm run aptos:sweep`, or a direct transfer) — exactly like the
+  //     BSC hot wallet. Here we only READ the balance and, if it can't cover the
+  //     withdrawal, alert with the concrete shortfall so the operator can fund it.
+  //   • ON: self-healing — sweep the user's own deposit address, then the wider
+  //     pool of deposit addresses (biggest first), then alert if still short.
+  // Every step is non-fatal: the send below still fails-and-alerts if the hot
+  // wallet is genuinely short.
   try {
     const assetAddr = await getAptosUsdtAsset()
     const need = Number(wd.amount)
@@ -162,25 +168,33 @@ export async function sendAptosWithdrawalOnChain(wd: AutoWithdrawal): Promise<vo
 
     let hotUsdt = await readHotUsdt()
     if (hotUsdt < need) {
-      log.warn(
-        { withdrawalId: wd.id, hotUsdt, needed: need },
-        'sendAptosWithdrawalOnChain: hot wallet short on USDT — sweeping user deposit address first',
-      )
-      const swept = await sweepAptosDeposit({ userId: wd.userId, reason: `withdrawal-preflight:${wd.id}` })
-      log.info({ withdrawalId: wd.id, sweep: swept }, 'sendAptosWithdrawalOnChain: pre-flight per-user sweep result')
-      hotUsdt = await readHotUsdt().catch(() => hotUsdt)
+      const autoSweep = await isFlagEnabled(FLAGS.APTOS_AUTO_SWEEP)
+      if (autoSweep) {
+        log.warn(
+          { withdrawalId: wd.id, hotUsdt, needed: need },
+          'sendAptosWithdrawalOnChain: hot wallet short on USDT — auto-sweep ON, sweeping user deposit address first',
+        )
+        const swept = await sweepAptosDeposit({ userId: wd.userId, reason: `withdrawal-preflight:${wd.id}` })
+        log.info({ withdrawalId: wd.id, sweep: swept }, 'sendAptosWithdrawalOnChain: pre-flight per-user sweep result')
+        hotUsdt = await readHotUsdt().catch(() => hotUsdt)
 
-      if (hotUsdt < need) {
-        const pool = await sweepAptosDepositsUntilFunded({
-          neededUsdt: need,
-          reason: `withdrawal-preflight-pool:${wd.id}`,
-        })
-        log.info({ withdrawalId: wd.id, pool }, 'sendAptosWithdrawalOnChain: pre-flight pool sweep result')
-        hotUsdt = pool.hotUsdtAfter ?? (await readHotUsdt().catch(() => hotUsdt))
+        if (hotUsdt < need) {
+          const pool = await sweepAptosDepositsUntilFunded({
+            neededUsdt: need,
+            reason: `withdrawal-preflight-pool:${wd.id}`,
+          })
+          log.info({ withdrawalId: wd.id, pool }, 'sendAptosWithdrawalOnChain: pre-flight pool sweep result')
+          hotUsdt = pool.hotUsdtAfter ?? (await readHotUsdt().catch(() => hotUsdt))
+        }
+      } else {
+        log.warn(
+          { withdrawalId: wd.id, hotUsdt, needed: need },
+          'sendAptosWithdrawalOnChain: hot wallet short on USDT — auto-sweep OFF (EVM parity), alerting for manual top-up',
+        )
       }
 
       if (hotUsdt < need) {
-        await alertAptosUsdtShortfall({ withdrawalId: wd.id, have: hotUsdt, need, hotAddress, assetAddr })
+        await alertAptosUsdtShortfall({ withdrawalId: wd.id, have: hotUsdt, need, hotAddress, assetAddr, autoSweep })
       }
     }
   } catch (err) {

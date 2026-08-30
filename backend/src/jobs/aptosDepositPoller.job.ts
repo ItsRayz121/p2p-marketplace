@@ -25,6 +25,7 @@ import { env } from '../lib/env'
 import { walletAptosCustodyIsConfigured } from '../lib/walletCrypto'
 import { creditDetectedDeposit } from '../services/depositWatcher.service'
 import { sweepAptosDeposit } from '../services/aptosDepositSweep.service'
+import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 
 // Native USDT on Aptos (Tether) — fungible-asset metadata address, 6 decimals.
 // Mirrors gasPaymentPoller; overridable via PlatformConfig 'gas_usdt_aptos_asset'.
@@ -212,6 +213,11 @@ export async function runAptosDepositPoller(): Promise<void> {
 
   const asset = await getUsdtAsset()
 
+  // EVM parity (default): leave the deposited USDT on the per-user address as
+  // reserve; the hot wallet is topped up on demand. Only auto-consolidate when
+  // the operator has explicitly turned the Aptos auto-sweep back on.
+  const autoSweep = await isFlagEnabled(FLAGS.APTOS_AUTO_SWEEP)
+
   const storedTs = await redis.get(CURSOR_KEY)
   const baseTs = storedTs ? Date.parse(storedTs) : Date.now() - COLD_START_LOOKBACK_MS
   // Apply the overlap so a boundary-second event is never skipped.
@@ -256,13 +262,15 @@ export async function runAptosDepositPoller(): Promise<void> {
       try {
         if (await recordAndCredit({ txHash, asset, toAddress: owner!, userId, humanAmount })) {
           credited++
-          // Sweep the freshly-received USDT off the per-user deposit address into
-          // the Aptos hot wallet so auto-withdrawals have a funded place to pay
-          // from (EVM parity). Fire-and-forget — a failure here is picked up by
-          // the 10-min straggler pass; it must never block the poller tick.
-          void sweepAptosDeposit({ userId, reason: 'post-credit' }).catch((err) =>
-            logger.error({ err, userId, txHash }, 'aptosDepositPoller: post-credit sweep threw'),
-          )
+          // Only auto-consolidate when aptos_auto_sweep_enabled is ON. Default
+          // (EVM parity): the USDT stays on the per-user deposit address; the hot
+          // wallet is funded on demand via the admin sweep tools. Fire-and-forget
+          // — never block the poller tick.
+          if (autoSweep) {
+            void sweepAptosDeposit({ userId, reason: 'post-credit' }).catch((err) =>
+              logger.error({ err, userId, txHash }, 'aptosDepositPoller: post-credit sweep threw'),
+            )
+          }
         }
       } catch (err) {
         logger.error({ err, txHash, userId }, 'aptosDepositPoller: recordAndCredit threw — will retry next tick')
