@@ -914,6 +914,9 @@ export async function adminForceCompleteCtmTrade(params: { tradeRef: string; adm
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
 
   let claimedCount = 0
+  // timeout: the streak + airdrop-points writes inside this tx take several
+  // round-trips, and a batch backfill may run against a distant DB — give it
+  // headroom over Prisma's 5s interactive-transaction default.
   await db.$transaction(async (tx) => {
     const claimed = await tx.ctmTrade.updateMany({
       where: { tradeRef, status: { not: 'completed' } },
@@ -936,7 +939,7 @@ export async function adminForceCompleteCtmTrade(params: { tradeRef: string; adm
         },
       })
     }
-  })
+  }, { timeout: 15_000, maxWait: 10_000 })
 
   await db.auditLog.create({
     data: { actorId: adminId, action: 'CTM_ADMIN_FORCE_RELEASE', metadata: { tradeRef, reason: params.reason ?? null } as JsonValue },
@@ -946,7 +949,10 @@ export async function adminForceCompleteCtmTrade(params: { tradeRef: string; adm
     logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM force-release'),
   )
 
-  void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'completed' })
+  // Awaited (not fire-and-forget): a batch caller that exits the process right
+  // after this returns would otherwise kill the pending episode-close write.
+  // closeEpisode has its own try/catch and never throws.
+  await closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'completed' })
 
   return { alreadyCompleted: claimedCount === 0 }
 }

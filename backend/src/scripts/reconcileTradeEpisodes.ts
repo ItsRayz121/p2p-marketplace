@@ -139,6 +139,15 @@ async function pass2(): Promise<void> {
   const cutoff = new Date(Date.now() - OLDER_THAN_DAYS * 24 * 60 * 60 * 1000)
   console.log(`\n── PASS 2: finalize genuinely-stuck trades older than ${OLDER_THAN_DAYS}d (before ${cutoff.toISOString()}) ──`)
 
+  // AuditLog.actorId is an FK to User — use a real admin id so the force-complete
+  // audit rows actually persist (a fake "system:…" id silently fails that insert).
+  const admin = await db.user.findFirst({
+    where: { role: { in: ['super_admin', 'admin'] } },
+    select: { id: true },
+    orderBy: { createdAt: 'asc' },
+  })
+  const actorId = admin?.id ?? 'system:reconcile'
+
   // ── USDT ──────────────────────────────────────────────────────────────────
   const usdtStuck = await db.trade.findMany({
     where: { status: USDT_STUCK_STATUS, updatedAt: { lt: cutoff } },
@@ -176,7 +185,7 @@ async function pass2(): Promise<void> {
     if (disputeOpen) { console.log(`  [review]  ctm ${ref} — has an open dispute, skipping`); continue }
     if (!APPLY)      { console.log(`  [would]   ctm ${ref} (${t.status}) — force-complete`); ctmDone++; continue }
     try {
-      await adminForceCompleteCtmTrade({ tradeRef: t.tradeRef, adminId: 'system:reconcile', reason: `Auto-finalized: stuck in ${t.status} > ${OLDER_THAN_DAYS}d, no open dispute.` })
+      await adminForceCompleteCtmTrade({ tradeRef: t.tradeRef, adminId: actorId, reason: `Auto-finalized: stuck in ${t.status} > ${OLDER_THAN_DAYS}d, no open dispute.` })
       console.log(`  [done]    ctm ${ref} — force-completed`)
       ctmDone++
     } catch (err) {
