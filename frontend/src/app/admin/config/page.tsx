@@ -54,7 +54,7 @@ const STRUCTURED_KEYS = new Set([
   'ctm_usdt_payment_enabled', 'messaging_inbox_enabled', 'admin_email_notifs_enabled',
   'taker_first_settlement_enabled', 'nokyc_taker_enabled',
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
-  'trade_proof_reject_enabled', 'trade_proof_reject_max',
+  'trade_proof_reject_enabled', 'trade_proof_reject_max', 'trade_buyer_cancel_after_pay_minutes',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -271,6 +271,7 @@ export default function ConfigPage() {
   const [nokycMaxOpen, setNokycMaxOpen] = useState('1')
   const [proofRejectFlag, setProofRejectFlag] = useState(true)
   const [proofRejectMax, setProofRejectMax] = useState('2')
+  const [buyerCancelAfterPayMin, setBuyerCancelAfterPayMin] = useState('0')
   const [betaSaving, setBetaSaving] = useState(false)
 
   // ── Media Retention & Storage ─────────────────────────────────────────────────
@@ -398,6 +399,7 @@ export default function ConfigPage() {
       setNokycMaxOpen(m['nokyc_max_open_trades'] ?? '1')
       setProofRejectFlag(m['trade_proof_reject_enabled'] !== 'false') // default ON
       setProofRejectMax(m['trade_proof_reject_max'] ?? '2')
+      setBuyerCancelAfterPayMin(m['trade_buyer_cancel_after_pay_minutes'] ?? '0')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
@@ -577,6 +579,7 @@ export default function ConfigPage() {
         { key: 'nokyc_max_open_trades', value: String(Math.max(parseInt(nokycMaxOpen, 10) || 0, 0)) },
         { key: 'trade_proof_reject_enabled', value: proofRejectFlag ? 'true' : 'false' },
         { key: 'trade_proof_reject_max', value: String(Math.max(parseInt(proofRejectMax, 10) || 0, 1)) },
+        { key: 'trade_buyer_cancel_after_pay_minutes', value: String(Math.max(parseInt(buyerCancelAfterPayMin, 10) || 0, 0)) },
       ])
       showToast('Feature settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save feature settings.', false) }
@@ -926,6 +929,16 @@ export default function ConfigPage() {
               </Field>
             </div>
           )}
+
+          {/* Buyer cancel-after-pay grace window */}
+          <div className="rounded-xl border border-border p-4">
+            <Field
+              label="Buyer cancel-after-payment window (minutes)"
+              hint="0 (default) = once the buyer marks a trade paid, they can't cancel — only dispute. Set to e.g. 10 to let the buyer self-cancel a trade they marked paid but didn't actually send, starting that many minutes after upload. The seller can never cancel after the buyer has paid. Applies to USDT & CTM."
+            >
+              <input className={inputCls} type="number" min="0" value={buyerCancelAfterPayMin} onChange={(e) => setBuyerCancelAfterPayMin(e.target.value)} placeholder="0" />
+            </Field>
+          </div>
 
           <div className="flex justify-end">
             <Button size="sm" loading={betaSaving} onClick={saveBeta}>Save Feature Settings</Button>

@@ -709,11 +709,34 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
 }
 
-export async function cancelTrade(tradeRef: string, userId: string, reason: string) {
+export async function cancelTrade(tradeRef: string, userId: string, reason: string, role = 'user') {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-  if (trade.buyerId !== userId && trade.sellerId !== userId) throw new AppError('FORBIDDEN', 'Access denied', 403)
-  if (trade.status !== 'awaiting_payment') throw new AppError('CONFLICT', 'Can only cancel trade in awaiting_payment status', 409)
+  const isAdmin = role === 'admin' || role === 'super_admin'
+  if (!isAdmin && trade.buyerId !== userId && trade.sellerId !== userId) throw new AppError('FORBIDDEN', 'Access denied', 403)
+
+  // awaiting_payment: either party may cancel freely (no PKR has moved yet).
+  // payment_uploaded: the seller can NEVER self-cancel (they could pocket the
+  //   buyer's fiat — recourse is "Payment not received" or a dispute). The buyer
+  //   may self-cancel only if the grace window is enabled AND elapsed. Admin any time.
+  if (trade.status === 'awaiting_payment') {
+    // ok
+  } else if (trade.status === 'payment_uploaded' && !isAdmin) {
+    if (trade.buyerId !== userId) {
+      throw new AppError('CONFLICT', 'Payment proof has been uploaded. Use "Payment not received" or open a dispute — you cannot cancel from here.', 409)
+    }
+    const graceMin = await getNumberConfig('trade_buyer_cancel_after_pay_minutes', 0)
+    if (graceMin <= 0) {
+      throw new AppError('CONFLICT', 'You have already marked this trade as paid. If you did not actually send the payment, open a dispute — it cannot be cancelled from here.', 409)
+    }
+    const unlockAt = trade.updatedAt.getTime() + graceMin * 60_000
+    if (Date.now() < unlockAt) {
+      const waitMin = Math.ceil((unlockAt - Date.now()) / 60_000)
+      throw new AppError('CONFLICT', `You can cancel in about ${waitMin} minute${waitMin === 1 ? '' : 's'} if the payment hasn't gone through. Otherwise wait for the seller, or open a dispute.`, 409)
+    }
+  } else if (!(trade.status === 'payment_uploaded' && isAdmin)) {
+    throw new AppError('CONFLICT', `Cannot cancel trade in status: ${trade.status}`, 409)
+  }
 
   await db.$transaction(async (tx: Tx) => {
     await tx.ctmTrade.update({

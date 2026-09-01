@@ -539,6 +539,7 @@ export default function TradePage() {
   }, [messages, mobileTab, user?.id])
 
   const isUserBuyer = trade?.buyerId === user?.id
+  const isUserSeller = trade?.sellerId === user?.id
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -1193,9 +1194,16 @@ export default function TradePage() {
                   </>
                 )}
                 {!myTurn && isAction('send_fiat') && (
-                  <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">
-                    Waiting for the buyer to send PKR and upload payment proof.
-                  </div>
+                  <>
+                    <div className="bg-warning/10 border border-warning/20 rounded-lg p-3 text-xs text-warning">
+                      Waiting for the buyer to send PKR and upload payment proof.
+                    </div>
+                    {/* Seller may cancel while the buyer has not paid yet. Once proof
+                        is uploaded this disappears — recourse is "Payment not received". */}
+                    {isUserSeller && trade.status === 'payment_pending' && (
+                      <Button variant="ghost" fullWidth className="mt-2" onClick={() => setShowCancelModal(true)}>Cancel Trade</Button>
+                    )}
+                  </>
                 )}
               </StepCard>
               </div>

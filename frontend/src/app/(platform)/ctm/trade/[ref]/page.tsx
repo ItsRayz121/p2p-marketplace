@@ -1369,6 +1369,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <p className="text-yellow-700 dark:text-yellow-300">The buyer is sending {isUsdtTrade ? 'USDT' : 'PKR'} to your {isUsdtTrade ? 'address' : 'account'}. You&apos;ll be notified when payment proof is uploaded.</p>
                   </div>
                 )}
+                {/* Seller may cancel while nothing of value has moved (classic flow,
+                    before the buyer uploads proof). Once proof is up the seller can
+                    no longer cancel — recourse is "Payment not received" or a dispute. */}
+                {!takerFirst && isAction('send_fiat') && rung === 'awaiting_payment' && (
+                  <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by seller' }))} disabled={actionLoading} className="w-full mt-2 border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
+                )}
               </StepCard>
               </div>
 

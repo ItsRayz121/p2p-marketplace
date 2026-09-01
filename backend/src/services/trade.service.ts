@@ -1302,13 +1302,18 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
   let buyerId: string
   let sellerId: string
 
+  // Optional grace window: how many minutes after the buyer uploads proof they
+  // may still self-cancel ("I didn't actually send payment"). 0 (default) = never;
+  // once proof is up the buyer's only exit is a dispute. Admin cancel is always allowed.
+  const buyerCancelAfterPayMin = await getNumberConfig('trade_buyer_cancel_after_pay_minutes', 0)
+
   await db.$transaction(async (tx: Tx) => {
     // SELECT FOR UPDATE prevents concurrent cancel+release from both succeeding
     const [trade] = await tx.$queryRaw<Array<{
       id: string; status: string; buyerId: string; sellerId: string;
-      adId: string; amount: Prisma.Decimal; fiatAmount: Prisma.Decimal
+      adId: string; amount: Prisma.Decimal; fiatAmount: Prisma.Decimal; paymentUploadedAt: Date | null
     }>>`
-      SELECT id, status, "buyerId", "sellerId", "adId", amount, "fiatAmount"
+      SELECT id, status, "buyerId", "sellerId", "adId", amount, "fiatAmount", "paymentUploadedAt"
       FROM "Trade"
       WHERE id = ${tradeId}
       FOR UPDATE
@@ -1324,15 +1329,34 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
       throw new AppError('INVALID_STATUS', `Cannot cancel trade in status: ${trade.status}`, 400)
     }
 
-    // Once the buyer has uploaded payment proof they may have already sent fiat.
-    // A seller cancelling here could keep the buyer's money — only the buyer
-    // (who knows whether they actually paid) or an admin may cancel now.
-    if (trade.status === 'payment_uploaded' && role !== 'admin' && trade.buyerId !== actorId) {
-      throw new AppError(
-        'FORBIDDEN',
-        'Payment proof has been uploaded — only the buyer or an admin can cancel this trade. If the payment is invalid, open a dispute instead.',
-        403,
-      )
+    // Once the buyer has uploaded payment proof the money may already be sent.
+    if (trade.status === 'payment_uploaded' && role !== 'admin') {
+      // The seller can NEVER self-cancel here (they could pocket the buyer's fiat) —
+      // their recourse for a bad/fake proof is "Payment not received" or a dispute.
+      if (trade.buyerId !== actorId) {
+        throw new AppError(
+          'FORBIDDEN',
+          'Payment proof has been uploaded. If it is invalid, use "Payment not received" or open a dispute — you cannot cancel from here.',
+          403,
+        )
+      }
+      // The buyer may self-cancel only if the grace window is enabled AND elapsed.
+      if (buyerCancelAfterPayMin <= 0) {
+        throw new AppError(
+          'FORBIDDEN',
+          'You have already marked this trade as paid. If you did not actually send the payment, open a dispute — it cannot be cancelled from here.',
+          403,
+        )
+      }
+      const unlockAt = (trade.paymentUploadedAt?.getTime() ?? 0) + buyerCancelAfterPayMin * 60_000
+      if (Date.now() < unlockAt) {
+        const waitMin = Math.ceil((unlockAt - Date.now()) / 60_000)
+        throw new AppError(
+          'CANCEL_TOO_EARLY',
+          `You can cancel in about ${waitMin} minute${waitMin === 1 ? '' : 's'} if the payment hasn't gone through. Otherwise wait for the seller, or open a dispute.`,
+          400,
+        )
+      }
     }
 
     buyerId = trade.buyerId

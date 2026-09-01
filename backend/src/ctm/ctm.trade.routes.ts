@@ -266,7 +266,7 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     const { ref } = req.params as { ref: string }
     const parsed = cancelSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    await cancelTrade(ref, req.user!.id, parsed.data.reason)
+    await cancelTrade(ref, req.user!.id, parsed.data.reason, req.user!.role)
     return reply.send({ success: true })
   })
 
