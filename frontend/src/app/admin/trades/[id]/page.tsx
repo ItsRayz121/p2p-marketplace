@@ -72,6 +72,31 @@ export default function TradeDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [fcOpen, setFcOpen] = useState(false)
+  const [fcReason, setFcReason] = useState('')
+  const [fcBusy, setFcBusy] = useState(false)
+  const [fcErr, setFcErr] = useState<string | null>(null)
+
+  function reload() {
+    return adminApi.getTrade(id as string)
+      .then((d) => { setTrade(d); setLoading(false) })
+      .catch((e) => { setError(e instanceof Error ? e.message : 'Failed to load trade'); setLoading(false) })
+  }
+
+  async function handleForceComplete() {
+    if (fcReason.trim().length < 5) { setFcErr('Enter a reason (min 5 characters).'); return }
+    setFcBusy(true); setFcErr(null)
+    try {
+      await adminApi.adminForceCompleteTrade(id as string, fcReason.trim())
+      setFcOpen(false); setFcReason('')
+      await reload()
+    } catch (e) {
+      setFcErr(e instanceof Error ? e.message : 'Force-complete failed')
+    } finally {
+      setFcBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (!id) return
     adminApi.getTrade(id as string)
@@ -297,6 +322,39 @@ export default function TradeDetailPage() {
           <p className="text-sm text-text-muted">No admin actions recorded for this trade.</p>
         )}
       </Section>
+
+      {/* Force-complete — only for a trade stuck at crypto_sent (seller delivered,
+          buyer never confirmed). Same effect as the buyer's release / auto-complete. */}
+      {trade.status === 'crypto_sent' && (
+        <Section title="Force Complete">
+          <p className="text-sm text-text-secondary mb-3">
+            The seller has marked the crypto as sent but the buyer never confirmed. Completing here
+            settles the trade (stats, streaks, maker bond, messaging thread) — USDT is non-custodial
+            so no funds move. If the seller may not have actually delivered, resolve via a dispute instead.
+          </p>
+          {!fcOpen ? (
+            <Button variant="danger" onClick={() => { setFcOpen(true); setFcErr(null) }}>Force Complete Trade</Button>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={fcReason}
+                onChange={(e) => setFcReason(e.target.value)}
+                placeholder="Reason (recorded in the audit log) — e.g. buyer confirmed receipt over support, seller is trusted…"
+                rows={3}
+                className="w-full border border-border rounded-xl p-2 text-sm bg-surface"
+              />
+              {fcErr && <p className="text-sm text-danger">{fcErr}</p>}
+              <div className="flex gap-2">
+                <Button variant="danger" onClick={handleForceComplete} disabled={fcBusy}>
+                  {fcBusy ? 'Completing…' : 'Confirm — Complete Trade'}
+                </Button>
+                <Button variant="secondary" onClick={() => { setFcOpen(false); setFcReason(''); setFcErr(null) }} disabled={fcBusy}>Cancel</Button>
+              </div>
+              <p className="text-xs text-text-muted">Requires step-up 2FA.</p>
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* Actions */}
       <div className="flex gap-3">

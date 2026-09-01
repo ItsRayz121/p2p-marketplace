@@ -6,8 +6,11 @@ import { ctmApi } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { CtmStatusTimeline } from '@/components/admin/CtmStatusTimeline'
 import { ArrowLeft } from 'lucide-react'
+
+const CTM_TERMINAL = ['completed', 'cancelled', 'expired', 'dispute_resolved']
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -39,6 +42,10 @@ export default function AdminCtmTradeDetailPage() {
   const [messages, setMessages] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [fcOpen, setFcOpen] = useState(false)
+  const [fcReason, setFcReason] = useState('')
+  const [fcBusy, setFcBusy] = useState(false)
+  const [fcErr, setFcErr] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -59,6 +66,19 @@ export default function AdminCtmTradeDetailPage() {
   }, [ref])
 
   useEffect(() => { if (ref) load() }, [ref, load])
+
+  async function handleForceComplete() {
+    setFcBusy(true); setFcErr(null)
+    try {
+      await ctmApi.adminForceRelease(ref, fcReason.trim() || undefined)
+      setFcOpen(false); setFcReason('')
+      await load()
+    } catch (e) {
+      setFcErr(e instanceof Error ? e.message : 'Force-complete failed')
+    } finally {
+      setFcBusy(false)
+    }
+  }
 
   if (loading) return <LoadingState message="Loading trade..." />
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={load} />
@@ -197,6 +217,38 @@ export default function AdminCtmTradeDetailPage() {
                   <span className="text-text-muted">{fmtDt(m.createdAt)} · </span>{m.message}
                 </p>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Force complete — any non-terminal CTM trade (incl. a disputed one) */}
+      {!CTM_TERMINAL.includes(trade.status) && (
+        <div className="bg-surface shadow-card border border-border rounded-xl p-4">
+          <p className="text-sm font-medium text-text-primary mb-1">Force Complete</p>
+          <p className="text-xs text-text-secondary mb-3">
+            Marks the trade completed (stats, streaks, maker bond, messaging thread) and closes any
+            open dispute. Use when both sides have settled off-platform or the buyer confirmed receipt
+            elsewhere. Does not move any tokens.
+          </p>
+          {!fcOpen ? (
+            <Button variant="danger" size="sm" onClick={() => { setFcOpen(true); setFcErr(null) }}>Force Complete Trade</Button>
+          ) : (
+            <div className="space-y-2">
+              <textarea
+                value={fcReason}
+                onChange={(e) => setFcReason(e.target.value)}
+                placeholder="Reason (optional, recorded in the audit log / dispute resolution)"
+                rows={3}
+                className="w-full border border-border rounded-xl p-2 text-xs bg-surface"
+              />
+              {fcErr && <p className="text-xs text-danger">{fcErr}</p>}
+              <div className="flex gap-2">
+                <Button variant="danger" size="sm" onClick={handleForceComplete} disabled={fcBusy}>
+                  {fcBusy ? 'Completing…' : 'Confirm — Complete Trade'}
+                </Button>
+                <Button variant="secondary" size="sm" onClick={() => { setFcOpen(false); setFcReason(''); setFcErr(null) }} disabled={fcBusy}>Cancel</Button>
+              </div>
             </div>
           )}
         </div>

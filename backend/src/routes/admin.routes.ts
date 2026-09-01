@@ -12,6 +12,7 @@ import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
 import { clawbackTradePoints } from '../services/airdrop.service'
+import { finalizeUsdtTrade } from '../services/trade.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
@@ -1813,6 +1814,41 @@ export async function adminRoutes(app: FastifyInstance) {
 
     log.info({ tradeId: id, adminId: req.user!.id, orderRef: trade.orderRef }, 'Admin approved tx verification — buyer can now release')
     return reply.send({ success: true, message: 'Transaction verification approved. Buyer can now release the trade.' })
+  })
+
+  // POST /admin/trades/:id/force-complete
+  // Terminal completion for a USDT trade stuck at crypto_sent — the seller
+  // delivered but the confirmer (buyer, classic) never tapped Confirm. Same effect
+  // as the buyer's release / the auto-complete job: finalizeUsdtTrade marks the
+  // status, updates stats/streaks, releases the maker bond, closes any open
+  // dispute + the messaging episode. USDT is non-custodial so no crypto moves.
+  // Step-up 2FA + a written reason are required.
+  app.post('/admin/trades/:id/force-complete', { preHandler: adminStepUp }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const bodySchema = z.object({ reason: z.string().min(5).max(500) })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'reason required', 400)
+
+    const trade = await db.trade.findUnique({
+      where: { id },
+      select: { id: true, status: true, orderRef: true, sellerTxHash: true, sellerDeliveryProofUrl: true },
+    })
+    if (!trade) throw Errors.NOT_FOUND('Trade')
+    if (trade.status !== 'crypto_sent') {
+      throw new AppError('INVALID_STATUS', `Trade must be in crypto_sent to force-complete (current: ${trade.status}). Use dispute resolution for other states.`, 400)
+    }
+    if (!trade.sellerTxHash && !trade.sellerDeliveryProofUrl) {
+      throw new AppError('NO_DELIVERY_PROOF', 'The seller has submitted no transfer proof — do not force-complete. Resolve via a dispute instead.', 400)
+    }
+
+    await finalizeUsdtTrade(id)
+    await createAuditLog(req.user!.id, 'TRADE_FORCE_COMPLETED_ADMIN', 'Trade', id, {
+      reason: parsed.data.reason,
+      orderRef: trade.orderRef,
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
+
+    log.info({ tradeId: id, adminId: req.user!.id, orderRef: trade.orderRef }, 'Admin force-completed trade')
+    return reply.send({ success: true, message: 'Trade completed.' })
   })
 
   // ── Disputes ───────────────────────────────────────────────────────────────

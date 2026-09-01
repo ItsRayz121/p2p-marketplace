@@ -2222,6 +2222,8 @@ export const adminApi = {
     apiRequest<Trade>(`/admin/trades/${id}/confirm-payment`, { method: 'POST' }),
   adminCancelTrade: (id: string) =>
     apiRequest<Trade>(`/admin/trades/${id}/cancel`, { method: 'POST' }),
+  adminForceCompleteTrade: (id: string, reason: string) =>
+    apiRequest<{ message: string }>(`/admin/trades/${id}/force-complete`, { method: 'POST', body: JSON.stringify({ reason }) }),
 
   // Disputes
   getDisputes: (params?: Record<string, string | number | undefined>) =>
@@ -3220,7 +3222,7 @@ export const ctmApi = {
   adminResolveDispute: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/admin/${ref}/resolve-dispute`, { method: 'POST', body: JSON.stringify(data) }),
   adminAddDisputeMessage: (ref: string, message: string) => apiRequest<unknown>(`/ctm/trades/admin/${ref}/dispute-message`, { method: 'POST', body: JSON.stringify({ message }) }),
   adminConfirmPayment: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/confirm-payment`, { method: 'POST' }),
-  adminForceRelease: (ref: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/release`, { method: 'POST' }),
+  adminForceRelease: (ref: string, reason?: string) => apiRequest<void>(`/ctm/trades/admin/${ref}/release`, { method: 'POST', body: JSON.stringify(reason ? { reason } : {}) }),
   adminGetMerchantQueue: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ merchants: unknown[]; total: number; page: number; limit: number }>('/ctm/merchants/admin/queue' + buildQs(params)),
   adminApproveMerchant: (id: string, data?: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/approve`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
