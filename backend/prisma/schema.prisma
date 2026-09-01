@@ -739,6 +739,13 @@ model Trade {
   confirmDeadlineAt      DateTime?
   confirmReminderSentAt  DateTime? // set once the halfway nudge notification has gone out, so it never resends
   confirmAdminWarnedAt   DateTime? // set once the pre-deadline admin heads-up (non-trusted seller) has gone out, so it never resends
+  // Seller "payment not received" — the seller bounced the buyer's payment proof
+  // back to unpaid instead of confirming or disputing. Count is capped by
+  // `trade_proof_reject_max` (default 2); the next rejection past the cap
+  // auto-opens a dispute instead of bouncing.
+  proofRejectionCount    Int         @default(0)
+  lastProofRejectedAt    DateTime?
+  lastProofRejectReason  String?
   createdAt          DateTime    @default(now())
   updatedAt          DateTime    @updatedAt
   adBidId            String?     @unique
@@ -2731,6 +2738,11 @@ model CtmTrade {
   takerFirst        Boolean           @default(false)
   proofDeadlineAt   DateTime?
   confirmDeadlineAt DateTime?
+  // Seller "payment not received" — see the twin fields on Trade. Bounces the
+  // buyer's proof back to awaiting_payment; capped by `trade_proof_reject_max`.
+  proofRejectionCount   Int             @default(0)
+  lastProofRejectedAt   DateTime?
+  lastProofRejectReason String?
   expiresAt         DateTime
   cancelledBy       String?
   cancelReason      String?

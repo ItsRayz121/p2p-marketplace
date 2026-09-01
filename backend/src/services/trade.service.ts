@@ -799,6 +799,143 @@ export async function confirmPayment(
   return updated
 }
 
+/** Human-readable reason codes for a seller "payment not received" rejection. */
+export const PROOF_REJECT_REASONS = ['fake_screenshot', 'wrong_amount', 'wrong_account', 'not_received', 'other'] as const
+export type ProofRejectReason = (typeof PROOF_REJECT_REASONS)[number]
+const PROOF_REJECT_LABEL: Record<ProofRejectReason, string> = {
+  fake_screenshot: 'the screenshot appears fake or edited',
+  wrong_amount:    'the amount received does not match',
+  wrong_account:   'the payment went to the wrong account',
+  not_received:    'no payment has arrived',
+  other:           'other',
+}
+
+/**
+ * Seller "Payment not received" — bounce the buyer's payment proof back to the
+ * unpaid rung with a written reason, instead of wrongly confirming it or opening
+ * a full dispute. The buyer then re-uploads correct proof or opens a dispute.
+ *
+ * Guardrail: `trade_proof_reject_max` (default 2) caps how many times the seller
+ * may do this. The rejection AFTER the cap auto-opens a dispute instead, so a
+ * seller can't stonewall a buyer who genuinely paid by rejecting forever.
+ *
+ * Classic flow only (status must be `payment_uploaded`, meaning the buyer's fiat
+ * leg). Taker-first `payment_uploaded` is the taker's CRYPTO leg — a different
+ * thing — so that flow falls back to confirm-or-dispute.
+ */
+export async function rejectPaymentProof(
+  tradeId: string,
+  actorId: string,
+  role: string,
+  reason: ProofRejectReason,
+  detail: string,
+) {
+  if (!(await isFlagEnabled(FLAGS.TRADE_PROOF_REJECT, true))) {
+    throw new AppError('FEATURE_DISABLED', 'Rejecting a payment proof is not available. Confirm the payment or open a dispute.', 403)
+  }
+  if (!PROOF_REJECT_REASONS.includes(reason)) {
+    throw new AppError('VALIDATION_ERROR', 'Invalid rejection reason.', 400)
+  }
+  if (!detail || detail.trim().length < 10) {
+    throw new AppError('VALIDATION_ERROR', 'Add a short explanation (at least 10 characters) so the buyer can fix it.', 400)
+  }
+
+  const trade = await db.trade.findUnique({
+    where: { id: tradeId },
+    select: {
+      id: true, status: true, disputeResumeStatus: true, takerFirst: true,
+      buyerId: true, sellerId: true, orderRef: true, proofRejectionCount: true,
+      dispute: { select: { status: true } },
+    },
+  })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (role !== 'admin' && trade.sellerId !== actorId) {
+    throw new AppError('FORBIDDEN', 'Only the seller can reject a payment proof', 403)
+  }
+  if (trade.takerFirst) {
+    throw new AppError('INVALID_STATUS', 'Not available for this trade. Confirm the payment or open a dispute.', 400)
+  }
+  if (ladderStatus(trade) !== 'payment_uploaded') {
+    throw new AppError('INVALID_STATUS', `Can only reject a payment proof while it is awaiting your confirmation (current: ${ladderStatus(trade)}).`, 400)
+  }
+  assertPartySettleable(trade, trade.dispute)
+
+  const maxRejections = await getNumberConfig('trade_proof_reject_max', 2)
+  const reasonText = `${PROOF_REJECT_LABEL[reason]} — ${detail.trim()}`
+  const otherPartyId = trade.buyerId
+
+  // ── Cap reached → auto-open a dispute instead of bouncing again ────────────
+  if (trade.proofRejectionCount >= maxRejections) {
+    // Create the dispute directly (bypassing openDispute's cooldown — by now the
+    // buyer has been bounced twice, an admin genuinely needs to look).
+    let dispute: Awaited<ReturnType<typeof db.dispute.create>>
+    try {
+      dispute = await db.$transaction(async (tx: Tx) => {
+        const d = await tx.dispute.create({
+          data: { tradeId, openedById: actorId, reason: 'seller_rejects_payment', description: `Seller rejected the buyer's payment proof ${trade.proofRejectionCount + 1} times. Latest reason: ${reasonText}` },
+        })
+        await tx.trade.update({
+          where: { id: tradeId },
+          data: {
+            status: 'disputed',
+            disputeResumeStatus: 'payment_uploaded',
+            proofRejectionCount: { increment: 1 },
+            lastProofRejectedAt: new Date(),
+            lastProofRejectReason: reasonText,
+          },
+        })
+        return d
+      })
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new AppError('CONFLICT', 'A dispute already exists for this trade', 409)
+      }
+      throw err
+    }
+    await postTradeSystemMessage(tradeId, actorId, `Seller rejected the payment proof again (${reasonText}). The rejection limit is reached, so this is now a dispute for an admin to review.`)
+    notify(otherPartyId, 'dispute', 'Trade moved to dispute', `The seller rejected your payment proof again. Because the limit was reached, an admin will now review trade #${trade.orderRef}.`, { tradeId, disputeId: dispute.id }, tradeId)
+    notify(actorId, 'dispute', 'Dispute Opened', `You reached the payment-proof rejection limit on trade #${trade.orderRef}, so it was escalated to an admin.`, { tradeId, disputeId: dispute.id }, tradeId)
+    createAdminNotif({ category: 'DISPUTE', title: 'Auto-dispute — payment proof rejected past the limit', body: `Trade #${trade.orderRef}: the seller rejected the buyer's payment proof more than ${maxRejections} time(s). Latest: ${reasonText}`, href: '/admin/disputes' })
+    void closeEpisode({ market: 'usdt', tradeId, outcome: 'disputed' })
+    return { outcome: 'disputed' as const, disputeId: dispute.id, rejectionCount: trade.proofRejectionCount + 1 }
+  }
+
+  // ── Under the cap → bounce back to the unpaid rung ────────────────────────
+  const result = await db.trade.updateMany({
+    where: { id: tradeId, ...claimRung(trade, 'payment_uploaded') },
+    data: {
+      ...advanceTo(trade, 'payment_pending'),
+      paymentProofUrl: null,
+      paymentUploadedAt: null,
+      proofRejectionCount: { increment: 1 },
+      lastProofRejectedAt: new Date(),
+      lastProofRejectReason: reasonText,
+    },
+  })
+  if (result.count === 0) {
+    throw new AppError('INVALID_STATUS', 'Trade status changed — reload and try again.', 409)
+  }
+
+  const newCount = trade.proofRejectionCount + 1
+  const remaining = Math.max(maxRejections - newCount, 0)
+  await postTradeSystemMessage(
+    tradeId,
+    actorId,
+    `Seller reported the payment was NOT received (${reasonText}). The buyer needs to re-check and upload correct proof, or open a dispute.${remaining === 0 ? ' The next rejection will escalate to a dispute.' : ''}`,
+  )
+  notify(
+    otherPartyId,
+    'trade',
+    'Payment not received',
+    `The seller says your payment for trade #${trade.orderRef} has not arrived: ${reasonText}. Please re-check and upload correct proof, or open a dispute if you believe it was sent.`,
+    { tradeId },
+    tradeId,
+  )
+  createAdminNotif({ category: 'TRADE', title: 'Payment proof rejected by seller', body: `Trade #${trade.orderRef}: seller rejected the buyer's proof (${reasonText}). Rejection ${newCount}/${maxRejections}.`, href: `/admin/trades/${tradeId}` })
+
+  return { outcome: 'bounced' as const, rejectionCount: newCount, remaining }
+}
+
 export async function markCryptoSent(
   tradeId: string,
   sellerId: string,

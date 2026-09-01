@@ -97,6 +97,9 @@ interface ExtendedTrade extends Trade {
   streakCount?: number
   /** Real ladder rung while `status` is parked at `disputed` (see lib/disputeResume). */
   disputeResumeStatus?: string | null
+  /** Seller "payment not received": how many times the seller has bounced the buyer's proof. */
+  proofRejectionCount?: number
+  lastProofRejectReason?: string | null
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -409,6 +412,9 @@ export default function TradePage() {
 
   const [showCancelModal, setShowCancelModal] = useState(false)
   const [cancelReason, setCancelReason] = useState('')
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [rejectReason, setRejectReason] = useState('not_received')
+  const [rejectDetail, setRejectDetail] = useState('')
   const [showReleaseModal, setShowReleaseModal] = useState(false)
   const [ratedAlready, setRatedAlready] = useState(false)
 
@@ -558,6 +564,27 @@ export default function TradePage() {
     try {
       await tradesApi.confirmPayment(id)
       analytics.paymentConfirmed({ tradeId: id })
+      await fetchTrade()
+      hapticNotify('success')
+    } catch (err) {
+      hapticNotify('error')
+      setActionError(err instanceof Error ? err.message : 'Action failed')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  // Seller: "payment not received" — bounce the buyer's proof back to unpaid
+  const handleRejectPayment = async () => {
+    if (rejectDetail.trim().length < 10) {
+      setActionError('Add a short explanation (at least 10 characters) so the buyer can fix it.')
+      return
+    }
+    setActionLoading(true)
+    setActionError(null)
+    try {
+      await tradesApi.rejectPayment(id, { reason: rejectReason, detail: rejectDetail.trim() })
+      setShowRejectModal(false); setRejectDetail(''); setRejectReason('not_received')
       await fetchTrade()
       hapticNotify('success')
     } catch (err) {
@@ -1146,6 +1173,13 @@ export default function TradePage() {
                     </div>
                   )
                 })()}
+                {isUserBuyer && isAction('send_fiat') && trade.lastProofRejectReason && (
+                  <div className="bg-danger/10 border border-danger/30 rounded-lg p-3 text-xs text-danger mb-2">
+                    <p className="font-semibold mb-0.5">The seller says your payment was not received</p>
+                    <p>Reason: {trade.lastProofRejectReason}</p>
+                    <p className="mt-1 text-danger/80">Re-check and upload correct proof below. If you&apos;re sure the payment was sent, open a dispute instead.</p>
+                  </div>
+                )}
                 {myTurn && isAction('send_fiat') && (
                   <>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUploadProof(f) }} />
@@ -1192,6 +1226,18 @@ export default function TradePage() {
                   <>
                     <p className="text-xs text-text-muted">Confirm only after the PKR has actually arrived in your account — a screenshot alone is not proof of funds.</p>
                     <Button fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleConfirmPayment}>Confirm Payment Received</Button>
+                    {!trade.takerFirst && (
+                      <button
+                        onClick={() => { setActionError(null); setShowRejectModal(true) }}
+                        disabled={actionLoading}
+                        className="w-full mt-2 text-xs text-danger border border-danger/30 rounded-lg py-2 hover:bg-danger/10 transition-colors"
+                      >
+                        Payment not received
+                      </button>
+                    )}
+                    {typeof trade.proofRejectionCount === 'number' && trade.proofRejectionCount > 0 && (
+                      <p className="text-[11px] text-text-muted mt-1">You&apos;ve reported this {trade.proofRejectionCount} time(s). After the limit, the next report opens a dispute.</p>
+                    )}
                   </>
                 )}
                 {!myTurn && isAction('confirm_fiat') && (
@@ -1621,6 +1667,46 @@ export default function TradePage() {
           <div className="flex gap-3">
             <Button variant="secondary" fullWidth onClick={() => { setShowCancelModal(false); setCancelReason('') }}>Keep Trade</Button>
             <Button variant="danger" fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleCancel}>Cancel Trade</Button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal isOpen={showRejectModal} onClose={() => { setShowRejectModal(false); setRejectDetail('') }} title="Payment not received">
+        <div className="space-y-4">
+          <p className="text-sm text-text-secondary">
+            Use this only if the PKR has genuinely not arrived. The trade goes back to the unpaid step
+            and the buyer is asked to re-check and upload correct proof. Don&apos;t use it to stall — after
+            the limit, the next rejection opens a dispute.
+          </p>
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">Reason</label>
+            <select
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
+            >
+              <option value="not_received">No payment has arrived</option>
+              <option value="wrong_amount">Amount received doesn&apos;t match</option>
+              <option value="wrong_account">Paid to the wrong account</option>
+              <option value="fake_screenshot">Screenshot looks fake / edited</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-text-primary mb-1">Explanation for the buyer</label>
+            <textarea
+              value={rejectDetail}
+              onChange={(e) => setRejectDetail(e.target.value)}
+              placeholder="e.g. Nothing has landed in my account as of 3:40pm — please check the account number and resend."
+              rows={3}
+              className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <p className="text-[11px] text-text-muted mt-1">At least 10 characters.</p>
+          </div>
+          {actionError && <p className="text-xs text-danger">{actionError}</p>}
+          <div className="flex gap-3">
+            <Button variant="secondary" fullWidth onClick={() => { setShowRejectModal(false); setRejectDetail('') }}>Back</Button>
+            <Button variant="danger" fullWidth loading={actionLoading} disabled={actionLoading} onClick={handleRejectPayment}>Report not received</Button>
           </div>
         </div>
       </Modal>

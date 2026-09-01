@@ -219,6 +219,9 @@ interface Trade {
   ratedByMe?: boolean
   /** Combined completed-trade count between this buyer & seller (USDT + CTM). */
   streakCount?: number
+  /** Seller "payment not received": bounce count + latest reason. */
+  proofRejectionCount?: number
+  lastProofRejectReason?: string | null
 }
 
 interface Message { id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }
@@ -308,6 +311,9 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [disputeOpen, setDisputeOpen] = useState(false)
   const [disputeReason, setDisputeReason] = useState('')
   const [disputeDesc, setDisputeDesc] = useState('')
+  const [rejectOpen, setRejectOpen] = useState(false)
+  const [rejectReason, setRejectReason] = useState('not_received')
+  const [rejectDetail, setRejectDetail] = useState('')
   const [txHash, setTxHash] = useState('')
   const [rating, setRating] = useState(5)
   const [ratingComment, setRatingComment] = useState('')
@@ -582,6 +588,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     if (disputeDesc.trim().length < 10) { setError('Add at least 10 characters describing the issue'); return }
     await doAction(() => ctmApi.openDispute(ref, { reason: disputeReason, description: disputeDesc.trim() }))
     setDisputeOpen(false)
+  }
+
+  const handleRejectPayment = async () => {
+    if (rejectDetail.trim().length < 10) { setError('Add at least 10 characters explaining the issue for the buyer'); return }
+    await doAction(() => ctmApi.rejectPayment(ref, { reason: rejectReason, detail: rejectDetail.trim() }))
+    setRejectOpen(false); setRejectDetail(''); setRejectReason('not_received')
   }
 
   const handleRate = async () => {
@@ -1161,6 +1173,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   }
                   return (
                     <div className="space-y-2">
+                      {trade.lastProofRejectReason && (
+                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3 text-xs text-red-700 dark:text-red-300">
+                          <p className="font-semibold mb-0.5">The seller says your payment was not received</p>
+                          <p>Reason: {trade.lastProofRejectReason}</p>
+                          <p className="mt-1 opacity-80">Re-check and upload correct proof below. If you&apos;re sure it was sent, open a dispute instead.</p>
+                        </div>
+                      )}
                       <p className="text-xs text-text-muted">Upload screenshot of your PKR payment as proof.</p>
                       <input type="file" accept="image/*" onChange={(e) => setProofFile(e.target.files?.[0] ?? null)} className="w-full border border-border rounded-xl p-2 text-sm" />
                       <button onClick={handleUploadPaymentProof} disabled={actionLoading || !proofFile} className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60 hover:bg-primary/90">
@@ -1384,6 +1403,40 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         className="w-full bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-60">
                         {actionLoading ? '…' : 'Confirm Payment Received'}
                       </button>
+                    )}
+                    {myTurn && !takerFirst && !rejectOpen && (
+                      <button onClick={() => { setError(''); setRejectOpen(true) }} disabled={actionLoading}
+                        className="w-full mt-2 text-xs text-red-600 dark:text-red-400 border border-red-500/30 rounded-xl py-2 hover:bg-red-500/10">
+                        Payment not received
+                      </button>
+                    )}
+                    {myTurn && !takerFirst && rejectOpen && (
+                      <div className="mt-2 border border-red-500/30 rounded-xl p-3 space-y-2 bg-red-500/5">
+                        <p className="text-xs text-text-secondary">
+                          Use this only if the payment genuinely has not arrived. The trade goes back to the unpaid step
+                          and the buyer re-uploads correct proof. After the limit, the next rejection opens a dispute.
+                        </p>
+                        <select value={rejectReason} onChange={(e) => setRejectReason(e.target.value)}
+                          className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface">
+                          <option value="not_received">No payment has arrived</option>
+                          <option value="wrong_amount">Amount received doesn&apos;t match</option>
+                          <option value="wrong_account">Paid to the wrong account</option>
+                          <option value="fake_screenshot">Screenshot looks fake / edited</option>
+                          <option value="other">Other</option>
+                        </select>
+                        <textarea rows={3} value={rejectDetail} onChange={(e) => setRejectDetail(e.target.value)}
+                          placeholder="Explain for the buyer (min 10 characters) — e.g. nothing has landed, please check the account number."
+                          className="w-full border border-border rounded-lg px-3 py-2 text-sm bg-surface resize-none" />
+                        <div className="flex gap-2">
+                          <button onClick={() => { setRejectOpen(false); setRejectDetail('') }} disabled={actionLoading}
+                            className="flex-1 border border-border rounded-lg py-2 text-sm">Back</button>
+                          <button onClick={handleRejectPayment} disabled={actionLoading || rejectDetail.trim().length < 10}
+                            className="flex-1 bg-red-600 text-white rounded-lg py-2 text-sm font-semibold disabled:opacity-60">Report not received</button>
+                        </div>
+                      </div>
+                    )}
+                    {typeof trade.proofRejectionCount === 'number' && trade.proofRejectionCount > 0 && (
+                      <p className="text-[11px] text-text-muted mt-1">Reported {trade.proofRejectionCount} time(s). After the limit, the next report opens a dispute.</p>
                     )}
                   </div>
                 ) : (

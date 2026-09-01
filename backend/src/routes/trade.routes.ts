@@ -8,6 +8,8 @@ import {
   getTradeById,
   uploadPaymentProof,
   confirmPayment,
+  rejectPaymentProof,
+  PROOF_REJECT_REASONS,
   markCryptoSent,
   releaseTrade,
   cancelTrade,
@@ -44,6 +46,11 @@ const cryptoSentSchema = z.object({
 
 const cancelSchema = z.object({
   reason: z.string().min(1).max(500),
+})
+
+const rejectPaymentSchema = z.object({
+  reason: z.enum(PROOF_REJECT_REASONS),
+  detail: z.string().min(10).max(500),
 })
 
 const disputeSchema = z.object({
@@ -148,6 +155,19 @@ export async function tradeRoutes(app: FastifyInstance) {
       return reply.send({ success: true, data: trade })
     })
   }
+
+  // POST /api/trades/:id/reject-payment — seller: "payment not received"
+  app.post('/trades/:id/reject-payment', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const role = req.user!.role
+    const { id } = req.params as { id: string }
+    const parsed = rejectPaymentSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const result = await rejectPaymentProof(id, userId, role, parsed.data.reason, parsed.data.detail)
+    return reply.send({ success: true, data: result })
+  })
 
   // POST /api/trades/:id/crypto-sent
   app.post('/trades/:id/crypto-sent', { preHandler: [authenticate] }, async (req, reply) => {

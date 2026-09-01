@@ -183,6 +183,109 @@ export async function confirmPayment(tradeRef: string, sellerId: string) {
   notify(trade.buyerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed', 'Seller confirmed your payment. They will now send the tokens.', { tradeRef })
 }
 
+/** Reason codes for a CTM seller "payment not received" rejection. Mirrors the USDT set. */
+export const CTM_PROOF_REJECT_REASONS = ['fake_screenshot', 'wrong_amount', 'wrong_account', 'not_received', 'other'] as const
+export type CtmProofRejectReason = (typeof CTM_PROOF_REJECT_REASONS)[number]
+const CTM_PROOF_REJECT_LABEL: Record<CtmProofRejectReason, string> = {
+  fake_screenshot: 'the screenshot appears fake or edited',
+  wrong_amount:    'the amount received does not match',
+  wrong_account:   'the payment went to the wrong account',
+  not_received:    'no payment has arrived',
+  other:           'other',
+}
+
+/**
+ * CTM seller "Payment not received" — bounce the buyer's proof back to
+ * awaiting_payment with a reason instead of confirming or opening a dispute.
+ * Capped by `trade_proof_reject_max` (default 2); the rejection after the cap
+ * auto-opens a dispute. Classic flow only (status === payment_uploaded).
+ */
+export async function rejectPaymentProof(
+  tradeRef: string,
+  actorId: string,
+  role: string,
+  reason: CtmProofRejectReason,
+  detail: string,
+) {
+  if (!(await isFlagEnabled(FLAGS.TRADE_PROOF_REJECT, true))) {
+    throw new AppError('FORBIDDEN', 'Rejecting a payment proof is not available. Confirm the payment or open a dispute.', 403)
+  }
+  if (!CTM_PROOF_REJECT_REASONS.includes(reason)) throw new AppError('VALIDATION_ERROR', 'Invalid rejection reason.', 400)
+  if (!detail || detail.trim().length < 10) {
+    throw new AppError('VALIDATION_ERROR', 'Add a short explanation (at least 10 characters) so the buyer can fix it.', 400)
+  }
+
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+  if (role !== 'admin' && trade.sellerId !== actorId) throw new AppError('FORBIDDEN', 'Only the seller can reject a payment proof', 403)
+  if (trade.takerFirst) throw new AppError('CONFLICT', 'Not available for this trade. Confirm the payment or open a dispute.', 409)
+  if (ladderStatus(trade) !== 'payment_uploaded') {
+    throw new AppError('CONFLICT', `Can only reject a payment proof while it is awaiting your confirmation (current: ${ladderStatus(trade)}).`, 409)
+  }
+  assertPartySettleable(trade, trade.dispute)
+
+  const maxRejections = await getNumberConfig('trade_proof_reject_max', 2)
+  const reasonText = `${CTM_PROOF_REJECT_LABEL[reason]} — ${detail.trim()}`
+  const label = refLabel(trade.displayRef)
+
+  // ── Cap reached → auto-dispute ───────────────────────────────────────────
+  if (trade.proofRejectionCount >= maxRejections) {
+    if (trade.dispute) throw new AppError('CONFLICT', 'Dispute already open for this trade', 409)
+    await db.$transaction([
+      db.ctmTrade.update({
+        where: { id: trade.id },
+        data: {
+          status: 'disputed',
+          disputeResumeStatus: 'payment_uploaded',
+          proofRejectionCount: { increment: 1 },
+          lastProofRejectedAt: new Date(),
+          lastProofRejectReason: reasonText,
+        },
+      }),
+      db.ctmDispute.create({
+        data: {
+          tradeId: trade.id,
+          openedById: actorId,
+          reason: 'not_received' as never,
+          description: `Seller rejected the buyer's payment proof ${trade.proofRejectionCount + 1} times. Latest reason: ${reasonText}`,
+        },
+      }),
+    ])
+    await postCtmSystemMessage(trade.id, actorId, `Seller rejected the payment proof again (${reasonText}). The rejection limit is reached, so an admin will now review this trade.`)
+    notify(trade.buyerId, 'CTM_DISPUTE_OPENED', 'Trade moved to dispute', `The seller rejected your payment proof again on trade ${label}. Because the limit was reached, an admin will review it.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
+    createAdminNotif({ category: 'DISPUTE', title: 'Auto-dispute — CTM payment proof rejected past the limit', body: `Trade ${label}: the seller rejected the buyer's payment proof more than ${maxRejections} time(s). Latest: ${reasonText}`, href: '/admin/ctm/disputes' })
+    void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
+    return { outcome: 'disputed' as const, rejectionCount: trade.proofRejectionCount + 1 }
+  }
+
+  // ── Under the cap → bounce to awaiting_payment ───────────────────────────
+  const bounced = await db.ctmTrade.updateMany({
+    where: { id: trade.id, ...claimRung(trade, 'payment_uploaded') },
+    data: {
+      ...advanceTo(trade, 'awaiting_payment'),
+      paymentProofUrl: null,
+      paymentProofHash: null,
+      proofDeadlineAt: null,
+      proofRejectionCount: { increment: 1 },
+      lastProofRejectedAt: new Date(),
+      lastProofRejectReason: reasonText,
+    },
+  })
+  if (bounced.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
+
+  const newCount = trade.proofRejectionCount + 1
+  const remaining = Math.max(maxRejections - newCount, 0)
+  await postCtmSystemMessage(
+    trade.id,
+    actorId,
+    `Seller reported the payment was NOT received (${reasonText}). The buyer needs to re-check and upload correct proof, or open a dispute.${remaining === 0 ? ' The next rejection will escalate to a dispute.' : ''}`,
+  )
+  notify(trade.buyerId, 'CTM_PAYMENT_REJECTED', 'Payment not received', `The seller says your payment for trade ${label} has not arrived: ${reasonText}. Please re-check and upload correct proof, or open a dispute.`, { tradeRef, displayRef: trade.displayRef })
+  createAdminNotif({ category: 'TRADE', title: 'CTM payment proof rejected by seller', body: `Trade ${label}: seller rejected the buyer's proof (${reasonText}). Rejection ${newCount}/${maxRejections}.`, href: `/admin/ctm/trades/${tradeRef}` })
+
+  return { outcome: 'bounced' as const, rejectionCount: newCount, remaining }
+}
+
 export async function markSellerTransferring(tradeRef: string, sellerId: string) {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef }, include: { dispute: { select: { status: true } } } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)

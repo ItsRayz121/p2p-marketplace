@@ -54,6 +54,7 @@ const STRUCTURED_KEYS = new Set([
   'ctm_usdt_payment_enabled', 'messaging_inbox_enabled', 'admin_email_notifs_enabled',
   'taker_first_settlement_enabled', 'nokyc_taker_enabled',
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
+  'trade_proof_reject_enabled', 'trade_proof_reject_max',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -268,6 +269,8 @@ export default function ConfigPage() {
   const [nokycDaily, setNokycDaily] = useState('60000')
   const [nokycCeiling, setNokycCeiling] = useState('150000')
   const [nokycMaxOpen, setNokycMaxOpen] = useState('1')
+  const [proofRejectFlag, setProofRejectFlag] = useState(true)
+  const [proofRejectMax, setProofRejectMax] = useState('2')
   const [betaSaving, setBetaSaving] = useState(false)
 
   // ── Media Retention & Storage ─────────────────────────────────────────────────
@@ -393,6 +396,8 @@ export default function ConfigPage() {
       setNokycDaily(m['nokyc_max_daily_pkr'] ?? '60000')
       setNokycCeiling(m['nokyc_rolling_ceiling_pkr'] ?? '150000')
       setNokycMaxOpen(m['nokyc_max_open_trades'] ?? '1')
+      setProofRejectFlag(m['trade_proof_reject_enabled'] !== 'false') // default ON
+      setProofRejectMax(m['trade_proof_reject_max'] ?? '2')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
@@ -570,6 +575,8 @@ export default function ConfigPage() {
         { key: 'nokyc_max_daily_pkr', value: String(Math.max(parseFloat(nokycDaily) || 0, 0)) },
         { key: 'nokyc_rolling_ceiling_pkr', value: String(Math.max(parseFloat(nokycCeiling) || 0, 0)) },
         { key: 'nokyc_max_open_trades', value: String(Math.max(parseInt(nokycMaxOpen, 10) || 0, 0)) },
+        { key: 'trade_proof_reject_enabled', value: proofRejectFlag ? 'true' : 'false' },
+        { key: 'trade_proof_reject_max', value: String(Math.max(parseInt(proofRejectMax, 10) || 0, 1)) },
       ])
       showToast('Feature settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save feature settings.', false) }
@@ -899,6 +906,23 @@ export default function ConfigPage() {
               </Field>
               <Field label="Max open trades" hint="Simultaneous open trades an un-verified taker may hold (default 1).">
                 <input className={inputCls} type="number" min="0" value={nokycMaxOpen} onChange={(e) => setNokycMaxOpen(e.target.value)} placeholder="1" />
+              </Field>
+            </div>
+          )}
+
+          {/* Seller "payment not received" / reject-proof — defaults ON */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={proofRejectFlag} onChange={(e) => setProofRejectFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Seller &ldquo;Payment not received&rdquo; <span className="font-mono text-xs text-text-muted">trade_proof_reject_enabled</span> <Badge variant="success" size="sm">default ON</Badge></p>
+              <p className="text-xs text-text-muted mt-0.5">Lets a seller bounce the buyer&apos;s payment proof back to the unpaid step with a written reason (fake screenshot, wrong amount, wrong account, not received) instead of confirming or opening a full dispute. The buyer then re-uploads or disputes. Applies to USDT &amp; CTM, classic flow. Turn OFF to hide the button (sellers fall back to confirm-or-dispute).</p>
+            </div>
+          </label>
+
+          {proofRejectFlag && (
+            <div className="rounded-xl border border-border p-4">
+              <Field label="Max rejections before auto-dispute" hint="After this many rejections on one trade, the next rejection opens a dispute instead of bouncing again (default 2). Stops a seller stonewalling a buyer who really paid.">
+                <input className={inputCls} type="number" min="1" value={proofRejectMax} onChange={(e) => setProofRejectMax(e.target.value)} placeholder="2" />
               </Field>
             </div>
           )}

@@ -180,7 +180,23 @@ export const FLAGS = {
    * without a redeploy.
    */
   APTOS_AUTO_SWEEP: 'aptos_auto_sweep_enabled',
+  /**
+   * Seller "payment not received" / reject-proof action (USDT + CTM). When ON
+   * (DEFAULT ON — this is a safety valve, not a new risk), a seller sitting at
+   * the payment_uploaded rung can bounce the buyer's proof back to the unpaid
+   * rung with a written reason instead of confirming or opening a full dispute.
+   * The buyer then re-uploads or disputes. Capped by `trade_proof_reject_max`
+   * (default 2): the rejection AFTER the cap auto-opens a dispute instead, so a
+   * stalling seller can't trap a buyer who really paid. Set
+   * `trade_proof_reject_enabled=false` to hide the button (sellers fall back to
+   * confirm-or-dispute, exactly as before this shipped).
+   */
+  TRADE_PROOF_REJECT: 'trade_proof_reject_enabled',
 } as const
+
+/** How many times a seller may bounce a buyer's payment proof before the next rejection auto-disputes. */
+export const TRADE_PROOF_REJECT_MAX_KEY = 'trade_proof_reject_max'
+export const TRADE_PROOF_REJECT_MAX_DEFAULT = 2
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]
 

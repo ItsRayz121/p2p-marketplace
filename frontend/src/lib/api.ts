@@ -1116,6 +1116,10 @@ export const tradesApi = {
   // not just a screenshot") required by non-custodial mode.
   confirmPayment: (id: string, confirmedReceipt = true) =>
     apiRequest<Trade>(`/trades/${id}/confirm-payment`, { method: 'POST', body: JSON.stringify({ confirmedReceipt }) }),
+  // Seller: "payment not received" — bounce the buyer's proof back to unpaid with a reason.
+  // reason ∈ fake_screenshot | wrong_amount | wrong_account | not_received | other
+  rejectPayment: (id: string, data: { reason: string; detail: string }) =>
+    apiRequest<{ outcome: 'bounced' | 'disputed'; rejectionCount: number; remaining?: number }>(`/trades/${id}/reject-payment`, { method: 'POST', body: JSON.stringify(data) }),
   // Seller: mark crypto sent with txHash (transitions payment_confirmed → crypto_sent)
   markCryptoSent: (id: string, txHash: string, screenshotUrl?: string) =>
     apiRequest<Trade>(`/trades/${id}/crypto-sent`, { method: 'POST', body: JSON.stringify({ txHash, ...(screenshotUrl ? { screenshotUrl } : {}) }) }),
@@ -3198,6 +3202,8 @@ export const ctmApi = {
   uploadPaymentProof: (ref: string, formData: FormData) =>
     apiRequest<{ fileUrl: string }>(`/ctm/trades/${ref}/payment-proof`, { method: 'POST', body: formData }),
   confirmPayment: (ref: string) => apiRequest<void>(`/ctm/trades/${ref}/confirm-payment`, { method: 'POST' }),
+  rejectPayment: (ref: string, data: { reason: string; detail: string }) =>
+    apiRequest<{ outcome: 'bounced' | 'disputed'; rejectionCount: number; remaining?: number }>(`/ctm/trades/${ref}/reject-payment`, { method: 'POST', body: JSON.stringify(data) }),
   markTransferring: (ref: string) => apiRequest<void>(`/ctm/trades/${ref}/seller-transferring`, { method: 'POST' }),
   uploadTokenProof: (ref: string, data: object | FormData) =>
     apiRequest<{ fileUrl?: string }>(`/ctm/trades/${ref}/token-proof`, { method: 'POST', body: data instanceof FormData ? data : JSON.stringify(data) }),

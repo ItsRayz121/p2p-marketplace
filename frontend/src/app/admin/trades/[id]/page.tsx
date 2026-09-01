@@ -144,6 +144,7 @@ export default function TradeDetailPage() {
           <Row label="Expires" value={fmtDateTime(trade.expiresAt)} />
           {trade.paymentUploadedAt && <Row label="Proof Uploaded" value={fmtDateTime(trade.paymentUploadedAt)} />}
           {trade.paymentConfirmedAt && <Row label="Payment Confirmed" value={fmtDateTime(trade.paymentConfirmedAt)} />}
+          {trade.proofRejectionCount > 0 && <Row label="Proof Rejections" value={`${trade.proofRejectionCount}× — last: ${trade.lastProofRejectReason ?? 'n/a'}`} />}
           {trade.updatedAt && <Row label="Last Updated" value={fmtDateTime(trade.updatedAt)} />}
         </dl>
       </Section>

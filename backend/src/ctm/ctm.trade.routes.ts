@@ -11,6 +11,8 @@ import {
   getTradeByRef,
   uploadPaymentProof,
   confirmPayment,
+  rejectPaymentProof,
+  CTM_PROOF_REJECT_REASONS,
   markSellerTransferring,
   uploadTokenProof,
   confirmReceipt,
@@ -168,6 +170,18 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
     await confirmPayment(ref, req.user!.id)
     db.ctmMerchantProfile.updateMany({ where: { userId: req.user!.id }, data: { lastActiveAt: new Date() } }).catch(() => {})
     return reply.send({ success: true })
+  })
+
+  // POST /ctm/trades/:ref/reject-payment — seller: "payment not received"
+  app.post('/ctm/trades/:ref/reject-payment', { preHandler: [authenticate] }, async (req, reply) => {
+    const { ref } = req.params as { ref: string }
+    const parsed = z.object({
+      reason: z.enum(CTM_PROOF_REJECT_REASONS),
+      detail: z.string().min(10).max(500),
+    }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await rejectPaymentProof(ref, req.user!.id, req.user!.role, parsed.data.reason, parsed.data.detail)
+    return reply.send({ success: true, data: result })
   })
 
   // POST /ctm/trades/:ref/seller-transferring — seller marks token transfer started
