@@ -19,6 +19,7 @@ import {
   adminResolveDispute,
   adminAddDisputeMessage,
   adminConfirmPayment,
+  adminForceCompleteCtmTrade,
   getAllTradesAdmin,
   sendMessage,
   getMessages,
@@ -26,10 +27,6 @@ import {
   selectTradePaymentAccount,
 } from './ctm.trade.service'
 import { db } from '../lib/prisma'
-import { releaseMakerBond } from '../services/makerBond.service'
-import { incrementTradeStreak } from '../services/tradeStreak.service'
-import { awardTradePointsTx } from '../services/airdrop.service'
-import { logger } from '../lib/logger'
 
 const disputeSchema = z.object({
   reason: z.enum(['proof_fake', 'not_received', 'amount_mismatch', 'wrong_token', 'seller_unresponsive', 'buyer_unresponsive', 'other']),
@@ -334,45 +331,8 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
   // POST /ctm/trades/admin/:ref/release — admin force completes trade
   app.post('/ctm/trades/admin/:ref/release', { preHandler: [authenticate, requireRole('admin', 'super_admin')] }, async (req, reply) => {
     const { ref } = req.params as { ref: string }
-    const trade = await db.ctmTrade.findUnique({ where: { tradeRef: ref } })
-    if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
-
-    await db.$transaction(async (tx) => {
-      // CAS guard: bump the streak only on a genuine transition INTO completed. A
-      // re-run on an already-completed trade — or a race with the auto-complete job /
-      // buyer confirm — claims 0 rows and skips the increment, so it can't double-count.
-      // disputeResumeStatus is cleared alongside: this endpoint can force-complete a
-      // DISPUTED trade, and leaving a stale resume rung on a completed trade would be
-      // a dangling artifact (disputeResume.ts).
-      const claimed = await tx.ctmTrade.updateMany({ where: { tradeRef: ref, status: { not: 'completed' } }, data: { status: 'completed', completedAt: new Date(), disputeResumeStatus: null } })
-      if (claimed.count > 0) {
-        await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
-        await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
-        // Force-completing a disputed trade must also close the dispute. Without
-        // this the CtmDispute row stays `open` forever, which keeps the reduced
-        // concurrency cap (tradeConcurrency.service keys off the dispute record,
-        // not the trade status) stuck on BOTH parties permanently.
-        await tx.ctmDispute.updateMany({
-          where: { tradeId: trade.id, status: { not: 'resolved' } },
-          data: {
-            status: 'resolved',
-            resolution: 'Closed by an admin force-completing the trade.',
-            resolvedAt: new Date(),
-            resolvedBy: req.user!.id,
-          },
-        })
-      }
-    })
-    await db.auditLog.create({
-      data: { actorId: req.user!.id, action: 'CTM_ADMIN_FORCE_RELEASE', metadata: { tradeRef: ref } },
-    }).catch(() => {})
-
-    // Force-release completes the trade in the maker's favour → return the bond
-    // (idempotent; no-op when off or none held).
-    await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
-      logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM force-release'),
-    )
-
+    const reason = (req.body as { reason?: string } | undefined)?.reason?.trim() || undefined
+    await adminForceCompleteCtmTrade({ tradeRef: ref, adminId: req.user!.id, ...(reason ? { reason } : {}) })
     return reply.send({ success: true })
   })
 

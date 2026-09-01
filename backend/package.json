@@ -21,6 +21,7 @@
     "aptos:sweep": "tsx src/scripts/sweepAptosDeposits.ts",
     "stats:backfill": "tsx src/scripts/backfillTradeStats.ts",
     "streaks:backfill": "tsx src/scripts/backfillTradeStreaks.ts",
+    "trades:reconcile-episodes": "tsx src/scripts/reconcileTradeEpisodes.ts",
     "support:merge-conversations": "tsx src/scripts/mergeSupportConversations.ts",
     "referral:unify-backfill": "tsx src/scripts/unifyReferrals.ts",
     "referral:enable": "tsx src/scripts/enableReferralProgram.ts",

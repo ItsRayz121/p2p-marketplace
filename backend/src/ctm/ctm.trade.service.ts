@@ -773,6 +773,58 @@ export async function adminConfirmPayment(adminId: string, tradeRef: string) {
   notify(trade.sellerId, 'CTM_PAYMENT_CONFIRMED', 'Payment confirmed by admin', 'An admin has confirmed the buyer payment. Please send the tokens.', { tradeRef })
 }
 
+/**
+ * Admin / tooling force-complete for a CTM trade — the same effect as the buyer
+ * confirming receipt, but callable from any non-completed status (including a
+ * disputed one). CAS-guarded so a re-run, or a race with the buyer confirm / the
+ * auto-complete job, claims 0 rows and skips the streak + points increment.
+ *
+ * Used by POST /ctm/trades/admin/:ref/release AND the reconcileTradeEpisodes
+ * script's --finalize-stuck pass.
+ */
+export async function adminForceCompleteCtmTrade(params: { tradeRef: string; adminId: string; reason?: string }) {
+  const { tradeRef, adminId } = params
+  const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
+  if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
+
+  let claimedCount = 0
+  await db.$transaction(async (tx) => {
+    const claimed = await tx.ctmTrade.updateMany({
+      where: { tradeRef, status: { not: 'completed' } },
+      data: { status: 'completed', completedAt: new Date(), disputeResumeStatus: null },
+    })
+    claimedCount = claimed.count
+    if (claimed.count > 0) {
+      await incrementTradeStreak(tx, trade.buyerId, trade.sellerId)
+      await awardTradePointsTx(tx, { tradeType: 'ctm', tradeId: trade.id, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmountPKR: trade.fiatAmount })
+      // Force-completing a disputed trade must also close the dispute, or the
+      // CtmDispute row stays `open` forever and keeps the reduced concurrency cap
+      // stuck on BOTH parties (tradeConcurrency keys off the dispute record).
+      await tx.ctmDispute.updateMany({
+        where: { tradeId: trade.id, status: { not: 'resolved' } },
+        data: {
+          status: 'resolved',
+          resolution: params.reason ?? 'Closed by an admin force-completing the trade.',
+          resolvedAt: new Date(),
+          resolvedBy: adminId,
+        },
+      })
+    }
+  })
+
+  await db.auditLog.create({
+    data: { actorId: adminId, action: 'CTM_ADMIN_FORCE_RELEASE', metadata: { tradeRef, reason: params.reason ?? null } as JsonValue },
+  }).catch(() => {})
+
+  await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+    logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM force-release'),
+  )
+
+  void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'completed' })
+
+  return { alreadyCompleted: claimedCount === 0 }
+}
+
 export async function getAllTradesAdmin(filters: { status?: string; search?: string; token?: string; minAmount?: number; maxAmount?: number; page?: number; limit?: number } = {}) {
   const { status, search, token, minAmount, maxAmount, page = 1, limit = 20 } = filters
   const skip = (page - 1) * limit

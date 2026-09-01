@@ -92,7 +92,15 @@ export async function openEpisode(params: {
 
 /**
  * Record a trade reaching a terminal state. Updates the episode outcome + endedAt
- * and posts a system divider. No-op when the flag is OFF. Never throws.
+ * and posts a system divider. Never throws.
+ *
+ * NOT flag-gated (unlike openEpisode): an episode only exists if the flag was ON
+ * when the trade opened, and closing one that exists is always cheap + correct.
+ * Gating this on the flag was a bug — trades that completed while the flag was
+ * OFF left their episode stuck at `active` forever, showing "In progress" in the
+ * inbox even though the trade was long done. reconcileTradeEpisodes.ts backfills
+ * the ones already stuck; keeping this ungated stops new ones from accruing
+ * whenever the flag is toggled.
  */
 export async function closeEpisode(params: {
   market: Market
@@ -100,7 +108,6 @@ export async function closeEpisode(params: {
   outcome: 'completed' | 'cancelled' | 'expired' | 'disputed'
 }): Promise<void> {
   try {
-    if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) return
     const episode = await db.tradeEpisode.findUnique({
       where: { market_tradeId: { market: params.market, tradeId: params.tradeId } },
       select: { id: true, threadId: true, tradeRef: true, outcome: true },
