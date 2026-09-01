@@ -844,7 +844,7 @@ export async function rejectPaymentProof(
     where: { id: tradeId },
     select: {
       id: true, status: true, disputeResumeStatus: true, takerFirst: true,
-      buyerId: true, sellerId: true, orderRef: true, proofRejectionCount: true,
+      buyerId: true, sellerId: true, orderRef: true, proofRejectionCount: true, expiresAt: true,
       dispute: { select: { status: true } },
     },
   })
@@ -901,12 +901,22 @@ export async function rejectPaymentProof(
   }
 
   // ── Under the cap → bounce back to the unpaid rung ────────────────────────
+  // Give the buyer a FRESH window to re-check and re-upload. Without this the
+  // trade drops to `payment_pending` carrying its ORIGINAL `expiresAt` — by the
+  // time a seller has reviewed the proof that deadline is almost always already
+  // past, so `runTradeEscalation` auto-cancels the trade (and, in non-custodial
+  // mode, slaps the buyer with an abandonment penalty + cooldown) on its very
+  // next cycle. That traps exactly the genuinely-paid buyer this feature exists
+  // to protect. 60 min is enough to sort out a real bank-side delay.
+  const REUPLOAD_GRACE_MS = 60 * 60 * 1000
+  const refreshedExpiry = new Date(Math.max(trade.expiresAt.getTime(), Date.now() + REUPLOAD_GRACE_MS))
   const result = await db.trade.updateMany({
     where: { id: tradeId, ...claimRung(trade, 'payment_uploaded') },
     data: {
       ...advanceTo(trade, 'payment_pending'),
       paymentProofUrl: null,
       paymentUploadedAt: null,
+      expiresAt: refreshedExpiry,
       proofRejectionCount: { increment: 1 },
       lastProofRejectedAt: new Date(),
       lastProofRejectReason: reasonText,

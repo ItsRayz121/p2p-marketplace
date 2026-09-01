@@ -231,26 +231,35 @@ export async function rejectPaymentProof(
   // ── Cap reached → auto-dispute ───────────────────────────────────────────
   if (trade.proofRejectionCount >= maxRejections) {
     if (trade.dispute) throw new AppError('CONFLICT', 'Dispute already open for this trade', 409)
-    await db.$transaction([
-      db.ctmTrade.update({
-        where: { id: trade.id },
-        data: {
-          status: 'disputed',
-          disputeResumeStatus: 'payment_uploaded',
-          proofRejectionCount: { increment: 1 },
-          lastProofRejectedAt: new Date(),
-          lastProofRejectReason: reasonText,
-        },
-      }),
-      db.ctmDispute.create({
-        data: {
-          tradeId: trade.id,
-          openedById: actorId,
-          reason: 'not_received' as never,
-          description: `Seller rejected the buyer's payment proof ${trade.proofRejectionCount + 1} times. Latest reason: ${reasonText}`,
-        },
-      }),
-    ])
+    try {
+      await db.$transaction([
+        db.ctmTrade.update({
+          where: { id: trade.id },
+          data: {
+            status: 'disputed',
+            disputeResumeStatus: 'payment_uploaded',
+            proofRejectionCount: { increment: 1 },
+            lastProofRejectedAt: new Date(),
+            lastProofRejectReason: reasonText,
+          },
+        }),
+        db.ctmDispute.create({
+          data: {
+            tradeId: trade.id,
+            openedById: actorId,
+            reason: 'not_received' as never,
+            description: `Seller rejected the buyer's payment proof ${trade.proofRejectionCount + 1} times. Latest reason: ${reasonText}`,
+          },
+        }),
+      ])
+    } catch (err) {
+      // A concurrent submit (or an already-open dispute the pre-read missed) trips
+      // the unique tradeId — surface it as a clean conflict, not a 500.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new AppError('CONFLICT', 'A dispute already exists for this trade', 409)
+      }
+      throw err
+    }
     await postCtmSystemMessage(trade.id, actorId, `Seller rejected the payment proof again (${reasonText}). The rejection limit is reached, so an admin will now review this trade.`)
     notify(trade.buyerId, 'CTM_DISPUTE_OPENED', 'Trade moved to dispute', `The seller rejected your payment proof again on trade ${label}. Because the limit was reached, an admin will review it.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
     createAdminNotif({ category: 'DISPUTE', title: 'Auto-dispute — CTM payment proof rejected past the limit', body: `Trade ${label}: the seller rejected the buyer's payment proof more than ${maxRejections} time(s). Latest: ${reasonText}`, href: '/admin/ctm/disputes' })
@@ -259,6 +268,13 @@ export async function rejectPaymentProof(
   }
 
   // ── Under the cap → bounce to awaiting_payment ───────────────────────────
+  // Refresh `expiresAt` so the buyer gets a real window to re-check and
+  // re-upload. Without this the trade drops to `awaiting_payment` with its
+  // original (by now almost always elapsed) deadline, and the CTM expiry sweep
+  // in ctm.jobs.ts flips it straight to `expired` — trapping a buyer who really
+  // paid. 60 min covers a genuine bank-side delay.
+  const REUPLOAD_GRACE_MS = 60 * 60 * 1000
+  const refreshedExpiry = new Date(Math.max(trade.expiresAt.getTime(), Date.now() + REUPLOAD_GRACE_MS))
   const bounced = await db.ctmTrade.updateMany({
     where: { id: trade.id, ...claimRung(trade, 'payment_uploaded') },
     data: {
@@ -266,6 +282,7 @@ export async function rejectPaymentProof(
       paymentProofUrl: null,
       paymentProofHash: null,
       proofDeadlineAt: null,
+      expiresAt: refreshedExpiry,
       proofRejectionCount: { increment: 1 },
       lastProofRejectedAt: new Date(),
       lastProofRejectReason: reasonText,
