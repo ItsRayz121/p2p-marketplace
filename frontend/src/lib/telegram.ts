@@ -229,10 +229,10 @@ export function buildListingShareLinks(
 /**
  * Build shareable links for a blockchain's gas fee (optionally scoped to one
  * token on that chain). Mirrors buildListingShareLinks:
- *   • web      — canonical https URL that opens /gas pre-selected to the chain
- *     (and token). Batch 1 carries the selection as query params; a later batch
- *     upgrades this to the pretty /gas/<chain>/<token> path (with a live-price
- *     unfurl card). Either shape is understood by the /gas resolver.
+ *   • web      — canonical https URL: the pretty `/gas/<chain>[/<token>]` path,
+ *     which carries per-chain metadata + a live-gas-price unfurl card and seeds
+ *     the wizard to that chain/token. `?ref=` rides along. The older
+ *     `/gas?chain=&token=` query shape is still understood by the resolver.
  *   • telegram — `t.me/<bot>?startapp=G_<chain>[_<token>][_r_<ref>]`, which the
  *     Mini App turns back into the same /gas selection (parseStartParamToPath).
  *     null when NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is unset.
@@ -254,10 +254,11 @@ export function buildGasShareLinks(
   const chain = chainSlug.toLowerCase()
   const token = tokenSymbol ? tokenSymbol.toLowerCase() : ''
 
-  const qs = new URLSearchParams({ chain })
-  if (token) qs.set('token', token)
-  if (refCode) qs.set('ref', refCode)
-  const web = `${origin}/gas?${qs.toString()}`
+  const path = token
+    ? `/gas/${encodeURIComponent(chain)}/${encodeURIComponent(token)}`
+    : `/gas/${encodeURIComponent(chain)}`
+  const ref = refCode ? `?ref=${encodeURIComponent(refCode)}` : ''
+  const web = `${origin}${path}${ref}`
 
   // Telegram start params allow [A-Za-z0-9_-], max 64 chars. Drop the token
   // segment, then the ref segment, if either would overflow the budget (the web
