@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader, TokenLogo } from './GasPrimitives'
 import { GasCalcPopup } from './GasCalcPopup'
+import { ShareGasButton } from '@/components/ui/ShareGasButton'
 import { openSupportEmail } from '@/lib/contact'
 
 export function GasAmountStep() {
@@ -27,15 +28,25 @@ export function GasAmountStep() {
         onBack={() => setPhase(PHASE.TOKEN)}
         title="Choose Amount"
         right={
-          <button
-            type="button"
-            onClick={() => setCalcOpen(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-primary transition-colors"
-            aria-label="Open amount calculator"
-            title="Calculate PKR / USDT / token amounts"
-          >
-            <Calculator className="w-3.5 h-3.5" /> Calculator
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setCalcOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-text-secondary hover:bg-surface-alt hover:text-primary transition-colors"
+              aria-label="Open amount calculator"
+              title="Calculate PKR / USDT / token amounts"
+            >
+              <Calculator className="w-3.5 h-3.5" /> Calculator
+            </button>
+            <ShareGasButton
+              compact
+              chainSlug={selectedChain.slug}
+              chainName={selectedChain.name}
+              tokenSymbol={selectedToken.symbol}
+              tokenName={selectedToken.name}
+              priceUsd={priceUsd}
+            />
+          </div>
         }
       />
 

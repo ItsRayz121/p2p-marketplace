@@ -109,6 +109,13 @@ export default function GasPage() {
   const [pollErrCount, setPollErrCount] = useState(0)
   const idempKeyRef = useRef(`gas_${Date.now()}_${Math.random().toString(36).slice(2)}`)
 
+  // ── Shareable deep link ────────────────────────────────────────────────────
+  // /gas?chain=<slug>[&token=<symbol>] — opens the wizard pre-selected to that
+  // chain (and token), skipping straight to the amount step. Fed by shared links
+  // (web + Telegram startapp=G_… via parseStartParamToPath). Applied once.
+  const deepLinkAppliedRef = useRef(false)
+  const pendingTokenRef    = useRef<string | null>(null)
+
   // ── Cancellation ─────────────────────────────────────────────────────────────
   const [cancelling, setCancelling]       = useState(false)
   const [cancelError, setCancelError]     = useState('')
@@ -154,6 +161,56 @@ export default function GasPage() {
       .catch((e: Error) => setChainsError(e.message || 'Failed to load chains'))
       .finally(() => setChainsLoading(false))
   }, [])
+
+  // Apply a ?chain=/?token= deep link once the chain list is in. An in-progress
+  // ?order= restore (handled separately below) always wins. An unknown / inactive
+  // chain silently falls back to the chain grid with a cleaned URL.
+  useEffect(() => {
+    if (deepLinkAppliedRef.current || chains.length === 0) return
+
+    let qs: URLSearchParams
+    try { qs = new URLSearchParams(window.location.search) } catch { return }
+    if (qs.get('order')) return                       // order-restore owns this load
+    const chainParam = qs.get('chain')
+    if (!chainParam) { deepLinkAppliedRef.current = true; return }
+
+    deepLinkAppliedRef.current = true
+
+    // A shared gas link doubles as a referral link — mirror ReferralCapture here
+    // so the code is stashed before we strip the query string (no mount-order race).
+    try {
+      const ref = qs.get('ref')
+      const isAuthed = document.cookie.split('; ').some((c) => c.startsWith('rupchain_auth='))
+      if (ref && !isAuthed && !localStorage.getItem('referralCode') && /^[A-Za-z0-9_-]{1,64}$/.test(ref)) {
+        localStorage.setItem('referralCode', ref)
+      }
+    } catch { /* best-effort */ }
+
+    const cleanUrl = () => { try { window.history.replaceState(null, '', '/gas') } catch { /* */ } }
+
+    const chain = chains.find((c) => c.slug.toLowerCase() === chainParam.toLowerCase())
+    if (!chain || !chain.isActive) { cleanUrl(); return }
+
+    const tokenParam = qs.get('token')
+    if (tokenParam) pendingTokenRef.current = tokenParam
+    handleSelectChain(chain)                          // sets chain, fetches tokens, → TOKEN step
+    cleanUrl()
+  // handleSelectChain is stable enough for this one-shot; re-running on its identity
+  // would be a no-op thanks to deepLinkAppliedRef.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chains])
+
+  // Second half of the deep link: once the chain's tokens load, select the one
+  // named in ?token= (case-insensitive symbol match) and jump to the amount step.
+  // An unmatched symbol just leaves the user on the token picker.
+  useEffect(() => {
+    const want = pendingTokenRef.current
+    if (!want || !tokenData) return
+    pendingTokenRef.current = null
+    const t = tokenData.tokens.find((x) => x.symbol.toLowerCase() === want.toLowerCase() && x.isActive)
+    if (t) { setSelectedToken(t); setPhase(PHASE.AMOUNT) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tokenData])
 
   // Any change to the order parameters invalidates a previously-applied promo, so it
   // is re-validated server-side (the source of truth) before it can affect the price.

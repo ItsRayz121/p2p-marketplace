@@ -156,19 +156,39 @@ export function getStartParam(): string {
 
 /**
  * Map a Mini App start parameter to an internal app path, or null if it isn't a
- * recognised deep link. Listing share links encode `L_usdt_<id>` / `L_ctm_<id>`
- * (start params allow only [A-Za-z0-9_-], max 64). Referral codes (`ref_…`) are
- * handled by the bot, not here.
+ * recognised deep link. Two grammars, both `[A-Za-z0-9_-]`, max 64 chars, with an
+ * optional trailing `_r_<code>` referral suffix (bound server-side on Mini-App
+ * auth — ignored here):
+ *   • Listings — `L_usdt_<id>` / `L_ctm_<id>`      → the listing page
+ *   • Gas fees — `G_<chainSlug>[_<tokenSymbol>]`   → /gas pre-selected to that
+ *     chain (and token). Covers every chain/token we add later with no code
+ *     change — the slug/symbol are resolved against the live list on /gas.
+ * Referral codes (`ref_…`) are handled by the bot, not here.
  */
 export function parseStartParamToPath(param: string): string | null {
   if (!param) return null
-  // Tolerate an optional `_r_<code>` referral suffix (see buildListingShareLinks);
-  // the referral is bound server-side on Mini-App auth — here we only resolve the
-  // listing path, ignoring the suffix.
-  const m = param.match(/^L_(usdt|ctm)_([A-Za-z0-9]+)(?:_r_[A-Za-z0-9_-]+)?$/)
-  if (!m) return null
-  const [, kind, id] = m
-  return kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
+
+  // Listing deep link — `L_<kind>_<id>` (+ optional `_r_<code>`).
+  const l = param.match(/^L_(usdt|ctm)_([A-Za-z0-9]+)(?:_r_[A-Za-z0-9_-]+)?$/)
+  if (l) {
+    const [, kind, id] = l
+    return kind === 'usdt' ? `/marketplace/listings/${id}` : `/ctm/listings/${id}`
+  }
+
+  // Gas deep link — `G_<chainSlug>[_<tokenSymbol>]` (+ optional `_r_<code>`).
+  // Slugs may contain hyphens (e.g. op-bnb); symbols are alphanumeric. The `_r_`
+  // suffix is disambiguated by backtracking (a token literally named "r" is not
+  // a thing). Resolution to a real chain/token happens on the /gas page.
+  const g = param.match(/^G_([a-z0-9-]+)(?:_([a-z0-9]+))?(?:_r_[A-Za-z0-9_-]+)?$/i)
+  if (g) {
+    const chain = g[1].toLowerCase()
+    const token = g[2] ? g[2].toLowerCase() : ''
+    const qs = new URLSearchParams({ chain })
+    if (token) qs.set('token', token)
+    return `/gas?${qs.toString()}`
+  }
+
+  return null
 }
 
 /**
@@ -202,6 +222,55 @@ export function buildListingShareLinks(
   const startParam = safeRef && base.length + 3 + safeRef.length <= 64 ? `${base}_r_${safeRef}` : base
   return {
     web: `${origin}${path}${ref}`,
+    telegram: bot ? `https://t.me/${bot}?startapp=${startParam}` : null,
+  }
+}
+
+/**
+ * Build shareable links for a blockchain's gas fee (optionally scoped to one
+ * token on that chain). Mirrors buildListingShareLinks:
+ *   • web      — canonical https URL that opens /gas pre-selected to the chain
+ *     (and token). Batch 1 carries the selection as query params; a later batch
+ *     upgrades this to the pretty /gas/<chain>/<token> path (with a live-price
+ *     unfurl card). Either shape is understood by the /gas resolver.
+ *   • telegram — `t.me/<bot>?startapp=G_<chain>[_<token>][_r_<ref>]`, which the
+ *     Mini App turns back into the same /gas selection (parseStartParamToPath).
+ *     null when NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is unset.
+ * The sharer's referral code rides along so a shared gas link doubles as a
+ * referral link for brand-new signups (ReferralCapture stashes ?ref on any route;
+ * the `_r_` suffix binds Mini-App auto-registrations).
+ */
+export function buildGasShareLinks(
+  chainSlug: string,
+  tokenSymbol?: string | null,
+  refCode?: string | null,
+): { web: string; telegram: string | null } {
+  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
+  const origin =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')
+
+  const chain = chainSlug.toLowerCase()
+  const token = tokenSymbol ? tokenSymbol.toLowerCase() : ''
+
+  const qs = new URLSearchParams({ chain })
+  if (token) qs.set('token', token)
+  if (refCode) qs.set('ref', refCode)
+  const web = `${origin}/gas?${qs.toString()}`
+
+  // Telegram start params allow [A-Za-z0-9_-], max 64 chars. Drop the token
+  // segment, then the ref segment, if either would overflow the budget (the web
+  // link above still carries both).
+  const safeChain = chain.replace(/[^a-z0-9-]/g, '')
+  const safeToken = token.replace(/[^a-z0-9]/g, '')
+  let startParam = `G_${safeChain}`
+  if (safeToken && startParam.length + 1 + safeToken.length <= 64) startParam += `_${safeToken}`
+  const safeRef = refCode && /^[A-Za-z0-9_-]{1,64}$/.test(refCode) ? refCode : ''
+  if (safeRef && startParam.length + 3 + safeRef.length <= 64) startParam += `_r_${safeRef}`
+
+  return {
+    web,
     telegram: bot ? `https://t.me/${bot}?startapp=${startParam}` : null,
   }
 }

@@ -4,6 +4,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE } from './GasContext'
 import { TokenLogo, CardHeader } from './GasPrimitives'
+import { ShareGasButton } from '@/components/ui/ShareGasButton'
 
 export function GasTokenStep() {
   const {
@@ -15,7 +16,12 @@ export function GasTokenStep() {
 
   return (
     <div className="p-5 space-y-4">
-      <CardHeader onBack={() => setPhase(PHASE.CHAINS)} title="Select Token" sub={`${selectedChain.name} · ${selectedChain.networkLabel}`} />
+      <CardHeader
+        onBack={() => setPhase(PHASE.CHAINS)}
+        title="Select Token"
+        sub={`${selectedChain.name} · ${selectedChain.networkLabel}`}
+        right={<ShareGasButton compact chainSlug={selectedChain.slug} chainName={selectedChain.name} />}
+      />
 
       {tokensLoading && <LoadingState message="Loading tokens..." />}
       {tokensError && <ErrorState title={tokensError} onRetry={() => fetchTokens(selectedChain)} />}
