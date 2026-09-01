@@ -375,8 +375,8 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
         <div className="bg-surface border border-border rounded-xl p-4 space-y-3">
           <span className="text-sm font-bold text-text-primary">SEO</span>
           <div>
-            <label className={labelCls}>Focus keyword</label>
-            <input className={inputCls} value={focusKeyword} onChange={(e) => setFocusKeyword(e.target.value)} placeholder="buy USDT Pakistan" />
+            <label className={labelCls}>Focus keyword <span className="text-text-muted">({focusKeyword.length}/80)</span></label>
+            <input className={inputCls} maxLength={80} value={focusKeyword} onChange={(e) => setFocusKeyword(e.target.value.slice(0, 80))} placeholder="buy USDT Pakistan" />
           </div>
           <div>
             <label className={labelCls}>Meta title <span className="text-text-muted">({metaTitle.length}/60)</span></label>
