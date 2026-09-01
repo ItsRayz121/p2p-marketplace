@@ -6615,7 +6615,13 @@ export async function adminRoutes(app: FastifyInstance) {
     if (claimed.count === 0) {
       const order = await db.gasFeeOrder.findUnique({ where: { id } })
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel pending, uploaded, or verified orders`, 409)
+      // payment_detected/awaiting_refund/failed etc. have a confirmed payment — a
+      // plain cancel would strand the user's USDT. Steer to Refund instead.
+      const paidStates = ['payment_detected', 'sending', 'delivered', 'awaiting_refund', 'refund_pending', 'failed']
+      const hint = paidStates.includes(order.status)
+        ? ` This order already took a payment — use "Refund" instead of cancelling.`
+        : ''
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel pending, uploaded, or verified orders.${hint}`, 409)
     }
     await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'failed' } })
