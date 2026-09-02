@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Calculator, X, ArrowLeftRight, ChevronDown } from 'lucide-react'
 import { marketplaceApi, type UsdtPriceHistory, type CtmPriceRange } from '@/lib/api'
-import { PriceChartCanvas } from '@/components/ui/PriceChartCanvas'
+import { PriceChartCanvas, type ChartView } from '@/components/ui/PriceChartCanvas'
 
 // USDT-marketplace price chart. Price = PKR per 1 USDT, sourced entirely from
 // completed USDT trades on THIS platform (the same source as the reference
@@ -16,6 +16,12 @@ const RANGES: { key: CtmPriceRange; label: string }[] = [
   { key: '90d', label: '90D' },
   { key: '1y', label: '1Y' },
   { key: 'all', label: 'All' },
+]
+
+const VIEWS: { key: ChartView; label: string }[] = [
+  { key: 'dots', label: 'Line + dots' },
+  { key: 'line', label: 'Line' },
+  { key: 'candles', label: 'Candles' },
 ]
 
 const RANGE_PHRASE: Record<CtmPriceRange, string> = {
@@ -37,6 +43,7 @@ function fmtUsdt(n: number): string {
 
 export function MarketplacePriceChart() {
   const [range, setRange] = useState<CtmPriceRange>('30d')
+  const [view, setView] = useState<ChartView>('dots')
   const [data, setData] = useState<UsdtPriceHistory | null>(null)
   const [loading, setLoading] = useState(true)
   const [showCalc, setShowCalc] = useState(false)
@@ -105,18 +112,33 @@ export function MarketplacePriceChart() {
 
       {!collapsed && (
       <>
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            onClick={() => setRange(r.key)}
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-              range === r.key ? 'bg-primary/10 text-primary' : 'text-text-muted hover:bg-surface-alt'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setRange(r.key)}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                range === r.key ? 'bg-primary/10 text-primary' : 'text-text-muted hover:bg-surface-alt'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="inline-flex rounded-lg border border-border overflow-hidden">
+          {VIEWS.map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setView(v.key)}
+              className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                view === v.key ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="mt-3">
@@ -134,7 +156,7 @@ export function MarketplacePriceChart() {
           <PriceChartCanvas
             candles={data.candles}
             points={points}
-            hasCandles={data.hasCandles}
+            view={view}
             toDisplay={(v) => v}
             format={fmtPkr}
             yUnit="PKR / USDT"
@@ -144,7 +166,8 @@ export function MarketplacePriceChart() {
 
       {data && data.tradeCount > 0 && (
         <p className="mt-2 text-[11px] text-text-muted">
-          {data.tradeCount} completed USDT {data.tradeCount === 1 ? 'trade' : 'trades'} in range · {data.hasCandles ? 'candlestick' : 'line'} view · price is PKR per 1 USDT
+          {data.tradeCount} completed USDT {data.tradeCount === 1 ? 'trade' : 'trades'} in range · price is PKR per 1 USDT
+          {data.droppedOutliers > 0 && ` · ${data.droppedOutliers} outlier ${data.droppedOutliers === 1 ? 'record' : 'records'} skipped`}
         </p>
       )}
       </>

@@ -3084,8 +3084,8 @@ export const blogApi = {
 // ─── Community Token Market ───────────────────────────────────────────────────
 
 export type CtmPriceRange = '24h' | '7d' | '30d' | '90d' | '1y' | 'all'
-export interface CtmPriceCandle { t: string; o: number; h: number; l: number; c: number; n: number }
-export interface CtmPricePoint { t: string; p: number }
+export interface CtmPriceCandle { t: string; o: number; h: number; l: number; c: number; n: number; filled?: boolean }
+export interface CtmPricePoint { t: string; p: number; filled?: boolean }
 export interface CtmPriceHistory {
   range: CtmPriceRange
   currency: 'PKR'
@@ -3093,6 +3093,7 @@ export interface CtmPriceHistory {
   candles: CtmPriceCandle[]
   points: CtmPricePoint[]
   tradeCount: number
+  droppedOutliers: number
   bucketMs: number
   from: string
   to: string
@@ -3107,6 +3108,7 @@ export interface UsdtPriceHistory {
   candles: CtmPriceCandle[]
   points: CtmPricePoint[]
   tradeCount: number
+  droppedOutliers: number
   bucketMs: number
   from: string
   to: string

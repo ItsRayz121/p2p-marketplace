@@ -5,18 +5,24 @@
 
 export type PriceRange = '24h' | '7d' | '30d' | '90d' | '1y' | 'all'
 
-export interface PriceCandle { t: string; o: number; h: number; l: number; c: number; n: number }
-export interface PricePoint { t: string; p: number }
+export interface PriceCandle {
+  t: string; o: number; h: number; l: number; c: number; n: number
+  /** true when the bucket had no trade and the close was carried forward. */
+  filled?: boolean
+}
+export interface PricePoint { t: string; p: number; filled?: boolean }
 
 export interface PriceHistoryResult {
   range: PriceRange
   candles: PriceCandle[]
   points: PricePoint[]
   tradeCount: number
+  /** Trades discarded as price outliers before bucketing (bad records). */
+  droppedOutliers: number
   bucketMs: number
   from: string
   to: string
-  /** Hint: enough distinct buckets to render a candlestick view sensibly. */
+  /** Hint: enough real (traded) buckets to render a candlestick view sensibly. */
   hasCandles: boolean
 }
 
@@ -24,6 +30,11 @@ export const PRICE_RANGES: PriceRange[] = ['24h', '7d', '30d', '90d', '1y', 'all
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
+
+// A single fat-finger trade record must never define the axis. Anything priced
+// outside median/OUTLIER_FACTOR … median*OUTLIER_FACTOR is dropped before
+// bucketing. 3x is wide enough to keep every plausible real move.
+const OUTLIER_FACTOR = 3
 
 const RANGE_MS: Record<PriceRange, number | null> = {
   '24h': 24 * HOUR,
@@ -55,9 +66,23 @@ export function priceRangeStart(range: PriceRange, now: Date, earliest: Date | n
   return new Date(now.getTime() - (RANGE_MS[range] as number))
 }
 
+function median(xs: number[]): number {
+  if (xs.length === 0) return 0
+  const s = [...xs].sort((a, b) => a - b)
+  const m = s.length >> 1
+  if (s.length % 2) return s[m] as number
+  return ((s[m - 1] as number) + (s[m] as number)) / 2
+}
+
 /**
  * Bucket ascending {price, at} trades into OHLC candles + a per-bucket close
  * line. `trades` must already be filtered to the window and sorted ascending.
+ *
+ * Two things keep the series legible on a low-volume market:
+ *  - price outliers (bad records) are dropped up front, so the axis fits reality;
+ *  - every bucket from the first trade to `now` is emitted — a quiet bucket
+ *    carries the previous close forward as a flat doji (`n: 0`, `filled: true`),
+ *    so "30d" always shows ~30 daily steps instead of 2-3 smeared candles.
  */
 export function buildPriceHistory(
   trades: { price: number; at: Date }[],
@@ -69,36 +94,67 @@ export function buildPriceHistory(
   const spanMs = Math.max(to.getTime() - from.getTime(), HOUR)
   const bucketMs = bucketMsFor(range, spanMs)
   const fromAligned = Math.floor(from.getTime() / bucketMs) * bucketMs
+  const lastKey = Math.floor((to.getTime() - fromAligned) / bucketMs)
 
+  // ── drop price outliers (median-relative) ──────────────────────────────────
+  const inWindow = trades.filter((tr) => tr.price > 0)
+  const med = median(inWindow.map((tr) => tr.price))
+  const clean = med > 0
+    ? inWindow.filter((tr) => tr.price >= med / OUTLIER_FACTOR && tr.price <= med * OUTLIER_FACTOR)
+    : inWindow
+  const droppedOutliers = inWindow.length - clean.length
+
+  // ── real (traded) buckets ─────────────────────────────────────────────────
   const byBucket = new Map<number, PriceCandle>()
-  for (const tr of trades) {
-    const at = tr.at.getTime()
-    const price = tr.price
-    if (!(price > 0)) continue
-    const key = Math.floor((at - fromAligned) / bucketMs)
-    const bucketStart = new Date(fromAligned + key * bucketMs).toISOString()
+  for (const tr of clean) {
+    const key = Math.floor((tr.at.getTime() - fromAligned) / bucketMs)
+    if (key < 0 || key > lastKey) continue
     const existing = byBucket.get(key)
     if (!existing) {
-      byBucket.set(key, { t: bucketStart, o: price, h: price, l: price, c: price, n: 1 })
+      byBucket.set(key, {
+        t: new Date(fromAligned + key * bucketMs).toISOString(),
+        o: tr.price, h: tr.price, l: tr.price, c: tr.price, n: 1,
+      })
     } else {
-      existing.h = Math.max(existing.h, price)
-      existing.l = Math.min(existing.l, price)
-      existing.c = price // ascending → latest wins
+      existing.h = Math.max(existing.h, tr.price)
+      existing.l = Math.min(existing.l, tr.price)
+      existing.c = tr.price // ascending → latest wins
       existing.n += 1
     }
   }
 
-  const candles = [...byBucket.values()].sort((a, b) => a.t.localeCompare(b.t))
-  const points: PricePoint[] = candles.map((c) => ({ t: c.t, p: c.c }))
+  const base = {
+    range, tradeCount: clean.length, droppedOutliers, bucketMs,
+    from: from.toISOString(), to: to.toISOString(),
+  }
+  if (byBucket.size === 0) {
+    return { ...base, candles: [], points: [], hasCandles: false }
+  }
+
+  // ── gap-fill from the first traded bucket through to now ───────────────────
+  const firstKey = Math.min(...byBucket.keys())
+  const candles: PriceCandle[] = []
+  let prevClose = 0
+  for (let key = firstKey; key <= lastKey; key++) {
+    const hit = byBucket.get(key)
+    if (hit) {
+      candles.push(hit)
+      prevClose = hit.c
+    } else {
+      const t = new Date(fromAligned + key * bucketMs).toISOString()
+      candles.push({ t, o: prevClose, h: prevClose, l: prevClose, c: prevClose, n: 0, filled: true })
+    }
+  }
+
+  const points: PricePoint[] = candles.map((c) => (
+    c.filled ? { t: c.t, p: c.c, filled: true } : { t: c.t, p: c.c }
+  ))
+  const realBuckets = candles.reduce((acc, c) => acc + (c.n > 0 ? 1 : 0), 0)
 
   return {
-    range,
+    ...base,
     candles,
     points,
-    tradeCount: trades.length,
-    bucketMs,
-    from: from.toISOString(),
-    to: to.toISOString(),
-    hasCandles: candles.length >= 4,
+    hasCandles: realBuckets >= 3 && candles.length >= 4,
   }
 }

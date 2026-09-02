@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Calculator, X, ArrowLeftRight, ChevronDown } from 'lucide-react'
 import { ctmApi, type CtmPriceHistory, type CtmPriceRange } from '@/lib/api'
-import { PriceChartCanvas } from '@/components/ui/PriceChartCanvas'
+import { PriceChartCanvas, type ChartView } from '@/components/ui/PriceChartCanvas'
 
 // Price chart for a CTM token. Prices come from completed trades on THIS
 // platform (source of truth), returned in PKR and converted to USDT client-side
@@ -21,6 +21,12 @@ const RANGES: { key: CtmPriceRange; label: string }[] = [
 ]
 
 type Currency = 'USDT' | 'PKR'
+
+const VIEWS: { key: ChartView; label: string }[] = [
+  { key: 'dots', label: 'Line + dots' },
+  { key: 'line', label: 'Line' },
+  { key: 'candles', label: 'Candles' },
+]
 
 const RANGE_PHRASE: Record<CtmPriceRange, string> = {
   '24h': 'the last 24 hours',
@@ -49,6 +55,7 @@ interface Props {
 
 export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
   const [range, setRange] = useState<CtmPriceRange>('30d')
+  const [view, setView] = useState<ChartView>('dots')
   const [currency, setCurrency] = useState<Currency>('USDT')
   const [data, setData] = useState<CtmPriceHistory | null>(null)
   const [loading, setLoading] = useState(true)
@@ -140,19 +147,34 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
 
       {!collapsed && (
       <>
-      {/* Timeframes */}
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            onClick={() => setRange(r.key)}
-            className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
-              range === r.key ? 'bg-primary/10 text-primary' : 'text-text-muted hover:bg-surface-alt'
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      {/* Timeframes + view */}
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-1.5">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => setRange(r.key)}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-colors ${
+                range === r.key ? 'bg-primary/10 text-primary' : 'text-text-muted hover:bg-surface-alt'
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
+        <div className="inline-flex rounded-lg border border-border overflow-hidden">
+          {VIEWS.map((v) => (
+            <button
+              key={v.key}
+              onClick={() => setView(v.key)}
+              className={`px-2.5 py-1 text-[11px] font-semibold transition-colors ${
+                view === v.key ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:bg-surface-alt'
+              }`}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Chart */}
@@ -171,7 +193,7 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
           <PriceChartCanvas
             candles={data.candles}
             points={points}
-            hasCandles={data.hasCandles}
+            view={view}
             toDisplay={conv}
             format={(v) => (effCurrency === 'USDT' ? fmtUsdt(v) : fmtPkr(v))}
             yUnit={`${effCurrency} / ${tokenSymbol}`}
@@ -182,7 +204,8 @@ export function CtmPriceChart({ tokenId, tokenSymbol }: Props) {
       {/* Footer note */}
       {data && data.tradeCount > 0 && (
         <p className="mt-2 text-[11px] text-text-muted">
-          {data.tradeCount} completed {data.tradeCount === 1 ? 'trade' : 'trades'} in range · {data.hasCandles ? 'candlestick' : 'line'} view
+          {data.tradeCount} completed {data.tradeCount === 1 ? 'trade' : 'trades'} in range
+          {data.droppedOutliers > 0 ? ` · ${data.droppedOutliers} outlier ${data.droppedOutliers === 1 ? 'record' : 'records'} skipped` : ''}
           {effCurrency === 'USDT' && usdtAvailable ? ` · converted at 1 USDT ≈ PKR ${fmtPkr(rate as number)}` : ''}
         </p>
       )}

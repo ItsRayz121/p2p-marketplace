@@ -369,9 +369,10 @@ export interface CtmPriceHistory {
   /** Prices are returned in PKR; multiply by (1 / usdtPkrRate) for USDT. */
   currency: 'PKR'
   usdtPkrRate: number | null
-  candles: { t: string; o: number; h: number; l: number; c: number; n: number }[]
-  points: { t: string; p: number }[]
+  candles: { t: string; o: number; h: number; l: number; c: number; n: number; filled?: boolean }[]
+  points: { t: string; p: number; filled?: boolean }[]
   tradeCount: number
+  droppedOutliers: number
   bucketMs: number
   from: string
   to: string
