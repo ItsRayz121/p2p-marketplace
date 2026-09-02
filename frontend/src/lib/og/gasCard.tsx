@@ -1,8 +1,12 @@
 /* Shared Open Graph "gas card" used by the /gas/<chain>[/<token>] opengraph-image
    routes. Rendered by next/og's ImageResponse (edge runtime) so a shared gas-fee
    link unfurls into a rich card that leads with the LIVE network fee — the whole
-   reason someone shares "look how cheap gas is on X right now". Inline styles
-   only; every container is explicitly display:flex (next/og constraint). */
+   reason someone shares "look how cheap gas is on X right now".
+
+   Satori constraints honoured: inline styles only; any element with >1 child is
+   explicitly display:flex; multi-part strings are pre-joined into a single text
+   node; NO emoji (Satori resolves emoji via a network fetch that we don't want
+   on the edge path). */
 
 export const OG_SIZE = { width: 1200, height: 630 }
 
@@ -102,15 +106,15 @@ export function renderGasCard(p: GasCardProps) {
             letterSpacing: '1px',
           }}
         >
-          ⛽ {p.chainSymbol}
+          {p.chainSymbol}
         </div>
       </div>
 
       {/* Chain + live fee */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 52, zIndex: 1 }}>
         <div style={{ fontSize: 40, fontWeight: 800, color: 'white', display: 'flex' }}>
-          {p.chainName} gas
-          {scoped && <span style={{ color: '#94a3b8', marginLeft: 14 }}>· {p.tokenSymbol}</span>}
+          <span>{`${p.chainName} gas`}</span>
+          {scoped && <span style={{ color: '#94a3b8', marginLeft: 14 }}>{`· ${p.tokenSymbol}`}</span>}
         </div>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
           <span
@@ -133,7 +137,7 @@ export function renderGasCard(p: GasCardProps) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 'auto', zIndex: 1 }}>
         {scoped && p.tokenPriceUsd != null && p.tokenPriceUsd > 0 && (
           <div style={{ fontSize: 26, color: '#cbd5e1', display: 'flex' }}>
-            {p.tokenName ?? p.tokenSymbol}: ${p.tokenPriceUsd < 1 ? p.tokenPriceUsd.toFixed(4) : p.tokenPriceUsd.toFixed(2)} / {p.tokenSymbol}
+            {`${p.tokenName ?? p.tokenSymbol}: $${p.tokenPriceUsd < 1 ? p.tokenPriceUsd.toFixed(4) : p.tokenPriceUsd.toFixed(2)} / ${p.tokenSymbol}`}
           </div>
         )}
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
