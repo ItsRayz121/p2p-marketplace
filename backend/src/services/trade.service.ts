@@ -763,11 +763,13 @@ export async function confirmPayment(
 
   // Classic: non-terminal. Release window — once payment is confirmed, the seller
   // must release the crypto within RELEASE_WINDOW_MIN or the trade auto-escalates
-  // to a dispute (tradeEscalation.job). Only enforced in non-custodial mode.
+  // to a dispute (tradeEscalation.job). Enforced unconditionally (regardless of the
+  // non-custodial flag) — without a deadline here a payment_confirmed trade has no
+  // expiry path at all and can sit forever, permanently occupying both parties'
+  // concurrency-cap slot if the seller goes dark. Mirrors CTM's proofDeadlineAt,
+  // which is likewise never flag-gated.
   const RELEASE_WINDOW_MIN = 15
-  const releaseDeadlineAt = nonCustodial
-    ? new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000)
-    : null
+  const releaseDeadlineAt = new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000)
 
   const updated = await db.$transaction(async (tx: Tx) => {
     const rows = await tx.$queryRaw<Array<{ id: string; status: string; disputeResumeStatus: string | null; sellerId: string; buyerId: string }>>`

@@ -22,6 +22,7 @@ import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
 import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
 import { runUsdtConfirmReminder, runUsdtConfirmAdminWarning, runUsdtConfirmDeadline } from '../jobs/usdtTradeDeadline.job'
+import { runAdBidExpiry } from '../jobs/adBidExpiry.job'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
 import { runAptosDepositSweepStragglers } from '../jobs/aptosDepositSweep.job'
@@ -233,6 +234,11 @@ export function startWorkers() {
   scheduleSweep('usdt-confirm-reminder', runUsdtConfirmReminder, 15 * 60 * 1000)
   scheduleSweep('usdt-confirm-admin-warning', runUsdtConfirmAdminWarning, 30 * 60 * 1000)
   scheduleSweep('usdt-confirm-deadline', runUsdtConfirmDeadline, 5 * 60 * 1000)
+
+  // USDT ad-bid expiry — mirrors ctm-bid-expiry below (CTM already had this; the
+  // USDT/PKR ad-bid side never did, letting accepted-but-unconfirmed bids lock
+  // ad inventory forever with no release path).
+  scheduleSweep('ad-bid-expiry', runAdBidExpiry, 5 * 60 * 1000)
 
   queues.ctmDisputeEscalation
     .add('ctm-dispute-escalation', {}, { repeat: { every: 30 * 60 * 1000 }, jobId: 'ctm-dispute-escalation-repeatable' })

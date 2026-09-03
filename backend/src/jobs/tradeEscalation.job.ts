@@ -91,13 +91,17 @@ export async function runTradeEscalation(): Promise<void> {
     }
   }
 
-  // 1b. Non-custodial release window: auto-escalate payment_confirmed trades
-  // whose releaseDeadlineAt has passed (seller confirmed payment but never
-  // released). Opens a dispute on the buyer's behalf so funds aren't left in
-  // limbo. releaseDeadlineAt is only ever set while the flag is ON, but we guard
-  // the flag too so this whole step is a no-op when non-custodial mode is off.
+  // 1b. Release window: auto-escalate payment_confirmed trades whose
+  // releaseDeadlineAt has passed (seller confirmed payment but never released).
+  // Opens a dispute on the buyer's behalf so funds aren't left in limbo. Runs
+  // unconditionally (releaseDeadlineAt is now always stamped by confirmPayment,
+  // regardless of the non-custodial flag) — previously this was flag-gated, which
+  // left payment_confirmed trades with no expiry path at all while the flag was
+  // off: a seller who went dark after confirming payment could occupy both
+  // parties' concurrency-cap slot indefinitely. Mirrors CTM's runCtmProofDeadline,
+  // which is likewise unconditional.
   let releaseEscalated = 0
-  if (nonCustodial) {
+  {
     const staleRelease = await db.trade.findMany({
       where: { status: 'payment_confirmed', releaseDeadlineAt: { lt: now } },
       take: 200,
