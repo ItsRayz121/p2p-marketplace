@@ -7,7 +7,7 @@ import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx } from '../services/airdrop.service'
 import { postCtmSystemMessage } from './ctm.trade.service'
 import { closeEpisode } from '../services/chatThread.service'
-import { ctmStepFromStatus, type CtmFlowAction } from '../services/ctmSettlementFlow'
+import { ctmStepFromStatus, ctmFlowSteps, type CtmFlowAction } from '../services/ctmSettlementFlow'
 
 /** What each pending action means in a missed-deadline message. */
 const MISSED_ACTION_TEXT: Record<CtmFlowAction, string> = {
@@ -113,6 +113,41 @@ export async function runCtmProofDeadline() {
       const openerId = step.actor === 'seller' ? trade.buyerId : trade.sellerId
       const reason = step.actor === 'seller' ? 'seller_unresponsive' : 'buyer_unresponsive'
       const actionText = MISSED_ACTION_TEXT[step.action]
+
+      // Every step completed so far (index < step.index) was reached in order, so if
+      // all of them belong to the SAME actor now missing this deadline, the
+      // counterparty has not taken a single action yet — nothing of theirs is at
+      // stake, and there is no one to open a dispute against. Close the trade as
+      // expired instead (no-fault, same as an untouched awaiting_payment trade).
+      const counterpartyActed = ctmFlowSteps(trade.takerFirst)
+        .slice(0, step.index)
+        .some((s) => s.actor !== step.actor)
+
+      if (!counterpartyActed) {
+        const expiredNow = await db.$transaction(async (tx) => {
+          const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'expired' } })
+          if (claimed.count === 0) return false
+          if (trade.listingId) {
+            await tx.ctmListing.update({
+              where: { id: trade.listingId },
+              data: { availableAmount: { increment: trade.tokenAmount }, lockedAmount: { decrement: trade.tokenAmount } },
+            })
+          }
+          return true
+        })
+        if (!expiredNow) continue
+
+        // No dispute ruling is possible here, so treat it as no-fault, like a plain expiry.
+        await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
+          logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM abandoned-step expiry'),
+        )
+        void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'expired' })
+
+        notify(missedActorId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — you missed the deadline to ${actionText}.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+        notify(openerId, 'CTM_TRADE_EXPIRED', 'Trade expired', `Trade ${lbl(trade)} expired — the ${step.actor} missed the deadline to ${actionText} before you took any action, so it closed automatically.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+        logger.info({ tradeRef: trade.tradeRef, missedActor: step.actor, action: step.action, takerFirst: trade.takerFirst }, 'CTM trade auto-expired: abandoned before counterparty acted')
+        continue
+      }
 
       // CAS: only escalate a trade still in this status (a same-instant transition
       // wins and this no-ops), and only if no dispute exists yet.
