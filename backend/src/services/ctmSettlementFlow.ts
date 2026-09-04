@@ -136,3 +136,41 @@ export function ctmStatusMeaning(takerFirst: boolean, status: string): {
   if (!step) return { waitingOn: null, action: null }
   return { waitingOn: step.actor, action: step.action }
 }
+
+/**
+ * How long the actor pending at a rung has, once ctm.trade.service.ts's own
+ * entering-transition stamps their deadline — keyed by the PENDING action (the
+ * one `ctmStepFromStatus` returns for that rung), not by the rung name, since the
+ * same rung name is reached by a different action depending on the flow. Mirrors
+ * the literals hardcoded at each transition (uploadPaymentProof, confirmPayment,
+ * markSellerTransferring, uploadTokenProof, confirmReceipt) — kept here as the one
+ * place both a fresh entry and a dispute-resume can look the window up from.
+ */
+const RESUME_DEADLINE_WINDOW: Partial<Record<CtmFlowAction, { field: 'proofDeadlineAt' | 'confirmDeadlineAt'; minutes: number }>> = {
+  confirm_fiat:   { field: 'proofDeadlineAt', minutes: 60 },
+  start_crypto:   { field: 'proofDeadlineAt', minutes: 60 },
+  prove_crypto:   { field: 'proofDeadlineAt', minutes: 120 },
+  confirm_crypto: { field: 'confirmDeadlineAt', minutes: 30 },
+  send_fiat:      { field: 'proofDeadlineAt', minutes: 60 },
+}
+
+/**
+ * The deadline patch a rung needs when handed back to the parties after a
+ * no-fault dispute dismissal (or any other "resume this rung fresh" call site).
+ * `awaiting_payment` and `completed` return `{}` — the first is governed by
+ * `expiresAt` (a different mechanism), never proof/confirm deadlines, and is
+ * unreachable via dispute-resume anyway (openDispute excludes it); the second is
+ * terminal and has none.
+ */
+export function ctmResumeDeadline(takerFirst: boolean, rung: string): { proofDeadlineAt?: Date; confirmDeadlineAt?: Date } {
+  // Explicit, not incidental: awaiting_payment's pending action (send_fiat or
+  // start_crypto, depending on flow) DOES have a RESUME_DEADLINE_WINDOW entry, so
+  // without this guard the lookup below would arm a proof deadline on a rung that
+  // must only ever be governed by `expiresAt`.
+  if (rung === 'awaiting_payment' || rung === 'completed') return {}
+  const step = ctmStepFromStatus(takerFirst, rung)
+  if (!step) return {}
+  const window = RESUME_DEADLINE_WINDOW[step.action]
+  if (!window) return {}
+  return { [window.field]: new Date(Date.now() + window.minutes * 60 * 1000) }
+}

@@ -14,7 +14,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.ser
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
-import { stepForAction, flowSteps } from './settlementFlow'
+import { stepForAction, flowSteps, stepFromStatus } from './settlementFlow'
 import {
   ladderStatus, advanceTo, claimRung,
   assertPartySettleable, settleDisputeOnCompletion,
@@ -37,6 +37,39 @@ import { awardTradePointsTx } from './airdrop.service'
 // backend/src/jobs/usdtTradeDeadline.job.ts for the reminder + auto-complete logic.
 export const CONFIRM_WINDOW_HOURS = 24
 const newConfirmDeadline = () => new Date(Date.now() + CONFIRM_WINDOW_HOURS * 60 * 60 * 1000)
+
+// Release window: how long the seller has, once landing on payment_confirmed in the
+// CLASSIC flow, to send the crypto before tradeEscalation.job auto-escalates it to a
+// dispute. See confirmPayment below.
+export const RELEASE_WINDOW_MIN = 15
+
+// Pay-after-crypto window: how long the maker/buyer has, once landing on
+// payment_confirmed in the TAKER-FIRST flow (they just acknowledged the taker's
+// crypto arrived), to send the PKR payment. `payment_confirmed` means a different
+// pending action depending on the flow — classic: seller sends crypto (short,
+// RELEASE_WINDOW_MIN — they already hold it); taker-first: buyer/maker sends fiat
+// (needs real bank-transfer time, matching CTM's equivalent 60-min window in
+// ctmSettlementFlow.ts's RESUME_DEADLINE_WINDOW).
+export const PAY_AFTER_CRYPTO_WINDOW_MIN = 60
+
+/**
+ * The deadline patch a rung needs when handed back to the parties fresh — used by
+ * releaseTrade (below) and by the admin "dismiss dispute" resume path
+ * (admin.routes.ts). Flow-aware: `payment_confirmed` means a different pending
+ * actor/action depending on `takerFirst` (mirrors CTM's ctmResumeDeadline).
+ * `crypto_sent` always means a pending terminal confirm regardless of flow, so it
+ * needs no branching. Every other rung uses a different mechanism (expiresAt for
+ * payment_pending, a 24h updatedAt staleness check for payment_uploaded) and gets
+ * neither field.
+ */
+export function usdtResumeDeadline(takerFirst: boolean, rung: string): { releaseDeadlineAt?: Date; confirmDeadlineAt?: Date } {
+  if (rung === 'crypto_sent') return { confirmDeadlineAt: newConfirmDeadline() }
+  if (rung !== 'payment_confirmed') return {}
+  const step = stepFromStatus(takerFirst, rung)
+  if (step?.action === 'send_crypto') return { releaseDeadlineAt: new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000) }
+  if (step?.action === 'send_fiat') return { releaseDeadlineAt: new Date(Date.now() + PAY_AFTER_CRYPTO_WINDOW_MIN * 60 * 1000) }
+  return {}
+}
 
 // ─── Payment-method resolution ──────────────────────────────────────────────
 // A trade stores `paymentMethod` as the buyer's selection. For current trades
@@ -767,9 +800,10 @@ export async function confirmPayment(
   // non-custodial flag) — without a deadline here a payment_confirmed trade has no
   // expiry path at all and can sit forever, permanently occupying both parties'
   // concurrency-cap slot if the seller goes dark. Mirrors CTM's proofDeadlineAt,
-  // which is likewise never flag-gated.
-  const RELEASE_WINDOW_MIN = 15
-  const releaseDeadlineAt = new Date(Date.now() + RELEASE_WINDOW_MIN * 60 * 1000)
+  // which is likewise never flag-gated. Routed through usdtResumeDeadline (the same
+  // helper the dispute-dismiss resume path uses) so this rung's window is computed
+  // in exactly one place.
+  const deadlinePatch = usdtResumeDeadline(pre.takerFirst, step.to)
 
   const updated = await db.$transaction(async (tx: Tx) => {
     const rows = await tx.$queryRaw<Array<{ id: string; status: string; disputeResumeStatus: string | null; sellerId: string; buyerId: string }>>`
@@ -790,7 +824,7 @@ export async function confirmPayment(
       data: {
         ...advanceTo(trade, step.to),
         paymentConfirmedAt: new Date(),
-        ...(releaseDeadlineAt ? { releaseDeadlineAt } : {}),
+        ...deadlinePatch,
       },
     })
   })
@@ -1297,9 +1331,13 @@ export async function releaseTrade(tradeId: string, buyerId: string) {
 
   // Taker-first: non-terminal — buyer (maker) acknowledges the taker's crypto
   // arrived; advance to `confirmed` so the maker can now send the PKR payment.
+  // Stamp a deadline for that now-pending send_fiat action — without one, a maker
+  // who confirms crypto receipt and then never pays has no expiry at all and can
+  // occupy both parties' concurrency-cap slot forever (the same bug fixed for the
+  // classic seller-release case in confirmPayment above).
   const result = await db.trade.updateMany({
     where: { id: tradeId, buyerId, ...claimRung(trade, step.from) },
-    data: advanceTo(trade, step.to),
+    data: { ...advanceTo(trade, step.to), ...usdtResumeDeadline(trade.takerFirst, step.to) },
   })
   if (result.count === 0) {
     const check = await db.trade.findUnique({ where: { id: tradeId }, select: { status: true, disputeResumeStatus: true } })

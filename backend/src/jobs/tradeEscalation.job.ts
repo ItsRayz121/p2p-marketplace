@@ -92,48 +92,66 @@ export async function runTradeEscalation(): Promise<void> {
   }
 
   // 1b. Release window: auto-escalate payment_confirmed trades whose
-  // releaseDeadlineAt has passed (seller confirmed payment but never released).
-  // Opens a dispute on the buyer's behalf so funds aren't left in limbo. Runs
-  // unconditionally (releaseDeadlineAt is now always stamped by confirmPayment,
-  // regardless of the non-custodial flag) — previously this was flag-gated, which
-  // left payment_confirmed trades with no expiry path at all while the flag was
-  // off: a seller who went dark after confirming payment could occupy both
-  // parties' concurrency-cap slot indefinitely. Mirrors CTM's runCtmProofDeadline,
-  // which is likewise unconditional.
+  // releaseDeadlineAt has passed. Runs unconditionally (releaseDeadlineAt is now
+  // always stamped, regardless of the non-custodial flag) — previously this was
+  // flag-gated, which left payment_confirmed trades with no expiry path at all
+  // while the flag was off: a party who went dark after this rung could occupy
+  // both parties' concurrency-cap slot indefinitely. Mirrors CTM's
+  // runCtmProofDeadline, which is likewise unconditional.
+  //
+  // Flow-aware: `payment_confirmed` means a different pending party depending on
+  // `takerFirst` — classic: the SELLER owes crypto (they already hold it, short
+  // window); taker-first: the BUYER/maker owes fiat (they just acknowledged the
+  // taker's crypto, needs real bank-transfer time — see PAY_AFTER_CRYPTO_WINDOW_MIN
+  // in trade.service.ts). Opening the dispute against the wrong party, or with
+  // "the seller did not release" wording on what's actually a stalled fiat
+  // payment, used to be silently wrong for every taker-first trade reaching this
+  // rung — `stepFromStatus` resolves the real pending actor per trade.
   let releaseEscalated = 0
   {
     const staleRelease = await db.trade.findMany({
       where: { status: 'payment_confirmed', releaseDeadlineAt: { lt: now } },
       take: 200,
       orderBy: { releaseDeadlineAt: 'asc' },
-      select: { id: true, buyerId: true, sellerId: true, orderRef: true },
+      select: { id: true, buyerId: true, sellerId: true, orderRef: true, takerFirst: true },
     })
     for (const trade of staleRelease) {
+      const step = stepFromStatus(trade.takerFirst, 'payment_confirmed')
+      if (!step) continue // shouldn't happen — payment_confirmed always has a pending step
+      const missedActorId = step.actor === 'seller' ? trade.sellerId : trade.buyerId
+      const openerId = step.actor === 'seller' ? trade.buyerId : trade.sellerId
+      const actionText = step.action === 'send_crypto' ? 'release the crypto' : 'send the PKR payment'
       try {
-        await db.$transaction(async (tx) => {
+        // Report back whether this pass actually created the dispute — the party
+        // may have acted (released/paid) or a dispute may already exist by the time
+        // the loop reaches this trade, in which case the transaction is a deliberate
+        // no-op and must NOT be followed by a "your trade was escalated" notice.
+        const escalated = await db.$transaction(async (tx) => {
           const [current] = await tx.$queryRaw<{ status: string }[]>`
             SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
           `
-          if (!current || current.status !== 'payment_confirmed') return
+          if (!current || current.status !== 'payment_confirmed') return false
           // Skip if a dispute somehow already exists (unique tradeId).
           const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
-          if (existing) return
+          if (existing) return false
           await tx.dispute.create({
             data: {
               tradeId: trade.id,
-              openedById: trade.buyerId,
-              reason: 'release_timeout',
-              description: 'Auto-escalated: the seller confirmed payment but did not release within the release window.',
+              openedById: openerId,
+              reason: step.action === 'send_crypto' ? 'release_timeout' : 'fiat_payment_timeout',
+              description: `Auto-escalated: the ${step.actor} did not ${actionText} within the release window.`,
             },
           })
-          // Dispute-resume: remember the rung so the seller can still release and the
-          // buyer still confirm while this auto-dispute is open — a missed release
+          // Dispute-resume: remember the rung so the pending party can still act and
+          // the counterparty still confirm while this auto-dispute is open — a missed
           // window is often a timezone gap, not a scam. Completing closes the dispute.
           await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed', disputeResumeStatus: 'payment_confirmed' } })
+          return true
         })
-        notify(trade.buyerId, 'dispute', 'Trade Escalated', 'The seller did not release in time, so your trade was escalated to a dispute for admin review.', { tradeId: trade.id }, trade.id)
-        notify(trade.sellerId, 'dispute', 'Trade Escalated', 'You confirmed payment but did not release in time, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
-        void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — seller did not release in time.`, href: '/admin/disputes' })
+        if (!escalated) continue
+        notify(openerId, 'dispute', 'Trade Escalated', `The ${step.actor} did not ${actionText} in time, so your trade was escalated to a dispute for admin review.`, { tradeId: trade.id }, trade.id)
+        notify(missedActorId, 'dispute', 'Trade Escalated', `You did not ${actionText} in time, so the trade was escalated to a dispute.`, { tradeId: trade.id }, trade.id)
+        void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — ${step.actor} did not ${actionText} in time.`, href: '/admin/disputes' })
         releaseEscalated++
       } catch (err) {
         logger.error({ err, tradeId: trade.id }, 'Failed to auto-escalate release-timeout trade')
@@ -180,13 +198,17 @@ export async function runTradeEscalation(): Promise<void> {
     const openerId = step.actor === 'buyer' ? trade.sellerId : trade.buyerId
     const reason = step.actor === 'buyer' ? 'buyer_unresponsive' : 'seller_unresponsive'
     try {
-      await db.$transaction(async (tx) => {
+      // Same false-positive guard as block 1b above: report back whether this pass
+      // actually created the dispute, and skip the "escalated" notice on a no-op
+      // (the party responded, or a dispute already exists, by the time the loop
+      // reaches this trade).
+      const escalated = await db.$transaction(async (tx) => {
         const [current] = await tx.$queryRaw<{ status: string }[]>`
           SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
         `
-        if (!current || current.status !== 'payment_uploaded') return
+        if (!current || current.status !== 'payment_uploaded') return false
         const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
-        if (existing) return
+        if (existing) return false
         await tx.dispute.create({
           data: {
             tradeId: trade.id,
@@ -199,7 +221,9 @@ export async function runTradeEscalation(): Promise<void> {
         // the rung so both parties can still settle while the dispute is open — a
         // missed confirm is often a timezone gap, not a scam. Completing closes it.
         await tx.trade.update({ where: { id: trade.id }, data: { status: 'disputed', disputeResumeStatus: 'payment_uploaded' } })
+        return true
       })
+      if (!escalated) continue
       notify(openerId, 'dispute', 'Trade Escalated', `The ${step.actor} did not respond in time, so your trade was escalated to a dispute for admin review.`, { tradeId: trade.id }, trade.id)
       notify(missedActorId, 'dispute', 'Trade Escalated', 'You did not respond in time after payment proof was uploaded, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
       void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (no response after upload)', body: `Trade #${trade.orderRef} — the ${step.actor} went dark >24h at payment_uploaded.`, href: '/admin/disputes' })

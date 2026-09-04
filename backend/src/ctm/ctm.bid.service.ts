@@ -167,10 +167,16 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
         where: { listingId: listing.id, status: 'pending', id: { not: bidId } },
         data: { status: 'rejected' },
       })
-      await tx.ctmListingBid.update({
-        where: { id: bidId },
+      // CAS on the bid's own status: the initial pending/expiresAt checks above ran
+      // outside this transaction, so runCtmBidExpiry's 5-min sweep could in theory
+      // expire this same bid in the gap before the transaction commits. Without this
+      // guard the listing's availableAmount would already be decremented above while
+      // the bid itself silently stayed 'expired' from the sweep's point of view.
+      const claimed = await tx.ctmListingBid.updateMany({
+        where: { id: bidId, status: 'pending' },
         data: { status: 'accepted_pending_buyer', expiresAt: newExpiry },
       })
+      if (claimed.count === 0) throw new AppError('CONFLICT', 'Bid is no longer pending — it may have expired', 409)
     })
     notify(bid.bidderId, 'CTM_BID_ACCEPTED_PENDING', 'Bid accepted — action needed',
       `Your bid was accepted! Complete your payment details within 30 minutes to open the trade.`,
@@ -283,10 +289,14 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
       },
     })
 
-    await tx.ctmListingBid.update({
-      where: { id: bidId },
+    // CAS on the bid's own status — see the accepted_pending_buyer branch above for
+    // why: the pending/expiresAt checks ran outside this transaction, so the bid
+    // sweep could have expired this bid in the gap before commit.
+    const claimedBid = await tx.ctmListingBid.updateMany({
+      where: { id: bidId, status: 'pending' },
       data: { status: 'accepted' },
     })
+    if (claimedBid.count === 0) throw new AppError('CONFLICT', 'Bid is no longer pending — it may have expired', 409)
 
     notify(bid.bidderId, 'CTM_BID_ACCEPTED', 'Your bid was accepted!', `Your bid on ${listing.token.symbol} was accepted. Trade is now open.`, { tradeRef: newTrade.tradeRef })
 
@@ -469,6 +479,18 @@ export async function confirmBidDetails(
   const escrowAmount = isOnChain ? fiatAmount : null
 
   const trade = await db.$transaction(async (tx: Tx) => {
+    // CAS on the bid's own status, claimed BEFORE creating the trade: the initial
+    // accepted_pending_buyer/expiresAt checks above ran outside this transaction, so
+    // runCtmBidExpiry's 5-min sweep could in theory expire this same bid (and release
+    // its reserved listing inventory back to the pool) in the gap before commit.
+    // Claiming first means an already-expired bid aborts the whole transaction
+    // instead of creating a trade against inventory the sweep just released.
+    const claimedBid = await tx.ctmListingBid.updateMany({
+      where: { id: bidId, status: 'accepted_pending_buyer' },
+      data: { status: 'accepted' },
+    })
+    if (claimedBid.count === 0) throw new AppError('CONFLICT', 'Bid confirmation window has expired', 409)
+
     const newTrade = await tx.ctmTrade.create({
       data: {
         displayRef: await generateCtmDisplayRef(tx),
@@ -492,7 +514,6 @@ export async function confirmBidDetails(
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
       },
     })
-    await tx.ctmListingBid.update({ where: { id: bidId }, data: { status: 'accepted' } })
     notify(listing.merchantProfile.userId, 'CTM_TRADE_READY', 'Trade is now open!',
       `Buyer completed their details. Trade ${newTrade.tradeRef} is open.`,
       { tradeRef: newTrade.tradeRef })

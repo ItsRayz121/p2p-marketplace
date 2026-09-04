@@ -12,7 +12,8 @@ import { queues } from '../queues/definitions'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
 import { clawbackTradePoints } from '../services/airdrop.service'
-import { finalizeUsdtTrade } from '../services/trade.service'
+import { finalizeUsdtTrade, usdtResumeDeadline } from '../services/trade.service'
+import { stepFromStatus } from '../services/settlementFlow'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
@@ -1741,10 +1742,29 @@ export async function adminRoutes(app: FastifyInstance) {
     const trade = await db.trade.findUnique({ where: { id } })
     if (!trade) throw Errors.NOT_FOUND('Trade')
 
-    await db.trade.update({
-      where: { id },
-      data: { status: 'payment_confirmed' },
+    // This button means "the seller confirms fiat was received" — only meaningful
+    // when payment_uploaded's pending action is actually confirm_fiat (classic). In
+    // the taker-first flow that same rung is waiting on the BUYER's confirm_crypto
+    // (verifying the taker's crypto arrived) — a completely different check with
+    // no fiat involved yet. Forcing the transition there would fabricate a fiat
+    // confirmation that never happened, so block it instead of silently bypassing
+    // the crypto-receipt verification step.
+    const pendingStep = stepFromStatus(trade.takerFirst, 'payment_uploaded')
+    if (pendingStep && pendingStep.action !== 'confirm_fiat') {
+      throw new AppError('CONFLICT', 'This trade is taker-first and waiting on the buyer to confirm crypto receipt, not a fiat payment — use the trade room to resolve it, not this admin action.', 409)
+    }
+
+    // CAS-guarded, and stamps a deadline for the newly pending action — mirrors
+    // ctm.trade.service.ts's adminConfirmPayment fix. Without this, an
+    // admin-confirmed trade could sit at payment_confirmed forever if the pending
+    // party then goes dark: releaseDeadlineAt stays null, so tradeEscalation.job's
+    // release-window sweep (which filters on it) can never pick the trade up,
+    // occupying both parties' concurrency-cap slot indefinitely.
+    const claimed = await db.trade.updateMany({
+      where: { id, status: 'payment_uploaded' },
+      data: { status: 'payment_confirmed', paymentConfirmedAt: new Date(), ...usdtResumeDeadline(trade.takerFirst, 'payment_confirmed') },
     })
+    if (claimed.count === 0) throw new AppError('CONFLICT', `Cannot confirm payment for trade in status: ${trade.status}`, 409)
     await createAuditLog(req.user!.id, 'TRADE_PAYMENT_CONFIRMED_ADMIN', 'Trade', id, {}, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
@@ -1942,7 +1962,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const trade = await db.trade.findUnique({
       where: { id: dispute.tradeId },
-      select: { status: true, disputeResumeStatus: true },
+      select: { status: true, disputeResumeStatus: true, takerFirst: true },
     })
 
     await db.$transaction([
@@ -1959,14 +1979,18 @@ export async function adminRoutes(app: FastifyInstance) {
       // Hand the trade back to its parties. Closing with no winner used to resolve
       // the dispute and leave the TRADE parked at `disputed` forever — the ladder
       // frozen (the dispute is no longer `open`) and no ruling to act on, so it could
-      // never be completed or closed. Deadlines are cleared so the escalation job
-      // does not immediately re-dispute what was just deliberately dismissed.
+      // never be completed or closed. The resumed rung's deadline is RE-ARMED (not
+      // just nulled) with a fresh window: the original one is long past, and nulling
+      // it outright used to leave the resumed rung with no deadline at all forever if
+      // the same party went dark again — the escalation sweep could never re-pick it
+      // up. A fresh window still avoids immediately re-disputing what was just
+      // deliberately dismissed.
       db.trade.update({
         where: { id: dispute.tradeId },
-        data: {
-          ...restoreAfterNoFaultClose(trade, 'dispute_resolved'),
-          releaseDeadlineAt: null,
-        },
+        data: (() => {
+          const restored = restoreAfterNoFaultClose(trade, 'dispute_resolved')
+          return { ...restored, releaseDeadlineAt: null, confirmDeadlineAt: null, ...usdtResumeDeadline(trade?.takerFirst ?? false, restored.status) }
+        })(),
       }),
     ])
     await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)

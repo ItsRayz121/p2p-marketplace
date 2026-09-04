@@ -91,7 +91,16 @@ export async function acceptAdBid(adOwnerUserId: string, bidId: string) {
       data: { status: 'rejected' },
     })
 
-    await tx.adBid.update({ where: { id: bidId }, data: { status: 'accepted_pending_buyer', expiresAt: newExpiry } })
+    // CAS on the bid's own status: the initial pending/expiresAt checks above ran
+    // outside this transaction, so runAdBidExpiry's 5-min sweep could in theory
+    // expire this same bid in the gap before commit. Without this guard the ad's
+    // availableAmount would already be decremented above while the bid itself
+    // silently stayed 'expired' from the sweep's point of view.
+    const claimed = await tx.adBid.updateMany({
+      where: { id: bidId, status: 'pending' },
+      data: { status: 'accepted_pending_buyer', expiresAt: newExpiry },
+    })
+    if (claimed.count === 0) throw new AppError('CONFLICT', 'Bid is no longer pending — it may have expired', 409)
   })
 
   notify(bid.bidderId, 'AD_BID_ACCEPTED_PENDING', 'Bid accepted — action needed',
@@ -210,6 +219,18 @@ export async function confirmBidDetails(
       },
     })
 
+    // CAS on the bid's own status, claimed BEFORE creating the trade: the initial
+    // accepted_pending_buyer/expiresAt checks above ran outside this transaction, so
+    // runAdBidExpiry's 5-min sweep could in theory expire this same bid (and release
+    // its reserved ad inventory back to the pool) in the gap before commit. Claiming
+    // first means an already-expired bid aborts the whole transaction instead of
+    // creating a trade against inventory the sweep just released.
+    const claimedBid = await tx.adBid.updateMany({
+      where: { id: bidId, status: 'accepted_pending_buyer' },
+      data: { status: 'accepted', paymentMethod: data.paymentMethod, buyerUsdtAddress: data.buyerUsdtAddress ?? null },
+    })
+    if (claimedBid.count === 0) throw new AppError('CONFLICT', 'Bid confirmation window has expired', 409)
+
     const trade = await tx.trade.create({
       data: {
         orderRef,
@@ -236,8 +257,6 @@ export async function confirmBidDetails(
     await tx.tradeMessage.create({
       data: { tradeId: trade.id, senderId: sellerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.', isSystem: true },
     })
-
-    await tx.adBid.update({ where: { id: bidId }, data: { status: 'accepted', paymentMethod: data.paymentMethod, buyerUsdtAddress: data.buyerUsdtAddress ?? null } })
 
     const newAdStatus = ad.availableAmount.lte(0) ? 'completed' : 'active'
     if (newAdStatus === 'completed') {

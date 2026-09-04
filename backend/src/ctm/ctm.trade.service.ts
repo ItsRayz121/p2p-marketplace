@@ -15,7 +15,7 @@ import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
-import { ctmStepForAction, ctmDisputeLock } from '../services/ctmSettlementFlow'
+import { ctmStepForAction, ctmDisputeLock, ctmResumeDeadline, ctmStepFromStatus } from '../services/ctmSettlementFlow'
 import {
   ladderStatus, advanceTo, claimRung, restoreAfterNoFaultClose,
   assertPartySettleable, settleDisputeOnCompletion,
@@ -174,9 +174,17 @@ export async function confirmPayment(tradeRef: string, sellerId: string) {
   // arrived and the trade completes (the maker's tokens were already delivered).
   if (step.terminal) return finalizeCtmTrade(tradeRef)
 
+  // Classic: landing on payment_confirmed leaves the SELLER pending on start_crypto
+  // next. This used to just clear proofDeadlineAt (satisfied — confirm_fiat is
+  // done) without arming a new one for the next pending action, so a seller who
+  // confirmed payment and then went dark had no deadline at all and could occupy
+  // both parties' concurrency-cap slot forever (the same class of bug fixed on the
+  // USDT side in trade.service.ts). Stamp the window for the now-pending action.
+  const nextDeadline = ctmResumeDeadline(trade.takerFirst, step.to)
+
   const advanced = await db.ctmTrade.updateMany({
     where: { id: trade.id, ...claimRung(trade, step.from) },
-    data: { ...advanceTo(trade, step.to), proofDeadlineAt: null },
+    data: { ...advanceTo(trade, step.to), proofDeadlineAt: null, ...nextDeadline },
   })
   if (advanced.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
   await postCtmSystemMessage(trade.id, sellerId, 'Seller confirmed the payment was received. The seller will now send the tokens.')
@@ -812,10 +820,15 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   // A dismissal is a no-fault close, so the trade goes BACK to its real rung and the
   // parties can finish it normally — that is what "neither party is affected" means.
   // Every other ruling is a decision about an unfinished trade, so it ends the trade
-  // at `dispute_resolved` and the parties settle per the ruling. Deadlines are
-  // cleared on a dismissal so the escalation job doesn't immediately re-dispute it.
+  // at `dispute_resolved` and the parties settle per the ruling. The resumed rung's
+  // deadline is RE-ARMED (not just nulled) with a fresh window: the original one is
+  // long past, and nulling it outright (as this used to do) leaves the resumed rung
+  // with no deadline at all forever if the same party goes dark again — the ladder
+  // sweep (runCtmProofDeadline) can never re-pick it up. A fresh window still avoids
+  // the escalation job immediately re-disputing what was just deliberately dismissed.
+  const restored = restoreAfterNoFaultClose(trade, 'dispute_resolved')
   const tradePatch = data.winner === 'dismissed'
-    ? { ...restoreAfterNoFaultClose(trade, 'dispute_resolved'), proofDeadlineAt: null, confirmDeadlineAt: null }
+    ? { ...restored, proofDeadlineAt: null, confirmDeadlineAt: null, ...ctmResumeDeadline(trade.takerFirst, restored.status) }
     : { status: 'dispute_resolved' as const, disputeResumeStatus: null }
 
   await db.$transaction([
@@ -907,7 +920,33 @@ export async function adminConfirmPayment(adminId: string, tradeRef: string) {
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.status !== 'payment_uploaded') throw new AppError('CONFLICT', `Cannot confirm payment in status: ${trade.status}`, 409)
 
-  await db.ctmTrade.update({ where: { id: trade.id }, data: { status: 'payment_confirmed' } })
+  // This action means "the seller confirms PKR was received" — only meaningful
+  // when payment_uploaded's pending action is actually confirm_fiat (classic). In
+  // the taker-first flow that same rung is waiting on the SELLER's prove_crypto
+  // (the on-chain token-transfer proof, hash-verified) — a completely different,
+  // unrelated check. Forcing the transition there would fabricate a fiat
+  // confirmation and skip the crypto-proof verification this service otherwise
+  // enforces everywhere else (verifyTradeTx, DUPLICATE_TX_HASH, etc.).
+  const pendingStep = ctmStepFromStatus(trade.takerFirst, 'payment_uploaded')
+  if (pendingStep && pendingStep.action !== 'confirm_fiat') {
+    throw new AppError('CONFLICT', 'This trade is taker-first and waiting on the seller to submit token-transfer proof, not a fiat payment — use the trade room to resolve it, not this admin action.', 409)
+  }
+
+  // CAS-guarded, and — like confirmPayment above — stamps a deadline for the newly
+  // pending action instead of leaving the trade with none. Without this, an
+  // admin-confirmed trade could sit at payment_confirmed forever if the pending
+  // party then goes dark, with no sweep able to pick it up (proofDeadlineAt/
+  // confirmDeadlineAt both null), occupying both parties' concurrency-cap slot.
+  const claimed = await db.ctmTrade.updateMany({
+    where: { id: trade.id, status: 'payment_uploaded' },
+    // Clear both fields first — the invariant elsewhere (ctm.jobs.ts) is that
+    // proofDeadlineAt and confirmDeadlineAt are never both set on an active trade.
+    // The incoming rung was payment_uploaded, which (classic) carries a live
+    // proofDeadlineAt for confirm_fiat; ctmResumeDeadline's patch below must
+    // overwrite it, not land alongside it.
+    data: { status: 'payment_confirmed', proofDeadlineAt: null, confirmDeadlineAt: null, ...ctmResumeDeadline(trade.takerFirst, 'payment_confirmed') },
+  })
+  if (claimed.count === 0) throw new AppError('CONFLICT', 'Trade status changed — reload and try again.', 409)
   await db.auditLog.create({
     data: { actorId: adminId, action: 'CTM_ADMIN_CONFIRM_PAYMENT', metadata: { tradeRef } as JsonValue },
   }).catch(() => {})

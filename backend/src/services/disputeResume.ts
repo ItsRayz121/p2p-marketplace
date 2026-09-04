@@ -139,9 +139,15 @@ export function assertPartySettleable(
  * frozen (assertPartySettleable rejects a non-open dispute) and there is no ruling
  * to act on either. The trade could never be completed OR closed.
  *
- * Deadlines are cleared rather than refreshed: the original ones are long past, and
- * re-arming them would have the escalation job immediately try to re-dispute a trade
- * whose dispute was just deliberately dismissed.
+ * This function only returns `{ status, disputeResumeStatus: null }` — it does NOT
+ * touch any deadline field. Every call site MUST re-arm a FRESH deadline for the
+ * resumed rung on top of this patch (ctm.trade.service.ts's ctmResumeDeadline /
+ * trade.service.ts's usdtResumeDeadline) — never leave it null. The original
+ * deadline is long past, so nulling it outright (the old behavior here) leaves the
+ * resumed rung with no deadline at all forever if the same party goes dark again,
+ * and no sweep can ever re-pick it up. A FRESH window still avoids the escalation
+ * job immediately re-disputing a trade whose dispute was just deliberately
+ * dismissed — it only fires again if the party genuinely stalls a second time.
  *
  * Legacy fallback — a trade disputed before dispute-resume shipped has no recorded
  * rung, so there is nothing to hand back. Those go terminal (`dispute_resolved`)

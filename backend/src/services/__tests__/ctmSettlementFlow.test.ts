@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   ctmFlowSteps, ctmStepForAction, ctmStepFromStatus, ctmActorForAction,
   ctmIsTerminalAction, ctmStatusMeaning, ctmDisputeLock, CTM_STATUS_LADDER,
+  ctmResumeDeadline,
 } from '../ctmSettlementFlow'
 
 describe('ctmSettlementFlow — classic (fiat-first)', () => {
@@ -118,5 +119,39 @@ describe('ctmSettlementFlow — invariants across both flows', () => {
     expect(ctmStatusMeaning(false, 'awaiting_payment')).toEqual({ waitingOn: 'buyer', action: 'send_fiat' })
     // Taker-first: at awaiting_payment we wait on the seller (taker) to start the crypto transfer.
     expect(ctmStatusMeaning(true, 'awaiting_payment')).toEqual({ waitingOn: 'seller', action: 'start_crypto' })
+  })
+})
+
+describe('ctmResumeDeadline', () => {
+  it('never arms a deadline for awaiting_payment or completed, in either flow', () => {
+    for (const takerFirst of [false, true]) {
+      expect(ctmResumeDeadline(takerFirst, 'awaiting_payment')).toEqual({})
+      expect(ctmResumeDeadline(takerFirst, 'completed')).toEqual({})
+    }
+  })
+
+  it('classic: arms proofDeadlineAt for the pending action at every non-terminal rung', () => {
+    expect(ctmResumeDeadline(false, 'payment_uploaded')).toHaveProperty('proofDeadlineAt') // pending: confirm_fiat
+    expect(ctmResumeDeadline(false, 'payment_confirmed')).toHaveProperty('proofDeadlineAt') // pending: start_crypto
+    expect(ctmResumeDeadline(false, 'seller_transferring')).toHaveProperty('proofDeadlineAt') // pending: prove_crypto
+    // proof_submitted's pending action (confirm_crypto) is the terminal step, so it uses confirmDeadlineAt.
+    expect(ctmResumeDeadline(false, 'proof_submitted')).toHaveProperty('confirmDeadlineAt')
+    expect(ctmResumeDeadline(false, 'proof_submitted')).not.toHaveProperty('proofDeadlineAt')
+  })
+
+  it('taker-first: payment_confirmed is a different pending action than classic (confirm_crypto, not start_crypto) and uses confirmDeadlineAt', () => {
+    const classic = ctmResumeDeadline(false, 'payment_confirmed')
+    const takerFirst = ctmResumeDeadline(true, 'payment_confirmed')
+    expect(classic).toHaveProperty('proofDeadlineAt')
+    expect(takerFirst).toHaveProperty('confirmDeadlineAt')
+    expect(takerFirst).not.toHaveProperty('proofDeadlineAt')
+  })
+
+  it('returns a future timestamp, not a past or null one', () => {
+    const now = Date.now()
+    const patch = ctmResumeDeadline(false, 'payment_confirmed')
+    const value = patch.proofDeadlineAt ?? patch.confirmDeadlineAt
+    expect(value).toBeInstanceOf(Date)
+    expect(value!.getTime()).toBeGreaterThan(now)
   })
 })
