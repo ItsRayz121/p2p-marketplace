@@ -864,7 +864,7 @@ export default function ConfigPage() {
             <input type="checkbox" checked={messagingFlag} onChange={(e) => setMessagingFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
               <p className="text-sm font-medium text-text-primary">Messaging inbox <span className="font-mono text-xs text-text-muted">messaging_inbox_enabled</span></p>
-              <p className="text-xs text-text-muted mt-0.5">Reveals the persistent counterparty Messaging inbox (dropdown + pages) and starts writing per-pair chat threads / trade episodes. Threads only ever form between users who have actually traded.</p>
+              <p className="text-xs text-text-muted mt-0.5">Reveals the persistent counterparty Messaging inbox (dropdown + pages) and starts writing per-pair chat threads / trade episodes. Users can also find and message each other by username with no shared trade required — either side can block/report from the thread.</p>
             </div>
           </label>
 
