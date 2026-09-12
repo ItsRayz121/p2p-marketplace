@@ -1522,7 +1522,7 @@ export default function TradePage() {
             messaging screen and the send box stays reachable above the keyboard.
             Desktop (lg): fixed 400–600px box inside the two-column layout. */}
         <div className={`min-w-0 bg-surface rounded-xl border border-border shadow-card flex-col min-h-[60dvh] max-h-[75dvh] lg:min-h-[400px] lg:max-h-[600px] ${mobileTab === 'trade' ? 'hidden lg:flex' : 'flex'}`}>
-          <div className="px-4 py-3 border-b border-border">
+          <div className="sticky top-0 z-10 px-4 py-3 border-b border-border bg-surface">
             <h2 className="text-sm font-semibold text-text-primary">Chat with {counterparty}</h2>
           </div>
 
@@ -1649,6 +1649,7 @@ export default function TradePage() {
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
+              onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
               placeholder="Type a message..."
               className="flex-1 min-w-0 px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary bg-surface"
             />

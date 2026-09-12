@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { Prisma } from '@prisma/client'
 import { AppError } from '../lib/errors'
 import { generateCsrfToken } from '../lib/csrf'
-import { authenticate } from '../middleware/auth.middleware'
+import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { hashPassword, verifyPassword, hashToken } from '../lib/hash'
 import { applyWithdrawalLock } from '../services/withdrawal-security.service'
@@ -23,6 +23,8 @@ import {
   disable2Fa,
   verify2Fa,
   loginOrRegisterWithGoogle,
+  isUsernameAvailable,
+  reserveUsername,
   COOKIE_OPTIONS,
 } from '../services/auth.service'
 import {
@@ -309,13 +311,16 @@ export async function authRoutes(app: FastifyInstance) {
   )
 
   // GET /check-username?username=...
-  app.get('/check-username', async (req, reply) => {
+  // Checked against UsernameHistory (every name ever held by anyone), not just
+  // the live User table — otherwise a name someone renamed away from would
+  // show as "available" for a stranger to grab.
+  app.get('/check-username', { preHandler: [optionalAuth] }, async (req, reply) => {
     const username = (req.query as { username?: string }).username?.trim()
     if (!username || username.length < 3 || username.length > 30) {
       return reply.send({ success: true, data: { available: false } })
     }
-    const existing = await db.user.findUnique({ where: { username }, select: { id: true } })
-    return reply.send({ success: true, data: { available: !existing } })
+    const available = await isUsernameAvailable(username, req.user?.id)
+    return reply.send({ success: true, data: { available } })
   })
 
   // PATCH /profile — update fullName/username
@@ -360,11 +365,11 @@ export async function authRoutes(app: FastifyInstance) {
           )
         }
       }
-      const taken = await db.user.findFirst({
-        where: { username: parsed.username!, NOT: { id: req.user!.id } },
-        select: { id: true },
-      })
-      if (taken) throw new AppError('CONFLICT', 'Username is already taken', 409)
+      // Checked against UsernameHistory (every name ever held by anyone, current
+      // or past), not just the live User table — otherwise a name someone
+      // renamed away from would be free for a stranger to claim.
+      const available = await isUsernameAvailable(parsed.username!, req.user!.id)
+      if (!available) throw new AppError('CONFLICT', 'Username is already taken', 409)
     }
 
     const data: Record<string, unknown> = {}
@@ -376,6 +381,7 @@ export async function authRoutes(app: FastifyInstance) {
     if (Object.keys(data).length > 0) {
       await db.user.update({ where: { id: req.user!.id }, data })
     }
+    if (isUsernameChange) await reserveUsername(req.user!.id, parsed.username!)
     const user = await getMe(req.user!.id)
     return reply.send({ success: true, data: user })
   })

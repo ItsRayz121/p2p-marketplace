@@ -140,8 +140,8 @@ export const FLAGS = {
    * Persistent counterparty messaging inbox (Phase 4). When ON, trade lifecycle
    * events accrue a per-pair ChatThread + TradeEpisode history and the "Messaging"
    * inbox (dropdown + pages) is revealed. OFF (default) = no thread/episode writes
-   * happen and the inbox is hidden, so deploying is a no-op. Trade-gated regardless:
-   * threads only ever form between users who have actually traded.
+   * happen and the inbox is hidden, so deploying is a no-op. A thread can also form
+   * from a username search (no shared trade required) — BlockedUser is the opt-out.
    */
   MESSAGING_INBOX: 'messaging_inbox_enabled',
   /**

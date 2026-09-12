@@ -9,9 +9,10 @@ import { logger } from '../lib/logger'
  *
  * One permanent ChatThread per unordered user pair (canonical userAId < userBId,
  * mirroring TradeStreak), reused across every trade the pair ever does. Each trade
- * is a TradeEpisode marker inside the thread, spanning BOTH markets. Trade-gated:
- * a thread only ever comes into existence via a real trade — there is no cold-DM
- * path. Once it exists the two established partners can keep chatting.
+ * is a TradeEpisode marker inside the thread, spanning BOTH markets. A thread also
+ * comes into existence when either side finds the other by username search and
+ * starts a conversation directly (startThread) — trading together is no longer
+ * required, so BlockedUser is the escape hatch for unwanted contact.
  *
  * Everything is gated by `messaging_inbox_enabled` (default OFF): while OFF, the
  * lifecycle hooks below no-op (no thread/episode writes at all) and the inbox is
@@ -143,6 +144,15 @@ function assertParticipant(thread: { userAId: string; userBId: string }, userId:
   if (thread.userAId !== userId && thread.userBId !== userId) {
     throw new AppError('FORBIDDEN', 'Not a participant of this conversation', 403)
   }
+}
+
+/** True if either side has blocked the other. */
+async function isBlockedEitherWay(aId: string, bId: string): Promise<boolean> {
+  const hit = await db.blockedUser.findFirst({
+    where: { OR: [{ blockerId: aId, blockedId: bId }, { blockerId: bId, blockedId: aId }] },
+    select: { id: true },
+  })
+  return !!hit
 }
 
 /** Inbox: the user's threads, newest activity first, with unread + active-trade counts. */
@@ -282,6 +292,10 @@ export async function getThread(userId: string, threadId: string) {
   const ratedByMe = new Set<string>([...uRatings, ...cRatings].map((r) => r.tradeId))
 
   const other = isA ? thread.userB : thread.userA
+  const [blockedByMe, blockedMe] = await Promise.all([
+    db.blockedUser.findUnique({ where: { blockerId_blockedId: { blockerId: userId, blockedId: other.id } }, select: { id: true } }),
+    db.blockedUser.findUnique({ where: { blockerId_blockedId: { blockerId: other.id, blockedId: userId } }, select: { id: true } }),
+  ])
   return {
     threadId: thread.id,
     other,
@@ -293,6 +307,8 @@ export async function getThread(userId: string, threadId: string) {
       ratedByMe: e.outcome === 'completed' ? ratedByMe.has(e.tradeId) : false,
     })),
     messages,
+    blockedByMe: !!blockedByMe,
+    blockedMe: !!blockedMe,
   }
 }
 
@@ -305,6 +321,11 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
   if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
   assertParticipant(thread, userId)
+
+  const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
+  if (await isBlockedEitherWay(userId, otherId)) {
+    throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
+  }
 
   const isA = thread.userAId === userId
   const [message] = await db.$transaction([
@@ -350,6 +371,75 @@ export async function deleteThreadMessage(userId: string, threadId: string, mess
   }
   await db.chatThreadMessage.update({ where: { id: messageId }, data: { deletedAt: new Date() } })
   return { ok: true }
+}
+
+// ─── Username search + cold contact ──────────────────────────────────────────
+
+/** Up to 10 users whose username matches, for the "find someone" search box. */
+export async function searchUsers(userId: string, rawQuery: string) {
+  const q = rawQuery.trim()
+  if (q.length < 2) return []
+  const [users, blockedEitherWay] = await Promise.all([
+    db.user.findMany({
+      where: {
+        username: { contains: q, mode: 'insensitive' },
+        NOT: { id: userId },
+        isBanned: false,
+        isSuspended: false,
+      },
+      select: { id: true, username: true, fullName: true, avatarUrl: true },
+      // Exact/prefix matches first, then alphabetical, so typing the full
+      // handle reliably surfaces that one account first.
+      orderBy: { username: 'asc' },
+      take: 10,
+    }),
+    db.blockedUser.findMany({
+      where: { OR: [{ blockerId: userId }, { blockedId: userId }] },
+      select: { blockerId: true, blockedId: true },
+    }),
+  ])
+  const blocked = new Set(blockedEitherWay.map((b) => (b.blockerId === userId ? b.blockedId : b.blockerId)))
+  return users.filter((u) => !blocked.has(u.id))
+}
+
+/**
+ * Start (or resume) a conversation with any user by username — no shared trade
+ * required. This is the intentional cold-DM path search enables; BlockedUser
+ * is what lets either side shut it down afterward.
+ */
+export async function startThread(userId: string, targetUsername: string): Promise<{ threadId: string }> {
+  const target = await db.user.findFirst({
+    where: { username: { equals: targetUsername.trim(), mode: 'insensitive' } },
+    select: { id: true },
+  })
+  if (!target) throw new AppError('NOT_FOUND', 'No user with that username', 404)
+  if (target.id === userId) throw new AppError('VALIDATION_ERROR', "You can't message yourself", 400)
+  if (await isBlockedEitherWay(userId, target.id)) {
+    throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
+  }
+  const thread = await getOrCreateThread(userId, target.id)
+  return { threadId: thread.id }
+}
+
+/** Block the OTHER participant of a thread — either side may initiate. Idempotent. */
+export async function blockThreadUser(userId: string, threadId: string): Promise<void> {
+  const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { userAId: true, userBId: true } })
+  if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
+  assertParticipant(thread, userId)
+  const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
+  await db.blockedUser.upsert({
+    where: { blockerId_blockedId: { blockerId: userId, blockedId: otherId } },
+    update: {},
+    create: { blockerId: userId, blockedId: otherId },
+  })
+}
+
+export async function unblockThreadUser(userId: string, threadId: string): Promise<void> {
+  const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { userAId: true, userBId: true } })
+  if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
+  assertParticipant(thread, userId)
+  const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
+  await db.blockedUser.deleteMany({ where: { blockerId: userId, blockedId: otherId } })
 }
 
 /**

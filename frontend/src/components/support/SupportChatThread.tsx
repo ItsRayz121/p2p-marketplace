@@ -317,6 +317,7 @@ export function SupportChatThread() {
                 handleSend()
               }
             }}
+            onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
             rows={1}
             placeholder="Type a message…"
             className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"

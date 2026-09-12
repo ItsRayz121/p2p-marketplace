@@ -310,6 +310,28 @@ async function clearOtpAttempts(userId: string, type: string): Promise<void> {
   await redis.del(`otp:attempts:${type}:${userId}`).catch(() => 0)
 }
 
+// ─── Username permanence ──────────────────────────────────────────────────────
+// UsernameHistory reserves every username a user has ever held, forever — the
+// plain unique constraint on User.username only protects the CURRENT name, so
+// without this a renamed-away handle was free for anyone (including a
+// scammer) to grab. A name is available only if no history row exists for it,
+// or the row already belongs to the SAME user (reclaiming an old handle).
+
+export async function isUsernameAvailable(username: string, forUserId?: string): Promise<boolean> {
+  const existing = await db.usernameHistory.findUnique({ where: { username }, select: { userId: true } })
+  if (!existing) return true
+  return existing.userId === forUserId
+}
+
+/** Idempotent: safe to call even if this exact (user, username) pair was already reserved. */
+export async function reserveUsername(userId: string, username: string): Promise<void> {
+  await db.usernameHistory.upsert({
+    where: { username },
+    update: {},
+    create: { userId, username },
+  })
+}
+
 // ─── Service Methods ──────────────────────────────────────────────────────────
 
 export async function register(input: RegisterInput): Promise<{ message: string }> {
@@ -352,6 +374,7 @@ export async function register(input: RegisterInput): Promise<{ message: string 
     })
 
     await tx.tradeStats.create({ data: { userId: user.id } })
+    await tx.usernameHistory.create({ data: { userId: user.id, username } })
 
     await tx.wallet.create({
       data: {
@@ -819,11 +842,14 @@ export async function loginOrRegisterWithGoogle(
   })
 
   if (!user) {
-    // New user — auto-generate username from their Google name
+    // New user — auto-generate username from their Google name. Checked against
+    // UsernameHistory (not just the live User table) so a handle someone else
+    // used to hold — then renamed away from — can never be reassigned here.
     const base = fullName.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'user'
     let username = base + Math.floor(1000 + Math.random() * 9000)
-    const taken = await db.user.findUnique({ where: { username } })
-    if (taken) username = base + Math.floor(10000 + Math.random() * 90000)
+    for (let i = 0; i < 5 && !(await isUsernameAvailable(username)); i++) {
+      username = base + Math.floor(10000 + Math.random() * 90000)
+    }
 
     // Resolve the inbound referral code (carried through the OAuth `state` param) the
     // same way email/password + Telegram signups do, so a Google signup credits the
@@ -848,6 +874,7 @@ export async function loginOrRegisterWithGoogle(
       select: USER_SELECT,
     })
     user = created
+    await reserveUsername(created.id, username)
 
     // Mirror the signup attribution into the gas referral system (best-effort, idempotent).
     if (referredById) {
@@ -965,7 +992,9 @@ export async function loginOrRegisterWithTelegram(
   const syntheticEmail = buildSyntheticEmail(telegramId)
   const base = (username ?? firstName).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 15) || 'tg'
   let desiredUsername = `${base}${Math.floor(1000 + Math.random() * 9000)}`
-  if (await db.user.findUnique({ where: { username: desiredUsername }, select: { id: true } })) {
+  // Checked against UsernameHistory, not just the live User table, so a handle
+  // someone renamed away from can never be reassigned to a new signup.
+  for (let i = 0; i < 5 && !(await isUsernameAvailable(desiredUsername)); i++) {
     desiredUsername = `${base}${Math.floor(100000 + Math.random() * 900000)}`
   }
   const userReferralCode = generateReferralCode()
@@ -992,6 +1021,7 @@ export async function loginOrRegisterWithTelegram(
     })
 
     await tx.tradeStats.create({ data: { userId: user.id } })
+    await tx.usernameHistory.create({ data: { userId: user.id, username: desiredUsername } })
     await tx.wallet.create({
       data: { userId: user.id, coin: 'USDT', network: 'TRC20', balance: 0, lockedBalance: 0 },
     })

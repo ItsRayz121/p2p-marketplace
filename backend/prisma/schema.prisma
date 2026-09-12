@@ -532,6 +532,9 @@ model User {
   tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
   chatThreadsAsA         ChatThread[]            @relation("ChatThreadUserA")
   chatThreadsAsB         ChatThread[]            @relation("ChatThreadUserB")
+  usernameHistory        UsernameHistory[]
+  blockedUsers           BlockedUser[]           @relation("BlockedUserBlocker")
+  blockedByUsers         BlockedUser[]           @relation("BlockedUserBlocked")
 
   @@index([email])
   @@index([username])
@@ -1521,9 +1524,9 @@ model TradeStreak {
 // PERSISTENT COUNTERPARTY MESSAGING (Phase 4)
 // One permanent thread per unordered pair of users (canonical userAId < userBId,
 // mirroring TradeStreak). Reused across every trade the two ever do — each trade
-// is a TradeEpisode marker within the thread. Trade-gated: a thread only ever
-// exists once the pair has actually traded (no cold DMs). Modeled on
-// SupportConversation (persistent conversation + dated sub-sessions).
+// is a TradeEpisode marker within the thread. A thread can also form from a
+// username search with no prior trade (see UsernameHistory / BlockedUser).
+// Modeled on SupportConversation (persistent conversation + dated sub-sessions).
 // ─────────────────────────────────────────────────────────────────────────────
 
 model ChatThread {
@@ -1577,6 +1580,39 @@ model TradeEpisode {
 
   @@unique([market, tradeId])
   @@index([threadId, startedAt])
+}
+
+/// Permanent reservation ledger for every username a user has ever held
+/// (current one included). Plain `User.username @unique` only protects the
+/// CURRENT name — the instant someone renames, the old handle became free for
+/// anyone to grab, which is an impersonation vector (a fresh account lifting a
+/// trader's old, trusted handle). A row here is forever; a username is only
+/// available if no row exists, or the row belongs to the same user (so they
+/// can freely switch back to a name they used to have).
+model UsernameHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  username  String   @unique
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+/// One row per (blocker, blocked) pair. Username search lets any user start a
+/// conversation with any other (no trade required — see ChatThread), so this
+/// is the counterbalance: either side can end unwanted contact, after which
+/// postThreadMessage refuses new messages in either direction.
+model BlockedUser {
+  id        String   @id @default(cuid())
+  blockerId String
+  blocker   User     @relation("BlockedUserBlocker", fields: [blockerId], references: [id], onDelete: Cascade)
+  blockedId String
+  blocked   User     @relation("BlockedUserBlocked", fields: [blockedId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([blockerId, blockedId])
+  @@index([blockedId])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

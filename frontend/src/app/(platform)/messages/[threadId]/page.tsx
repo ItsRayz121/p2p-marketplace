@@ -11,11 +11,13 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Button } from '@/components/ui/Button'
+import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
+import { Modal } from '@/components/ui/Modal'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2 } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag } from 'lucide-react'
 
 type TimelineItem =
   | { kind: 'message'; at: number; msg: ThreadMessage }
@@ -38,6 +40,45 @@ export default function MessageThreadPage() {
   const [sending, setSending] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Header "⋮" menu — block/unblock + report the other participant.
+  const menuAnchorRef = useRef<HTMLButtonElement>(null)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [blockBusy, setBlockBusy] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportReason, setReportReason] = useState('')
+  const [reportBusy, setReportBusy] = useState(false)
+  const [reportSent, setReportSent] = useState(false)
+
+  async function toggleBlock() {
+    if (!data || blockBusy) return
+    setBlockBusy(true)
+    setMenuOpen(false)
+    try {
+      if (data.blockedByMe) await messagingApi.unblock(threadId)
+      else await messagingApi.block(threadId)
+      await load()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to update block status')
+    } finally {
+      setBlockBusy(false)
+    }
+  }
+
+  async function submitReport() {
+    if (!reportReason.trim() || reportBusy) return
+    setReportBusy(true)
+    try {
+      await messagingApi.report(threadId, reportReason.trim())
+      setReportSent(true)
+      setReportReason('')
+      setTimeout(() => { setReportOpen(false); setReportSent(false) }, 1500)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Failed to file report')
+    } finally {
+      setReportBusy(false)
+    }
+  }
 
   // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
   // sent with the next message (as an optional-caption attachment).
@@ -164,6 +205,7 @@ export default function MessageThreadPage() {
 
   const name = data.other.fullName || data.other.username || 'Trader'
   const s = data.stats
+  const blocked = data.blockedByMe || data.blockedMe
 
   return (
     // Fill the viewport below the navbar. On mobile we cancel the parent <main>'s
@@ -171,8 +213,9 @@ export default function MessageThreadPage() {
     // ABOVE the fixed BottomNav instead of being hidden behind it — the input is
     // visible the instant the thread opens, no scrolling required.
     <div className="max-w-2xl mx-auto flex flex-col h-[calc(100dvh-4rem)] pb-[calc(4rem+max(1rem,env(safe-area-inset-bottom)))] -mb-[calc(6rem+env(safe-area-inset-bottom))] lg:h-[calc(100dvh-4rem)] lg:pb-0 lg:mb-0">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
+      {/* Header — sticky so the counterparty's name is always visible, even while
+          scrolling the thread or when the mobile keyboard reflows the layout. */}
+      <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
         <Link href="/messages" className="p-1 -ml-1 rounded hover:bg-muted" aria-label="Back">
           <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
@@ -192,7 +235,42 @@ export default function MessageThreadPage() {
             </span>
           </div>
         </div>
+        <button
+          ref={menuAnchorRef}
+          onClick={() => setMenuOpen((v) => !v)}
+          aria-label="Conversation options"
+          className="p-1.5 -mr-1 rounded hover:bg-muted flex-shrink-0"
+        >
+          <MoreVertical className="w-5 h-5 text-text-muted" />
+        </button>
+        <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)}>
+          <div className="bg-surface border border-border rounded-lg shadow-card py-1">
+            <button
+              onClick={toggleBlock}
+              disabled={blockBusy}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt disabled:opacity-50"
+            >
+              {data.blockedByMe ? <ShieldCheck className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
+              {data.blockedByMe ? 'Unblock' : 'Block'} {name}
+            </button>
+            <button
+              onClick={() => { setMenuOpen(false); setReportOpen(true) }}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-danger hover:bg-surface-alt"
+            >
+              <Flag className="w-4 h-4" /> Report {name}
+            </button>
+          </div>
+        </AnchoredMenu>
       </div>
+
+      {/* Block state banner */}
+      {(data.blockedByMe || data.blockedMe) && (
+        <div className="mx-4 mt-3 rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-text-muted text-center">
+          {data.blockedByMe
+            ? <>You've blocked {name}. <button onClick={toggleBlock} disabled={blockBusy} className="text-primary font-medium hover:underline">Unblock</button> to message again.</>
+            : `You can't message ${name} right now.`}
+        </div>
+      )}
 
       {/* Pinned in-progress trade — the latest active trade sits at the top so it's
           one tap away; the full trade history remains in the timeline below. */}
@@ -351,7 +429,7 @@ export default function MessageThreadPage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || sending}
+            disabled={uploading || sending || blocked}
             aria-label="Attach image"
             className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
           >
@@ -361,15 +439,43 @@ export default function MessageThreadPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-            placeholder="Type a message…"
+            onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
+            placeholder={blocked ? "You can't message here" : 'Type a message…'}
             maxLength={2000}
-            className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary"
+            disabled={blocked}
+            className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary disabled:opacity-50"
           />
-          <Button size="sm" onClick={() => void send()} disabled={sending || uploading || (!draft.trim() && !pendingImage)} aria-label="Send">
+          <Button size="sm" onClick={() => void send()} disabled={sending || uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">
             <Send className="w-4 h-4" />
           </Button>
         </div>
       </div>
+
+      <Modal isOpen={reportOpen} onClose={() => setReportOpen(false)} title={`Report ${name}`}>
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">
+            Tell us what happened. Our team reviews this in your support conversation — {name} is never notified.
+          </p>
+          <textarea
+            value={reportReason}
+            onChange={(e) => setReportReason(e.target.value)}
+            rows={4}
+            maxLength={1000}
+            placeholder="What went wrong?"
+            className="w-full px-3 py-2 text-sm border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+          <div className="flex gap-3">
+            <button onClick={() => setReportOpen(false)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">Cancel</button>
+            <button
+              onClick={() => void submitReport()}
+              disabled={!reportReason.trim() || reportBusy}
+              className="flex-1 bg-danger text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50"
+            >
+              {reportSent ? 'Sent ✓' : reportBusy ? 'Sending…' : 'Submit report'}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

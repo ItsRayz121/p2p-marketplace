@@ -91,6 +91,10 @@ export interface ThreadView {
   stats: ThreadStats
   episodes: TradeEpisode[]
   messages: ThreadMessage[]
+  /** True if the viewer has blocked the other participant. */
+  blockedByMe: boolean
+  /** True if the other participant has blocked the viewer. */
+  blockedMe: boolean
 }
 
 export const messagingApi = {
@@ -104,6 +108,15 @@ export const messagingApi = {
     }),
   deleteMessage: (threadId: string, messageId: string) =>
     apiRequest<unknown>(`/messages/${threadId}/${messageId}/delete`, { method: 'POST' }),
+  /** Find people by username to start a new conversation (no shared trade needed). */
+  search: (q: string) => apiRequest<ChatUser[]>(`/messages/search?q=${encodeURIComponent(q)}`),
+  /** Get-or-create a thread with a user by username; returns its threadId. */
+  start: (username: string) =>
+    apiRequest<{ threadId: string }>('/messages/start', { method: 'POST', body: JSON.stringify({ username }) }),
+  block: (threadId: string) => apiRequest<{ blocked: boolean }>(`/messages/${threadId}/block`, { method: 'POST' }),
+  unblock: (threadId: string) => apiRequest<{ blocked: boolean }>(`/messages/${threadId}/unblock`, { method: 'POST' }),
+  report: (threadId: string, reason: string) =>
+    apiRequest<{ filed: boolean }>(`/messages/${threadId}/report`, { method: 'POST', body: JSON.stringify({ reason }) }),
 }
 
 /** Deep link to a trade room from an episode. */

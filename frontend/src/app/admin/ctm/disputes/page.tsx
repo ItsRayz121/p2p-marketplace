@@ -127,7 +127,8 @@ export default function AdminCtmDisputesPage() {
   }
 
   const handleResolve = async () => {
-    if (!selected || !resolution.trim() || !ackSettled) return
+    if (!selected || !resolution.trim()) return
+    if (winner !== 'dismissed' && !ackSettled) return
     setSubmitting(true)
     try {
       await ctmApi.adminResolveDispute(selected.trade.tradeRef, { winner, resolution })
