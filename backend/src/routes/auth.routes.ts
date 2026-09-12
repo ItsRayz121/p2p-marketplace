@@ -338,13 +338,17 @@ export async function authRoutes(app: FastifyInstance) {
 
     const current = await db.user.findUnique({
       where: { id: req.user!.id },
-      select: { username: true, usernameChangedAt: true, legalNameLockedAt: true },
+      select: { username: true, usernameChangedAt: true, legalNameLockedAt: true, fullName: true },
     })
     if (!current) throw new AppError('NOT_FOUND', 'User not found', 404)
 
     // Once the name is locked to the verified CNIC legal name, the user can no
     // longer self-edit it (admin override only). Username stays freely editable.
-    if (parsed.fullName && current.legalNameLockedAt && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
+    // Only reject when fullName is actually changing — the settings page always
+    // resends the current fullName alongside a username-only edit, and that must
+    // not trip the lock.
+    const isFullNameChange = parsed.fullName && parsed.fullName !== current.fullName
+    if (isFullNameChange && current.legalNameLockedAt && (await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P))) {
       throw new AppError(
         'NAME_LOCKED',
         'Your name is verified from your CNIC and cannot be changed. Contact support if it is incorrect.',
@@ -373,7 +377,7 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const data: Record<string, unknown> = {}
-    if (parsed.fullName) data.fullName = parsed.fullName
+    if (isFullNameChange) data.fullName = parsed.fullName
     if (isUsernameChange) {
       data.username = parsed.username
       data.usernameChangedAt = new Date()
