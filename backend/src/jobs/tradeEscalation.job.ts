@@ -131,17 +131,32 @@ export async function runTradeEscalation(): Promise<void> {
             SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
           `
           if (!current || current.status !== 'payment_confirmed') return false
-          // Skip if a dispute somehow already exists (unique tradeId).
-          const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
-          if (existing) return false
-          await tx.dispute.create({
-            data: {
-              tradeId: trade.id,
-              openedById: openerId,
-              reason: step.action === 'send_crypto' ? 'release_timeout' : 'fiat_payment_timeout',
-              description: `Auto-escalated: the ${step.actor} did not ${actionText} within the release window.`,
-            },
-          })
+          // A trade can only ever carry ONE Dispute row (tradeId is unique). Skip if
+          // there's a genuinely active one; but if the only existing row is already
+          // `resolved`, this is a SECOND stall after that ruling — reopen the same
+          // row instead of silently skipping, or a repeat offender becomes invisible
+          // forever with no way to ever flag it again.
+          const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true, status: true } })
+          if (existing && existing.status !== 'resolved') return false
+          if (existing) {
+            await tx.dispute.update({ where: { id: existing.id }, data: { status: 'open', escalatedAt: null } })
+            await tx.disputeMessage.create({
+              data: {
+                disputeId: existing.id,
+                senderId: openerId,
+                message: `Auto-reopened: the ${step.actor} did not ${actionText} again within the release window, after this dispute was previously resolved. Admin will review.`,
+              },
+            })
+          } else {
+            await tx.dispute.create({
+              data: {
+                tradeId: trade.id,
+                openedById: openerId,
+                reason: step.action === 'send_crypto' ? 'release_timeout' : 'fiat_payment_timeout',
+                description: `Auto-escalated: the ${step.actor} did not ${actionText} within the release window.`,
+              },
+            })
+          }
           // Dispute-resume: remember the rung so the pending party can still act and
           // the counterparty still confirm while this auto-dispute is open — a missed
           // window is often a timezone gap, not a scam. Completing closes the dispute.
@@ -207,16 +222,28 @@ export async function runTradeEscalation(): Promise<void> {
           SELECT status FROM "Trade" WHERE id = ${trade.id} FOR UPDATE
         `
         if (!current || current.status !== 'payment_uploaded') return false
-        const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true } })
-        if (existing) return false
-        await tx.dispute.create({
-          data: {
-            tradeId: trade.id,
-            openedById: openerId,
-            reason,
-            description: `Auto-escalated: the ${step.actor} did not respond within 24h of payment proof being uploaded.`,
-          },
-        })
+        // Same reopen-if-resolved rule as block 1b above — see its comment.
+        const existing = await tx.dispute.findUnique({ where: { tradeId: trade.id }, select: { id: true, status: true } })
+        if (existing && existing.status !== 'resolved') return false
+        if (existing) {
+          await tx.dispute.update({ where: { id: existing.id }, data: { status: 'open', escalatedAt: null } })
+          await tx.disputeMessage.create({
+            data: {
+              disputeId: existing.id,
+              senderId: openerId,
+              message: `Auto-reopened: the ${step.actor} did not respond again within 24h, after this dispute was previously resolved. Admin will review.`,
+            },
+          })
+        } else {
+          await tx.dispute.create({
+            data: {
+              tradeId: trade.id,
+              openedById: openerId,
+              reason,
+              description: `Auto-escalated: the ${step.actor} did not respond within 24h of payment proof being uploaded.`,
+            },
+          })
+        }
         // Dispute-resume: park status at `disputed` for admin tooling but remember
         // the rung so both parties can still settle while the dispute is open — a
         // missed confirm is often a timezone gap, not a scam. Completing closes it.

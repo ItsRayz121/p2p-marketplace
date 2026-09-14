@@ -20,8 +20,8 @@ import { runMerchantSettlementJob } from '../jobs/gasMerchantSettlement.job'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { processSubscription } from '../services/moralisStreams.service'
 import { runReconcileTick } from '../services/depositReconcile.service'
-import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry } from '../ctm/ctm.jobs'
-import { runUsdtConfirmReminder, runUsdtConfirmAdminWarning, runUsdtConfirmDeadline } from '../jobs/usdtTradeDeadline.job'
+import { runCtmTradeExpiry, runCtmProofDeadline, runCtmDisputeEscalation, runCtmMerchantTierUpgrade, runCtmEscrowMonitor, runCtmInactiveMerchantPause, runCtmBidExpiry, runCtmConfirmReminder, runCtmConfirmFinalWarning } from '../ctm/ctm.jobs'
+import { runUsdtConfirmReminder, runUsdtConfirmAdminWarning, runUsdtConfirmDeadline, runUsdtConfirmFinalWarning } from '../jobs/usdtTradeDeadline.job'
 import { runAdBidExpiry } from '../jobs/adBidExpiry.job'
 import { runGasPaymentPoller } from '../jobs/gasPaymentPoller.job'
 import { runAptosDepositPoller } from '../jobs/aptosDepositPoller.job'
@@ -227,12 +227,19 @@ export function startWorkers() {
   // (default attempts:3), so it stays a Queue+Worker.
   scheduleSweep('ctm-trade-expiry', runCtmTradeExpiry, 5 * 60 * 1000)
   scheduleSweep('ctm-proof-deadline', runCtmProofDeadline, 5 * 60 * 1000)
+  // CTM's terminal confirm window is a fixed 30 minutes (much shorter than USDT's
+  // 24h), so its reminder/warning sweeps run on a tighter cadence to actually catch
+  // the narrow pre-deadline windows.
+  scheduleSweep('ctm-confirm-reminder', runCtmConfirmReminder, 2 * 60 * 1000)
+  scheduleSweep('ctm-confirm-final-warning', runCtmConfirmFinalWarning, 2 * 60 * 1000)
 
   // USDT final-confirmation deadline (crypto_sent stuck forever otherwise — see
   // usdtTradeDeadline.job.ts). Halfway nudge to the confirmer, a pre-deadline
-  // admin heads-up for non-trusted sellers, then the deadline sweep (CTM cadence).
+  // admin heads-up for non-trusted sellers, a final user-facing warning, then the
+  // deadline sweep itself (CTM cadence).
   scheduleSweep('usdt-confirm-reminder', runUsdtConfirmReminder, 15 * 60 * 1000)
   scheduleSweep('usdt-confirm-admin-warning', runUsdtConfirmAdminWarning, 30 * 60 * 1000)
+  scheduleSweep('usdt-confirm-final-warning', runUsdtConfirmFinalWarning, 15 * 60 * 1000)
   scheduleSweep('usdt-confirm-deadline', runUsdtConfirmDeadline, 5 * 60 * 1000)
 
   // USDT ad-bid expiry — mirrors ctm-bid-expiry below (CTM already had this; the

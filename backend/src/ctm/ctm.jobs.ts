@@ -2,6 +2,7 @@ import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import https from 'node:https'
 import { notify as centralNotify } from '../lib/notify'
+import { createAdminNotif } from '../services/adminNotification.service'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx } from '../services/airdrop.service'
@@ -150,23 +151,41 @@ export async function runCtmProofDeadline() {
       }
 
       // CAS: only escalate a trade still in this status (a same-instant transition
-      // wins and this no-ops), and only if no dispute exists yet.
+      // wins and this no-ops). A trade can only ever carry ONE CtmDispute row
+      // (tradeId is unique), so a SECOND stall after the first dispute was already
+      // resolved/dismissed can't insert a new row — reopen the same one instead of
+      // silently skipping, or a repeat offender would go completely invisible with
+      // no way to ever flag it again.
       const escalated = await db.$transaction(async (tx) => {
-        const existing = await tx.ctmDispute.findFirst({ where: { tradeId: trade.id }, select: { id: true } })
-        if (existing) return false
-        // Dispute-resume: remember the rung so the parties can still settle while the
-        // auto-dispute is open — a missed deadline is often just a timezone gap, not
-        // a scam. `status` still parks at `disputed` for admin tooling.
+        const existing = await tx.ctmDispute.findFirst({ where: { tradeId: trade.id }, select: { id: true, status: true } })
+        if (existing && existing.status !== 'resolved') return false
         const claimed = await tx.ctmTrade.updateMany({ where: { id: trade.id, status: trade.status }, data: { status: 'disputed', disputeResumeStatus: trade.status } })
         if (claimed.count === 0) return false
-        await tx.ctmDispute.create({
-          data: {
-            tradeId: trade.id,
-            openedById: openerId,
-            reason: reason as never,
-            description: `Auto-escalated: the ${step.actor} did not ${actionText} within the deadline.`,
-          },
-        })
+        if (existing) {
+          await tx.ctmDispute.update({
+            where: { id: existing.id },
+            data: { status: 'open', escalatedAt: null },
+          })
+          await tx.ctmDisputeMessage.create({
+            data: {
+              disputeId: existing.id,
+              senderId: openerId,
+              message: `Auto-reopened: the ${step.actor} missed the deadline to ${actionText} again, after this dispute was previously resolved. Admin will review.`,
+            },
+          })
+        } else {
+          // Dispute-resume: remember the rung so the parties can still settle while
+          // the auto-dispute is open — a missed deadline is often just a timezone
+          // gap, not a scam. `status` still parks at `disputed` for admin tooling.
+          await tx.ctmDispute.create({
+            data: {
+              tradeId: trade.id,
+              openedById: openerId,
+              reason: reason as never,
+              description: `Auto-escalated: the ${step.actor} did not ${actionText} within the deadline.`,
+            },
+          })
+        }
         return true
       })
       if (!escalated) continue
@@ -178,19 +197,21 @@ export async function runCtmProofDeadline() {
     }
 
     // ── Terminal: both legs delivered, only the final ack is late ─────────────
-    // Auto-complete if the DELIVERING merchant (the counterparty of the pending
-    // confirmer) is trusted; else leave for admin review. Classic: confirmer=buyer,
-    // deliverer=seller. Taker-first: confirmer=seller/taker, deliverer=buyer/maker.
+    // Auto-complete UNCONDITIONALLY — mirrors USDT's runUsdtConfirmDeadline. The
+    // deliverer (the counterparty of the pending confirmer) already delivered both
+    // legs; the confirmer's own inaction must never be able to trap the trade (and
+    // both parties' concurrency-cap slot) forever. This used to gate on the
+    // deliverer's merchant tier and silently clear the deadline with no admin alert
+    // for anyone below verified/elite — the overwhelming majority of merchants —
+    // which is exactly why trades sat stuck for days with zero visibility. Classic:
+    // confirmer=buyer, deliverer=seller. Taker-first: confirmer=seller/taker,
+    // deliverer=buyer/maker. A non-trusted-tier deliverer still gets the trade
+    // completed (no funds move — CTM's terminal step is a self-claim ack, same
+    // logic as USDT), but flags admin afterward for visibility/potential review —
+    // never an automatic penalty.
     const delivererId = step.actor === 'buyer' ? trade.sellerId : trade.buyerId
     const delivererTier = (step.actor === 'buyer' ? trade.seller : trade.buyer).ctmMerchantProfile?.tier
-    const autoComplete = delivererTier === 'verified' || delivererTier === 'elite'
-
-    if (!autoComplete) {
-      // Clear both deadline fields so this doesn't re-fire; admin resolves manually.
-      await db.ctmTrade.update({ where: { id: trade.id }, data: { confirmDeadlineAt: null, proofDeadlineAt: null } })
-      logger.warn({ tradeRef: trade.tradeRef, delivererTier, takerFirst: trade.takerFirst }, 'CTM final-confirm deadline missed — admin review needed')
-      continue
-    }
+    const delivererTrusted = delivererTier === 'verified' || delivererTier === 'elite'
 
     let streakResult: { count: number; isMilestone: boolean } = { count: 0, isMilestone: false }
     let didComplete = false
@@ -235,10 +256,94 @@ export async function runCtmProofDeadline() {
 
     // The party who missed the final confirmation (the pending confirmer).
     const confirmerId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+    await postCtmSystemMessage(trade.id, delivererId, 'Trade auto-completed — the confirmation deadline passed without a response.')
     notify(confirmerId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed because you missed the confirmation deadline.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
     notify(delivererId, 'CTM_AUTO_COMPLETED', 'Trade auto-completed', `Trade ${lbl(trade)} was auto-completed after the counterparty's confirmation deadline passed.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+    if (!delivererTrusted) {
+      void createAdminNotif({
+        category: 'TRADE',
+        title: `⚠️ CTM trade ${lbl(trade)} auto-completed — review`,
+        body: `Auto-completed after the confirmation deadline passed. Deliverer tier: ${delivererTier ?? 'new'} (not yet trusted). Review for abuse; no penalty is applied automatically.`,
+        href: `/admin/ctm/trades/${trade.tradeRef}`,
+        telegram: true,
+      })
+    }
     logger.info({ tradeRef: trade.tradeRef, delivererTier, takerFirst: trade.takerFirst }, 'CTM auto-completed: final confirmation deadline missed')
   }
+}
+
+/**
+ * Halfway nudge for the CTM terminal confirm step (always 30 minutes — see
+ * RESUME_DEADLINE_WINDOW.confirm_crypto): notify + chat-message the pending
+ * confirmer partway through the window, mirroring USDT's runUsdtConfirmReminder.
+ */
+export async function runCtmConfirmReminder(): Promise<void> {
+  const now = new Date()
+  const reminderCutoff = new Date(now.getTime() + 15 * 60 * 1000) // half of the 30-min window
+
+  const due = await db.ctmTrade.findMany({
+    where: {
+      status: { in: ['payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted'] },
+      confirmDeadlineAt: { lte: reminderCutoff, gt: now },
+      confirmReminderSentAt: null,
+    },
+    take: 200,
+    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true, takerFirst: true, status: true },
+  })
+
+  for (const trade of due) {
+    const step = ctmStepFromStatus(trade.takerFirst, trade.status)
+    if (!step || !step.terminal) continue
+    const pendingId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+
+    const claimed = await db.ctmTrade.updateMany({
+      where: { id: trade.id, status: trade.status, confirmReminderSentAt: null },
+      data: { confirmReminderSentAt: now },
+    })
+    if (claimed.count === 0) continue
+
+    await postCtmSystemMessage(trade.id, pendingId, 'Reminder: please confirm receipt soon — if this isn\'t confirmed or disputed in time, the trade will auto-complete.')
+    notify(pendingId, 'CTM_CONFIRM_REMINDER', 'Action needed on your trade', `Trade ${lbl(trade)} is waiting on your confirmation. Please review it soon — if it's not confirmed or disputed in time, it will auto-complete.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+  }
+
+  if (due.length > 0) logger.info({ count: due.length }, 'CTM confirm reminder: nudges sent')
+}
+
+/**
+ * Final warning shortly before the CTM terminal confirm deadline passes — the
+ * user-facing equivalent of the admin-only pre-warning USDT sends, but aimed at
+ * the pending confirmer instead (they're the one about to lose the window).
+ */
+export async function runCtmConfirmFinalWarning(): Promise<void> {
+  const now = new Date()
+  const warnCutoff = new Date(now.getTime() + 5 * 60 * 1000) // 5 min before the 30-min window ends
+
+  const due = await db.ctmTrade.findMany({
+    where: {
+      status: { in: ['payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted'] },
+      confirmDeadlineAt: { lte: warnCutoff, gt: now },
+      confirmFinalWarnedAt: null,
+    },
+    take: 200,
+    select: { id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true, takerFirst: true, status: true },
+  })
+
+  for (const trade of due) {
+    const step = ctmStepFromStatus(trade.takerFirst, trade.status)
+    if (!step || !step.terminal) continue
+    const pendingId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+
+    const claimed = await db.ctmTrade.updateMany({
+      where: { id: trade.id, status: trade.status, confirmFinalWarnedAt: null },
+      data: { confirmFinalWarnedAt: now },
+    })
+    if (claimed.count === 0) continue
+
+    await postCtmSystemMessage(trade.id, pendingId, '⏰ Final warning: this trade will auto-complete in a few minutes if you don\'t confirm or dispute it now.')
+    notify(pendingId, 'CTM_CONFIRM_FINAL_WARNING', 'Last chance to act', `Trade ${lbl(trade)} auto-completes in a few minutes. Confirm receipt now, or open a dispute if something's wrong.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef })
+  }
+
+  if (due.length > 0) logger.info({ count: due.length }, 'CTM confirm final warning: sent')
 }
 
 export async function runCtmDisputeEscalation() {

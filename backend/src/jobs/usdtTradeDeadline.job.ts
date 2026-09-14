@@ -31,7 +31,10 @@ import { logger } from '../lib/logger'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { stepFromStatus } from '../services/settlementFlow'
-import { finalizeUsdtTrade, CONFIRM_WINDOW_HOURS } from '../services/trade.service'
+import { finalizeUsdtTrade, CONFIRM_WINDOW_HOURS, postTradeSystemMessage } from '../services/trade.service'
+
+/** How long before the deadline the pending confirmer gets a final, user-facing warning (chat + notify). */
+const FINAL_WARN_LEAD_HOURS = 1
 
 /** Badge tiers we don't bother pre-warning admin about — their word is trusted enough. Mirrors CTM's verified/elite gate. */
 const TRUSTED_BADGES = new Set(['trusted', 'top', 'elite'])
@@ -69,6 +72,7 @@ export async function runUsdtConfirmReminder(): Promise<void> {
     })
     if (claimed.count === 0) continue
 
+    await postTradeSystemMessage(trade.id, pendingId, 'Reminder: please confirm receipt soon — if this isn\'t confirmed or disputed in time, the trade will auto-complete.')
     notify(
       pendingId,
       'trade',
@@ -80,6 +84,48 @@ export async function runUsdtConfirmReminder(): Promise<void> {
   }
 
   if (due.length > 0) logger.info({ count: due.length }, 'USDT confirm reminder: nudges sent')
+}
+
+/**
+ * Final, user-facing warning shortly before the confirmation deadline passes —
+ * aimed at the pending confirmer (unlike runUsdtConfirmAdminWarning, which is
+ * admin-only). Gives the party about to lose the window one last unmissable nudge
+ * in the trade chat itself, not just a bell/push notification.
+ */
+export async function runUsdtConfirmFinalWarning(): Promise<void> {
+  const now = new Date()
+  const warnCutoff = new Date(now.getTime() + FINAL_WARN_LEAD_HOURS * 60 * 60 * 1000)
+
+  const due = await db.trade.findMany({
+    where: { status: 'crypto_sent', confirmDeadlineAt: { lte: warnCutoff, gt: now }, confirmFinalWarnedAt: null },
+    orderBy: { confirmDeadlineAt: 'asc' },
+    take: 200,
+    select: { id: true, orderRef: true, buyerId: true, sellerId: true, takerFirst: true },
+  })
+
+  for (const trade of due) {
+    const step = stepFromStatus(trade.takerFirst, 'crypto_sent')
+    if (!step) continue
+    const pendingId = step.actor === 'buyer' ? trade.buyerId : trade.sellerId
+
+    const claimed = await db.trade.updateMany({
+      where: { id: trade.id, status: 'crypto_sent', confirmFinalWarnedAt: null },
+      data: { confirmFinalWarnedAt: now },
+    })
+    if (claimed.count === 0) continue
+
+    await postTradeSystemMessage(trade.id, pendingId, `⏰ Final warning: this trade will auto-complete in about ${FINAL_WARN_LEAD_HOURS}h if you don't confirm or dispute it now.`)
+    notify(
+      pendingId,
+      'trade',
+      'Last chance to act',
+      `Trade ${lbl(trade)} auto-completes in about ${FINAL_WARN_LEAD_HOURS}h. Confirm receipt now, or open a dispute if something's wrong.`,
+      { tradeId: trade.id },
+      trade.id,
+    )
+  }
+
+  if (due.length > 0) logger.info({ count: due.length }, 'USDT confirm final warning: sent')
 }
 
 /**

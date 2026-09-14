@@ -11,8 +11,14 @@ import type { TradeStatus, CtmTradeStatus } from '@prisma/client'
  * while they have an unresolved dispute against them.
  *
  * Always on (not flag-gated). Admin-tunable via PlatformConfig:
- *   - max_concurrent_trades                (default 3; 0 = unlimited)
- *   - max_concurrent_trades_with_dispute   (default 1; 0 = unlimited)
+ *   - max_concurrent_trades                (default 8; 0 = unlimited)
+ *   - max_concurrent_trades_with_dispute   (default 2; 0 = unlimited)
+ *
+ * Defaults raised 2026-09-14: with the stuck-trade auto-resolve fixes shipped the
+ * same day (ctm.jobs.ts's terminal-step tier gate removed; both markets' auto-
+ * dispute sweeps can now reopen an already-resolved dispute instead of silently
+ * skipping), trades stop occupying a slot indefinitely — so a tighter cap was
+ * mostly just adding friction to legitimate concurrent trading, not stopping fraud.
  */
 
 // In-progress statuses (a trade still needs action from someone).
@@ -67,8 +73,8 @@ export async function isTradeLimitBypassed(userId: string): Promise<boolean> {
 /** The user's effective cap right now (lower while they have an open dispute). */
 export async function effectiveTradeCap(userId: string): Promise<number> {
   const [normal, withDispute, disputed] = await Promise.all([
-    getNumberConfig('max_concurrent_trades', 3),
-    getNumberConfig('max_concurrent_trades_with_dispute', 1),
+    getNumberConfig('max_concurrent_trades', 8),
+    getNumberConfig('max_concurrent_trades_with_dispute', 2),
     hasOpenDispute(userId),
   ])
   return disputed ? withDispute : normal
