@@ -1989,7 +1989,16 @@ export async function adminRoutes(app: FastifyInstance) {
         where: { id: dispute.tradeId },
         data: (() => {
           const restored = restoreAfterNoFaultClose(trade, 'dispute_resolved')
-          return { ...restored, releaseDeadlineAt: null, confirmDeadlineAt: null, ...usdtResumeDeadline(trade?.takerFirst ?? false, restored.status) }
+          // Also reset the reminder/warning "already sent" flags — otherwise a
+          // resumed crypto_sent rung that was reminded/warned before the dispute
+          // would never get its courtesy nudges again (the deadline sweep itself
+          // isn't gated on these, so this only affects the reminders, not whether
+          // the trade actually resolves).
+          return {
+            ...restored, releaseDeadlineAt: null, confirmDeadlineAt: null,
+            confirmReminderSentAt: null, confirmAdminWarnedAt: null, confirmFinalWarnedAt: null,
+            ...usdtResumeDeadline(trade?.takerFirst ?? false, restored.status),
+          }
         })(),
       }),
     ])

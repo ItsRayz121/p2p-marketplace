@@ -827,8 +827,16 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   // sweep (runCtmProofDeadline) can never re-pick it up. A fresh window still avoids
   // the escalation job immediately re-disputing what was just deliberately dismissed.
   const restored = restoreAfterNoFaultClose(trade, 'dispute_resolved')
+  // Also reset the reminder/warning "already sent" flags on a dismissal — otherwise
+  // a resumed proof_submitted rung that was reminded/warned before the dispute would
+  // never get its courtesy nudges again (the deadline sweep itself isn't gated on
+  // these, so this only affects the reminders, not whether the trade auto-resolves).
   const tradePatch = data.winner === 'dismissed'
-    ? { ...restored, proofDeadlineAt: null, confirmDeadlineAt: null, ...ctmResumeDeadline(trade.takerFirst, restored.status) }
+    ? {
+        ...restored, proofDeadlineAt: null, confirmDeadlineAt: null,
+        confirmReminderSentAt: null, confirmFinalWarnedAt: null,
+        ...ctmResumeDeadline(trade.takerFirst, restored.status),
+      }
     : { status: 'dispute_resolved' as const, disputeResumeStatus: null }
 
   await db.$transaction([
