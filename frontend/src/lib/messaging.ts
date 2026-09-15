@@ -16,6 +16,8 @@ export interface InboxItem {
   other: ChatUser
   lastMessageAt: string
   lastMessagePreview: string | null
+  /** Delivery/read status of the last message, only when the viewer sent it. */
+  lastMessageStatus: 'sent' | 'delivered' | 'read' | null
   unread: boolean
   activeTrades: number
   totalTrades: number
@@ -36,6 +38,8 @@ export interface ThreadMessage {
   deletedAt?: string | null
   isSystem: boolean
   createdAt: string
+  /** Delivery/read tick state — only set for messages the viewer themselves sent. */
+  status?: 'sent' | 'delivered' | 'read' | null
 }
 
 export interface TradeEpisode {
@@ -43,7 +47,7 @@ export interface TradeEpisode {
   market: 'usdt' | 'ctm'
   tradeId: string
   tradeRef: string
-  outcome: 'active' | 'completed' | 'cancelled' | 'expired' | 'disputed'
+  outcome: 'active' | 'completed' | 'cancelled' | 'expired' | 'disputed' | 'dispute_resolved'
   fiatAmount: string | null
   startedAt: string
   endedAt: string | null
@@ -130,4 +134,5 @@ export const OUTCOME_LABEL: Record<TradeEpisode['outcome'], string> = {
   cancelled: 'Cancelled',
   expired: 'Expired',
   disputed: 'Disputed',
+  dispute_resolved: 'Resolved',
 }

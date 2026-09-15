@@ -17,18 +17,32 @@ import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Check, CheckCheck, AlertCircle } from 'lucide-react'
+
+/** A message not yet confirmed by the server — rendered like a real one but with
+ *  a pending/failed indicator instead of delivery ticks (which only exist once
+ *  the server has assigned the message a real id). */
+type DisplayMessage = ThreadMessage & { pending?: boolean; failed?: boolean; tempId?: string }
 
 type TimelineItem =
-  | { kind: 'message'; at: number; msg: ThreadMessage }
+  | { kind: 'message'; at: number; msg: DisplayMessage }
   | { kind: 'episode'; at: number; ep: TradeEpisode }
 
+/** WhatsApp-style delivery ticks for a message the viewer sent themselves. */
+function MessageTicks({ m }: { m: DisplayMessage }) {
+  if (m.pending) return <Clock className="w-3 h-3 text-white/70" aria-label="Sending" />
+  if (m.failed) return <AlertCircle className="w-3 h-3 text-red-200" aria-label="Failed to send — tap to retry" />
+  if (m.status === 'read') return <CheckCheck className="w-3.5 h-3.5 text-sky-300" aria-label="Read" />
+  if (m.status === 'delivered') return <CheckCheck className="w-3.5 h-3.5 text-white/70" aria-label="Delivered" />
+  return <Check className="w-3.5 h-3.5 text-white/70" aria-label="Sent" />
+}
+
 const OUTCOME_ICON: Record<TradeEpisode['outcome'], React.ElementType> = {
-  active: Clock, completed: CheckCircle2, cancelled: XCircle, expired: Clock, disputed: AlertTriangle,
+  active: Clock, completed: CheckCircle2, cancelled: XCircle, expired: Clock, disputed: AlertTriangle, dispute_resolved: CheckCircle2,
 }
 const OUTCOME_CLS: Record<TradeEpisode['outcome'], string> = {
   active: 'text-blue-500', completed: 'text-emerald-500', cancelled: 'text-text-muted',
-  expired: 'text-text-muted', disputed: 'text-amber-500',
+  expired: 'text-text-muted', disputed: 'text-amber-500', dispute_resolved: 'text-emerald-500',
 }
 
 export default function MessageThreadPage() {
@@ -37,7 +51,12 @@ export default function MessageThreadPage() {
   const [data, setData] = useState<ThreadView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
-  const [sending, setSending] = useState(false)
+  // Messages sent locally but not yet confirmed by the server — shown immediately
+  // (optimistic) with a "sending…" clock, retried automatically on failure, and
+  // left with a tap-to-retry affordance if every retry fails. Fixes the "message
+  // sometimes doesn't seem to send" complaint: previously a failed POST just left
+  // the draft text sitting in the input with no visible feedback.
+  const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -118,15 +137,17 @@ export default function MessageThreadPage() {
     return () => clearInterval(id)
   }, [user, load])
 
-  // Build a single time-ordered timeline of episode dividers + messages.
+  // Build a single time-ordered timeline of episode dividers + messages, with any
+  // still-unconfirmed local messages appended at the end.
   const timeline = useMemo<TimelineItem[]>(() => {
     if (!data) return []
     const items: TimelineItem[] = [
       ...data.messages.map((m) => ({ kind: 'message' as const, at: new Date(m.createdAt).getTime(), msg: m })),
       ...data.episodes.map((e) => ({ kind: 'episode' as const, at: new Date(e.startedAt).getTime(), ep: e })),
+      ...pendingMessages.map((m) => ({ kind: 'message' as const, at: new Date(m.createdAt).getTime(), msg: m })),
     ]
     return items.sort((a, b) => a.at - b.at)
-  }, [data])
+  }, [data, pendingMessages])
 
   // The latest still-in-progress trade — pinned just under the header so it's
   // reachable without scrolling; the full history stays in the timeline below.
@@ -155,21 +176,49 @@ export default function MessageThreadPage() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight })
   }, [timeline])
 
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  const SEND_RETRY_DELAYS_MS = [1200, 3000] // two automatic retries before giving up
+
+  /** Attempt to actually deliver one pending message, retrying transient failures. */
+  const attemptSend = useCallback(async (tempId: string, body: string, attachmentUrl?: string) => {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await messagingApi.postMessage(threadId, body, attachmentUrl)
+        setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId))
+        await load()
+        return
+      } catch {
+        if (attempt >= SEND_RETRY_DELAYS_MS.length) {
+          setPendingMessages((prev) => prev.map((m) => (m.tempId === tempId ? { ...m, pending: false, failed: true } : m)))
+          return
+        }
+        await sleep(SEND_RETRY_DELAYS_MS[attempt])
+      }
+    }
+  }, [threadId, load])
+
   const send = async () => {
     const body = draft.trim()
     // A message needs either text or an image attachment.
-    if ((!body && !pendingImage) || sending) return
-    setSending(true)
-    try {
-      await messagingApi.postMessage(threadId, body, pendingImage ?? undefined)
-      setDraft('')
-      setPendingImage(null)
-      await load()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send')
-    } finally {
-      setSending(false)
-    }
+    if (!body && !pendingImage) return
+    const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const attachmentUrl = pendingImage ?? undefined
+    // Show it immediately — the user sees their message land in the timeline
+    // right away instead of waiting on the network round-trip.
+    setPendingMessages((prev) => [...prev, {
+      id: tempId, tempId, senderId: user!.id, body, attachmentUrl: attachmentUrl ?? null,
+      isSystem: false, createdAt: new Date().toISOString(), pending: true,
+    }])
+    setDraft('')
+    setPendingImage(null)
+    void attemptSend(tempId, body, attachmentUrl)
+  }
+
+  /** Tap a failed bubble to try sending it again. */
+  const retryPending = (m: DisplayMessage) => {
+    if (!m.tempId || !m.failed) return
+    setPendingMessages((prev) => prev.map((p) => (p.tempId === m.tempId ? { ...p, failed: false, pending: true } : p)))
+    void attemptSend(m.tempId, m.body, m.attachmentUrl ?? undefined)
   }
 
   // Pick + upload an image; the returned Cloudinary URL waits in pendingImage
@@ -364,9 +413,9 @@ export default function MessageThreadPage() {
             )
           }
           const hasImage = isTrustedImageUrl(m.attachmentUrl)
-          // Own free-chat message (not a folded trade line) still inside the 15-min window.
+          // Own free-chat message (not a folded trade line, not still-local) inside the 15-min window.
           const deletable =
-            mine && !m.id.startsWith('tm_') && !m.id.startsWith('cm_') &&
+            mine && !m.pending && !m.failed && !m.id.startsWith('tm_') && !m.id.startsWith('cm_') &&
             Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
           return (
             <div key={m.id} className={`group flex items-center gap-1.5 ${mine ? 'justify-end' : 'justify-start'}`}>
@@ -379,7 +428,10 @@ export default function MessageThreadPage() {
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
-              <div className={`order-2 max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'}`}>
+              <div
+                onClick={() => m.failed && retryPending(m)}
+                className={`order-2 max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
+              >
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -387,7 +439,11 @@ export default function MessageThreadPage() {
                   </a>
                 )}
                 {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
-                <p className={`text-[10px] mt-0.5 ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
+                <div className={`flex items-center gap-1 mt-0.5 ${mine ? 'justify-end' : ''}`}>
+                  {m.failed && <span className="text-[10px] text-red-200">Tap to retry ·</span>}
+                  <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
+                  {mine && <MessageTicks m={m} />}
+                </div>
               </div>
             </div>
           )
@@ -429,7 +485,7 @@ export default function MessageThreadPage() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || sending || blocked}
+            disabled={uploading || blocked}
             aria-label="Attach image"
             className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
           >
@@ -445,7 +501,7 @@ export default function MessageThreadPage() {
             disabled={blocked}
             className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary disabled:opacity-50"
           />
-          <Button size="sm" onClick={() => void send()} disabled={sending || uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">
+          <Button size="sm" onClick={() => void send()} disabled={uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">
             <Send className="w-4 h-4" />
           </Button>
         </div>

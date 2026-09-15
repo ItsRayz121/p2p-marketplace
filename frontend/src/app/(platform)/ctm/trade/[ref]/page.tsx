@@ -876,6 +876,13 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           <p className="font-semibold text-text-primary">{counterparty}</p>
         </div>
       </div>
+      {/* Public platform review — prioritized above the in-app trader rating so
+          traders see the Trustpilot ask first. Self-gates: hidden unless
+          NEXT_PUBLIC_TRUSTPILOT_URL is set, shown at most once per browser per
+          ~75 days, never incentivised. Offered for every completed CTM trade
+          at any in-app score. */}
+      <TrustpilotPrompt surface="trade" />
+
       <div className="border-t border-border pt-4 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-semibold text-text-primary">Rate your experience with {counterparty}</p>
@@ -924,12 +931,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
           </>
         )}
       </div>
-
-      {/* Public platform review — a peer to the trader rating above, not a
-          replacement. Self-gates: hidden unless NEXT_PUBLIC_TRUSTPILOT_URL is set,
-          shown at most once per browser per ~75 days, never incentivised. Offered
-          for every completed CTM trade at any in-app score. */}
-      <TrustpilotPrompt surface="trade" />
 
       <button onClick={() => setStep4Collapsed(true)} className="w-full border border-border py-2 rounded-xl text-sm text-text-muted hover:bg-surface transition-colors">Close</button>
     </div>

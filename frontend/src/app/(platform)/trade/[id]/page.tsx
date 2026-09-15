@@ -302,6 +302,13 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
             </div>
           </div>
 
+          {/* Public platform review — prioritized above the in-app counterparty
+              rating so traders see the Trustpilot ask first. Self-gates: hidden
+              unless NEXT_PUBLIC_TRUSTPILOT_URL is set, shown at most once per
+              browser per ~75 days, never incentivised. Offered for every
+              completed trade at any in-app score. */}
+          <TrustpilotPrompt surface="trade" />
+
           <div className="border-t border-border pt-4">
             {ratedAlready ? (
               <p className="text-sm text-text-muted text-center">You already rated this trade.</p>
@@ -326,12 +333,6 @@ function CompletedTradeCard({ trade, isUserBuyer, counterparty, ratedAlready, on
               </>
             )}
           </div>
-
-          {/* Public platform review — a peer to the counterparty rating above, not
-              a replacement. Self-gates: hidden unless NEXT_PUBLIC_TRUSTPILOT_URL is
-              set, shown at most once per browser per ~75 days, never incentivised.
-              Offered for every completed trade at any in-app score. */}
-          <TrustpilotPrompt surface="trade" />
         </div>
       )}
     </div>

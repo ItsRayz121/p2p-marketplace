@@ -9,7 +9,16 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtDateTime } from '@/lib/fmt'
-import { MessageSquare, BadgeCheck, Headphones, Search, X } from 'lucide-react'
+import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck } from 'lucide-react'
+
+/** WhatsApp-style delivery tick for the inbox preview, shown only when the
+ *  viewer sent the last message in that thread. */
+function LastMessageTick({ status }: { status: 'sent' | 'delivered' | 'read' | null }) {
+  if (!status) return null
+  if (status === 'read') return <CheckCheck className="w-3.5 h-3.5 text-sky-500 flex-shrink-0" aria-label="Read" />
+  if (status === 'delivered') return <CheckCheck className="w-3.5 h-3.5 text-text-muted flex-shrink-0" aria-label="Delivered" />
+  return <Check className="w-3.5 h-3.5 text-text-muted flex-shrink-0" aria-label="Sent" />
+}
 
 export default function MessagesInboxPage() {
   const { user } = useAuth()
@@ -84,7 +93,7 @@ export default function MessagesInboxPage() {
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find someone by username…"
+          placeholder="Find someone by name or username…"
           className="w-full rounded-lg border border-border bg-surface pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-primary"
         />
         {query && (
@@ -159,8 +168,9 @@ export default function MessagesInboxPage() {
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
                       {t.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
                     </div>
-                    <p className="text-xs text-text-muted truncate mt-0.5">
-                      {t.lastMessagePreview ?? `${t.totalTrades} trade${t.totalTrades === 1 ? '' : 's'} together`}
+                    <p className="text-xs text-text-muted truncate mt-0.5 flex items-center gap-1">
+                      <LastMessageTick status={t.lastMessageStatus} />
+                      <span className="truncate">{t.lastMessagePreview ?? `${t.totalTrades} trade${t.totalTrades === 1 ? '' : 's'} together`}</span>
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
