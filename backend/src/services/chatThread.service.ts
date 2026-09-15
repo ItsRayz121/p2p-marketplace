@@ -148,10 +148,22 @@ export async function reopenEpisode(params: { market: Market; tradeId: string })
   try {
     const episode = await db.tradeEpisode.findUnique({
       where: { market_tradeId: { market: params.market, tradeId: params.tradeId } },
-      select: { id: true, outcome: true },
+      select: { id: true, threadId: true, tradeRef: true, outcome: true },
     })
     if (!episode || episode.outcome !== 'disputed') return
     await db.tradeEpisode.update({ where: { id: episode.id }, data: { outcome: 'active', endedAt: null } })
+    // Narrate the resume the same way closeEpisode narrates a close — otherwise
+    // the inbox timeline shows a "disputed" divider with no explanation of how
+    // the trade got back to active.
+    await db.chatThreadMessage.create({
+      data: {
+        threadId: episode.threadId,
+        senderId: '',
+        isSystem: true,
+        body: `Trade ${episode.tradeRef} resumed — the dispute was dismissed.`,
+      },
+    })
+    await db.chatThread.update({ where: { id: episode.threadId }, data: { lastMessageAt: new Date() } })
   } catch (err) {
     logger.warn({ err, tradeId: params.tradeId }, 'reopenEpisode failed (non-fatal)')
   }
@@ -261,6 +273,10 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   // Mark read for this viewer — opening the thread means every message the
   // OTHER side sent has now been delivered AND seen (delivered may already be
   // set from an inbox-list fetch; read always follows from opening the thread).
+  // These ticks are only ever shown to the SENDER on their own later fetch (see
+  // receiptStatus below), which queries fresh from the DB — so there's nothing
+  // to backfill into the response built from the pre-update `thread.messages`
+  // read above.
   const isA = thread.userAId === userId
   const now = new Date()
   await Promise.all([
@@ -272,20 +288,13 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       where: { threadId, senderId: { not: userId }, isSystem: false, deliveredAt: null },
       data: { deliveredAt: now },
     }),
-    ...(markRead ? [db.chatThreadMessage.updateMany({
-      where: { threadId, senderId: { not: userId }, isSystem: false, readAt: null },
-      data: { readAt: now },
-    })] : []),
-  ]).catch(() => {})
-
-  // The messages above were fetched before the updates just ran — patch the
-  // in-memory copy so this response already reflects delivered/read instead of
-  // looking stale until the next poll.
-  for (const m of thread.messages) {
-    if (m.senderId === userId || m.isSystem) continue
-    if (!m.deliveredAt) m.deliveredAt = now
-    if (markRead && !m.readAt) m.readAt = now
-  }
+    markRead
+      ? db.chatThreadMessage.updateMany({
+          where: { threadId, senderId: { not: userId }, isSystem: false, readAt: null },
+          data: { readAt: now },
+        })
+      : Promise.resolve(null),
+  ]).catch((err) => logger.warn({ err, threadId }, 'failed to mark thread read/delivered (non-fatal)'))
 
   const stats = { completed: 0, cancelled: 0, expired: 0, disputed: 0, active: 0, total: thread.episodes.length }
   const s = stats as Record<string, number>
@@ -398,11 +407,10 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
   }
 
-  if (clientId) {
-    const existing = await db.chatThreadMessage.findUnique({ where: { threadId_clientId: { threadId, clientId } }, select: MESSAGE_SELECT })
-    if (existing) return existing
-  }
-
+  // clientId is sent on every send, not just retries, so this must stay a
+  // single round trip on the common path — attempt the create and only fall
+  // back to a lookup on the rare unique-constraint hit (matches the same
+  // create-then-catch-P2002 idempotency convention used by gas.ledger.ts).
   const isA = thread.userAId === userId
   try {
     const [message] = await db.$transaction([
@@ -418,9 +426,9 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     ])
     return message
   } catch (err) {
-    // Two near-simultaneous retries both passed the pre-check above — the loser
-    // of the race hits the unique constraint; return the winner's row instead of
-    // failing (still idempotent, just resolved after the fact).
+    // A retry of the same clientId (lost response, or a race between two
+    // near-simultaneous retries) hits the unique constraint — return the
+    // already-created row instead of failing or duplicating it.
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       const existing = await db.chatThreadMessage.findUnique({ where: { threadId_clientId: { threadId, clientId } }, select: MESSAGE_SELECT })
       if (existing) return existing

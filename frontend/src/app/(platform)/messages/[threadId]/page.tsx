@@ -200,8 +200,13 @@ export default function MessageThreadPage() {
         // reuses it, so the server returns the original message instead of
         // creating a duplicate.
         await messagingApi.postMessage(threadId, body, attachmentUrl, tempId)
+        // The message is confirmed sent at this point — drop the local placeholder
+        // and treat the follow-up refresh as unrelated best-effort polish. `load`
+        // never throws today (it catches internally), but keeping it outside this
+        // try/catch means a future change to that can't misreport an already-
+        // successful send as a failure and retry it.
         setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId))
-        await load()
+        void load()
         return
       } catch {
         if (attempt >= SEND_RETRY_DELAYS_MS.length) {
