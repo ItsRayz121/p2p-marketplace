@@ -13,6 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { TRUSTPILOT_CHAT_NUDGE } from '../lib/tradeMessages'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock, ctmResumeDeadline, ctmStepFromStatus } from '../services/ctmSettlementFlow'
@@ -674,6 +675,9 @@ async function finalizeCtmTrade(tradeRef: string) {
       : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
     await postCtmSystemMessage(trade.id, buyerId, streakMsg)
   }
+
+  await postCtmSystemMessage(trade.id, buyerId, TRUSTPILOT_CHAT_NUDGE)
+
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
 
@@ -861,6 +865,13 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
       metadata: { tradeRef, winner: data.winner, resolution: data.resolution } as JsonValue,
     },
   }).catch(() => {})
+
+  // A ruling ends the trade at `dispute_resolved` — close the inbox episode so it
+  // stops showing "in progress" forever. A dismissal reopens the trade instead
+  // (restored to its real rung above), so the episode correctly stays active.
+  if (data.winner !== 'dismissed') {
+    void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'dispute_resolved' })
+  }
 
   // Maker collateral bond (Phase 5): seize to the winner if the maker lost, else
   // release. 'split' and 'dismissed' have no loser, so the bond is simply returned

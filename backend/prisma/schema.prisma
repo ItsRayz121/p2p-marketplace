@@ -1560,6 +1560,11 @@ model ChatThreadMessage {
   deletedAt     DateTime?
   isSystem      Boolean    @default(false)
   createdAt     DateTime   @default(now())
+  // Delivery/read receipts (WhatsApp-style ticks). Set by the RECIPIENT's own
+  // requests: deliveredAt on their next inbox fetch, readAt on opening this
+  // specific thread. Never set for messages the viewer sent themselves.
+  deliveredAt   DateTime?
+  readAt        DateTime?
 
   @@index([threadId, createdAt])
 }

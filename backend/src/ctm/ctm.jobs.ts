@@ -190,6 +190,8 @@ export async function runCtmProofDeadline() {
       })
       if (!escalated) continue
 
+      void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
+
       notify(openerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: the ${step.actor} missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
       notify(missedActorId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
       logger.warn({ tradeRef: trade.tradeRef, missedActor: step.actor, action: step.action, takerFirst: trade.takerFirst }, 'CTM auto-dispute: party missed step deadline')
@@ -246,6 +248,7 @@ export async function runCtmProofDeadline() {
     await releaseMakerBond({ tradeType: 'ctm', tradeId: trade.id }).catch((err) =>
       logger.error({ err, tradeId: trade.id }, 'Failed to release maker bond on CTM auto-complete'),
     )
+    void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'completed' })
 
     if (streakResult.count > 0) {
       const streakMsg = streakResult.isMilestone

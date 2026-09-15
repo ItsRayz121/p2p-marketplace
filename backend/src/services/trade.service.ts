@@ -14,6 +14,7 @@ import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.ser
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
+import { TRUSTPILOT_CHAT_NUDGE } from '../lib/tradeMessages'
 import { stepForAction, flowSteps, stepFromStatus } from './settlementFlow'
 import {
   ladderStatus, advanceTo, claimRung,
@@ -1279,6 +1280,8 @@ export async function finalizeUsdtTrade(tradeId: string) {
       : `🤝 ${ordinal(streakResult.count)} completed trade between you two.`
     await postTradeSystemMessage(tradeId, buyerId, streakMsg)
   }
+
+  await postTradeSystemMessage(tradeId, buyerId, TRUSTPILOT_CHAT_NUDGE)
 
   // Notify both parties (flow-neutral — either side may be the one that completed it).
   notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The trade is complete. 🎉', { tradeId }, tradeId)

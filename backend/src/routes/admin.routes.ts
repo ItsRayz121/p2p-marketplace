@@ -14,6 +14,7 @@ import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.se
 import { clawbackTradePoints } from '../services/airdrop.service'
 import { finalizeUsdtTrade, usdtResumeDeadline } from '../services/trade.service'
 import { stepFromStatus } from '../services/settlementFlow'
+import { closeEpisode } from '../services/chatThread.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
@@ -2085,6 +2086,7 @@ export async function adminRoutes(app: FastifyInstance) {
       // disputeResumeStatus is cleared too — an admin ruling ends the trade, so the
       // parties can no longer advance the ladder themselves (disputeResume.ts).
       await tx.trade.update({ where: { id: dispute.tradeId }, data: { status: 'dispute_resolved', disputeResumeStatus: null } })
+      void closeEpisode({ market: 'usdt', tradeId: dispute.tradeId, outcome: 'dispute_resolved' })
       // Increment dispute win/loss counts for both parties
       await tx.tradeStats.upsert({
         where: { userId: winnerId },
