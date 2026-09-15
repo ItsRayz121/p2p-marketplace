@@ -1565,7 +1565,13 @@ model ChatThreadMessage {
   // specific thread. Never set for messages the viewer sent themselves.
   deliveredAt   DateTime?
   readAt        DateTime?
+  // Client-generated id for send-retry idempotency: a retried POST after a lost
+  // response (e.g. a dropped mobile connection) reuses the same clientId, so
+  // postThreadMessage can detect the duplicate and return the original message
+  // instead of creating a second one. Null for messages sent before this existed.
+  clientId      String?
 
+  @@unique([threadId, clientId])
   @@index([threadId, createdAt])
 }
 

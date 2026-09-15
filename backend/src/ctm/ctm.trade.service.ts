@@ -21,7 +21,7 @@ import {
   ladderStatus, advanceTo, claimRung, restoreAfterNoFaultClose,
   assertPartySettleable, settleDisputeOnCompletion,
 } from '../services/disputeResume'
-import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
+import { openEpisode, closeEpisode, reopenEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
@@ -867,9 +867,12 @@ export async function adminResolveDispute(adminId: string, tradeRef: string, dat
   }).catch(() => {})
 
   // A ruling ends the trade at `dispute_resolved` — close the inbox episode so it
-  // stops showing "in progress" forever. A dismissal reopens the trade instead
-  // (restored to its real rung above), so the episode correctly stays active.
-  if (data.winner !== 'dismissed') {
+  // stops showing "in progress" forever. A dismissal instead reopens the trade
+  // (restored to its real rung above); if an earlier auto-escalation had already
+  // closed the episode as 'disputed', undo that so the inbox reflects the resume.
+  if (data.winner === 'dismissed') {
+    void reopenEpisode({ market: 'ctm', tradeId: trade.id })
+  } else {
     void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'dispute_resolved' })
   }
 

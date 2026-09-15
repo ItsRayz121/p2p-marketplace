@@ -13,6 +13,8 @@ import {
 const postSchema = z.object({
   body: z.string().max(2000).optional().default(''),
   attachmentUrl: z.string().url().optional(),
+  // Client-generated key for send-retry idempotency (see postThreadMessage).
+  clientId: z.string().min(1).max(64).optional(),
 })
 
 const startSchema = z.object({ username: z.string().trim().min(1).max(30) })
@@ -47,11 +49,15 @@ export async function messagingRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { enabled: true, ...data } })
   })
 
-  // GET /api/v1/messages/:threadId — full thread (messages + episodes + stats)
+  // GET /api/v1/messages/:threadId — full thread (messages + episodes + stats).
+  // ?markRead=0 skips marking the counterparty's messages read (used for the
+  // frontend's background poll while the tab isn't actually visible) — delivery
+  // is unaffected, only the "seen by a human" read receipt.
   app.get('/messages/:threadId', { preHandler: [authenticate] }, async (req, reply) => {
     await assertEnabled()
     const { threadId } = req.params as { threadId: string }
-    const data = await getThread(req.user!.id, threadId)
+    const markRead = (req.query as { markRead?: string }).markRead !== '0'
+    const data = await getThread(req.user!.id, threadId, markRead)
     return reply.send({ success: true, data })
   })
 
@@ -61,7 +67,7 @@ export async function messagingRoutes(app: FastifyInstance) {
     const { threadId } = req.params as { threadId: string }
     const parsed = postSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl)
+    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId)
     return reply.code(201).send({ success: true, data: message })
   })
 

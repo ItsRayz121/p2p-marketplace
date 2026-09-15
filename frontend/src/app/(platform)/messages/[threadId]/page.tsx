@@ -120,9 +120,12 @@ export default function MessageThreadPage() {
     })
   }, [])
 
-  const load = useCallback(async () => {
+  // markRead defaults to true (initial load, explicit refreshes); the background
+  // poll passes it based on tab visibility so a message isn't shown as "Read"
+  // before anyone actually looked at the screen.
+  const load = useCallback(async (markRead = true) => {
     try {
-      setData(await messagingApi.getThread(threadId))
+      setData(await messagingApi.getThread(threadId, { markRead }))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load conversation')
     }
@@ -130,10 +133,20 @@ export default function MessageThreadPage() {
 
   useEffect(() => { if (user) void load() }, [user, load])
 
-  // Poll for new messages while the thread is open.
+  // Mark read the moment the tab actually becomes visible again — covers a poll
+  // tick landing while backgrounded (see below) never getting a follow-up read.
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') void load(true) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [load])
+
+  // Poll for new messages while the thread is open. Only marks read while the
+  // tab is actually visible — a backgrounded tab still fetches (so unread counts
+  // stay current) but doesn't falsely mark incoming messages as seen.
   useEffect(() => {
     if (!user) return
-    const id = setInterval(() => { void load() }, 15_000)
+    const id = setInterval(() => { void load(document.visibilityState === 'visible') }, 15_000)
     return () => clearInterval(id)
   }, [user, load])
 
@@ -183,7 +196,10 @@ export default function MessageThreadPage() {
   const attemptSend = useCallback(async (tempId: string, body: string, attachmentUrl?: string) => {
     for (let attempt = 0; ; attempt++) {
       try {
-        await messagingApi.postMessage(threadId, body, attachmentUrl)
+        // tempId doubles as the idempotency key: a retry after a lost response
+        // reuses it, so the server returns the original message instead of
+        // creating a duplicate.
+        await messagingApi.postMessage(threadId, body, attachmentUrl, tempId)
         setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId))
         await load()
         return

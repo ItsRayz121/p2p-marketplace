@@ -14,7 +14,7 @@ import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.se
 import { clawbackTradePoints } from '../services/airdrop.service'
 import { finalizeUsdtTrade, usdtResumeDeadline } from '../services/trade.service'
 import { stepFromStatus } from '../services/settlementFlow'
-import { closeEpisode } from '../services/chatThread.service'
+import { closeEpisode, reopenEpisode } from '../services/chatThread.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
@@ -2005,6 +2005,11 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
     await createAuditLog(req.user!.id, 'DISPUTE_CLOSED', 'Dispute', id, { note: parsed.data.note }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
+    // The trade resumed its real rung above — undo an episode that auto-escalation
+    // may have already closed as 'disputed', so the inbox stops showing "Disputed"
+    // for a trade that's actually back in progress.
+    void reopenEpisode({ market: 'usdt', tradeId: dispute.tradeId })
+
     // Closed without a winner = no fault assigned → return the maker's bond
     // (idempotent; no-op when bonds are off or none was held). Without this the
     // bond would stay locked forever on a no-winner close.
@@ -2086,7 +2091,6 @@ export async function adminRoutes(app: FastifyInstance) {
       // disputeResumeStatus is cleared too — an admin ruling ends the trade, so the
       // parties can no longer advance the ladder themselves (disputeResume.ts).
       await tx.trade.update({ where: { id: dispute.tradeId }, data: { status: 'dispute_resolved', disputeResumeStatus: null } })
-      void closeEpisode({ market: 'usdt', tradeId: dispute.tradeId, outcome: 'dispute_resolved' })
       // Increment dispute win/loss counts for both parties
       await tx.tradeStats.upsert({
         where: { userId: winnerId },
@@ -2100,6 +2104,11 @@ export async function adminRoutes(app: FastifyInstance) {
       })
       loserLossCount = loserStats.disputesLost
     })
+
+    // Only after the transaction has actually committed — closeEpisode posts a
+    // permanent "resolved" divider, which must never persist if the ruling above
+    // ends up rolled back.
+    void closeEpisode({ market: 'usdt', tradeId: dispute.tradeId, outcome: 'dispute_resolved' })
 
     await createAuditLog(req.user!.id, 'DISPUTE_RESOLVED', 'Dispute', id, {
       winner: parsed.data.winner,

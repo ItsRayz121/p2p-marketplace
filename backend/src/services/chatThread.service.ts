@@ -138,6 +138,25 @@ export async function closeEpisode(params: {
   }
 }
 
+/**
+ * Undo a 'disputed' episode closure when the dispute is DISMISSED and the trade
+ * hands back to its real in-progress rung — otherwise the inbox would show the
+ * thread as permanently "Disputed" even though the trade resumed normally.
+ * Only reopens from 'disputed'; never touches a genuinely terminal outcome.
+ */
+export async function reopenEpisode(params: { market: Market; tradeId: string }): Promise<void> {
+  try {
+    const episode = await db.tradeEpisode.findUnique({
+      where: { market_tradeId: { market: params.market, tradeId: params.tradeId } },
+      select: { id: true, outcome: true },
+    })
+    if (!episode || episode.outcome !== 'disputed') return
+    await db.tradeEpisode.update({ where: { id: episode.id }, data: { outcome: 'active', endedAt: null } })
+  } catch (err) {
+    logger.warn({ err, tradeId: params.tradeId }, 'reopenEpisode failed (non-fatal)')
+  }
+}
+
 // ─── User-facing reads/writes (routes) ───────────────────────────────────────
 
 function assertParticipant(thread: { userAId: string; userBId: string }, userId: string): void {
@@ -218,8 +237,14 @@ export async function getInboxSummary(userId: string): Promise<{ unreadThreads: 
   return { unreadThreads, activeTrades }
 }
 
-/** Full thread view: messages + episode dividers + relationship stats. Marks read. */
-export async function getThread(userId: string, threadId: string) {
+/**
+ * Full thread view: messages + episode dividers + relationship stats.
+ * `markRead` (default true) controls the per-message readAt receipt only —
+ * pass false for a background poll while the tab isn't actually visible, so a
+ * "Read" tick isn't shown for a message nobody has actually looked at yet.
+ * Delivery (deliveredAt) and the thread-level unread flag are unaffected.
+ */
+export async function getThread(userId: string, threadId: string, markRead = true) {
   const thread = await db.chatThread.findUnique({
     where: { id: threadId },
     select: {
@@ -247,11 +272,20 @@ export async function getThread(userId: string, threadId: string) {
       where: { threadId, senderId: { not: userId }, isSystem: false, deliveredAt: null },
       data: { deliveredAt: now },
     }),
-    db.chatThreadMessage.updateMany({
+    ...(markRead ? [db.chatThreadMessage.updateMany({
       where: { threadId, senderId: { not: userId }, isSystem: false, readAt: null },
       data: { readAt: now },
-    }),
+    })] : []),
   ]).catch(() => {})
+
+  // The messages above were fetched before the updates just ran — patch the
+  // in-memory copy so this response already reflects delivered/read instead of
+  // looking stale until the next poll.
+  for (const m of thread.messages) {
+    if (m.senderId === userId || m.isSystem) continue
+    if (!m.deliveredAt) m.deliveredAt = now
+    if (markRead && !m.readAt) m.readAt = now
+  }
 
   const stats = { completed: 0, cancelled: 0, expired: 0, disputed: 0, active: 0, total: thread.episodes.length }
   const s = stats as Record<string, number>
@@ -342,8 +376,15 @@ export async function getThread(userId: string, threadId: string) {
   }
 }
 
-/** Post a message to a thread. Sender must be a participant. Bumps the other's unread. */
-export async function postThreadMessage(userId: string, threadId: string, body: string, attachmentUrl?: string) {
+const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true } as const
+
+/**
+ * Post a message to a thread. Sender must be a participant. Bumps the other's
+ * unread. `clientId` (optional) makes retried sends idempotent: the frontend's
+ * auto-retry-on-failure reuses the same clientId, so a retry after a lost
+ * response returns the original message instead of creating a duplicate.
+ */
+export async function postThreadMessage(userId: string, threadId: string, body: string, attachmentUrl?: string, clientId?: string) {
   const text = body.trim()
   if (!text && !attachmentUrl) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
@@ -357,19 +398,35 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
   }
 
+  if (clientId) {
+    const existing = await db.chatThreadMessage.findUnique({ where: { threadId_clientId: { threadId, clientId } }, select: MESSAGE_SELECT })
+    if (existing) return existing
+  }
+
   const isA = thread.userAId === userId
-  const [message] = await db.$transaction([
-    db.chatThreadMessage.create({
-      data: { threadId, senderId: userId, body: text, ...(attachmentUrl ? { attachmentUrl } : {}) },
-      select: { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true },
-    }),
-    db.chatThread.update({
-      where: { id: threadId },
-      // Bump the OTHER participant's unread flag.
-      data: { lastMessageAt: new Date(), ...(isA ? { unreadByB: true } : { unreadByA: true }) },
-    }),
-  ])
-  return message
+  try {
+    const [message] = await db.$transaction([
+      db.chatThreadMessage.create({
+        data: { threadId, senderId: userId, body: text, clientId: clientId ?? null, ...(attachmentUrl ? { attachmentUrl } : {}) },
+        select: MESSAGE_SELECT,
+      }),
+      db.chatThread.update({
+        where: { id: threadId },
+        // Bump the OTHER participant's unread flag.
+        data: { lastMessageAt: new Date(), ...(isA ? { unreadByB: true } : { unreadByA: true }) },
+      }),
+    ])
+    return message
+  } catch (err) {
+    // Two near-simultaneous retries both passed the pre-check above — the loser
+    // of the race hits the unique constraint; return the winner's row instead of
+    // failing (still idempotent, just resolved after the fact).
+    if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const existing = await db.chatThreadMessage.findUnique({ where: { threadId_clientId: { threadId, clientId } }, select: MESSAGE_SELECT })
+      if (existing) return existing
+    }
+    throw err
+  }
 }
 
 // Retraction is only allowed within this window of sending (matches the support

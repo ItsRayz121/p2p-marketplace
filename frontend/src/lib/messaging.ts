@@ -104,11 +104,16 @@ export interface ThreadView {
 export const messagingApi = {
   getSummary: () => apiRequest<InboxSummary>('/messages/summary'),
   getInbox: () => apiRequest<InboxItem[]>('/messages'),
-  getThread: (threadId: string) => apiRequest<ThreadView>(`/messages/${threadId}`),
-  postMessage: (threadId: string, body: string, attachmentUrl?: string) =>
+  /** `markRead: false` skips marking the counterparty's messages read — used for
+   *  a background poll while the tab isn't actually visible to the user. */
+  getThread: (threadId: string, opts?: { markRead?: boolean }) =>
+    apiRequest<ThreadView>(`/messages/${threadId}${opts?.markRead === false ? '?markRead=0' : ''}`),
+  /** `clientId` makes a retried send idempotent — reuse the same id across retries
+   *  of the same message so a lost-response retry can't create a duplicate. */
+  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string) =>
     apiRequest<ThreadMessage>(`/messages/${threadId}`, {
       method: 'POST',
-      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}) }),
+      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}), ...(clientId ? { clientId } : {}) }),
     }),
   deleteMessage: (threadId: string, messageId: string) =>
     apiRequest<unknown>(`/messages/${threadId}/${messageId}/delete`, { method: 'POST' }),
