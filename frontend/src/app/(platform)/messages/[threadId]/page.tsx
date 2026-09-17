@@ -17,7 +17,9 @@ import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Check, CheckCheck, AlertCircle } from 'lucide-react'
+import { toast } from '@/lib/toast'
+import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Check, CheckCheck, AlertCircle } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -81,6 +83,41 @@ export default function MessageThreadPage() {
       alert(e instanceof Error ? e.message : 'Failed to update block status')
     } finally {
       setBlockBusy(false)
+    }
+  }
+
+  /** Share the viewer's OWN username so someone else can start a chat with them —
+   *  same universal-link pattern as the gas/listing share buttons: Telegram's
+   *  native share sheet with the `t.me` startapp deep link inside the Mini App,
+   *  the Web Share sheet (falling back to clipboard) everywhere else. */
+  async function shareMyUsername() {
+    setMenuOpen(false)
+    if (!user?.username) return
+    hapticSelection()
+    const { web, telegram } = buildProfileShareLink(user.username, user.referralCode)
+    const title = 'Chat with me on RupChain'
+    const text = 'Message me on RupChain — tap to start a chat.'
+
+    if (isTelegramMiniApp()) {
+      const shareUrl = telegram ?? web
+      openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(shareUrl)}&text=${encodeURIComponent(text)}`)
+      return
+    }
+
+    const nav = typeof navigator !== 'undefined' ? navigator : undefined
+    if (nav?.share) {
+      try {
+        await nav.share({ title, text, url: web })
+        return
+      } catch {
+        // user dismissed, or share failed — fall through to copy
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(web)
+      toast.success('Link copied', 'Your chat link is on your clipboard')
+    } catch {
+      toast.info('Share this link', web)
     }
   }
 
@@ -331,8 +368,14 @@ export default function MessageThreadPage() {
         >
           <MoreVertical className="w-5 h-5 text-text-muted" />
         </button>
-        <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)}>
+        <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)} align="end" width={224}>
           <div className="bg-surface border border-border rounded-lg shadow-card py-1">
+            <button
+              onClick={() => void shareMyUsername()}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+            >
+              <Share2 className="w-4 h-4" /> Share my username
+            </button>
             <button
               onClick={toggleBlock}
               disabled={blockBusy}

@@ -163,6 +163,8 @@ export function getStartParam(): string {
  *   • Gas fees — `G_<chainSlug>[_<tokenSymbol>]`   → /gas pre-selected to that
  *     chain (and token). Covers every chain/token we add later with no code
  *     change — the slug/symbol are resolved against the live list on /gas.
+ *   • Profile DM — `M_<username>`                  → /m/<username>, which
+ *     starts (or resumes) a direct conversation with that user.
  * Referral codes (`ref_…`) are handled by the bot, not here.
  */
 export function parseStartParamToPath(param: string): string | null {
@@ -187,6 +189,11 @@ export function parseStartParamToPath(param: string): string | null {
     if (token) qs.set('token', token)
     return `/gas?${qs.toString()}`
   }
+
+  // Profile / DM deep link — `M_<username>` (+ optional `_r_<code>`). Usernames
+  // are `[A-Za-z0-9_]`, max 30 chars (see auth.routes.ts).
+  const m = param.match(/^M_([A-Za-z0-9_]{1,30})(?:_r_[A-Za-z0-9_-]+)?$/)
+  if (m) return `/m/${m[1]}`
 
   return null
 }
@@ -267,6 +274,40 @@ export function buildGasShareLinks(
   const safeToken = token.replace(/[^a-z0-9]/g, '')
   let startParam = `G_${safeChain}`
   if (safeToken && startParam.length + 1 + safeToken.length <= 64) startParam += `_${safeToken}`
+  const safeRef = refCode && /^[A-Za-z0-9_-]{1,64}$/.test(refCode) ? refCode : ''
+  if (safeRef && startParam.length + 3 + safeRef.length <= 64) startParam += `_r_${safeRef}`
+
+  return {
+    web,
+    telegram: bot ? `https://t.me/${bot}?startapp=${startParam}` : null,
+  }
+}
+
+/**
+ * Build shareable links that let anyone start (or resume) a direct conversation
+ * with `username` — mirrors buildListingShareLinks/buildGasShareLinks:
+ *   • web      — `<origin>/m/<username>`, a route that starts the thread and
+ *     drops the opener straight into it (signing in first if needed).
+ *   • telegram — `t.me/<bot>?startapp=M_<username>[_r_<ref>]`; the Mini App
+ *     resolves to the same `/m/<username>` path (parseStartParamToPath). null
+ *     when NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is unset.
+ * The sharer's own referral code rides along so this doubles as a referral link
+ * for a brand-new recipient (same convention as the other share builders).
+ */
+export function buildProfileShareLink(
+  username: string,
+  refCode?: string | null,
+): { web: string; telegram: string | null } {
+  const bot = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME?.replace(/^@/, '')
+  const origin =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')
+
+  const ref = refCode ? `?ref=${encodeURIComponent(refCode)}` : ''
+  const web = `${origin}/m/${encodeURIComponent(username)}${ref}`
+
+  let startParam = `M_${username}`
   const safeRef = refCode && /^[A-Za-z0-9_-]{1,64}$/.test(refCode) ? refCode : ''
   if (safeRef && startParam.length + 3 + safeRef.length <= 64) startParam += `_r_${safeRef}`
 
