@@ -190,9 +190,15 @@ export function parseStartParamToPath(param: string): string | null {
     return `/gas?${qs.toString()}`
   }
 
-  // Profile / DM deep link — `M_<username>` (+ optional `_r_<code>`). Usernames
-  // are `[A-Za-z0-9_]`, max 30 chars (see auth.routes.ts).
-  const m = param.match(/^M_([A-Za-z0-9_]{1,30})(?:_r_[A-Za-z0-9_-]+)?$/)
+  // Profile / DM deep link — `M_<username>` (+ optional `-r-<code>`). Usernames
+  // are `[A-Za-z0-9_]`, max 30 chars (see auth.routes.ts) — note NO hyphen,
+  // unlike the other grammars above. That's why the referral suffix here is
+  // `-r-` rather than `_r_`: since a username can itself contain an underscore,
+  // an underscore-based separator would be ambiguous (the greedy username group
+  // would swallow "_r_<code>" whole rather than stopping before it). A hyphen
+  // can't appear in a username at all, so the username group always stops at
+  // the first one with no backtracking required.
+  const m = param.match(/^M_([A-Za-z0-9_]{1,30})(?:-r-[A-Za-z0-9_-]+)?$/)
   if (m) return `/m/${m[1]}`
 
   return null
@@ -288,7 +294,7 @@ export function buildGasShareLinks(
  * with `username` — mirrors buildListingShareLinks/buildGasShareLinks:
  *   • web      — `<origin>/m/<username>`, a route that starts the thread and
  *     drops the opener straight into it (signing in first if needed).
- *   • telegram — `t.me/<bot>?startapp=M_<username>[_r_<ref>]`; the Mini App
+ *   • telegram — `t.me/<bot>?startapp=M_<username>[-r-<ref>]`; the Mini App
  *     resolves to the same `/m/<username>` path (parseStartParamToPath). null
  *     when NEXT_PUBLIC_TELEGRAM_BOT_USERNAME is unset.
  * The sharer's own referral code rides along so this doubles as a referral link
@@ -309,7 +315,10 @@ export function buildProfileShareLink(
 
   let startParam = `M_${username}`
   const safeRef = refCode && /^[A-Za-z0-9_-]{1,64}$/.test(refCode) ? refCode : ''
-  if (safeRef && startParam.length + 3 + safeRef.length <= 64) startParam += `_r_${safeRef}`
+  // `-r-` (not `_r_`) — see parseStartParamToPath: usernames can contain an
+  // underscore but never a hyphen, so only a hyphen-based separator is
+  // unambiguous here.
+  if (safeRef && startParam.length + 3 + safeRef.length <= 64) startParam += `-r-${safeRef}`
 
   return {
     web,

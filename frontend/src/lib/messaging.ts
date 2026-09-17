@@ -40,6 +40,10 @@ export interface ThreadMessage {
   createdAt: string
   /** Delivery/read tick state — only set for messages the viewer themselves sent. */
   status?: 'sent' | 'delivered' | 'read' | null
+  /** Echoes the sender's clientId (see messagingApi.postMessage) — lets a pending
+   *  bubble reconcile against this message arriving via a concurrent poll before
+   *  the original send's own response comes back. Null for folded trade-room lines. */
+  clientId?: string | null
 }
 
 export interface TradeEpisode {

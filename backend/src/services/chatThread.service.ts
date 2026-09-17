@@ -263,7 +263,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -329,16 +329,16 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null }
   // Prefix trade-message ids so they can never collide with thread-message ids.
   // Only the thread's own messages support soft delete + delivery/read receipts;
   // folded trade-room lines never carry a deletedAt and have no receipt status.
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt) })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null, clientId: null })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null, clientId: null })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     // Redact retracted messages to a tombstone in the inbox view (the row itself
     // is retained in the DB for dispute review).
@@ -433,7 +433,10 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     // near-simultaneous retries) hits the unique constraint — return the
     // already-created row instead of failing or duplicating it.
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      const existing = await db.chatThreadMessage.findUnique({ where: { threadId_clientId: { threadId, clientId } }, select: MESSAGE_SELECT })
+      const existing = await db.chatThreadMessage.findUnique({
+        where: { threadId_senderId_clientId: { threadId, senderId: userId, clientId } },
+        select: MESSAGE_SELECT,
+      })
       if (existing) return existing
     }
     throw err

@@ -13,7 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from '../services/adminNotification.service'
-import { TRUSTPILOT_CHAT_NUDGE } from '../lib/tradeMessages'
+import { TRUSTPILOT_CHAT_NUDGE, TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock, ctmResumeDeadline, ctmStepFromStatus } from '../services/ctmSettlementFlow'
@@ -676,7 +676,7 @@ async function finalizeCtmTrade(tradeRef: string) {
     await postCtmSystemMessage(trade.id, buyerId, streakMsg)
   }
 
-  await postCtmSystemMessage(trade.id, buyerId, TRUSTPILOT_CHAT_NUDGE)
+  if (TRUSTPILOT_CHAT_NUDGE_ENABLED) await postCtmSystemMessage(trade.id, buyerId, TRUSTPILOT_CHAT_NUDGE)
 
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })

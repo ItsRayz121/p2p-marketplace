@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { ApiError } from '@/lib/api'
 import {
   messagingApi, episodeTradeHref, episodeProgress, OUTCOME_LABEL,
   type ThreadView, type ThreadMessage, type TradeEpisode,
@@ -201,10 +202,17 @@ export default function MessageThreadPage() {
   // still-unconfirmed local messages appended at the end.
   const timeline = useMemo<TimelineItem[]>(() => {
     if (!data) return []
+    // A pending bubble's own POST can still be in flight when a concurrent poll
+    // (or a visibilitychange-triggered load) already fetched the SAME message —
+    // the server echoes clientId back, so drop the local placeholder the moment
+    // it shows up server-side instead of waiting on the original request to
+    // resolve. Without this the message briefly renders twice.
+    const confirmedClientIds = new Set(data.messages.map((m) => m.clientId).filter((c): c is string => !!c))
+    const stillPending = pendingMessages.filter((m) => !m.tempId || !confirmedClientIds.has(m.tempId))
     const items: TimelineItem[] = [
       ...data.messages.map((m) => ({ kind: 'message' as const, at: new Date(m.createdAt).getTime(), msg: m })),
       ...data.episodes.map((e) => ({ kind: 'episode' as const, at: new Date(e.startedAt).getTime(), ep: e })),
-      ...pendingMessages.map((m) => ({ kind: 'message' as const, at: new Date(m.createdAt).getTime(), msg: m })),
+      ...stillPending.map((m) => ({ kind: 'message' as const, at: new Date(m.createdAt).getTime(), msg: m })),
     ]
     return items.sort((a, b) => a.at - b.at)
   }, [data, pendingMessages])
@@ -262,8 +270,14 @@ export default function MessageThreadPage() {
         setPendingMessages((prev) => prev.filter((m) => m.tempId !== tempId))
         void load()
         return
-      } catch {
-        if (attempt >= SEND_RETRY_DELAYS_MS.length) {
+      } catch (err) {
+        // A 4xx (blocked, validation, thread not found, …) is never going to
+        // succeed on retry — fail it immediately instead of burning two more
+        // round trips (and several seconds) before surfacing the same error.
+        // Network failures and 5xx (status 0 / >=500) are the transient kind
+        // retries are actually for.
+        const permanent = err instanceof ApiError && err.status >= 400 && err.status < 500
+        if (permanent || attempt >= SEND_RETRY_DELAYS_MS.length) {
           setPendingMessages((prev) => prev.map((m) => (m.tempId === tempId ? { ...m, pending: false, failed: true } : m)))
           return
         }

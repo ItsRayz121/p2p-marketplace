@@ -70,7 +70,7 @@ export function AnchoredMenu({
     const r = el.getBoundingClientRect()
     const spaceBelow = window.innerHeight - r.bottom
     const spaceAbove = r.top
-    // Prefer opening downward; flip up only when there's clearly more room below.
+    // Prefer opening downward; flip up only when there's clearly more room above.
     const openUp = spaceBelow < Math.min(desiredMaxH, 200) && spaceAbove > spaceBelow
     const maxH = Math.max(120, Math.min(desiredMaxH, (openUp ? spaceAbove : spaceBelow) - gap - 8))
     const w = width ?? r.width

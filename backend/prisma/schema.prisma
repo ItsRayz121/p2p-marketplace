@@ -1571,7 +1571,10 @@ model ChatThreadMessage {
   // instead of creating a second one. Null for messages sent before this existed.
   clientId      String?
 
-  @@unique([threadId, clientId])
+  // Scoped by senderId too (not just threadId+clientId) so a clientId collision
+  // between the thread's TWO DIFFERENT participants can never make one sender's
+  // retry return the other participant's message.
+  @@unique([threadId, senderId, clientId])
   @@index([threadId, createdAt])
 }
 
