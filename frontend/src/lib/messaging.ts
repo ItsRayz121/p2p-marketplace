@@ -126,6 +126,8 @@ export const messagingApi = {
   /** Get-or-create a thread with a user by username; returns its threadId. */
   start: (username: string) =>
     apiRequest<{ threadId: string }>('/messages/start', { method: 'POST', body: JSON.stringify({ username }) }),
+  /** Get-or-create the viewer's own "My Notes" private-notes thread. */
+  self: () => apiRequest<{ threadId: string }>('/messages/self', { method: 'POST' }),
   block: (threadId: string) => apiRequest<{ blocked: boolean }>(`/messages/${threadId}/block`, { method: 'POST' }),
   unblock: (threadId: string) => apiRequest<{ blocked: boolean }>(`/messages/${threadId}/unblock`, { method: 'POST' }),
   report: (threadId: string, reason: string) =>

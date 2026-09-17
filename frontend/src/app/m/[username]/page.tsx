@@ -22,11 +22,11 @@ export default function StartChatByUsernamePage() {
       router.replace(`/login?next=${encodeURIComponent(`/m/${username}`)}`)
       return
     }
-    if (user.username.toLowerCase() === username.toLowerCase()) {
-      setError("That's your own RupChain username — share it with someone else to start a chat.")
-      return
-    }
-    messagingApi.start(username)
+    // Your own share link — drop into My Notes instead of a dead-end error,
+    // since testing your own share button used to be the one way to hit this.
+    const isSelf = user.username.toLowerCase() === username.toLowerCase()
+    const request = isSelf ? messagingApi.self() : messagingApi.start(username)
+    request
       .then(({ threadId }) => router.replace(`/messages/${threadId}`))
       .catch((e) => setError(e instanceof Error ? e.message : 'Could not start that conversation'))
   }, [isLoading, user, username, router])

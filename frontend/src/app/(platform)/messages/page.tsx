@@ -9,7 +9,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtDateTime } from '@/lib/fmt'
-import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck } from 'lucide-react'
+import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck, FileText } from 'lucide-react'
 
 /** WhatsApp-style delivery tick for the inbox preview, shown only when the
  *  viewer sent the last message in that thread. */
@@ -32,6 +32,7 @@ export default function MessagesInboxPage() {
   const [results, setResults] = useState<ChatUser[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [starting, setStarting] = useState<string | null>(null)
+  const [openingNotes, setOpeningNotes] = useState(false)
 
   useEffect(() => {
     const q = query.trim()
@@ -54,6 +55,18 @@ export default function MessagesInboxPage() {
     } catch (e) {
       alert(e instanceof Error ? e.message : 'Could not start that conversation')
       setStarting(null)
+    }
+  }
+
+  async function openMyNotes() {
+    if (openingNotes) return
+    setOpeningNotes(true)
+    try {
+      const { threadId } = await messagingApi.self()
+      router.push(`/messages/${threadId}`)
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not open My Notes')
+      setOpeningNotes(false)
     }
   }
 
@@ -145,6 +158,28 @@ export default function MessagesInboxPage() {
           <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
         </div>
       </Link>
+
+      {/* My Notes — a private, self-only thread (Saved Messages style) for jotting
+          things down or holding onto text. Shows your own username since this is
+          also the "who am I" surface people were reaching for in the share-username
+          menu. */}
+      <button
+        onClick={() => void openMyNotes()}
+        disabled={openingNotes}
+        className="w-full flex items-center gap-3 p-3 mb-4 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors text-left disabled:opacity-60"
+      >
+        <UserAvatar name={user?.fullName || user?.username || 'You'} avatarUrl={user?.avatarUrl ?? null} size="md" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="font-semibold text-text-primary">My Notes</span>
+            <FileText className="w-3.5 h-3.5 text-text-muted" />
+          </div>
+          <p className="text-xs text-text-muted truncate mt-0.5">
+            {user?.username ? `@${user.username} · private notes only you can see` : 'Private notes only you can see'}
+          </p>
+        </div>
+        {openingNotes && <span className="text-xs font-medium text-text-muted flex-shrink-0">Opening…</span>}
+      </button>
 
       {items.length === 0 ? (
         <EmptyState

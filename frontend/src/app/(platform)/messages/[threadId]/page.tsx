@@ -342,7 +342,11 @@ export default function MessageThreadPage() {
   if (error) return <ErrorState description={error} onRetry={load} />
   if (!data) return <LoadingState />
 
-  const name = data.other.fullName || data.other.username || 'Trader'
+  // The self-notes thread ("My Notes" — see getOrCreateSelfThread on the backend)
+  // has the viewer as its own "other" participant. Block/report don't apply to
+  // yourself, so the header menu is suppressed entirely for it below.
+  const isSelf = data.other.id === user?.id
+  const name = isSelf ? 'My Notes' : data.other.fullName || data.other.username || 'Trader'
   const s = data.stats
   const blocked = data.blockedByMe || data.blockedMe
 
@@ -374,42 +378,48 @@ export default function MessageThreadPage() {
             </span>
           </div>
         </div>
-        <button
-          ref={menuAnchorRef}
-          onClick={() => setMenuOpen((v) => !v)}
-          aria-label="Conversation options"
-          className="p-1.5 -mr-1 rounded hover:bg-muted flex-shrink-0"
-        >
-          <MoreVertical className="w-5 h-5 text-text-muted" />
-        </button>
-        <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)} align="end" width={224}>
-          <div className="bg-surface border border-border rounded-lg shadow-card py-1">
+        {/* Block/report/share-username don't apply to your own notes — the menu
+            adds nothing there, so skip it entirely. */}
+        {!isSelf && (
+          <>
             <button
-              onClick={() => void shareMyUsername()}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+              ref={menuAnchorRef}
+              onClick={() => setMenuOpen((v) => !v)}
+              aria-label="Conversation options"
+              className="p-1.5 -mr-1 rounded hover:bg-muted flex-shrink-0"
             >
-              <Share2 className="w-4 h-4" /> Share my username
+              <MoreVertical className="w-5 h-5 text-text-muted" />
             </button>
-            <button
-              onClick={toggleBlock}
-              disabled={blockBusy}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt disabled:opacity-50"
-            >
-              {data.blockedByMe ? <ShieldCheck className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
-              {data.blockedByMe ? 'Unblock' : 'Block'} {name}
-            </button>
-            <button
-              onClick={() => { setMenuOpen(false); setReportOpen(true) }}
-              className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-danger hover:bg-surface-alt"
-            >
-              <Flag className="w-4 h-4" /> Report {name}
-            </button>
-          </div>
-        </AnchoredMenu>
+            <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)} align="end" width={224}>
+              <div className="bg-surface border border-border rounded-lg shadow-card py-1">
+                <button
+                  onClick={() => void shareMyUsername()}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+                >
+                  <Share2 className="w-4 h-4" /> Share my username
+                </button>
+                <button
+                  onClick={toggleBlock}
+                  disabled={blockBusy}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt disabled:opacity-50"
+                >
+                  {data.blockedByMe ? <ShieldCheck className="w-4 h-4" /> : <ShieldOff className="w-4 h-4" />}
+                  {data.blockedByMe ? 'Unblock' : 'Block'} {name}
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); setReportOpen(true) }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-danger hover:bg-surface-alt"
+                >
+                  <Flag className="w-4 h-4" /> Report {name}
+                </button>
+              </div>
+            </AnchoredMenu>
+          </>
+        )}
       </div>
 
       {/* Block state banner */}
-      {(data.blockedByMe || data.blockedMe) && (
+      {!isSelf && (data.blockedByMe || data.blockedMe) && (
         <div className="mx-4 mt-3 rounded-xl border border-border bg-muted/50 px-3 py-2 text-xs text-text-muted text-center">
           {data.blockedByMe
             ? <>You've blocked {name}. <button onClick={toggleBlock} disabled={blockBusy} className="text-primary font-medium hover:underline">Unblock</button> to message again.</>
@@ -592,7 +602,7 @@ export default function MessageThreadPage() {
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
             onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
-            placeholder={blocked ? "You can't message here" : 'Type a message…'}
+            placeholder={blocked ? "You can't message here" : isSelf ? 'Write a note to yourself…' : 'Type a message…'}
             maxLength={2000}
             disabled={blocked}
             className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary disabled:opacity-50"

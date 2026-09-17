@@ -29,6 +29,13 @@ function canonicalPair(x: string, y: string): { userAId: string; userBId: string
   return x < y ? { userAId: x, userBId: y } : { userAId: y, userBId: x }
 }
 
+/** Prisma `where` fragment excluding the caller's self-notes thread (userAId === userBId
+ *  is otherwise impossible — see getOrCreateSelfThread). Shared by getInbox and
+ *  getInboxSummary so the two queries can't drift on what counts as a "real" thread. */
+function excludeSelfThread(userId: string) {
+  return { NOT: { userAId: userId, userBId: userId } }
+}
+
 /** Get or create the thread for a pair. Idempotent under concurrency (upsert). */
 async function getOrCreateThread(x: string, y: string): Promise<{ id: string; userAId: string; userBId: string }> {
   const { userAId, userBId } = canonicalPair(x, y)
@@ -189,7 +196,11 @@ async function isBlockedEitherWay(aId: string, bId: string): Promise<boolean> {
 /** Inbox: the user's threads, newest activity first, with unread + active-trade counts. */
 export async function getInbox(userId: string) {
   const threads = await db.chatThread.findMany({
-    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    // Exclude the self-notes thread at the query level, not just after fetching —
+    // it's surfaced separately as the pinned "My Notes" entry. Filtering post-take
+    // instead of here would let it silently occupy one of the 100 slots below and
+    // push out the 100th real conversation for anyone with that many threads.
+    where: { OR: [{ userAId: userId }, { userBId: userId }], ...excludeSelfThread(userId) },
     orderBy: { lastMessageAt: 'desc' },
     take: 100,
     select: {
@@ -236,7 +247,8 @@ export async function getInbox(userId: string) {
 /** Total active-trade episodes across all the user's threads (dropdown badge). */
 export async function getInboxSummary(userId: string): Promise<{ unreadThreads: number; activeTrades: number }> {
   const threads = await db.chatThread.findMany({
-    where: { OR: [{ userAId: userId }, { userBId: userId }] },
+    // Excludes the self-notes thread — see getInbox above.
+    where: { OR: [{ userAId: userId }, { userBId: userId }], ...excludeSelfThread(userId) },
     select: { userAId: true, unreadByA: true, unreadByB: true, episodes: { select: { outcome: true } } },
   })
   let unreadThreads = 0
@@ -507,6 +519,19 @@ export async function searchUsers(userId: string, rawQuery: string) {
 }
 
 /**
+ * Get-or-create the viewer's own private-notes thread ("My Notes" — a
+ * Saved-Messages-style scratchpad only they can see). A ChatThread with
+ * userAId === userBId is otherwise never created — search and startThread both
+ * refuse a self-target — so this is the one deliberate path into it, reached
+ * via the dedicated "My Notes" entry in the inbox rather than by typing your
+ * own username.
+ */
+export async function getOrCreateSelfThread(userId: string): Promise<{ threadId: string }> {
+  const thread = await getOrCreateThread(userId, userId)
+  return { threadId: thread.id }
+}
+
+/**
  * Start (or resume) a conversation with any user by username — no shared trade
  * required. This is the intentional cold-DM path search enables; BlockedUser
  * is what lets either side shut it down afterward.
@@ -530,6 +555,11 @@ export async function blockThreadUser(userId: string, threadId: string): Promise
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { userAId: true, userBId: true } })
   if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
   assertParticipant(thread, userId)
+  // The self-notes thread has no "other" side — the frontend never shows a block
+  // control for it, but refuse it here too so a direct API call can't create a
+  // self-block that then locks the user out of their own notes (postThreadMessage
+  // refuses to send once isBlockedEitherWay matches, and there is no UI to undo it).
+  if (thread.userAId === thread.userBId) throw new AppError('VALIDATION_ERROR', "You can't block yourself", 400)
   const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
   await db.blockedUser.upsert({
     where: { blockerId_blockedId: { blockerId: userId, blockedId: otherId } },

@@ -7,7 +7,7 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { createAdminNotif } from '../services/adminNotification.service'
 import {
   getInbox, getInboxSummary, getThread, postThreadMessage, deleteThreadMessage,
-  searchUsers, startThread, blockThreadUser, unblockThreadUser,
+  searchUsers, startThread, getOrCreateSelfThread, blockThreadUser, unblockThreadUser,
 } from '../services/chatThread.service'
 
 const postSchema = z.object({
@@ -96,6 +96,15 @@ export async function messagingRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data })
   })
 
+  // POST /api/v1/messages/self — get-or-create the viewer's own "My Notes"
+  // private-notes thread. The only path into a self-thread (search and
+  // /messages/start both refuse a self-target).
+  app.post('/messages/self', { preHandler: [authenticate] }, async (req, reply) => {
+    await assertEnabled()
+    const data = await getOrCreateSelfThread(req.user!.id)
+    return reply.send({ success: true, data })
+  })
+
   // POST /api/v1/messages/:threadId/block — block the other participant
   app.post('/messages/:threadId/block', { preHandler: [authenticate] }, async (req, reply) => {
     await assertEnabled()
@@ -133,6 +142,9 @@ export async function messagingRoutes(app: FastifyInstance) {
     if (thread.userAId !== userId && thread.userBId !== userId) {
       throw new AppError('FORBIDDEN', 'Not a participant of this conversation', 403)
     }
+    // The self-notes thread has no "other" side to report — the frontend never
+    // shows a report control for it (see isSelf in the thread page).
+    if (thread.userAId === thread.userBId) throw new AppError('VALIDATION_ERROR', "You can't report yourself", 400)
     const reportedUsername = thread.userAId === userId ? thread.userB.username : thread.userA.username
 
     let conversation = await db.supportConversation.findFirst({ where: { userId }, orderBy: { createdAt: 'desc' } })
