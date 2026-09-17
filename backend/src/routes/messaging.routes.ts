@@ -15,6 +15,9 @@ const postSchema = z.object({
   attachmentUrl: z.string().url().optional(),
   // Client-generated key for send-retry idempotency (see postThreadMessage).
   clientId: z.string().min(1).max(64).optional(),
+  // One-tap "share my listing" — both present or both absent.
+  sharedAdMarket: z.enum(['usdt', 'ctm']).optional(),
+  sharedAdId: z.string().min(1).max(64).optional(),
 })
 
 const startSchema = z.object({ username: z.string().trim().min(1).max(30) })
@@ -67,7 +70,10 @@ export async function messagingRoutes(app: FastifyInstance) {
     const { threadId } = req.params as { threadId: string }
     const parsed = postSchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId)
+    const sharedAd = parsed.data.sharedAdMarket && parsed.data.sharedAdId
+      ? { market: parsed.data.sharedAdMarket, id: parsed.data.sharedAdId }
+      : undefined
+    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId, sharedAd)
     return reply.code(201).send({ success: true, data: message })
   })
 

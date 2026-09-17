@@ -6,11 +6,12 @@ import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api'
 import {
   messagingApi, episodeTradeHref, episodeProgress, OUTCOME_LABEL,
-  type ThreadView, type ThreadMessage, type TradeEpisode,
+  type ThreadView, type ThreadMessage, type TradeEpisode, type SharedAdPreview,
 } from '@/lib/messaging'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Button } from '@/components/ui/Button'
 import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 import { Modal } from '@/components/ui/Modal'
@@ -21,7 +22,8 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2 } from 'lucide-react'
+import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2 } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -31,6 +33,36 @@ type DisplayMessage = ThreadMessage & { pending?: boolean; failed?: boolean; tem
 type TimelineItem =
   | { kind: 'message'; at: number; msg: DisplayMessage }
   | { kind: 'episode'; at: number; ep: TradeEpisode }
+
+/** A one-tap-shared listing rendered inline in a chat bubble — tap it to go
+ *  straight to the live listing (USDT ad or CTM listing). */
+function SharedAdCard({ ad, mine }: { ad: SharedAdPreview; mine: boolean }) {
+  if (ad.deleted) {
+    return (
+      <div className={`rounded-lg border px-3 py-2 text-xs italic ${mine ? 'border-white/30 text-white/70' : 'border-border text-text-muted'}`}>
+        This listing is no longer available.
+      </div>
+    )
+  }
+  const href = ad.market === 'usdt' ? `/marketplace/listings/${ad.id}` : `/ctm/listings/${ad.id}`
+  const isSell = ad.side === 'sell'
+  return (
+    <Link
+      href={href}
+      className={`flex items-center gap-2 rounded-lg border p-2 transition-colors ${mine ? 'border-white/25 hover:bg-white/10' : 'border-border hover:bg-surface-alt'}`}
+    >
+      <EntityLogo type="token" slug={ad.symbol ?? '?'} size="sm" logoUrl={ad.logoUrl} />
+      <div className="min-w-0 flex-1">
+        <p className={`text-xs font-semibold truncate ${mine ? 'text-white' : 'text-text-primary'}`}>{ad.name} ({ad.symbol})</p>
+        <p className={`text-[11px] ${mine ? 'text-white/70' : 'text-text-muted'}`}>
+          {isSell ? 'Selling' : 'Buying'} · PKR {ad.price ? Number(ad.price).toLocaleString() : '—'}
+          {ad.status && ad.status !== 'active' ? ' · Inactive' : ''}
+        </p>
+      </div>
+      <ExternalLink className={`w-3.5 h-3.5 flex-shrink-0 ${mine ? 'text-white/70' : 'text-text-muted'}`} />
+    </Link>
+  )
+}
 
 const OUTCOME_ICON: Record<TradeEpisode['outcome'], React.ElementType> = {
   active: Clock, completed: CheckCircle2, cancelled: XCircle, expired: Clock, disputed: AlertTriangle, dispute_resolved: CheckCircle2,
@@ -63,6 +95,24 @@ export default function MessageThreadPage() {
   const [reportReason, setReportReason] = useState('')
   const [reportBusy, setReportBusy] = useState(false)
   const [reportSent, setReportSent] = useState(false)
+
+  // One-tap "share my listing" picker.
+  const [shareAdOpen, setShareAdOpen] = useState(false)
+  const [sharingAd, setSharingAd] = useState(false)
+
+  async function sendSharedAd(item: { market: 'usdt' | 'ctm'; id: string }) {
+    if (sharingAd) return
+    setSharingAd(true)
+    try {
+      await messagingApi.postMessage(threadId, '', undefined, undefined, item)
+      setShareAdOpen(false)
+      await load()
+    } catch (e) {
+      toast.error('Could not share listing', e instanceof Error ? e.message : 'Please try again')
+    } finally {
+      setSharingAd(false)
+    }
+  }
 
   async function toggleBlock() {
     if (!data || blockBusy) return
@@ -552,6 +602,7 @@ export default function MessageThreadPage() {
                     <img src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                   </a>
                 )}
+                {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} mine={mine} /></div>}
                 {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <div className={`flex items-center gap-1 mt-0.5 ${mine ? 'justify-end' : ''}`}>
                   {m.failed && <span className="text-[10px] text-red-200">Tap to retry ·</span>}
@@ -605,6 +656,16 @@ export default function MessageThreadPage() {
           >
             <ImagePlus className="w-5 h-5" />
           </button>
+          <button
+            type="button"
+            onClick={() => setShareAdOpen(true)}
+            disabled={blocked}
+            aria-label="Share one of my listings"
+            title="Share a listing"
+            className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <Tag className="w-5 h-5" />
+          </button>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -620,6 +681,13 @@ export default function MessageThreadPage() {
           </Button>
         </div>
       </div>
+
+      <ShareAdPicker
+        isOpen={shareAdOpen}
+        onClose={() => setShareAdOpen(false)}
+        onSelect={(item) => void sendSharedAd(item)}
+        sharing={sharingAd}
+      />
 
       <Modal isOpen={reportOpen} onClose={() => setReportOpen(false)} title={`Report ${name}`}>
         <div className="space-y-3">

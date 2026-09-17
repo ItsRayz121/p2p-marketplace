@@ -208,7 +208,7 @@ export async function getInbox(userId: string) {
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       episodes: { select: { outcome: true } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true } },
     },
   })
 
@@ -233,7 +233,7 @@ export async function getInbox(userId: string) {
       threadId: t.id,
       other,
       lastMessageAt: t.lastMessageAt,
-      lastMessagePreview: last ? last.body : null,
+      lastMessagePreview: last ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : '')) : null,
       lastMessageStatus: last && last.senderId === userId
         ? (last.readAt ? 'read' : last.deliveredAt ? 'delivered' : 'sent')
         : null,
@@ -261,6 +261,51 @@ export async function getInboxSummary(userId: string): Promise<{ unreadThreads: 
   return { unreadThreads, activeTrades }
 }
 
+export interface SharedAdPreview {
+  market: Market
+  id: string
+  /** True when the referenced Ad/CtmListing no longer exists (deleted since shared). */
+  deleted: boolean
+  side?: 'buy' | 'sell'
+  status?: string
+  symbol?: string
+  name?: string
+  logoUrl?: string | null
+  /** USDT ad network (BEP20, Aptos, …) — absent for CTM tokens. */
+  network?: string | null
+  /** PKR price, as a string (Prisma Decimal → string). */
+  price?: string
+}
+
+/**
+ * Batch-resolve one-tap-shared listing references to their CURRENT live state
+ * (see the sharedAdMarket/sharedAdId comment on ChatThreadMessage) — a shared
+ * card should always show what's true right now, not a stale send-time price.
+ * A ref whose row no longer exists is simply absent from the returned map;
+ * callers fill in `{ deleted: true }` themselves.
+ */
+async function resolveSharedAdPreviews(refs: { market: Market; id: string }[]): Promise<Map<string, SharedAdPreview>> {
+  const map = new Map<string, SharedAdPreview>()
+  if (refs.length === 0) return map
+  const usdtIds = [...new Set(refs.filter((r) => r.market === 'usdt').map((r) => r.id))]
+  const ctmIds = [...new Set(refs.filter((r) => r.market === 'ctm').map((r) => r.id))]
+  const [ads, listings] = await Promise.all([
+    usdtIds.length
+      ? db.ad.findMany({ where: { id: { in: usdtIds } }, select: { id: true, side: true, status: true, coin: true, network: true, price: true } })
+      : Promise.resolve([]),
+    ctmIds.length
+      ? db.ctmListing.findMany({ where: { id: { in: ctmIds } }, select: { id: true, side: true, status: true, pricePerUnit: true, token: { select: { symbol: true, name: true, logoUrl: true } } } })
+      : Promise.resolve([]),
+  ])
+  for (const a of ads) {
+    map.set(`usdt:${a.id}`, { market: 'usdt', id: a.id, deleted: false, side: a.side, status: a.status, symbol: a.coin, name: a.coin, logoUrl: null, network: a.network, price: a.price.toString() })
+  }
+  for (const l of listings) {
+    map.set(`ctm:${l.id}`, { market: 'ctm', id: l.id, deleted: false, side: l.side, status: l.status, symbol: l.token.symbol, name: l.token.name, logoUrl: l.token.logoUrl ?? null, network: null, price: l.pricePerUnit.toString() })
+  }
+  return map
+}
+
 /**
  * Full thread view: messages + episode dividers + relationship stats.
  * `markRead` (default true) controls the per-message readAt receipt only —
@@ -275,7 +320,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -341,22 +386,37 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null }
   // Prefix trade-message ids so they can never collide with thread-message ids.
-  // Only the thread's own messages support soft delete — folded trade-room
-  // lines never carry a deletedAt, but DO carry their own real receipt status
-  // now that TradeMessage/CtmTradeMessage have deliveredAt/readAt columns
-  // (marked by the trade room's own getMessages, not by this read-only view).
+  // Only the thread's own messages support soft delete + shared-ad references —
+  // folded trade-room lines never carry a deletedAt, but DO carry their own real
+  // receipt status now that TradeMessage/CtmTradeMessage have deliveredAt/readAt
+  // columns (marked by the trade room's own getMessages, not by this read-only view).
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     // Redact retracted messages to a tombstone in the inbox view (the row itself
     // is retained in the DB for dispute review).
     .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null } : m))
+
+  // Resolve any shared-ad references to their CURRENT live state (price, side,
+  // whether it's still active) rather than a stale send-time snapshot — a
+  // one-tap-shared listing should always reflect what the recipient would
+  // actually see if they tapped through to it right now.
+  const sharedRefs = messages
+    .filter((m): m is Msg & { sharedAdMarket: string; sharedAdId: string } => !!m.sharedAdMarket && !!m.sharedAdId)
+    .map((m) => ({ market: m.sharedAdMarket as Market, id: m.sharedAdId }))
+  const sharedAdMap = await resolveSharedAdPreviews(sharedRefs)
+  const messagesWithSharedAd = messages.map((m) => ({
+    ...m,
+    sharedAd: m.sharedAdMarket && m.sharedAdId
+      ? sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }
+      : null,
+  }))
 
   // Live status for ACTIVE episodes so the thread can show a progress bar (H1).
   // The episode's own `outcome` stays 'active' the whole time, so we join to the
@@ -396,23 +456,33 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       status: e.outcome === 'active' ? (statusByTrade.get(e.tradeId) ?? null) : null,
       ratedByMe: e.outcome === 'completed' ? ratedByMe.has(e.tradeId) : false,
     })),
-    messages,
+    messages: messagesWithSharedAd,
     blockedByMe: !!blockedByMe,
     blockedMe: !!blockedMe,
   }
 }
 
-const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true } as const
+const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true, sharedAdMarket: true, sharedAdId: true } as const
 
 /**
  * Post a message to a thread. Sender must be a participant. Bumps the other's
  * unread. `clientId` (optional) makes retried sends idempotent: the frontend's
  * auto-retry-on-failure reuses the same clientId, so a retry after a lost
  * response returns the original message instead of creating a duplicate.
+ * `sharedAd` (optional) is a one-tap "share my listing" — the sender's OWN
+ * active Ad/CtmListing, validated below so nobody can share someone else's
+ * listing or a listing that's paused/deleted.
  */
-export async function postThreadMessage(userId: string, threadId: string, body: string, attachmentUrl?: string, clientId?: string) {
+export async function postThreadMessage(
+  userId: string,
+  threadId: string,
+  body: string,
+  attachmentUrl?: string,
+  clientId?: string,
+  sharedAd?: { market: Market; id: string },
+) {
   const text = body.trim()
-  if (!text && !attachmentUrl) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (!text && !attachmentUrl && !sharedAd) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
 
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
@@ -424,6 +494,18 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
     throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
   }
 
+  if (sharedAd) {
+    if (sharedAd.market === 'usdt') {
+      const ad = await db.ad.findUnique({ where: { id: sharedAd.id }, select: { userId: true, status: true } })
+      if (!ad || ad.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
+      if (ad.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
+    } else {
+      const listing = await db.ctmListing.findUnique({ where: { id: sharedAd.id }, select: { status: true, merchantProfile: { select: { userId: true } } } })
+      if (!listing || listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
+      if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
+    }
+  }
+
   // clientId is sent on every send, not just retries, so this must stay a
   // single round trip on the common path — attempt the create and only fall
   // back to a lookup on the rare unique-constraint hit (matches the same
@@ -432,7 +514,11 @@ export async function postThreadMessage(userId: string, threadId: string, body: 
   try {
     const [message] = await db.$transaction([
       db.chatThreadMessage.create({
-        data: { threadId, senderId: userId, body: text, clientId: clientId ?? null, ...(attachmentUrl ? { attachmentUrl } : {}) },
+        data: {
+          threadId, senderId: userId, body: text, clientId: clientId ?? null,
+          ...(attachmentUrl ? { attachmentUrl } : {}),
+          ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+        },
         select: MESSAGE_SELECT,
       }),
       db.chatThread.update({

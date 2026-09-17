@@ -29,6 +29,22 @@ export interface InboxSummary {
   activeTrades: number
 }
 
+export interface SharedAdPreview {
+  market: 'usdt' | 'ctm'
+  id: string
+  /** True when the referenced listing no longer exists (deleted since shared). */
+  deleted: boolean
+  side?: 'buy' | 'sell'
+  status?: string
+  symbol?: string
+  name?: string
+  logoUrl?: string | null
+  /** USDT ad network (BEP20, Aptos, …) — absent for CTM tokens. */
+  network?: string | null
+  /** PKR price. */
+  price?: string
+}
+
 export interface ThreadMessage {
   id: string
   senderId: string
@@ -44,6 +60,9 @@ export interface ThreadMessage {
    *  bubble reconcile against this message arriving via a concurrent poll before
    *  the original send's own response comes back. Null for folded trade-room lines. */
   clientId?: string | null
+  /** One-tap "share my listing" — the sender's OWN listing, resolved to its
+   *  current live state server-side. Null for an ordinary message. */
+  sharedAd?: SharedAdPreview | null
 }
 
 export interface TradeEpisode {
@@ -113,11 +132,17 @@ export const messagingApi = {
   getThread: (threadId: string, opts?: { markRead?: boolean }) =>
     apiRequest<ThreadView>(`/messages/${threadId}${opts?.markRead === false ? '?markRead=0' : ''}`),
   /** `clientId` makes a retried send idempotent — reuse the same id across retries
-   *  of the same message so a lost-response retry can't create a duplicate. */
-  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string) =>
+   *  of the same message so a lost-response retry can't create a duplicate.
+   *  `sharedAd` one-tap-shares the sender's own listing (see ShareAdPicker). */
+  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }) =>
     apiRequest<ThreadMessage>(`/messages/${threadId}`, {
       method: 'POST',
-      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}), ...(clientId ? { clientId } : {}) }),
+      body: JSON.stringify({
+        body,
+        ...(attachmentUrl ? { attachmentUrl } : {}),
+        ...(clientId ? { clientId } : {}),
+        ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+      }),
     }),
   deleteMessage: (threadId: string, messageId: string) =>
     apiRequest<unknown>(`/messages/${threadId}/${messageId}/delete`, { method: 'POST' }),

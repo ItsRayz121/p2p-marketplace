@@ -1575,6 +1575,13 @@ model ChatThreadMessage {
   // postThreadMessage can detect the duplicate and return the original message
   // instead of creating a second one. Null for messages sent before this existed.
   clientId      String?
+  // One-tap "share my listing" into the chat: references the sender's OWN
+  // active Ad (usdt) or CtmListing (ctm) at send time. No FK — the referenced
+  // row can later be edited/deleted/expire, so the current state is resolved
+  // live on read (getThread) rather than snapshotted here. Both null for an
+  // ordinary message.
+  sharedAdMarket String?
+  sharedAdId     String?
 
   // Scoped by senderId too (not just threadId+clientId) so a clientId collision
   // between the thread's TWO DIFFERENT participants can never make one sender's
