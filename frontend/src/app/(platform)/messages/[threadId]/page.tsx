@@ -23,7 +23,7 @@ import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2 } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -86,6 +86,10 @@ export default function MessageThreadPage() {
   const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Composer "+" menu — collapses the photo/listing attach options behind one tap.
+  const attachAnchorRef = useRef<HTMLButtonElement>(null)
+  const [attachOpen, setAttachOpen] = useState(false)
 
   // Header "⋮" menu — block/unblock + report the other participant.
   const menuAnchorRef = useRef<HTMLButtonElement>(null)
@@ -648,24 +652,40 @@ export default function MessageThreadPage() {
             className="hidden"
           />
           <button
+            ref={attachAnchorRef}
             type="button"
-            onClick={() => fileInputRef.current?.click()}
+            onClick={() => setAttachOpen((v) => !v)}
             disabled={uploading || blocked}
-            aria-label="Attach image"
-            className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
+            aria-label="Add photo or listing"
+            aria-expanded={attachOpen}
+            className={`p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-all disabled:opacity-50 ${attachOpen ? 'bg-muted text-primary rotate-45' : ''}`}
           >
-            <ImagePlus className="w-5 h-5" />
+            <Plus className="w-5 h-5" />
           </button>
-          <button
-            type="button"
-            onClick={() => setShareAdOpen(true)}
-            disabled={blocked}
-            aria-label="Share one of my listings"
-            title="Share a listing"
-            className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
-          >
-            <Tag className="w-5 h-5" />
-          </button>
+          <AnchoredMenu anchorRef={attachAnchorRef} open={attachOpen} onClose={() => setAttachOpen(false)} width={208} gap={8}>
+            <div className="bg-surface border border-border rounded-xl shadow-card py-1.5">
+              <button
+                type="button"
+                onClick={() => { setAttachOpen(false); fileInputRef.current?.click() }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt"
+              >
+                <span className="flex-shrink-0 w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <ImagePlus className="w-5 h-5" />
+                </span>
+                <span className="text-sm font-semibold text-text-primary">Photo</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAttachOpen(false); setShareAdOpen(true) }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt"
+              >
+                <span className="flex-shrink-0 w-9 h-9 rounded-full bg-warning/10 text-warning flex items-center justify-center">
+                  <Tag className="w-5 h-5" />
+                </span>
+                <span className="text-sm font-semibold text-text-primary">Share a listing</span>
+              </button>
+            </div>
+          </AnchoredMenu>
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
