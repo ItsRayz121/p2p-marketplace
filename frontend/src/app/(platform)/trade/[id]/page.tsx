@@ -33,6 +33,7 @@ import { promptPushOptIn } from '@/lib/pushPrompt'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
 import { supportMailto } from '@/lib/contact'
+import { MessageTicks } from '@/components/chat/MessageTicks'
 import {
   FileText,
   Upload,
@@ -56,6 +57,9 @@ interface ChatMessage {
   createdAt: string
   /** Local-only delivery state for optimistic sends. Absent on server messages. */
   sendStatus?: 'sending' | 'failed'
+  /** Server-side WhatsApp-style receipt — only ever set on the viewer's OWN
+   *  sent messages (see trade.service.ts getMessages). */
+  status?: 'sent' | 'delivered' | 'read' | null
 }
 
 // Cooldown before "Open Dispute" unlocks, measured from when the buyer uploaded
@@ -457,9 +461,13 @@ export default function TradePage() {
 
   const fetchTrade = useCallback(async () => {
     try {
+      // A "Read" tick should only appear once the recipient actually has the
+      // room open/visible, not from a background tab poll (mirrors the
+      // Messages-tab thread's markRead semantics).
+      const markRead = typeof document === 'undefined' || document.visibilityState === 'visible'
       const [tradeData, messagesData] = await Promise.all([
         tradesApi.getTrade(id),
-        tradesApi.getMessages(id),
+        tradesApi.getMessages(id, markRead),
       ])
       const extended = tradeData as ExtendedTrade
       setTrade(extended)
@@ -1600,7 +1608,12 @@ export default function TradePage() {
                         {msg.message}
                       </div>
                     )}
-                    <span className="text-[10px] text-text-muted px-1">{msgTime}</span>
+                    <div className="flex items-center gap-1 px-1">
+                      <span className="text-[10px] text-text-muted">{msgTime}</span>
+                      {isMine && !msg.sendStatus && (
+                        <MessageTicks status={msg.status ?? null} variant="muted" className="w-3 h-3" />
+                      )}
+                    </div>
                     {isMine && msg.sendStatus === 'sending' && (
                       <span className="text-[10px] text-text-muted">Sending…</span>
                     )}

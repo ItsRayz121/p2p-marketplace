@@ -238,7 +238,8 @@ export async function tradeRoutes(app: FastifyInstance) {
     const userId = req.user!.id
     const role = req.user!.role
     const { id } = req.params as { id: string }
-    const messages = await getMessages(id, userId, role)
+    const { markRead } = req.query as { markRead?: string }
+    const messages = await getMessages(id, userId, role, markRead !== 'false')
     return reply.send({ success: true, data: messages })
   })
 

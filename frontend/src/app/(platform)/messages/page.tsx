@@ -11,6 +11,16 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { fmtDateTime } from '@/lib/fmt'
 import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck, FileText } from 'lucide-react'
 
+/** True when a search query (after trimming + stripping a leading "@") is the
+ *  viewer's own username — searchUsers deliberately excludes the caller, so
+ *  an empty result set for your own handle needs a distinct message pointing
+ *  at My Notes instead of the generic "no one found" text. */
+function isOwnUsername(query: string, myUsername: string | null | undefined): boolean {
+  if (!myUsername) return false
+  const q = query.trim().replace(/^@/, '')
+  return q.length > 0 && q.toLowerCase() === myUsername.toLowerCase()
+}
+
 /** WhatsApp-style delivery tick for the inbox preview, shown only when the
  *  viewer sent the last message in that thread. */
 function LastMessageTick({ status }: { status: 'sent' | 'delivered' | 'read' | null }) {
@@ -119,7 +129,20 @@ export default function MessagesInboxPage() {
             {searching ? (
               <p className="text-xs text-text-muted px-3 py-3">Searching…</p>
             ) : results.length === 0 ? (
-              <p className="text-xs text-text-muted px-3 py-3">No one found with that username.</p>
+              isOwnUsername(query, user?.username) ? (
+                <div className="px-3 py-3">
+                  <p className="text-xs text-text-muted">That&apos;s your own username — you can&apos;t start a chat with yourself.</p>
+                  <button
+                    onClick={() => void openMyNotes()}
+                    disabled={openingNotes}
+                    className="mt-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+                  >
+                    {openingNotes ? 'Opening…' : 'Open My Notes →'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-text-muted px-3 py-3">No one found with that username.</p>
+              )
             ) : (
               results.map((u) => (
                 <button

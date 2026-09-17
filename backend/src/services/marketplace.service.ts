@@ -714,17 +714,22 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
 // the cached rate:USD_PKR only when no active USDT listings exist).
 
 export interface MarketRateUsdt {
-  averagePkrRate: number | null
-  listingCount: number
+  buyRatePkr: number | null
+  sellRatePkr: number | null
+  buyListingCount: number
+  sellListingCount: number
 }
 
 export interface MarketRateToken {
   symbol: string
   name: string
   slug: string
-  averageUsdtRate: number | null
-  averagePkrRate: number | null
-  listingCount: number
+  buyRateUsdt: number | null
+  sellRateUsdt: number | null
+  buyPricePkr: number | null
+  sellPricePkr: number | null
+  buyListingCount: number
+  sellListingCount: number
 }
 
 export interface MarketRatesSummary {
@@ -804,6 +809,70 @@ function median(xs: number[]): number {
   const s = [...xs].sort((a, b) => a - b)
   const mid = Math.floor(s.length / 2)
   return s.length % 2 ? s[mid]! : (s[mid - 1]! + s[mid]!) / 2
+}
+
+export interface UsdtSideRates {
+  buyRatePkr: number | null
+  sellRatePkr: number | null
+  buySample: number
+  sellSample: number
+}
+
+// USDT→PKR rate split by ad side, for anywhere that converts PKR into a USDT
+// estimate in a specific direction (a token being bought vs. sold, gas being
+// bought, etc). Buy and sell carry a real spread, so a single blended number
+// is wrong for either direction. Median of the latest 20 active ads per side
+// keeps one stale/mispriced listing from skewing the number (same reasoning
+// as getUsdtReferenceRate below); a side with no active listings falls back
+// to the other side, then to the FX spot rate.
+export async function getUsdtSideRates(): Promise<UsdtSideRates> {
+  const SAMPLE = 20
+  const [buyListings, sellListings] = await Promise.all([
+    db.ad.findMany({
+      where: { status: 'active', coin: 'USDT', side: 'buy' },
+      orderBy: { updatedAt: 'desc' },
+      take: SAMPLE,
+      select: { price: true },
+    }),
+    db.ad.findMany({
+      where: { status: 'active', coin: 'USDT', side: 'sell' },
+      orderBy: { updatedAt: 'desc' },
+      take: SAMPLE,
+      select: { price: true },
+    }),
+  ])
+  const round2 = (n: number) => parseFloat(n.toFixed(2))
+  const buyPrices = buyListings.map((l) => Number(l.price)).filter((n) => n > 0)
+  const sellPrices = sellListings.map((l) => Number(l.price)).filter((n) => n > 0)
+
+  let fxSpot: number | null = null
+  const readFxSpot = async () => {
+    if (fxSpot !== null) return fxSpot
+    const raw = (await redis.get('rate:USDT')) ?? (await redis.get('rate:USD_PKR'))
+    if (raw) {
+      try {
+        const p = JSON.parse(raw) as { rate?: number }
+        fxSpot = typeof p.rate === 'number' ? p.rate : parseFloat(raw)
+      } catch {
+        fxSpot = parseFloat(raw)
+      }
+      if (!(fxSpot! > 0)) fxSpot = null
+    }
+    return fxSpot
+  }
+
+  const buyMedian = buyPrices.length ? round2(median(buyPrices)) : null
+  const sellMedian = sellPrices.length ? round2(median(sellPrices)) : null
+
+  const buyRatePkr = buyMedian ?? sellMedian ?? (await readFxSpot())
+  const sellRatePkr = sellMedian ?? buyMedian ?? (await readFxSpot())
+
+  return {
+    buyRatePkr,
+    sellRatePkr,
+    buySample: buyPrices.length,
+    sellSample: sellPrices.length,
+  }
 }
 
 // Marketplace-facing USDT→PKR reference rate. Unlike getRateCoin (which is the
@@ -915,28 +984,11 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
   // reflects current market conditions rather than stale historical listings.
   const RATE_SAMPLE_SIZE = 20
 
-  // ── 1. USDT marketplace — average PKR price across the latest 20 active listings ──
-  const usdtListings = await db.ad.findMany({
-    where: { status: 'active', coin: 'USDT' },
-    orderBy: { updatedAt: 'desc' },
-    take: RATE_SAMPLE_SIZE,
-    select: { price: true },
-  })
-  const usdtCount = usdtListings.length
-  const usdtAvgPkr = usdtCount > 0
-    ? usdtListings.reduce((sum, l) => sum + Number(l.price), 0) / usdtCount
-    : null
+  // ── 1. USDT marketplace — buy/sell median PKR rate (see getUsdtSideRates) ──
+  const usdtRates = await getUsdtSideRates()
+  const { buyRatePkr: usdtBuyRatePkr, sellRatePkr: usdtSellRatePkr } = usdtRates
 
-  // USD→PKR conversion factor: prefer the internal USDT listing average; fall
-  // back to the cached rate:USD_PKR only when no active USDT listings exist.
-  let usdPkr: number | null = usdtAvgPkr && usdtAvgPkr > 0 ? usdtAvgPkr : null
-  if (usdPkr === null) {
-    const raw = await redis.get('rate:USD_PKR')
-    const parsed = raw ? parseFloat(raw) : NaN
-    usdPkr = !isNaN(parsed) && parsed > 0 ? parsed : null
-  }
-
-  // ── 2. Community tokens — average price across the latest 20 active listings per token ──
+  // ── 2. Community tokens — buy/sell median price across the latest 20 active listings per token ──
   // First find which tokens currently have active listings, then average each
   // token's most-recently-updated 20 listings (not its entire history).
   const ctmTokenIds = await db.ctmListing.groupBy({
@@ -969,25 +1021,36 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
           },
           orderBy: { updatedAt: 'desc' },
           take: RATE_SAMPLE_SIZE,
-          select: { pricePerUnit: true },
+          select: { pricePerUnit: true, side: true },
         })
-        const count = listings.length
-        const avgPkr = count > 0
-          ? listings.reduce((sum, l) => sum + Number(l.pricePerUnit), 0) / count
+        // Listing side is the maker's action ('sell' = maker sells the token,
+        // i.e. what the "Buy Tokens" tab shows a taker; 'buy' = maker buys the
+        // token, the "Sell Tokens" tab). Buy/sell carry a real price spread, so
+        // each is priced against its OWN matching-direction USDT rate below
+        // rather than one blended PKR/USDT figure.
+        const buyListings = listings.filter((l) => l.side === 'buy')
+        const sellListings = listings.filter((l) => l.side === 'sell')
+        const avg = (xs: typeof listings) => xs.length
+          ? xs.reduce((sum, l) => sum + Number(l.pricePerUnit), 0) / xs.length
           : null
+        const buyPricePkr = avg(buyListings)
+        const sellPricePkr = avg(sellListings)
         return {
           symbol: meta.symbol,
           name: meta.name,
           slug: meta.slug,
-          averagePkrRate: avgPkr,
-          averageUsdtRate: avgPkr !== null && usdPkr ? avgPkr / usdPkr : null,
-          listingCount: count,
+          buyPricePkr,
+          sellPricePkr,
+          buyRateUsdt: buyPricePkr !== null && usdtBuyRatePkr ? buyPricePkr / usdtBuyRatePkr : null,
+          sellRateUsdt: sellPricePkr !== null && usdtSellRatePkr ? sellPricePkr / usdtSellRatePkr : null,
+          buyListingCount: buyListings.length,
+          sellListingCount: sellListings.length,
         }
       }),
     )
   )
     .filter((x): x is MarketRateToken => x !== null)
-    .sort((a, b) => b.listingCount - a.listingCount)
+    .sort((a, b) => (b.buyListingCount + b.sellListingCount) - (a.buyListingCount + a.sellListingCount))
 
   // ── 3. Gas fees — platform price of each public chain's native gas token ──
   // Gas is a platform-run service (not a P2P listing market), so the "rate" is
@@ -1013,18 +1076,29 @@ export async function getMarketRatesSummary(): Promise<MarketRatesSummary> {
     if (!native) continue
     const usd = await readUsdPrice(native.priceSymbol)
     if (usd <= 0) continue // never show a fabricated price
+    // Buying gas is a PKR→USDT-equivalent acquisition — same direction as a
+    // token "Buy" listing, so it's priced off the sell-side USDT rate (the
+    // rate a buyer pays for USDT on this platform).
     gasFees.push({
       symbol: chain.symbol,
       name: `${chain.name} Gas`,
       slug: chain.slug,
-      averageUsdtRate: usd,
-      averagePkrRate: usdPkr ? usd * usdPkr : null,
-      listingCount: 1,
+      buyPricePkr: usdtSellRatePkr ? usd * usdtSellRatePkr : null,
+      sellPricePkr: null,
+      buyRateUsdt: usd,
+      sellRateUsdt: null,
+      buyListingCount: 1,
+      sellListingCount: 0,
     })
   }
 
   const result: MarketRatesSummary = {
-    usdt: { averagePkrRate: usdtAvgPkr, listingCount: usdtCount },
+    usdt: {
+      buyRatePkr: usdtBuyRatePkr,
+      sellRatePkr: usdtSellRatePkr,
+      buyListingCount: usdtRates.buySample,
+      sellListingCount: usdtRates.sellSample,
+    },
     communityTokens,
     gasFees,
     updatedAt: now.toISOString(),

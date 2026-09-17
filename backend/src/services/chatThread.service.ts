@@ -330,27 +330,29 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     usdtTradeIds.length
       ? db.tradeMessage.findMany({
           where: { tradeId: { in: usdtTradeIds }, isSystem: false },
-          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true },
+          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true, deliveredAt: true, readAt: true },
         })
       : Promise.resolve([]),
     ctmTradeIds.length
       ? db.ctmTradeMessage.findMany({
           where: { tradeId: { in: ctmTradeIds }, isSystem: false },
-          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true },
+          select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true, deliveredAt: true, readAt: true },
         })
       : Promise.resolve([]),
   ])
 
   type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null }
   // Prefix trade-message ids so they can never collide with thread-message ids.
-  // Only the thread's own messages support soft delete + delivery/read receipts;
-  // folded trade-room lines never carry a deletedAt and have no receipt status.
+  // Only the thread's own messages support soft delete — folded trade-room
+  // lines never carry a deletedAt, but DO carry their own real receipt status
+  // now that TradeMessage/CtmTradeMessage have deliveredAt/readAt columns
+  // (marked by the trade room's own getMessages, not by this read-only view).
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
     ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null, clientId: null })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: null, clientId: null })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     // Redact retracted messages to a tombstone in the inbox view (the row itself
     // is retained in the DB for dispute review).

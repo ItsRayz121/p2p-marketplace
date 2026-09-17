@@ -788,16 +788,21 @@ model AdBid {
 }
 
 model TradeMessage {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tradeId       String
-  trade         Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  trade         Trade     @relation(fields: [tradeId], references: [id], onDelete: Cascade)
   senderId      String
-  message       String   @db.VarChar(500)
+  message       String    @db.VarChar(500)
   attachmentUrl String?
   // System (auto) messages posted by the platform on each step transition. Rendered
   // as centered status lines in chat rather than as a party's bubble.
-  isSystem      Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  isSystem      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  // WhatsApp-style receipts (mirrors ChatThreadMessage): set when the OTHER
+  // participant's client next fetches the trade room, and readAt when they
+  // actually have it open. Never set for isSystem messages.
+  deliveredAt   DateTime?
+  readAt        DateTime?
 
   @@index([tradeId])
 }
@@ -2870,15 +2875,18 @@ model CtmTradeProof {
 }
 
 model CtmTradeMessage {
-  id            String   @id @default(cuid())
+  id            String    @id @default(cuid())
   tradeId       String
-  trade         CtmTrade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+  trade         CtmTrade  @relation(fields: [tradeId], references: [id], onDelete: Cascade)
   senderId      String
-  message       String   @db.VarChar(1000)
+  message       String    @db.VarChar(1000)
   attachmentUrl String?
   // System (auto) messages posted by the platform on each step transition.
-  isSystem      Boolean  @default(false)
-  createdAt     DateTime @default(now())
+  isSystem      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  // WhatsApp-style receipts (mirrors ChatThreadMessage) — see TradeMessage.
+  deliveredAt   DateTime?
+  readAt        DateTime?
 
   @@index([tradeId])
 }

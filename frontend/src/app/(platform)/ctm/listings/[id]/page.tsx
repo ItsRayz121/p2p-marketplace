@@ -3,7 +3,7 @@ import { useState, use, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ctmApi, apiRequest, ApiError, walletApi, marketplaceApi } from '@/lib/api'
-import type { SavedDeliveryAddress, MarketRateToken } from '@/lib/api'
+import type { SavedDeliveryAddress } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { MethodSelect } from '@/components/ui/MethodSelect'
@@ -160,8 +160,10 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   // BEP20, …). A Binance internal transfer can only come from a Binance account,
   // so the sending account must always match the method.
   const [usdtFromAddress, setUsdtFromAddress] = useState('')
-  // Per-token market estimate (USDT/PKR) for the price header.
-  const [marketRate, setMarketRate] = useState<MarketRateToken | null>(null)
+  // Platform USDT buy/sell rate (PKR per USDT) — buy and sell carry a real
+  // spread, so this listing's own price is converted with the rate matching
+  // its own side, not a blended average (see ctm/page.tsx listing cards).
+  const [usdtRates, setUsdtRates] = useState<{ buyRatePkr: number | null; sellRatePkr: number | null }>({ buyRatePkr: null, sellRatePkr: null })
   const [bidPrice, setBidPrice] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -286,8 +288,7 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   useEffect(() => {
     if (!listing) return
     marketplaceApi.getMarketRatesSummary().then((res) => {
-      const t = res.communityTokens.find((c) => c.symbol === listing.token.symbol)
-      setMarketRate(t ?? null)
+      setUsdtRates({ buyRatePkr: res.usdt.buyRatePkr, sellRatePkr: res.usdt.sellRatePkr })
     }).catch(() => {})
   }, [listing?.token.symbol]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -422,8 +423,11 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
   // USDT methods split into the two familiar groups for display.
   const usdtWallet = usdtOffered.filter((m) => ctmUsdtMethodKind(m) === 'wallet')
   const usdtExchange = usdtOffered.filter((m) => ctmUsdtMethodKind(m) === 'exchange')
-  // Per-token USDT estimate for the price header (same source as the market cards).
-  const usdtPerToken = marketRate?.averageUsdtRate ?? null
+  // Per-token USDT estimate for the price header — this listing's own PKR
+  // price divided by the platform rate matching its own side (see ctm/page.tsx
+  // listing cards for the same direction-matching rule).
+  const matchingUsdtRatePkr = listing.side === 'sell' ? usdtRates.sellRatePkr : usdtRates.buyRatePkr
+  const usdtPerToken = matchingUsdtRatePkr ? Number(listing.pricePerUnit) / matchingUsdtRatePkr : null
 
   // BUY listings (lister=BUYER, taker=SELLER):
   //   taker picks their own payment receiving account (buyer will send PKR here)

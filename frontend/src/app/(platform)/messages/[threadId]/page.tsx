@@ -20,7 +20,8 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Check, CheckCheck, AlertCircle } from 'lucide-react'
+import { MessageTicks } from '@/components/chat/MessageTicks'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2 } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -30,15 +31,6 @@ type DisplayMessage = ThreadMessage & { pending?: boolean; failed?: boolean; tem
 type TimelineItem =
   | { kind: 'message'; at: number; msg: DisplayMessage }
   | { kind: 'episode'; at: number; ep: TradeEpisode }
-
-/** WhatsApp-style delivery ticks for a message the viewer sent themselves. */
-function MessageTicks({ m }: { m: DisplayMessage }) {
-  if (m.pending) return <Clock className="w-3 h-3 text-white/70" aria-label="Sending" />
-  if (m.failed) return <AlertCircle className="w-3 h-3 text-red-200" aria-label="Failed to send — tap to retry" />
-  if (m.status === 'read') return <CheckCheck className="w-3.5 h-3.5 text-sky-300" aria-label="Read" />
-  if (m.status === 'delivered') return <CheckCheck className="w-3.5 h-3.5 text-white/70" aria-label="Delivered" />
-  return <Check className="w-3.5 h-3.5 text-white/70" aria-label="Sent" />
-}
 
 const OUTCOME_ICON: Record<TradeEpisode['outcome'], React.ElementType> = {
   active: Clock, completed: CheckCircle2, cancelled: XCircle, expired: Clock, disputed: AlertTriangle, dispute_resolved: CheckCircle2,
@@ -87,17 +79,23 @@ export default function MessageThreadPage() {
     }
   }
 
-  /** Share the viewer's OWN username so someone else can start a chat with them —
-   *  same universal-link pattern as the gas/listing share buttons: Telegram's
-   *  native share sheet with the `t.me` startapp deep link inside the Mini App,
-   *  the Web Share sheet (falling back to clipboard) everywhere else. */
-  async function shareMyUsername() {
+  /** Share a profile link — the OTHER participant's when inside their thread
+   *  (so you can forward a trader's profile to someone else), or your own from
+   *  the My Notes self-thread. Either way the link carries the CURRENT viewer's
+   *  own referral code (buildProfileShareLink's convention: the code always
+   *  belongs to whoever is sharing, not whoever is being shared) — same
+   *  universal-link pattern as the gas/listing share buttons: Telegram's native
+   *  share sheet with the `t.me` startapp deep link inside the Mini App, the
+   *  Web Share sheet (falling back to clipboard) everywhere else. */
+  async function shareProfile() {
     setMenuOpen(false)
-    if (!user?.username) return
+    const isSelfShare = !data || data.other.id === user?.id
+    const targetUsername = isSelfShare ? user?.username : data?.other.username
+    if (!targetUsername) return
     hapticSelection()
-    const { web, telegram } = buildProfileShareLink(user.username, user.referralCode)
-    const title = 'Chat with me on RupChain'
-    const text = 'Message me on RupChain — tap to start a chat.'
+    const { web, telegram } = buildProfileShareLink(targetUsername, user?.referralCode)
+    const title = isSelfShare ? 'Chat with me on RupChain' : `Chat with ${targetUsername} on RupChain`
+    const text = isSelfShare ? 'Message me on RupChain — tap to start a chat.' : `Message ${targetUsername} on RupChain — tap to start a chat.`
 
     if (isTelegramMiniApp()) {
       const shareUrl = telegram ?? web
@@ -116,7 +114,7 @@ export default function MessageThreadPage() {
     }
     try {
       await navigator.clipboard.writeText(web)
-      toast.success('Link copied', 'Your chat link is on your clipboard')
+      toast.success('Link copied', isSelfShare ? 'Your chat link is on your clipboard' : `${targetUsername}'s chat link is on your clipboard`)
     } catch {
       toast.info('Share this link', web)
     }
@@ -378,8 +376,18 @@ export default function MessageThreadPage() {
             </span>
           </div>
         </div>
-        {/* Block/report/share-username don't apply to your own notes — the menu
-            adds nothing there, so skip it entirely. */}
+        {/* Block/report don't apply to your own notes, and there's only one
+            possible share action there — a single icon button, no dropdown. */}
+        {isSelf && (
+          <button
+            onClick={() => void shareProfile()}
+            aria-label="Share my profile"
+            title="Share my profile"
+            className="p-1.5 -mr-1 rounded hover:bg-muted flex-shrink-0"
+          >
+            <Share2 className="w-5 h-5 text-text-muted" />
+          </button>
+        )}
         {!isSelf && (
           <>
             <button
@@ -393,10 +401,10 @@ export default function MessageThreadPage() {
             <AnchoredMenu anchorRef={menuAnchorRef} open={menuOpen} onClose={() => setMenuOpen(false)} align="end" width={224}>
               <div className="bg-surface border border-border rounded-lg shadow-card py-1">
                 <button
-                  onClick={() => void shareMyUsername()}
+                  onClick={() => void shareProfile()}
                   className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
                 >
-                  <Share2 className="w-4 h-4" /> Share my username
+                  <Share2 className="w-4 h-4" /> Share {name}&apos;s profile
                 </button>
                 <button
                   onClick={toggleBlock}
@@ -548,7 +556,7 @@ export default function MessageThreadPage() {
                 <div className={`flex items-center gap-1 mt-0.5 ${mine ? 'justify-end' : ''}`}>
                   {m.failed && <span className="text-[10px] text-red-200">Tap to retry ·</span>}
                   <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
-                  {mine && <MessageTicks m={m} />}
+                  {mine && <MessageTicks status={m.status ?? null} pending={m.pending} failed={m.failed} />}
                 </div>
               </div>
             </div>

@@ -1466,15 +1466,47 @@ export async function sendMessage(tradeRef: string, senderId: string, message: s
   return msg
 }
 
-export async function getMessages(tradeRef: string, userId: string, role: string) {
+/**
+ * `markRead` (default true) mirrors chatThread.service.ts's getThread: pass
+ * false for a background poll while the tab isn't actually visible, so a
+ * "Read" tick isn't shown for a message nobody has actually looked at yet.
+ * Delivery (deliveredAt) always fires on fetch regardless.
+ */
+export async function getMessages(tradeRef: string, userId: string, role: string, markRead = true) {
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (!isParticipant(trade, userId, role)) throw new AppError('FORBIDDEN', 'Access denied', 403)
 
-  return db.ctmTradeMessage.findMany({
+  // Only a real trade party's fetch counts as "delivered"/"read" — an admin
+  // viewing the room isn't one of the two trade parties.
+  const isRealParty = trade.buyerId === userId || trade.sellerId === userId
+  if (isRealParty) {
+    const now = new Date()
+    await Promise.all([
+      db.ctmTradeMessage.updateMany({
+        where: { tradeId: trade.id, senderId: { not: userId }, isSystem: false, deliveredAt: null },
+        data: { deliveredAt: now },
+      }),
+      markRead
+        ? db.ctmTradeMessage.updateMany({
+            where: { tradeId: trade.id, senderId: { not: userId }, isSystem: false, readAt: null },
+            data: { readAt: now },
+          })
+        : Promise.resolve(null),
+    ]).catch((err) => logger.warn({ err, tradeId: trade.id }, 'failed to mark CTM trade messages read/delivered (non-fatal)'))
+  }
+
+  const messages = await db.ctmTradeMessage.findMany({
     where: { tradeId: trade.id },
     orderBy: { createdAt: 'asc' },
   })
+
+  return messages.map((m) => ({
+    ...m,
+    status: m.senderId !== userId
+      ? null
+      : (m.readAt ? 'read' as const : m.deliveredAt ? 'delivered' as const : 'sent' as const),
+  }))
 }
 
 export async function rateTrade(tradeRef: string, raterId: string, data: {

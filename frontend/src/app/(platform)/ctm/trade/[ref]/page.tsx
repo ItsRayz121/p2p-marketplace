@@ -15,6 +15,7 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { isOpaqueId } from '@/lib/pkPaymentMethods'
 import { supportMailto } from '@/lib/contact'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
+import { MessageTicks } from '@/components/chat/MessageTicks'
 
 /** Never surface an opaque payment-method ID to users — fall back to a label. */
 function prettyMethod(value?: string | null): string {
@@ -224,7 +225,16 @@ interface Trade {
   lastProofRejectReason?: string | null
 }
 
-interface Message { id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }
+interface Message {
+  id: string
+  senderId: string
+  message: string
+  isSystem?: boolean
+  createdAt: string
+  /** Server-side WhatsApp-style receipt — only ever set on the viewer's OWN
+   *  sent messages (see ctm.trade.service.ts getMessages). */
+  status?: 'sent' | 'delivered' | 'read' | null
+}
 
 function Countdown({ deadline }: { deadline: string }) {
   const [diff, setDiff] = useState(new Date(deadline).getTime() - Date.now())
@@ -353,7 +363,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
 
   const fetchMessages = useCallback(async () => {
     try {
-      const res = await ctmApi.getMessages(ref)
+      // A "Read" tick should only appear once the recipient actually has the
+      // room open/visible, not from a background tab poll (mirrors the
+      // Messages-tab thread's markRead semantics).
+      const markRead = typeof document === 'undefined' || document.visibilityState === 'visible'
+      const res = await ctmApi.getMessages(ref, markRead)
       const msgs = res as Message[]
       setMessages(msgs)
       if (msgs.length > prevMsgCountRef.current) {
@@ -1636,7 +1650,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap shadow-sm ${isMe ? 'bg-primary text-white rounded-br-sm' : 'bg-surface border border-border text-text-primary rounded-bl-sm'}`}>
                       {m.message}
                     </div>
-                    <span className="text-[10px] text-text-muted px-1">{msgTime}</span>
+                    <div className="flex items-center gap-1 px-1">
+                      <span className="text-[10px] text-text-muted">{msgTime}</span>
+                      {isMe && <MessageTicks status={m.status ?? null} variant="muted" className="w-3 h-3" />}
+                    </div>
                   </div>
                 </div>
               )

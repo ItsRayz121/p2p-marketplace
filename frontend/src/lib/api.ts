@@ -775,13 +775,18 @@ export interface MarketRateToken {
   symbol: string
   name: string
   slug: string
-  averageUsdtRate: number | null
-  averagePkrRate: number | null
-  listingCount: number
+  /** USDT-equivalent rate matching each direction's own listings — buy and
+   *  sell carry a real spread, so there is no single blended rate. */
+  buyRateUsdt: number | null
+  sellRateUsdt: number | null
+  buyPricePkr: number | null
+  sellPricePkr: number | null
+  buyListingCount: number
+  sellListingCount: number
 }
 
 export interface MarketRatesSummary {
-  usdt: { averagePkrRate: number | null; listingCount: number }
+  usdt: { buyRatePkr: number | null; sellRatePkr: number | null; buyListingCount: number; sellListingCount: number }
   communityTokens: MarketRateToken[]
   gasFees: MarketRateToken[]
   updatedAt: string
@@ -1134,8 +1139,8 @@ export const tradesApi = {
     apiRequest<void>(`/trades/${id}/rate`, { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (id: string, message: string) =>
     apiRequest<{ id: string; message: string; createdAt: string }>(`/trades/${id}/messages`, { method: 'POST', body: JSON.stringify({ message }) }),
-  getMessages: (id: string) =>
-    apiRequest<{ messages: Array<{ id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string }> }>(`/trades/${id}/messages`),
+  getMessages: (id: string, markRead = true) =>
+    apiRequest<{ messages: Array<{ id: string; senderId: string; message: string; isSystem?: boolean; createdAt: string; status?: 'sent' | 'delivered' | 'read' | null }> }>(`/trades/${id}/messages${markRead ? '' : '?markRead=false'}`),
 }
 
 export interface AdBid {
@@ -3213,7 +3218,7 @@ export const ctmApi = {
   openDispute: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/${ref}/dispute`, { method: 'POST', body: JSON.stringify(data) }),
   cancelTrade: (ref: string, data: object) => apiRequest<void>(`/ctm/trades/${ref}/cancel`, { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/messages`, { method: 'POST', body: JSON.stringify(data) }),
-  getMessages: (ref: string) => apiRequest<unknown[]>(`/ctm/trades/${ref}/messages`),
+  getMessages: (ref: string, markRead = true) => apiRequest<unknown[]>(`/ctm/trades/${ref}/messages${markRead ? '' : '?markRead=false'}`),
   rateTrade: (ref: string, data: object) => apiRequest<unknown>(`/ctm/trades/${ref}/rate`, { method: 'POST', body: JSON.stringify(data) }),
   selectTradePaymentAccount: (ref: string, accountIndex: number) =>
     apiRequest<{ selectedIdx: number; selectedAccount: Record<string, string> }>(`/ctm/trades/${ref}/select-payment-account`, { method: 'POST', body: JSON.stringify({ accountIndex }) }),

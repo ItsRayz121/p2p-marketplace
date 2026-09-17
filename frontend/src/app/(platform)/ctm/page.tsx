@@ -204,10 +204,12 @@ function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
 function ListingRow({
   listing,
   marketRate,
+  usdtRates,
   onViewMerchant,
 }: {
   listing: Listing
   marketRate?: MarketRateToken
+  usdtRates: { buyRatePkr: number | null; sellRatePkr: number | null }
   onViewMerchant: (id: string) => void
 }) {
   const mp = listing.merchantProfile
@@ -249,8 +251,13 @@ function ListingRow({
   const minTok = Number(listing.minOrderTokens)
   const maxTok = Number(listing.maxOrderTokens)
 
-  const usdtRate = marketRate?.averageUsdtRate ?? null
-  const pkrRate  = marketRate?.averagePkrRate ?? null
+  // This listing's OWN PKR price converted with the platform rate matching its
+  // OWN side (buy vs. sell carry a real spread) — not a token-wide blended
+  // average, so two listings of the same token at different prices no longer
+  // show an identical "≈ X USDT" figure.
+  const matchingUsdtRatePkr = isSell ? usdtRates.sellRatePkr : usdtRates.buyRatePkr
+  const usdtRate = matchingUsdtRatePkr ? price / matchingUsdtRatePkr : null
+  const pkrRate  = isSell ? marketRate?.sellPricePkr ?? null : marketRate?.buyPricePkr ?? null
 
   const openProfile = () => onViewMerchant(user.id)
 
@@ -607,6 +614,9 @@ export default function CtmHomePage() {
   const [ctmStats, setCtmStats] = useState<CtmStats | null>(null)
   const [tokens, setTokens] = useState<CtmToken[]>([])
   const [rateMap, setRateMap] = useState<Record<string, MarketRateToken>>({})
+  // Platform USDT buy/sell rate (PKR per USDT) — needed to convert each
+  // listing's own PKR price into its matching-direction USDT estimate.
+  const [usdtRates, setUsdtRates] = useState<{ buyRatePkr: number | null; sellRatePkr: number | null }>({ buyRatePkr: null, sellRatePkr: null })
   const [profileUserId, setProfileUserId] = useState<string | null>(null)
 
   const fetchListings = useCallback(async (p = 1, append = false) => {
@@ -673,14 +683,20 @@ export default function CtmHomePage() {
         const map: Record<string, MarketRateToken> = {}
         for (const t of ratesRes.value.communityTokens) map[t.symbol] = t
         setRateMap(map)
+        setUsdtRates({ buyRatePkr: ratesRes.value.usdt.buyRatePkr, sellRatePkr: ratesRes.value.usdt.sellRatePkr })
         // Evaluate any CTM price alerts the user set in Settings against each
         // token's current PKR rate (mirrors the USDT alert check on the
         // marketplace page — fires while the user is browsing the CTM market).
+        // Alerts track a token's general PKR level, not a buy/sell direction —
+        // blend both sides when available, else whichever side has data.
         for (const t of ratesRes.value.communityTokens) {
-          if (t.averagePkrRate == null) continue
-          const triggered = checkAlerts(t.slug, t.averagePkrRate)
+          const pkrRate = t.buyPricePkr !== null && t.sellPricePkr !== null
+            ? (t.buyPricePkr + t.sellPricePkr) / 2
+            : t.buyPricePkr ?? t.sellPricePkr
+          if (pkrRate == null) continue
+          const triggered = checkAlerts(t.slug, pkrRate)
           for (const a of triggered) {
-            const msg = `${t.symbol} is now PKR ${t.averagePkrRate.toLocaleString()} — your ${a.direction} PKR ${a.targetPkr.toLocaleString()} alert triggered.`
+            const msg = `${t.symbol} is now PKR ${pkrRate.toLocaleString()} — your ${a.direction} PKR ${a.targetPkr.toLocaleString()} alert triggered.`
             await requestAndNotify('RupChain Price Alert', msg)
             toast.success(`Price alert: ${t.symbol} ${a.direction === 'above' ? '↑' : '↓'} PKR ${a.targetPkr.toLocaleString()}`, msg)
           }
@@ -831,7 +847,7 @@ export default function CtmHomePage() {
       ) : (
         <div className="space-y-2">
           {listings.map((l) => (
-            <ListingRow key={l.id} listing={l} marketRate={rateMap[l.token.symbol]} onViewMerchant={setProfileUserId} />
+            <ListingRow key={l.id} listing={l} marketRate={rateMap[l.token.symbol]} usdtRates={usdtRates} onViewMerchant={setProfileUserId} />
           ))}
         </div>
       )}

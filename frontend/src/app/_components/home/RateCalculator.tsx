@@ -7,17 +7,22 @@ import { api } from '@/lib/api'
 // ─── Types (mirror backend MarketRatesSummary) ──────────────────────────────────
 
 interface MarketRateUsdt {
-  averagePkrRate: number | null
-  listingCount: number
+  buyRatePkr: number | null
+  sellRatePkr: number | null
+  buyListingCount: number
+  sellListingCount: number
 }
 
 interface MarketRateToken {
   symbol: string
   name: string
   slug: string
-  averageUsdtRate: number | null
-  averagePkrRate: number | null
-  listingCount: number
+  buyRateUsdt: number | null
+  sellRateUsdt: number | null
+  buyPricePkr: number | null
+  sellPricePkr: number | null
+  buyListingCount: number
+  sellListingCount: number
 }
 
 interface MarketRatesSummary {
@@ -114,9 +119,16 @@ function EmptyRate() {
 function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
   const [amount, setAmount] = useState('')
   const [from, setFrom] = useState<'USDT' | 'PKR'>('USDT')
+  // Buy = you're buying USDT (paying PKR); Sell = you're selling USDT (receiving
+  // PKR). These carry a real spread, so the rate must match the chosen side.
+  // `usdt.sellRatePkr` comes from ads where the MAKER sells USDT — i.e. exactly
+  // the ads a USDT BUYER trades against on the marketplace's "Buy USDT" tab
+  // (and vice versa for `buyRatePkr` / "Sell USDT") — see marketplace.service.ts.
+  const [side, setSide] = useState<'Buy' | 'Sell'>('Buy')
 
-  const rate = usdt.averagePkrRate // PKR per USDT
-  const hasRate = rate !== null && rate > 0 && usdt.listingCount > 0
+  const rate = side === 'Buy' ? usdt.sellRatePkr : usdt.buyRatePkr // PKR per USDT
+  const listingCount = side === 'Buy' ? usdt.sellListingCount : usdt.buyListingCount
+  const hasRate = rate !== null && rate > 0 && listingCount > 0
 
   const out = useMemo(() => {
     if (!hasRate || rate === null) return null
@@ -127,44 +139,53 @@ function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
       : { usdt: n / rate, pkr: n }
   }, [amount, from, rate, hasRate])
 
-  if (!hasRate) return <EmptyRate />
-
   return (
     <div className="space-y-3">
-      <div>
-        <div className="mb-1.5 flex items-center justify-between">
-          <label className="text-xs font-medium text-slate-400">You enter</label>
-          <UnitToggle units={['USDT', 'PKR']} value={from} onChange={(u) => setFrom(u as 'USDT' | 'PKR')} />
-        </div>
-        <input
-          type="number"
-          inputMode="decimal"
-          min="0"
-          value={amount}
-          onChange={(e) => setAmount(e.target.value)}
-          placeholder={from === 'USDT' ? 'e.g. 100' : 'e.g. 50,000'}
-          className={INPUT_CLS}
-        />
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="text-xs font-medium text-slate-400">I want to</label>
+        <UnitToggle units={['Buy', 'Sell']} value={side} onChange={(u) => setSide(u as 'Buy' | 'Sell')} />
       </div>
 
-      <div className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-2">
-        <OutputRow
-          label={from === 'USDT' ? 'Estimated PKR' : 'Estimated USDT'}
-          value={
-            out
-              ? from === 'USDT'
-                ? `PKR ${fmtPkr(out.pkr)}`
-                : `${fmtUsdt(out.usdt)} USDT`
-              : '—'
-          }
-        />
-      </div>
+      {!hasRate ? (
+        <EmptyRate />
+      ) : (
+        <>
+          <div>
+            <div className="mb-1.5 flex items-center justify-between">
+              <label className="text-xs font-medium text-slate-400">You enter</label>
+              <UnitToggle units={['USDT', 'PKR']} value={from} onChange={(u) => setFrom(u as 'USDT' | 'PKR')} />
+            </div>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              placeholder={from === 'USDT' ? 'e.g. 100' : 'e.g. 50,000'}
+              className={INPUT_CLS}
+            />
+          </div>
 
-      <RateFooter
-        lines={[`1 USDT ≈ PKR ${fmtPkr(rate as number)}`]}
-        depth={`Based on latest ${usdt.listingCount} active listing${usdt.listingCount === 1 ? '' : 's'}`}
-        note="Final trade rate may vary by listing."
-      />
+          <div className="rounded-lg border border-white/10 bg-white/5 p-3 space-y-2">
+            <OutputRow
+              label={from === 'USDT' ? 'Estimated PKR' : 'Estimated USDT'}
+              value={
+                out
+                  ? from === 'USDT'
+                    ? `PKR ${fmtPkr(out.pkr)}`
+                    : `${fmtUsdt(out.usdt)} USDT`
+                  : '—'
+              }
+            />
+          </div>
+
+          <RateFooter
+            lines={[`1 USDT ≈ PKR ${fmtPkr(rate as number)} (${side.toLowerCase()})`]}
+            depth={`Based on latest ${listingCount} active ${side.toLowerCase()} listing${listingCount === 1 ? '' : 's'}`}
+            note="Final trade rate may vary by listing."
+          />
+        </>
+      )}
     </div>
   )
 }
@@ -174,23 +195,37 @@ function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
 function CtmCalculator({ tokens }: { tokens: MarketRateToken[] }) {
   const [symbol, setSymbol] = useState(tokens[0]?.symbol ?? '')
   const [amount, setAmount] = useState('')
+  // Buy Tokens / Sell Tokens — mirrors the CTM marketplace tabs. A token's buy
+  // and sell listings carry a real spread, so the estimate must match the
+  // chosen side. `sellRateUsdt`/`sellPricePkr` come from listings where the
+  // MAKER sells the token — exactly what the "Buy Tokens" tab shows a taker
+  // (and vice versa for `buyRateUsdt`/`buyPricePkr` / "Sell Tokens").
+  const [side, setSide] = useState<'Buy Tokens' | 'Sell Tokens'>('Buy Tokens')
 
   const token = tokens.find((t) => t.symbol === symbol) ?? tokens[0]
+  const rateUsdt = token ? (side === 'Buy Tokens' ? token.sellRateUsdt : token.buyRateUsdt) : null
+  const pricePkr = token ? (side === 'Buy Tokens' ? token.sellPricePkr : token.buyPricePkr) : null
+  const listingCount = token ? (side === 'Buy Tokens' ? token.sellListingCount : token.buyListingCount) : 0
 
   const out = useMemo(() => {
     if (!token) return null
     const n = parseAmount(amount)
     if (n === null) return null
     return {
-      usdt: token.averageUsdtRate !== null ? n * token.averageUsdtRate : null,
-      pkr: token.averagePkrRate !== null ? n * token.averagePkrRate : null,
+      usdt: rateUsdt !== null ? n * rateUsdt : null,
+      pkr: pricePkr !== null ? n * pricePkr : null,
     }
-  }, [amount, token])
+  }, [amount, token, rateUsdt, pricePkr])
 
   if (tokens.length === 0 || !token) return <EmptyRate />
 
   return (
     <div className="space-y-3">
+      <div className="mb-1.5 flex items-center justify-between">
+        <label className="text-xs font-medium text-slate-400">I want to</label>
+        <UnitToggle units={['Buy Tokens', 'Sell Tokens']} value={side} onChange={(u) => setSide(u as 'Buy Tokens' | 'Sell Tokens')} />
+      </div>
+
       <div>
         <label className="mb-1.5 block text-xs font-medium text-slate-400">Community token</label>
         <select value={symbol} onChange={(e) => setSymbol(e.target.value)} className={SELECT_CLS}>
@@ -228,10 +263,10 @@ function CtmCalculator({ tokens }: { tokens: MarketRateToken[] }) {
 
       <RateFooter
         lines={[
-          token.averageUsdtRate !== null ? `1 ${token.symbol} ≈ ${fmtUsdt(token.averageUsdtRate)} USDT` : null,
-          token.averagePkrRate !== null ? `1 ${token.symbol} ≈ PKR ${fmtPkr(token.averagePkrRate)}` : null,
+          rateUsdt !== null ? `1 ${token.symbol} ≈ ${fmtUsdt(rateUsdt)} USDT` : null,
+          pricePkr !== null ? `1 ${token.symbol} ≈ PKR ${fmtPkr(pricePkr)}` : null,
         ]}
-        depth={`Based on latest ${token.listingCount} active listing${token.listingCount === 1 ? '' : 's'}`}
+        depth={`Based on latest ${listingCount} active listing${listingCount === 1 ? '' : 's'}`}
         note="Final trade rate may vary by listing."
       />
     </div>
@@ -246,8 +281,10 @@ function GasCalculator({ options }: { options: MarketRateToken[] }) {
   const [unit, setUnit] = useState<'GAS' | 'USDT' | 'PKR'>('GAS')
 
   const opt = options.find((o) => o.symbol === symbol) ?? options[0]
-  const usdtRate = opt?.averageUsdtRate ?? null // USDT per gas token
-  const pkrRate = opt?.averagePkrRate ?? null // PKR per gas token
+  // Gas is always a purchase (platform-run service, one direction only), so it
+  // only ever populates the buy-side fields (see marketplace.service.ts).
+  const usdtRate = opt?.buyRateUsdt ?? null // USDT per gas token
+  const pkrRate = opt?.buyPricePkr ?? null // PKR per gas token
 
   const out = useMemo(() => {
     if (!opt || usdtRate === null || usdtRate <= 0) return null

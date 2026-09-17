@@ -282,7 +282,8 @@ export async function ctmTradeRoutes(app: FastifyInstance) {
   // GET /ctm/trades/:ref/messages — get messages
   app.get('/ctm/trades/:ref/messages', { preHandler: [authenticate] }, async (req, reply) => {
     const { ref } = req.params as { ref: string }
-    const messages = await getMessages(ref, req.user!.id, req.user!.role)
+    const { markRead } = req.query as { markRead?: string }
+    const messages = await getMessages(ref, req.user!.id, req.user!.role, markRead !== 'false')
     return reply.send({ success: true, data: messages })
   })
 

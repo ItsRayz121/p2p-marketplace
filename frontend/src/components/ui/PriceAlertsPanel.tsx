@@ -340,7 +340,13 @@ export function CtmPriceAlertsManager() {
       }
       if (ratesRes.status === 'fulfilled') {
         const map: Record<string, number | null> = {}
-        for (const t of ratesRes.value.communityTokens) map[t.slug] = t.averagePkrRate
+        for (const t of ratesRes.value.communityTokens) {
+          // Alerts track a token's general PKR level, not a buy/sell direction —
+          // blend both sides when available, else whichever side has data.
+          map[t.slug] = t.buyPricePkr !== null && t.sellPricePkr !== null
+            ? (t.buyPricePkr + t.sellPricePkr) / 2
+            : t.buyPricePkr ?? t.sellPricePkr
+        }
         setRateBySlug(map)
       }
       setLoaded(true)
