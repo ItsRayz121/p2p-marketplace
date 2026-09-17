@@ -128,7 +128,11 @@ function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
 
   const rate = side === 'Buy' ? usdt.sellRatePkr : usdt.buyRatePkr // PKR per USDT
   const listingCount = side === 'Buy' ? usdt.sellListingCount : usdt.buyListingCount
-  const hasRate = rate !== null && rate > 0 && listingCount > 0
+  // `rate` already reflects getUsdtSideRates' own fallback (same-side median →
+  // other-side median → FX spot), so it can be a valid, usable number even when
+  // this side's OWN listing count is 0 — don't re-gate on listingCount here or
+  // the fallback becomes unreachable and the calculator hides itself needlessly.
+  const hasRate = rate !== null && rate > 0
 
   const out = useMemo(() => {
     if (!hasRate || rate === null) return null
@@ -181,7 +185,9 @@ function UsdtCalculator({ usdt }: { usdt: MarketRateUsdt }) {
 
           <RateFooter
             lines={[`1 USDT ≈ PKR ${fmtPkr(rate as number)} (${side.toLowerCase()})`]}
-            depth={`Based on latest ${listingCount} active ${side.toLowerCase()} listing${listingCount === 1 ? '' : 's'}`}
+            depth={listingCount > 0
+              ? `Based on latest ${listingCount} active ${side.toLowerCase()} listing${listingCount === 1 ? '' : 's'}`
+              : 'Based on the platform’s nearest available rate (no direct listings right now)'}
             note="Final trade rate may vary by listing."
           />
         </>

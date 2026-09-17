@@ -208,7 +208,7 @@ export async function getInbox(userId: string) {
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       episodes: { select: { outcome: true } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, deletedAt: true } },
     },
   })
 
@@ -233,7 +233,7 @@ export async function getInbox(userId: string) {
       threadId: t.id,
       other,
       lastMessageAt: t.lastMessageAt,
-      lastMessagePreview: last ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : '')) : null,
+      lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : '')) : null,
       lastMessageStatus: last && last.senderId === userId
         ? (last.readAt ? 'read' : last.deliveredAt ? 'delivered' : 'sent')
         : null,
@@ -400,8 +400,10 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     // Redact retracted messages to a tombstone in the inbox view (the row itself
-    // is retained in the DB for dispute review).
-    .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null } : m))
+    // is retained in the DB for dispute review). Also clear the shared-ad
+    // reference so a retracted "share my listing" message can't still resolve
+    // and surface the live listing (price/side/status) after retraction.
+    .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null } : m))
 
   // Resolve any shared-ad references to their CURRENT live state (price, side,
   // whether it's still active) rather than a stale send-time snapshot — a
