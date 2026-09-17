@@ -299,7 +299,10 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   const stats = { completed: 0, cancelled: 0, expired: 0, disputed: 0, active: 0, total: thread.episodes.length }
   const s = stats as Record<string, number>
   for (const e of thread.episodes) {
-    if (e.outcome in stats) s[e.outcome] = (s[e.outcome] ?? 0) + 1
+    // dispute_resolved folds into `completed` — same "done" bucket the rest of
+    // the codebase uses for it (see reconcileTradeEpisodes.ts, CtmStatusTimeline).
+    const key = e.outcome === 'dispute_resolved' ? 'completed' : e.outcome
+    if (key in stats) s[key] = (s[key] ?? 0) + 1
   }
 
   // ── Unify the timeline: the actual per-trade room chat still lives in

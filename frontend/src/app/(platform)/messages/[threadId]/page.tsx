@@ -123,11 +123,21 @@ export default function MessageThreadPage() {
   // markRead defaults to true (initial load, explicit refreshes); the background
   // poll passes it based on tab visibility so a message isn't shown as "Read"
   // before anyone actually looked at the screen.
+  //
+  // Overlapping calls are common (mount, the 15s poll, visibilitychange, and the
+  // post-send refresh can all be in flight together) and resolve in whatever
+  // order the network gives them back, not the order they were issued. Without
+  // a sequence guard a slower, older response can land last and clobber fresher
+  // state — a just-arrived message or read tick would flicker away until the
+  // next poll, which reads to the user as a dropped connection.
+  const loadSeq = useRef(0)
   const load = useCallback(async (markRead = true) => {
+    const seq = ++loadSeq.current
     try {
-      setData(await messagingApi.getThread(threadId, { markRead }))
+      const result = await messagingApi.getThread(threadId, { markRead })
+      if (seq === loadSeq.current) setData(result)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load conversation')
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : 'Failed to load conversation')
     }
   }, [threadId])
 
@@ -192,6 +202,13 @@ export default function MessageThreadPage() {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const SEND_RETRY_DELAYS_MS = [1200, 3000] // two automatic retries before giving up
 
+  // Sends are chained through this queue so an earlier message's attempt (and
+  // its retries) always finishes hitting the network before the next one
+  // starts — otherwise a message that types first but hits a transient retry
+  // can land in the database after one typed later, scrambling order for both
+  // sides once confirmed.
+  const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
+
   /** Attempt to actually deliver one pending message, retrying transient failures. */
   const attemptSend = useCallback(async (tempId: string, body: string, attachmentUrl?: string) => {
     for (let attempt = 0; ; attempt++) {
@@ -219,6 +236,7 @@ export default function MessageThreadPage() {
   }, [threadId, load])
 
   const send = async () => {
+    if (!user) return
     const body = draft.trim()
     // A message needs either text or an image attachment.
     if (!body && !pendingImage) return
@@ -227,19 +245,19 @@ export default function MessageThreadPage() {
     // Show it immediately — the user sees their message land in the timeline
     // right away instead of waiting on the network round-trip.
     setPendingMessages((prev) => [...prev, {
-      id: tempId, tempId, senderId: user!.id, body, attachmentUrl: attachmentUrl ?? null,
+      id: tempId, tempId, senderId: user.id, body, attachmentUrl: attachmentUrl ?? null,
       isSystem: false, createdAt: new Date().toISOString(), pending: true,
     }])
     setDraft('')
     setPendingImage(null)
-    void attemptSend(tempId, body, attachmentUrl)
+    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(tempId, body, attachmentUrl))
   }
 
   /** Tap a failed bubble to try sending it again. */
   const retryPending = (m: DisplayMessage) => {
     if (!m.tempId || !m.failed) return
     setPendingMessages((prev) => prev.map((p) => (p.tempId === m.tempId ? { ...p, failed: false, pending: true } : p)))
-    void attemptSend(m.tempId, m.body, m.attachmentUrl ?? undefined)
+    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(m.tempId!, m.body, m.attachmentUrl ?? undefined))
   }
 
   // Pick + upload an image; the returned Cloudinary URL waits in pendingImage
