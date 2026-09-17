@@ -472,7 +472,7 @@ export async function deleteThreadMessage(userId: string, threadId: string, mess
 
 /** Up to 10 users whose username OR display name matches, for the "find someone" search box. */
 export async function searchUsers(userId: string, rawQuery: string) {
-  const q = rawQuery.trim()
+  const q = rawQuery.trim().replace(/^@/, '')
   if (q.length < 2) return []
   const [users, blockedEitherWay] = await Promise.all([
     db.user.findMany({
@@ -507,7 +507,7 @@ export async function searchUsers(userId: string, rawQuery: string) {
  */
 export async function startThread(userId: string, targetUsername: string): Promise<{ threadId: string }> {
   const target = await db.user.findFirst({
-    where: { username: { equals: targetUsername.trim(), mode: 'insensitive' } },
+    where: { username: { equals: targetUsername.trim().replace(/^@/, ''), mode: 'insensitive' } },
     select: { id: true },
   })
   if (!target) throw new AppError('NOT_FOUND', 'No user with that username', 404)
