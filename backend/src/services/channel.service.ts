@@ -86,7 +86,7 @@ export async function searchChannelDirectory(userId: string, rawQuery: string) {
   return channels.map((c) => ({ ...c, isMember: joined.has(c.id) }))
 }
 
-export async function createChannel(userId: string, input: { name: string; description?: string; visibility: 'public' | 'private' }): Promise<{ id: string; slug: string }> {
+export async function createChannel(userId: string, input: { name: string; description?: string | undefined; visibility: 'public' | 'private' }): Promise<{ id: string; slug: string }> {
   const name = input.name.trim()
   if (name.length < 3) throw new AppError('VALIDATION_ERROR', 'Channel name must be at least 3 characters', 400)
   const description = input.description?.trim() || null
@@ -240,7 +240,7 @@ export async function leaveChannel(userId: string, channelId: string): Promise<v
   ])
 }
 
-export async function updateChannel(userId: string, channelId: string, input: { name?: string; description?: string; visibility?: 'public' | 'private' }) {
+export async function updateChannel(userId: string, channelId: string, input: { name?: string | undefined; description?: string | undefined; visibility?: 'public' | 'private' | undefined }) {
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)

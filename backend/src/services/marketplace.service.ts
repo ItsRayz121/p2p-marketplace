@@ -1,7 +1,7 @@
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
-import { Prisma } from '@prisma/client'
+import { Prisma, AdStatus } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { getBondConfig, computeBondUsdt } from './makerBond.service'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
@@ -557,7 +557,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     coin: 'USDT',
     // Admin-only: 'all' means no status filter at all; otherwise default to
     // active (public callers never pass `status`, so their behavior is unchanged).
-    ...(params.status === 'all' ? {} : { status: (params.status as Prisma.AdStatus) ?? 'active' }),
+    ...(params.status === 'all' ? {} : { status: (params.status as AdStatus) ?? 'active' }),
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
     ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),
     ...(paymentMethodIdFilter
