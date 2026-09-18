@@ -21,15 +21,22 @@ import { logger } from '../lib/logger'
 
 const MESSAGE_MAX_LEN = 4000
 
+// Static path segments registered under /channels/:idOrSlug in channel.routes.ts
+// (e.g. GET /channels/directory) always win over the parametric route, so a
+// channel slug equal to one of these would be permanently unreachable by slug.
+const RESERVED_SLUGS = new Set(['directory'])
+
 /** Base slug + a short random suffix, retried on the rare collision. Reuses
  *  blog.service.ts's slugify (diacritic-stripping etc.) rather than a second,
  *  divergent implementation — only the collision-retry strategy differs (blog
  *  posts append -2/-3…, channels get a short random suffix). */
 async function generateUniqueSlug(name: string): Promise<string> {
   const base = baseSlugify(name).slice(0, 40)
+  const baseIsReserved = RESERVED_SLUGS.has(base)
   for (let attempt = 0; attempt < 8; attempt++) {
     const suffix = randomBytes(3).toString('hex') // 24 bits — plenty once combined with a retry loop
-    const slug = attempt === 0 ? base : `${base}-${suffix}`
+    const slug = attempt === 0 && !baseIsReserved ? base : `${base}-${suffix}`
+    if (RESERVED_SLUGS.has(slug)) continue
     const existing = await db.channel.findUnique({ where: { slug }, select: { id: true } })
     if (!existing) return slug
   }
@@ -96,14 +103,24 @@ export async function createChannel(userId: string, input: { name: string; descr
   }
 
   const slug = await generateUniqueSlug(name)
-  const channel = await db.channel.create({
-    data: {
-      ownerId: userId, name, description, slug, visibility: input.visibility,
-      members: { create: { userId, role: 'owner' } },
-    },
-    select: { id: true, slug: true },
-  })
-  return channel
+  try {
+    const channel = await db.channel.create({
+      data: {
+        ownerId: userId, name, description, slug, visibility: input.visibility,
+        members: { create: { userId, role: 'owner' } },
+      },
+      select: { id: true, slug: true },
+    })
+    return channel
+  } catch (err) {
+    // Same-name race: another create() committed the same slug between our
+    // uniqueness check and this insert (see generateUniqueSlug's check-then-act
+    // comment above).
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new AppError('VALIDATION_ERROR', 'A channel with that name was just created — try a different name', 400)
+    }
+    throw err
+  }
 }
 
 /** Full channel view — meta always returned; `messages` only populated for members (or the public preview caller explicitly opts out of via listMessages). */

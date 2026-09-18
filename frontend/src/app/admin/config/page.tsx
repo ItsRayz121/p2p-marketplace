@@ -55,6 +55,7 @@ const STRUCTURED_KEYS = new Set([
   'taker_first_settlement_enabled', 'nokyc_taker_enabled',
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
   'trade_proof_reject_enabled', 'trade_proof_reject_max', 'trade_buyer_cancel_after_pay_minutes',
+  'channels_enabled', 'channels_max_per_user', 'channels_max_members',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -272,6 +273,9 @@ export default function ConfigPage() {
   const [proofRejectFlag, setProofRejectFlag] = useState(true)
   const [proofRejectMax, setProofRejectMax] = useState('2')
   const [buyerCancelAfterPayMin, setBuyerCancelAfterPayMin] = useState('0')
+  const [channelsFlag, setChannelsFlag] = useState(true)
+  const [channelsMaxPerUser, setChannelsMaxPerUser] = useState('5')
+  const [channelsMaxMembers, setChannelsMaxMembers] = useState('10000')
   const [betaSaving, setBetaSaving] = useState(false)
 
   // ── Media Retention & Storage ─────────────────────────────────────────────────
@@ -400,6 +404,9 @@ export default function ConfigPage() {
       setProofRejectFlag(m['trade_proof_reject_enabled'] !== 'false') // default ON
       setProofRejectMax(m['trade_proof_reject_max'] ?? '2')
       setBuyerCancelAfterPayMin(m['trade_buyer_cancel_after_pay_minutes'] ?? '0')
+      setChannelsFlag(m['channels_enabled'] !== 'false') // default ON
+      setChannelsMaxPerUser(m['channels_max_per_user'] ?? '5')
+      setChannelsMaxMembers(m['channels_max_members'] ?? '10000')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
       setCtmMargin(m['ctm_price_margin_pct'] ?? '5')
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
@@ -580,6 +587,9 @@ export default function ConfigPage() {
         { key: 'trade_proof_reject_enabled', value: proofRejectFlag ? 'true' : 'false' },
         { key: 'trade_proof_reject_max', value: String(Math.max(parseInt(proofRejectMax, 10) || 0, 1)) },
         { key: 'trade_buyer_cancel_after_pay_minutes', value: String(Math.max(parseInt(buyerCancelAfterPayMin, 10) || 0, 0)) },
+        { key: 'channels_enabled', value: channelsFlag ? 'true' : 'false' },
+        { key: 'channels_max_per_user', value: String(Math.max(parseInt(channelsMaxPerUser, 10) || 0, 1)) },
+        { key: 'channels_max_members', value: String(Math.max(parseInt(channelsMaxMembers, 10) || 0, 1)) },
       ])
       showToast('Feature settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save feature settings.', false) }
@@ -939,6 +949,27 @@ export default function ConfigPage() {
               <input className={inputCls} type="number" min="0" value={buyerCancelAfterPayMin} onChange={(e) => setBuyerCancelAfterPayMin(e.target.value)} placeholder="0" />
             </Field>
           </div>
+
+          {/* Channels (Telegram-style broadcast tab) — defaults ON */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={channelsFlag} onChange={(e) => setChannelsFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Channels tab <span className="font-mono text-xs text-text-muted">channels_enabled</span> <Badge variant="success" size="sm">default ON</Badge></p>
+              <p className="text-xs text-text-muted mt-0.5">Telegram-style broadcast Channels alongside Messages — users create text-only channels, discover public ones, or join private ones via invite link. Turn OFF to hide the tab and reject writes (existing channels/messages are kept, not deleted).</p>
+            </div>
+          </label>
+
+          {channelsFlag && (
+            <div className="rounded-xl border border-border p-4 space-y-4">
+              <SubSection label="Channel caps" />
+              <Field label="Max channels owned per user" hint="How many channels a single user may create/own at once (default 5).">
+                <input className={inputCls} type="number" min="1" value={channelsMaxPerUser} onChange={(e) => setChannelsMaxPerUser(e.target.value)} placeholder="5" />
+              </Field>
+              <Field label="Max members per channel" hint="Hard cap on subscribers a single channel can accumulate (default 10,000).">
+                <input className={inputCls} type="number" min="1" value={channelsMaxMembers} onChange={(e) => setChannelsMaxMembers(e.target.value)} placeholder="10000" />
+              </Field>
+            </div>
+          )}
 
           <div className="flex justify-end">
             <Button size="sm" loading={betaSaving} onClick={saveBeta}>Save Feature Settings</Button>
