@@ -2223,6 +2223,8 @@ export const adminApi = {
     return res.blob()
   },
 
+  getAds: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ ads: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/admin/ads' + buildQs(params)),
   getTrades: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ trades: Trade[]; total: number }>('/admin/trades' + buildQs(params)),
   getTrade: (id: string) =>
@@ -3241,6 +3243,8 @@ export const ctmApi = {
   adminApproveMerchant: (id: string, data?: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/approve`, { method: 'POST', body: data ? JSON.stringify(data) : undefined }),
   adminSuspendMerchant: (id: string, data: object) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/suspend`, { method: 'POST', body: JSON.stringify(data) }),
   adminChangeMerchantTier: (id: string, tier: string) => apiRequest<unknown>(`/ctm/merchants/admin/${id}/tier`, { method: 'PATCH', body: JSON.stringify({ tier }) }),
+  adminGetListings: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<{ listings: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/listings/admin/all' + buildQs(params)),
 
   // Admin proofs
   adminGetProofs: (params?: Record<string, string | number | undefined>) =>

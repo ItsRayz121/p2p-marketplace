@@ -104,6 +104,8 @@ export interface GetAdsParams {
   limit?: number
   merchantId?: string
   seller?: string
+  /** Admin-only override — public callers never pass this, so the public route stays active-only. */
+  status?: string
 }
 
 export interface PaginatedResult<T> {
@@ -552,7 +554,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   }
 
   const where: Prisma.AdWhereInput = {
-    status: 'active',
+    status: (params.status as Prisma.AdStatus) ?? 'active',
     coin: 'USDT',
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
     ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),

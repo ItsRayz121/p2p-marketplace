@@ -14,16 +14,26 @@ import {
   ArrowLeft, Shield, Star, TrendingUp, Users, AlertTriangle, Wallet,
   Scale, ClipboardList, CreditCard, Gavel, Bell, MessageSquareWarning,
   Sparkles, Mail, KeyRound, Copy, Check, ExternalLink,
+  ShieldCheck, Link2, Twitter, Instagram, Facebook, Youtube, Send, Globe,
 } from 'lucide-react'
 import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
 import { AppealCard } from '@/components/admin/AppealCard'
+import { KycDocImage } from '@/components/admin/KycDocImage'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-type Tab = 'intelligence' | 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
+type Tab = 'intelligence' | 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'kyc' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
+
+const SOCIAL_ICONS: Record<string, any> = {
+  twitter: Twitter, x: Twitter, instagram: Instagram, facebook: Facebook,
+  youtube: Youtube, telegram: Send, tiktok: Link2, website: Globe, link: Globe,
+}
+function socialIconFor(platform: string) {
+  return SOCIAL_ICONS[platform.toLowerCase()] ?? Globe
+}
 
 function statusTone(status: string): string {
   const s = status.toLowerCase()
@@ -353,6 +363,7 @@ export default function AdminUserProfilePage() {
     { key: 'disputes', label: 'Disputes & Ratings', icon: Scale },
     { key: 'referrals', label: 'Referrals', icon: Users },
     { key: 'payment', label: 'Payment & Addresses', icon: CreditCard },
+    { key: 'kyc', label: 'KYC & Social', icon: ShieldCheck },
     { key: 'fraud', label: 'Fraud History', icon: AlertTriangle, badge: data.fraudFlags?.length ?? 0 },
     { key: 'notifications', label: 'Notifications', icon: Bell },
     { key: 'audit', label: 'Audit', icon: ClipboardList },
@@ -878,6 +889,72 @@ export default function AdminUserProfilePage() {
                 ))}
               </ul>
             ) : <Empty msg="No saved delivery addresses." />}
+          </Section>
+        </div>
+      )}
+
+      {/* ── KYC & Social ── */}
+      {tab === 'kyc' && (
+        <div className="space-y-4">
+          <Section title="Social Media Links">
+            {p.socialLinks?.length ? (
+              <div className="px-5 py-3 space-y-2">
+                {p.socialLinksPublic && <Badge variant="success" size="sm">Public on profile</Badge>}
+                <ul className="divide-y divide-border -mx-5">
+                  {p.socialLinks.map((s: any, i: number) => {
+                    const Icon = socialIconFor(s.platform)
+                    return (
+                      <li key={i} className="px-5 py-3 text-sm flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <Icon size={15} className="text-text-muted shrink-0" />
+                          <span className="text-text-primary font-medium capitalize">{s.platform}</span>
+                          <a href={s.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline truncate">{s.url}</a>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {s.verified && <Badge variant="success" size="sm">Verified</Badge>}
+                          {s.hidden && <Badge variant="default" size="sm">Hidden</Badge>}
+                        </div>
+                      </li>
+                    )
+                  })}
+                </ul>
+              </div>
+            ) : <Empty msg="This user has not added any social media links." />}
+          </Section>
+          <Section title="KYC Submissions" count={data.kycSubmissions?.length}>
+            {data.kycSubmissions?.length ? (
+              <ul className="divide-y divide-border">
+                {data.kycSubmissions.map((k: any) => (
+                  <li key={k.id} className="px-5 py-4 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge variant={k.status === 'approved' ? 'success' : k.status === 'rejected' ? 'danger' : 'gold'} size="sm">{k.status}</Badge>
+                        <span className="text-xs text-text-muted uppercase">{k.tier}</span>
+                        {k.legalName && <span className="text-sm text-text-primary font-medium">{k.legalName}</span>}
+                      </div>
+                      <span className="text-xs text-text-muted">Submitted {fmtDate(k.createdAt)}{k.reviewedAt ? ` · Reviewed ${fmtDate(k.reviewedAt)}` : ''}</span>
+                    </div>
+                    {k.rejectionReason && (
+                      <p className="text-xs text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">Rejected: {k.rejectionReason}</p>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {k.frontUrl && <KycDocImage submissionId={k.id} kind="front" label="CNIC Front" />}
+                      {k.backUrl && <KycDocImage submissionId={k.id} kind="back" label="CNIC Back" />}
+                      {k.selfieUrl && <KycDocImage submissionId={k.id} kind="selfie" label="Selfie" />}
+                      {k.videoUrl && <KycDocImage submissionId={k.id} kind="video" label="Video" isVideo />}
+                    </div>
+                    {k.socialLinks?.length ? (
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
+                        <span>Submitted with KYC:</span>
+                        {k.socialLinks.map((s: any, i: number) => (
+                          <a key={i} href={s.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline capitalize">{s.platform}</a>
+                        ))}
+                      </div>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            ) : <Empty msg="No KYC submissions on file." />}
           </Section>
         </div>
       )}

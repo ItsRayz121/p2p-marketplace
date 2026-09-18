@@ -16,7 +16,7 @@ import { finalizeUsdtTrade, usdtResumeDeadline } from '../services/trade.service
 import { stepFromStatus } from '../services/settlementFlow'
 import { closeEpisode, reopenEpisode } from '../services/chatThread.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
-import { getPublicConfig } from '../services/marketplace.service'
+import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
@@ -495,7 +495,7 @@ export async function adminRoutes(app: FastifyInstance) {
         adminNotes: { orderBy: { createdAt: 'desc' }, take: 20 },
         paymentMethods: { orderBy: { createdAt: 'desc' } },
         savedAddresses: true,
-        kycSubmissions: { orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, tier: true, status: true, reviewedAt: true, createdAt: true } },
+        kycSubmissions: { orderBy: { createdAt: 'desc' }, take: 10, select: { id: true, tier: true, status: true, reviewedAt: true, createdAt: true, legalName: true, frontUrl: true, backUrl: true, selfieUrl: true, videoUrl: true, socialLinks: true, rejectionReason: true } },
         wallets: { select: { coin: true, network: true, balance: true, lockedBalance: true } },
       },
     })
@@ -666,6 +666,8 @@ export async function adminRoutes(app: FastifyInstance) {
           totalTrades: ts?.totalTrades ?? 0,
           avgRating,
           ratingCount: rCount,
+          socialLinks: user.socialLinks,
+          socialLinksPublic: user.socialLinksPublic,
         },
         summary: {
           p2pStatus, ctmBuyStatus, ctmSellStatus, gasStatus,
@@ -1656,6 +1658,20 @@ export async function adminRoutes(app: FastifyInstance) {
     if (user) await sendKycEmail('merchant_rejected', user.email, { reason: parsed.data.reason })
 
     return reply.send({ success: true })
+  })
+
+  // ── Ads (read-only marketplace listings viewer) ─────────────────────────────
+
+  app.get('/admin/ads', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as Record<string, string | undefined>
+    const data = await getAds({
+      page: query.page ? parseInt(query.page, 10) : 1,
+      limit: query.limit ? parseInt(query.limit, 10) : 20,
+      ...(query.side ? { side: query.side } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.seller ? { seller: query.seller } : {}),
+    })
+    return reply.send({ success: true, data })
   })
 
   // ── Trades ─────────────────────────────────────────────────────────────────
