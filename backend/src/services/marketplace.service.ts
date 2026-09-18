@@ -554,8 +554,10 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   }
 
   const where: Prisma.AdWhereInput = {
-    status: (params.status as Prisma.AdStatus) ?? 'active',
     coin: 'USDT',
+    // Admin-only: 'all' means no status filter at all; otherwise default to
+    // active (public callers never pass `status`, so their behavior is unchanged).
+    ...(params.status === 'all' ? {} : { status: (params.status as Prisma.AdStatus) ?? 'active' }),
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
     ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),
     ...(paymentMethodIdFilter

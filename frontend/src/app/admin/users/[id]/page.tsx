@@ -27,12 +27,18 @@ import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 
 type Tab = 'intelligence' | 'overview' | 'trades' | 'wallet' | 'disputes' | 'referrals' | 'payment' | 'kyc' | 'audit' | 'moderation' | 'appeals' | 'notifications' | 'fraud'
 
-const SOCIAL_ICONS: Record<string, any> = {
-  twitter: Twitter, x: Twitter, instagram: Instagram, facebook: Facebook,
-  youtube: Youtube, telegram: Send, tiktok: Link2, website: Globe, link: Globe,
-}
+// Platform values are free-form display strings (e.g. "Twitter/X", "YouTube")
+// — normalize the same way socialLinks.service.ts's normalizePlatform() does
+// before mapping to an icon, so aliases and casing don't fall through to Globe.
 function socialIconFor(platform: string) {
-  return SOCIAL_ICONS[platform.toLowerCase()] ?? Globe
+  const s = (platform || '').toLowerCase().trim()
+  if (s === 'x' || s === 'twitter' || s === 'twitter/x') return Twitter
+  if (s === 'ig' || s === 'instagram') return Instagram
+  if (s === 'fb' || s === 'facebook') return Facebook
+  if (s === 'youtube' || s === 'yt') return Youtube
+  if (s === 'telegram' || s === 'tg') return Send
+  if (s === 'tiktok') return Link2
+  return Globe
 }
 
 function statusTone(status: string): string {
@@ -938,10 +944,10 @@ export default function AdminUserProfilePage() {
                       <p className="text-xs text-danger bg-danger/5 border border-danger/20 rounded-lg px-3 py-2">Rejected: {k.rejectionReason}</p>
                     )}
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {k.frontUrl && <KycDocImage submissionId={k.id} kind="front" label="CNIC Front" />}
-                      {k.backUrl && <KycDocImage submissionId={k.id} kind="back" label="CNIC Back" />}
-                      {k.selfieUrl && <KycDocImage submissionId={k.id} kind="selfie" label="Selfie" />}
-                      {k.videoUrl && <KycDocImage submissionId={k.id} kind="video" label="Video" isVideo />}
+                      {k.hasFront && <KycDocImage submissionId={k.id} kind="front" label="CNIC Front" />}
+                      {k.hasBack && <KycDocImage submissionId={k.id} kind="back" label="CNIC Back" />}
+                      {k.hasSelfie && <KycDocImage submissionId={k.id} kind="selfie" label="Selfie" />}
+                      {k.hasVideo && <KycDocImage submissionId={k.id} kind="video" label="Video" isVideo />}
                     </div>
                     {k.socialLinks?.length ? (
                       <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">

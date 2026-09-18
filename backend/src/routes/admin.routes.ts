@@ -677,7 +677,14 @@ export async function adminRoutes(app: FastifyInstance) {
         withdrawals, deposits, depositAddresses,
         paymentMethods: user.paymentMethods,
         savedAddresses: user.savedAddresses,
-        kycSubmissions: user.kycSubmissions,
+        // Never ship raw Cloudinary storage URLs to the browser — the frontend
+        // loads doc images through the signed byte-proxy (GET /admin/kyc/:id/doc/:kind),
+        // it only needs to know whether each one exists.
+        kycSubmissions: user.kycSubmissions.map((k) => ({
+          id: k.id, tier: k.tier, status: k.status, reviewedAt: k.reviewedAt, createdAt: k.createdAt,
+          legalName: k.legalName, socialLinks: k.socialLinks, rejectionReason: k.rejectionReason,
+          hasFront: !!k.frontUrl, hasBack: !!k.backUrl, hasSelfie: !!k.selfieUrl, hasVideo: !!k.videoUrl,
+        })),
         wallets: user.wallets,
         disputes: { p2p: p2pDisputes, ctm: ctmDisputes },
         ratings: { p2p: ratingsReceived, ctm: ctmRatingsReceived },

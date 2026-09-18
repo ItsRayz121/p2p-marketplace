@@ -61,8 +61,7 @@ export default function AdminUsdtAdsPage() {
 
   const fetchAds = useCallback(async () => {
     try {
-      const params: Record<string, string | number> = { side, page, limit }
-      if (statusFilter !== 'all') params.status = statusFilter
+      const params: Record<string, string | number> = { side, status: statusFilter, page, limit }
       const data = await adminApi.getAds(params) as AdsResponse
       setAds(data.ads ?? [])
       setTotal(data.total ?? 0)
