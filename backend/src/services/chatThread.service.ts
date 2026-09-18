@@ -284,7 +284,7 @@ export interface SharedAdPreview {
  * A ref whose row no longer exists is simply absent from the returned map;
  * callers fill in `{ deleted: true }` themselves.
  */
-async function resolveSharedAdPreviews(refs: { market: Market; id: string }[]): Promise<Map<string, SharedAdPreview>> {
+export async function resolveSharedAdPreviews(refs: { market: Market; id: string }[]): Promise<Map<string, SharedAdPreview>> {
   const map = new Map<string, SharedAdPreview>()
   if (refs.length === 0) return map
   const usdtIds = [...new Set(refs.filter((r) => r.market === 'usdt').map((r) => r.id))]

@@ -145,6 +145,15 @@ export const FLAGS = {
    */
   MESSAGING_INBOX: 'messaging_inbox_enabled',
   /**
+   * Telegram-style broadcast Channels tab inside Messaging. When ON, users can
+   * create text-only broadcast channels (owner posts, members read), browse the
+   * public directory, and join via invite link. ON by default — purely additive
+   * (no trade/escrow/money path touches it), with the flag kept as an admin
+   * kill-switch: set `channels_enabled=false` to hide the tab and reject writes
+   * without losing any channel/message data.
+   */
+  CHANNELS: 'channels_enabled',
+  /**
    * Admin notification EMAIL channel. When ON, critical admin notifications
    * (email-eligible ones — withdrawal failures, reverted txs, unattributed
    * deposits) are ALSO emailed to ADMIN_ALERT_EMAIL, on top of the in-app bell,
@@ -197,6 +206,13 @@ export const FLAGS = {
 /** How many times a seller may bounce a buyer's payment proof before the next rejection auto-disputes. */
 export const TRADE_PROOF_REJECT_MAX_KEY = 'trade_proof_reject_max'
 export const TRADE_PROOF_REJECT_MAX_DEFAULT = 2
+
+/** How many channels a single user may own at once. */
+export const CHANNELS_MAX_PER_USER_KEY = 'channels_max_per_user'
+export const CHANNELS_MAX_PER_USER_DEFAULT = 5
+/** How many members a single channel may hold (owner included). */
+export const CHANNELS_MAX_MEMBERS_KEY = 'channels_max_members'
+export const CHANNELS_MAX_MEMBERS_DEFAULT = 10_000
 
 export type FlagKey = (typeof FLAGS)[keyof typeof FLAGS]
 
