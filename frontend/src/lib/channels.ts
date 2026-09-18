@@ -44,6 +44,7 @@ export interface ChannelMessage {
   senderId: string
   body: string
   deletedAt?: string | null
+  editedAt?: string | null
   isSystem: boolean
   createdAt: string
   clientId?: string | null
@@ -74,9 +75,11 @@ export const channelsApi = {
     }),
   deleteMessage: (channelId: string, messageId: string) =>
     apiRequest<unknown>(`/channels/${channelId}/messages/${messageId}/delete`, { method: 'POST' }),
+  editMessage: (channelId: string, messageId: string, body: string) =>
+    apiRequest<ChannelMessage>(`/channels/${channelId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   join: (channelId: string) => apiRequest<{ joined: boolean }>(`/channels/${channelId}/join`, { method: 'POST' }),
   leave: (channelId: string) => apiRequest<{ left: boolean }>(`/channels/${channelId}/leave`, { method: 'POST' }),
-  update: (channelId: string, input: { name?: string; description?: string; visibility?: 'public' | 'private' }) =>
+  update: (channelId: string, input: { name?: string; description?: string; visibility?: 'public' | 'private'; avatarUrl?: string }) =>
     apiRequest<ChannelCard>(`/channels/${channelId}`, { method: 'PATCH', body: JSON.stringify(input) }),
   regenerateInvite: (channelId: string) => apiRequest<{ slug: string }>(`/channels/${channelId}/regenerate-invite`, { method: 'POST' }),
   delete: (channelId: string) => apiRequest<{ deleted: boolean }>(`/channels/${channelId}`, { method: 'DELETE' }),

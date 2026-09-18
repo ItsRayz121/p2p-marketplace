@@ -5,20 +5,22 @@ import { useParams, useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { channelsApi, type ChannelDetail, type ChannelMessage } from '@/lib/channels'
 import { renderChannelText } from '@/lib/richText'
-import { EmojiPicker, insertAtCursor } from '@/components/channels/EmojiPicker'
+import { useFileUpload } from '@/hooks/useFileUpload'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 import { Modal } from '@/components/ui/Modal'
+import { Spinner } from '@/components/ui/Spinner'
+import { UploadProgress } from '@/components/ui/UploadProgress'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
-  ExternalLink, Tag, Radio,
+  ExternalLink, Tag, Radio, X, Camera,
 } from 'lucide-react'
 
 function SharedAdCard({ ad }: { ad: NonNullable<ChannelMessage['sharedAd']> }) {
@@ -50,6 +52,7 @@ export default function ChannelPage() {
   const [draft, setDraft] = useState('')
   const [sending, setSending] = useState(false)
   const [joining, setJoining] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
 
@@ -155,16 +158,32 @@ export default function ChannelPage() {
     const body = draft.trim()
     if (!body) return
     setSending(true)
-    const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
     try {
-      await channelsApi.post(channel.id, body, clientId)
+      if (editingId) {
+        await channelsApi.editMessage(channel.id, editingId, body)
+        setEditingId(null)
+      } else {
+        const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+        await channelsApi.post(channel.id, body, clientId)
+      }
       setDraft('')
       await load()
     } catch (e) {
-      toast.error('Could not post', e instanceof Error ? e.message : 'Please try again')
+      toast.error(editingId ? 'Could not save edit' : 'Could not post', e instanceof Error ? e.message : 'Please try again')
     } finally {
       setSending(false)
     }
+  }
+
+  function startEdit(m: ChannelMessage) {
+    setEditingId(m.id)
+    setDraft(m.body)
+    requestAnimationFrame(() => draftRef.current?.focus())
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setDraft('')
   }
 
   async function sendSharedAd(item: { market: 'usdt' | 'ctm'; id: string }) {
@@ -186,18 +205,11 @@ export default function ChannelPage() {
     if (!window.confirm('Delete this broadcast? Every member will see it was removed.')) return
     try {
       await channelsApi.deleteMessage(channel.id, id)
+      if (editingId === id) cancelEdit()
       await load()
     } catch (e) {
       toast.error('Could not delete message', e instanceof Error ? e.message : 'Please try again')
     }
-  }
-
-  function pickEmoji(emoji: string) {
-    const el = draftRef.current
-    if (!el) { setDraft((d) => d + emoji); return }
-    const { next, caret } = insertAtCursor(el, draft, emoji)
-    setDraft(next)
-    requestAnimationFrame(() => { el.focus(); el.setSelectionRange(caret, caret) })
   }
 
   if (error) return <ErrorState description={error} onRetry={load} />
@@ -299,24 +311,36 @@ export default function ChannelPage() {
                     </div>
                   )
                 }
+                const withinMutateWindow = mine && Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
                 return (
                   <div key={m.id} className="group flex items-start gap-2">
                     <UserAvatar name={channel.owner.fullName || channel.owner.username || 'Owner'} avatarUrl={channel.owner.avatarUrl} size="sm" />
                     <div className="min-w-0 flex-1">
-                      <div className="rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%]">
+                      <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}
                         {m.body && <div className="whitespace-pre-wrap break-words">{renderChannelText(m.body)}</div>}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-[10px] text-text-muted">{fmtTime(m.createdAt)}</p>
-                        {mine && Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000 && (
-                          <button
-                            onClick={() => void deleteMessage(m.id)}
-                            aria-label="Delete broadcast"
-                            className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity text-text-muted hover:text-danger"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                        <p className="text-[10px] text-text-muted">
+                          {fmtTime(m.createdAt)}{m.editedAt && ' · edited'}
+                        </p>
+                        {withinMutateWindow && (
+                          <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-2">
+                            <button
+                              onClick={() => startEdit(m)}
+                              aria-label="Edit broadcast"
+                              className="text-text-muted hover:text-primary"
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => void deleteMessage(m.id)}
+                              aria-label="Delete broadcast"
+                              className="text-text-muted hover:text-danger"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
                         )}
                       </div>
                     </div>
@@ -328,12 +352,19 @@ export default function ChannelPage() {
 
           {isOwner ? (
             <div className="border-t border-border bg-surface">
+              {editingId && (
+                <div className="flex items-center justify-between px-3 pt-2 text-xs text-primary">
+                  <span>Editing broadcast</span>
+                  <button onClick={cancelEdit} className="flex items-center gap-1 text-text-muted hover:text-text-primary">
+                    <X className="w-3 h-3" /> Cancel
+                  </button>
+                </div>
+              )}
               <div className="flex items-end gap-2 px-3 py-3">
-                <EmojiPicker onPick={pickEmoji} disabled={sending} />
                 <button
                   type="button"
                   onClick={() => setShareAdOpen(true)}
-                  disabled={sending}
+                  disabled={sending || !!editingId}
                   aria-label="Share a listing"
                   className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
                 >
@@ -344,7 +375,7 @@ export default function ChannelPage() {
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-                  placeholder="Broadcast **bold**, __underline__, > quote…"
+                  placeholder="Type a message…"
                   maxLength={4000}
                   rows={1}
                   disabled={sending}
@@ -353,7 +384,7 @@ export default function ChannelPage() {
                 <button
                   onClick={() => void send()}
                   disabled={sending || !draft.trim()}
-                  aria-label="Post"
+                  aria-label={editingId ? 'Save edit' : 'Post'}
                   className="p-2.5 rounded-full bg-primary text-white disabled:opacity-50 flex-shrink-0"
                 >
                   <Send className="w-4 h-4" />
@@ -392,23 +423,38 @@ function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
   isOpen: boolean
   onClose: () => void
   channel: ChannelDetail
-  onSaved: (updated: { name: string; description: string | null; visibility: 'public' | 'private' }) => void
+  onSaved: (updated: { name: string; description: string | null; visibility: 'public' | 'private'; avatarUrl: string | null }) => void
 }) {
   const [name, setName] = useState(channel.name)
   const [description, setDescription] = useState(channel.description ?? '')
   const [visibility, setVisibility] = useState<'public' | 'private'>(channel.visibility)
+  const [avatarUrl, setAvatarUrl] = useState(channel.avatarUrl)
   const [busy, setBusy] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const { upload: uploadAvatar, uploading: uploadingAvatar, error: uploadAvatarError, progress: avatarProgress } = useFileUpload('avatar')
 
   useEffect(() => {
-    if (isOpen) { setName(channel.name); setDescription(channel.description ?? ''); setVisibility(channel.visibility) }
+    if (isOpen) { setName(channel.name); setDescription(channel.description ?? ''); setVisibility(channel.visibility); setAvatarUrl(channel.avatarUrl) }
   }, [isOpen, channel])
+
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      setAvatarUrl(await uploadAvatar(file))
+    } catch { /* upload hook sets error state */ }
+    if (avatarInputRef.current) avatarInputRef.current.value = ''
+  }
 
   async function submit() {
     if (name.trim().length < 3 || busy) return
     setBusy(true)
     try {
-      const updated = await channelsApi.update(channel.id, { name: name.trim(), description: description.trim(), visibility })
-      onSaved({ name: updated.name, description: updated.description, visibility: updated.visibility })
+      const updated = await channelsApi.update(channel.id, {
+        name: name.trim(), description: description.trim(), visibility,
+        ...(avatarUrl && avatarUrl !== channel.avatarUrl ? { avatarUrl } : {}),
+      })
+      onSaved({ name: updated.name, description: updated.description, visibility: updated.visibility, avatarUrl: updated.avatarUrl })
     } catch (e) {
       toast.error('Could not save changes', e instanceof Error ? e.message : 'Please try again')
     } finally {
@@ -419,6 +465,36 @@ function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Edit channel">
       <div className="space-y-3">
+        <div className="flex items-center gap-4">
+          <div className="relative">
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="Channel avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
+            ) : (
+              <UserAvatar name={name || channel.name} avatarUrl={null} size="lg" />
+            )}
+            <button
+              type="button"
+              onClick={() => avatarInputRef.current?.click()}
+              disabled={uploadingAvatar}
+              className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-primary text-white flex items-center justify-center shadow hover:bg-primary-hover transition-colors disabled:opacity-50"
+            >
+              {uploadingAvatar ? <Spinner size="sm" /> : <Camera size={12} />}
+            </button>
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={handleAvatarChange}
+            />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-text-primary">Channel picture</p>
+            <p className="text-xs text-text-muted">JPEG, PNG or WebP, max 10MB</p>
+            {uploadingAvatar && avatarProgress && <UploadProgress progress={avatarProgress} className="mt-1 max-w-[12rem]" />}
+            {uploadAvatarError && <p className="text-xs text-danger mt-0.5">{uploadAvatarError}</p>}
+          </div>
+        </div>
         <div>
           <label className="block text-xs font-medium text-text-muted mb-1">Channel name</label>
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} className="w-full px-3 py-2 text-sm border border-border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary" />

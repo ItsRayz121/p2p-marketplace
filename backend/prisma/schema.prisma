@@ -1680,6 +1680,7 @@ model ChannelMessage {
   // markup — rendered client-side (see frontend richText helper). Never HTML.
   body      String    @db.VarChar(4000)
   deletedAt DateTime?
+  editedAt  DateTime?
   isSystem  Boolean   @default(false)
   createdAt DateTime  @default(now())
   clientId  String?

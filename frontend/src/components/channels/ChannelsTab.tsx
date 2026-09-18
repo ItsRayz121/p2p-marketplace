@@ -75,33 +75,17 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
 
   return (
     <div>
-      <button
-        onClick={() => setCreateOpen(true)}
-        className="w-full flex items-center justify-center gap-2 p-3 mb-4 rounded-lg border border-dashed border-primary/40 text-primary font-medium text-sm hover:bg-primary/5 transition-colors"
-      >
-        <Plus className="w-4 h-4" /> Create a channel
-      </button>
-
-      {mine.length > 0 && (
-        <div className="mb-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">My channels</h2>
-          <ul className="space-y-2">
-            {mine.map((c) => (
-              <li key={c.id}>
-                <ChannelRow
-                  channel={c}
-                  badge={
-                    <span className="text-[10px] text-text-muted flex-shrink-0">{fmtDateTime(c.lastMessageAt)}</span>
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
       <div>
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">Discover</h2>
+        <div className="flex items-center gap-2 mb-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted flex-1">Discover</h2>
+          <button
+            onClick={() => setCreateOpen(true)}
+            aria-label="Create a channel"
+            className="w-7 h-7 flex items-center justify-center rounded-full border border-dashed border-primary/40 text-primary hover:bg-primary/5 transition-colors flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+        </div>
         <div className="relative mb-3">
           <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -140,6 +124,24 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
           </ul>
         )}
       </div>
+
+      {mine.length > 0 && (
+        <div className="mt-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">My channels</h2>
+          <ul className="space-y-2">
+            {mine.map((c) => (
+              <li key={c.id}>
+                <ChannelRow
+                  channel={c}
+                  badge={
+                    <span className="text-[10px] text-text-muted flex-shrink-0">{fmtDateTime(c.lastMessageAt)}</span>
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <CreateChannelModal
         isOpen={createOpen}

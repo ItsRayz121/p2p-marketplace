@@ -2,6 +2,7 @@ import { randomBytes } from 'crypto'
 import { Prisma } from '@prisma/client'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
+import { assertCloudinaryUrl } from '../lib/upload'
 import { assertSafeChannelText } from '../lib/channelTextSafety'
 import {
   CHANNELS_MAX_PER_USER_KEY, CHANNELS_MAX_PER_USER_DEFAULT,
@@ -145,7 +146,7 @@ export async function getChannel(userId: string, idOrSlug: string) {
 }
 
 const CHANNEL_MESSAGE_SELECT = {
-  id: true, senderId: true, body: true, deletedAt: true, isSystem: true, createdAt: true,
+  id: true, senderId: true, body: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
   clientId: true, sharedAdMarket: true, sharedAdId: true,
 } as const
 
@@ -240,18 +241,22 @@ export async function leaveChannel(userId: string, channelId: string): Promise<v
   ])
 }
 
-export async function updateChannel(userId: string, channelId: string, input: { name?: string | undefined; description?: string | undefined; visibility?: 'public' | 'private' | undefined }) {
+export async function updateChannel(userId: string, channelId: string, input: { name?: string | undefined; description?: string | undefined; visibility?: 'public' | 'private' | undefined; avatarUrl?: string | undefined }) {
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)
   const name = input.name?.trim()
   if (name !== undefined && name.length < 3) throw new AppError('VALIDATION_ERROR', 'Channel name must be at least 3 characters', 400)
+  // Only our own Cloudinary uploads — same rule as user avatars — prevents
+  // storing arbitrary third-party image URLs (tracking pixels, phishing).
+  if (input.avatarUrl !== undefined) assertCloudinaryUrl(input.avatarUrl, 'avatarUrl')
   const updated = await db.channel.update({
     where: { id: channelId },
     data: {
       ...(name !== undefined ? { name } : {}),
       ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
       ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
+      ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl } : {}),
     },
     select: CHANNEL_CARD_SELECT,
   })
@@ -376,7 +381,9 @@ export async function postChannelMessage(
   }
 }
 
-const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
+// Shared by delete and edit — an owner can fix a typo or pull a broadcast
+// shortly after sending, but not rewrite history long after members have read it.
+const MESSAGE_MUTATE_WINDOW_MS = 15 * 60 * 1000
 
 export async function deleteChannelMessage(userId: string, channelId: string, messageId: string) {
   const message = await db.channelMessage.findUnique({
@@ -387,9 +394,34 @@ export async function deleteChannelMessage(userId: string, channelId: string, me
     throw new AppError('NOT_FOUND', 'Message not found', 404)
   }
   if (message.deletedAt) return { ok: true }
-  if (Date.now() - message.createdAt.getTime() > MESSAGE_DELETE_WINDOW_MS) {
+  if (Date.now() - message.createdAt.getTime() > MESSAGE_MUTATE_WINDOW_MS) {
     throw new AppError('VALIDATION_ERROR', 'Messages can only be deleted within 15 minutes of sending.', 400)
   }
   await db.channelMessage.update({ where: { id: messageId }, data: { deletedAt: new Date() } })
   return { ok: true }
+}
+
+export async function editChannelMessage(userId: string, channelId: string, messageId: string, body: string) {
+  const text = body.trim()
+  if (!text) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (text.length > MESSAGE_MAX_LEN) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
+  assertSafeChannelText(text)
+
+  const message = await db.channelMessage.findUnique({
+    where: { id: messageId },
+    select: { id: true, channelId: true, senderId: true, isSystem: true, deletedAt: true, createdAt: true },
+  })
+  if (!message || message.channelId !== channelId || message.senderId !== userId || message.isSystem) {
+    throw new AppError('NOT_FOUND', 'Message not found', 404)
+  }
+  if (message.deletedAt) throw new AppError('VALIDATION_ERROR', 'This broadcast was deleted', 400)
+  if (Date.now() - message.createdAt.getTime() > MESSAGE_MUTATE_WINDOW_MS) {
+    throw new AppError('VALIDATION_ERROR', 'Messages can only be edited within 15 minutes of sending.', 400)
+  }
+  const updated = await db.channelMessage.update({
+    where: { id: messageId },
+    data: { body: text, editedAt: new Date() },
+    select: CHANNEL_MESSAGE_SELECT,
+  })
+  return updated
 }

@@ -6,7 +6,7 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import {
   listMyChannels, searchChannelDirectory, createChannel, getChannel, listChannelMessages,
   joinChannel, leaveChannel, updateChannel, regenerateInvite, deleteChannel, kickMember,
-  listMembers, postChannelMessage, deleteChannelMessage,
+  listMembers, postChannelMessage, deleteChannelMessage, editChannelMessage,
 } from '../services/channel.service'
 
 const createSchema = z.object({
@@ -18,12 +18,16 @@ const updateSchema = z.object({
   name: z.string().trim().min(3).max(60).optional(),
   description: z.string().trim().max(300).optional(),
   visibility: z.enum(['public', 'private']).optional(),
+  avatarUrl: z.string().url().max(500).optional(),
 })
 const postSchema = z.object({
   body: z.string().max(4000).optional().default(''),
   clientId: z.string().min(1).max(64).optional(),
   sharedAdMarket: z.enum(['usdt', 'ctm']).optional(),
   sharedAdId: z.string().min(1).max(64).optional(),
+})
+const editSchema = z.object({
+  body: z.string().trim().min(1).max(4000),
 })
 
 /** Telegram-style broadcast Channels tab — see channel.service.ts for the model. */
@@ -85,6 +89,15 @@ export async function channelRoutes(app: FastifyInstance) {
     await assertEnabled()
     const { channelId, messageId } = req.params as { channelId: string; messageId: string }
     const data = await deleteChannelMessage(req.user!.id, channelId, messageId)
+    return reply.send({ success: true, data })
+  })
+
+  app.patch('/channels/:channelId/messages/:messageId', { preHandler: [authenticate] }, async (req, reply) => {
+    await assertEnabled()
+    const { channelId, messageId } = req.params as { channelId: string; messageId: string }
+    const parsed = editSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await editChannelMessage(req.user!.id, channelId, messageId, parsed.data.body)
     return reply.send({ success: true, data })
   })
 
