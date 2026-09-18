@@ -24,6 +24,7 @@ export const CLOUDINARY_FOLDERS = {
   GAS_LOGO: 'rupchain/gas/logos',
   AVATAR: 'rupchain/avatars',
   CHAT_IMAGE: 'rupchain/trade/chat',
+  CHANNEL_IMAGE: 'rupchain/channels/images',
   APPEAL_EVIDENCE: 'rupchain/appeals/evidence',
   BLOG_IMAGE: 'rupchain/blog',
   GIVEAWAY_IMAGE: 'rupchain/giveaways',

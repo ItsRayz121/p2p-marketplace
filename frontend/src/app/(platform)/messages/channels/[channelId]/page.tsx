@@ -6,6 +6,8 @@ import { useAuth } from '@/hooks/useAuth'
 import { channelsApi, type ChannelDetail, type ChannelMessage } from '@/lib/channels'
 import { renderChannelText } from '@/lib/richText'
 import { useFileUpload } from '@/hooks/useFileUpload'
+import { compressImage } from '@/lib/imageCompress'
+import { isTrustedImageUrl } from '@/lib/utils'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -20,7 +22,7 @@ import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
-  ExternalLink, Tag, Radio, X, Camera,
+  ExternalLink, Tag, Radio, X, Camera, ImagePlus,
 } from 'lucide-react'
 
 function SharedAdCard({ ad }: { ad: NonNullable<ChannelMessage['sharedAd']> }) {
@@ -55,6 +57,14 @@ export default function ChannelPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
+
+  // Pending image attachment — compressed client-side, then uploaded to
+  // Cloudinary the moment it's picked; the URL waits here until the user hits
+  // send (so they can add a caption first), mirroring the DM thread's flow.
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const [compressing, setCompressing] = useState(false)
+  const imageInputRef = useRef<HTMLInputElement>(null)
+  const { upload: uploadImage, uploading: uploadingImage, progress: imageProgress } = useFileUpload('channel-image')
 
   const menuAnchorRef = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -156,7 +166,7 @@ export default function ChannelPage() {
   async function send() {
     if (!channel || sending) return
     const body = draft.trim()
-    if (!body) return
+    if (!body && !pendingImage) return
     setSending(true)
     try {
       if (editingId) {
@@ -164,9 +174,10 @@ export default function ChannelPage() {
         setEditingId(null)
       } else {
         const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
-        await channelsApi.post(channel.id, body, clientId)
+        await channelsApi.post(channel.id, body, clientId, undefined, pendingImage ?? undefined)
       }
       setDraft('')
+      setPendingImage(null)
       await load()
     } catch (e) {
       toast.error(editingId ? 'Could not save edit' : 'Could not post', e instanceof Error ? e.message : 'Please try again')
@@ -176,6 +187,9 @@ export default function ChannelPage() {
   }
 
   function startEdit(m: ChannelMessage) {
+    // Editing only ever changes text (see editChannelMessage) — drop any
+    // not-yet-sent image pick rather than silently losing it on save.
+    setPendingImage(null)
     setEditingId(m.id)
     setDraft(m.body)
     requestAnimationFrame(() => draftRef.current?.focus())
@@ -184,6 +198,21 @@ export default function ChannelPage() {
   function cancelEdit() {
     setEditingId(null)
     setDraft('')
+  }
+
+  async function onPickImage(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = '' // allow re-picking the same file
+    if (!file) return
+    setCompressing(true)
+    try {
+      const url = await uploadImage(await compressImage(file))
+      setPendingImage(url)
+    } catch (err) {
+      toast.error('Image upload failed', err instanceof Error ? err.message : 'Please try again')
+    } finally {
+      setCompressing(false)
+    }
   }
 
   async function sendSharedAd(item: { market: 'usdt' | 'ctm'; id: string }) {
@@ -318,6 +347,11 @@ export default function ChannelPage() {
                     <div className="min-w-0 flex-1">
                       <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}
+                        {isTrustedImageUrl(m.attachmentUrl) && (
+                          <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
+                            <img src={m.attachmentUrl!} alt="Broadcast attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                          </a>
+                        )}
                         {m.body && <div className="whitespace-pre-wrap break-words">{renderChannelText(m.body)}</div>}
                       </div>
                       <div className="flex items-center gap-2 mt-0.5">
@@ -360,7 +394,44 @@ export default function ChannelPage() {
                   </button>
                 </div>
               )}
+              {(pendingImage || uploadingImage || compressing) && (
+                <div className="px-3 pt-2">
+                  {pendingImage ? (
+                    <div className="relative inline-block">
+                      <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                      <button
+                        onClick={() => setPendingImage(null)}
+                        aria-label="Remove image"
+                        className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-danger text-white flex items-center justify-center"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-text-muted">
+                      <Spinner size="sm" /> {compressing ? 'Preparing image…' : 'Uploading…'}
+                      {uploadingImage && imageProgress && <UploadProgress progress={imageProgress} className="max-w-[8rem]" />}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex items-end gap-2 px-3 py-3">
+                <button
+                  type="button"
+                  onClick={() => imageInputRef.current?.click()}
+                  disabled={sending || !!editingId || uploadingImage || compressing || !!pendingImage}
+                  aria-label="Attach an image"
+                  className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
+                >
+                  <ImagePlus className="w-5 h-5" />
+                </button>
+                <input
+                  ref={imageInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(e) => void onPickImage(e)}
+                />
                 <button
                   type="button"
                   onClick={() => setShareAdOpen(true)}
@@ -383,7 +454,7 @@ export default function ChannelPage() {
                 />
                 <button
                   onClick={() => void send()}
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || (editingId ? !draft.trim() : !draft.trim() && !pendingImage)}
                   aria-label={editingId ? 'Save edit' : 'Post'}
                   className="p-2.5 rounded-full bg-primary text-white disabled:opacity-50 flex-shrink-0"
                 >

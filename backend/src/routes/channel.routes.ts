@@ -25,6 +25,7 @@ const postSchema = z.object({
   clientId: z.string().min(1).max(64).optional(),
   sharedAdMarket: z.enum(['usdt', 'ctm']).optional(),
   sharedAdId: z.string().min(1).max(64).optional(),
+  attachmentUrl: z.string().url().max(500).optional(),
 })
 const editSchema = z.object({
   body: z.string().trim().min(1).max(4000),
@@ -81,7 +82,7 @@ export async function channelRoutes(app: FastifyInstance) {
     const sharedAd = parsed.data.sharedAdMarket && parsed.data.sharedAdId
       ? { market: parsed.data.sharedAdMarket, id: parsed.data.sharedAdId }
       : undefined
-    const message = await postChannelMessage(req.user!.id, channelId, parsed.data.body, parsed.data.clientId, sharedAd)
+    const message = await postChannelMessage(req.user!.id, channelId, parsed.data.body, parsed.data.clientId, sharedAd, parsed.data.attachmentUrl)
     return reply.code(201).send({ success: true, data: message })
   })
 

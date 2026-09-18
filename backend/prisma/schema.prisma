@@ -1628,11 +1628,12 @@ model UsernameHistory {
   @@index([userId])
 }
 
-/// Telegram-style broadcast channel: the owner posts text-only updates, members
-/// read. Deliberately a separate model from ChatThread (always a 2-person DM
-/// with images/attachments) rather than reusing it — a channel is one-to-many
-/// broadcast, not a conversation, and keeping it text-only avoids the media
-/// storage/bandwidth cost a DM-style attachment flow would add here.
+/// Telegram-style broadcast channel: the owner posts updates, members read.
+/// Deliberately a separate model from ChatThread (always a 2-person DM) rather
+/// than reusing it — a channel is one-to-many broadcast, not a conversation.
+/// Broadcasts may carry one image (ChannelMessage.attachmentUrl) — client-side
+/// compressed before upload and served off Cloudinary's CDN, so the fan-out to
+/// many members is cache hits, not repeated storage/transform cost.
 model Channel {
   id          String           @id @default(cuid())
   ownerId     String
@@ -1679,6 +1680,7 @@ model ChannelMessage {
   // Raw text as typed, including the lightweight **bold**/__underline__/`>` quote
   // markup — rendered client-side (see frontend richText helper). Never HTML.
   body      String    @db.VarChar(4000)
+  attachmentUrl String?
   deletedAt DateTime?
   editedAt  DateTime?
   isSystem  Boolean   @default(false)

@@ -146,7 +146,7 @@ export async function getChannel(userId: string, idOrSlug: string) {
 }
 
 const CHANNEL_MESSAGE_SELECT = {
-  id: true, senderId: true, body: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
+  id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
   clientId: true, sharedAdMarket: true, sharedAdId: true,
 } as const
 
@@ -167,7 +167,7 @@ export async function listChannelMessages(userId: string, channelId: string) {
     select: CHANNEL_MESSAGE_SELECT,
   })
   rows.reverse()
-  const messages = rows.map((m) => (m.deletedAt ? { ...m, body: '', sharedAdMarket: null, sharedAdId: null } : m))
+  const messages = rows.map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null } : m))
 
   // Resolve one-tap-shared listings to their CURRENT live state, same as the DM
   // inbox (see resolveSharedAdPreviews) — a shared card should never show a
@@ -335,11 +335,16 @@ export async function postChannelMessage(
   body: string,
   clientId?: string,
   sharedAd?: { market: Market; id: string },
+  attachmentUrl?: string,
 ) {
   const text = body.trim()
-  if (!text && !sharedAd) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (!text && !sharedAd && !attachmentUrl) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > MESSAGE_MAX_LEN) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
   if (text) assertSafeChannelText(text)
+  // Broadcasts fan out to every member (up to the channel cap), unlike a DM —
+  // only our own Cloudinary uploads are allowed, so nobody can post an arbitrary
+  // third-party URL (tracking pixel, phishing image) to a public audience.
+  if (attachmentUrl) assertCloudinaryUrl(attachmentUrl, 'attachmentUrl')
 
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
@@ -362,6 +367,7 @@ export async function postChannelMessage(
       db.channelMessage.create({
         data: {
           channelId, senderId: userId, body: text, clientId: clientId ?? null,
+          ...(attachmentUrl ? { attachmentUrl } : {}),
           ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
         },
         select: CHANNEL_MESSAGE_SELECT,

@@ -2,12 +2,16 @@
 import { useState, useCallback } from 'react'
 import { apiRequest } from '@/lib/api'
 
-type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image' | 'blog-image' | 'giveaway-image'
+type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'merchant-proof' | 'avatar' | 'chat-image' | 'blog-image' | 'giveaway-image' | 'channel-image'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024 // 50 MB
+// Broadcasts fan out to every channel member, so a broadcast image goes through
+// client-side compression first (see lib/imageCompress.ts) and is capped much
+// tighter than an ordinary chat attachment.
+const MAX_CHANNEL_IMAGE_BYTES = 2 * 1024 * 1024 // 2 MB
 
 /** Live upload progress in bytes. `pct` is 0–100 (0 until the first tick). */
 export interface UploadProgress {
@@ -74,7 +78,7 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
 
     const isVideo = type === 'kyc-video'
     const allowed = isVideo ? ALLOWED_VIDEO_TYPES : ALLOWED_IMAGE_TYPES
-    const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES
+    const maxBytes = isVideo ? MAX_VIDEO_BYTES : type === 'channel-image' ? MAX_CHANNEL_IMAGE_BYTES : MAX_IMAGE_BYTES
 
     if (!allowed.includes(file.type)) {
       const msg = isVideo
@@ -85,7 +89,7 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
     }
 
     if (file.size > maxBytes) {
-      const msg = `File size must be ${isVideo ? '50' : '10'} MB or less.`
+      const msg = `File size must be ${isVideo ? '50' : Math.round(maxBytes / (1024 * 1024))} MB or less.`
       setError(msg)
       throw new Error(msg)
     }

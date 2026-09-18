@@ -43,6 +43,7 @@ export interface ChannelMessage {
   id: string
   senderId: string
   body: string
+  attachmentUrl?: string | null
   deletedAt?: string | null
   editedAt?: string | null
   isSystem: boolean
@@ -64,13 +65,14 @@ export const channelsApi = {
     apiRequest<{ id: string; slug: string }>('/channels', { method: 'POST', body: JSON.stringify(input) }),
   get: (idOrSlug: string) => apiRequest<ChannelDetail>(`/channels/${idOrSlug}`),
   messages: (channelId: string) => apiRequest<ChannelMessage[]>(`/channels/${channelId}/messages`),
-  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }) =>
+  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, attachmentUrl?: string) =>
     apiRequest<ChannelMessage>(`/channels/${channelId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
         body,
         ...(clientId ? { clientId } : {}),
         ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+        ...(attachmentUrl ? { attachmentUrl } : {}),
       }),
     }),
   deleteMessage: (channelId: string, messageId: string) =>
