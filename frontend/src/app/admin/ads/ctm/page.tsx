@@ -23,8 +23,8 @@ interface CtmListingRow {
   pricePerUnit: string
   availableAmount: string
   totalAmount: string
-  minOrderPkr: string
-  maxOrderPkr: string
+  minOrderTokens: string
+  maxOrderTokens: string
   status: string
   createdAt: string
   token: { id: string; symbol: string; name: string }
@@ -165,7 +165,7 @@ export default function AdminCtmAdsPage() {
                     </td>
                     <td className="px-4 py-3 text-text-primary" data-label="Price/Unit">{Number(l.pricePerUnit).toLocaleString()}</td>
                     <td className="px-4 py-3 text-text-primary" data-label="Available">{Number(l.availableAmount).toLocaleString()} / {Number(l.totalAmount).toLocaleString()} {l.token.symbol}</td>
-                    <td className="px-4 py-3 text-text-secondary" data-label="Order Limits">{Number(l.minOrderPkr).toLocaleString()} – {Number(l.maxOrderPkr).toLocaleString()}</td>
+                    <td className="px-4 py-3 text-text-secondary" data-label="Order Limits">{(Number(l.minOrderTokens) * Number(l.pricePerUnit)).toLocaleString()} – {(Number(l.maxOrderTokens) * Number(l.pricePerUnit)).toLocaleString()}</td>
                     <td className="px-4 py-3 text-text-secondary" data-label="Payment Methods">{l.resolvedPaymentMethods?.map((m) => m.label).join(', ') || '—'}</td>
                     <td className="px-4 py-3" data-label="Status">
                       <Badge variant={statusVariant(l.status)} size="sm">{l.status}</Badge>

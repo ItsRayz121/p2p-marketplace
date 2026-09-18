@@ -553,11 +553,19 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     })
   }
 
+  // Admin-only param — validate against the real enum instead of trusting the
+  // raw query string, so a bad/typo'd value 400s cleanly instead of throwing
+  // an unhandled Prisma validation error.
+  const VALID_AD_STATUSES = new Set<string>(Object.values(AdStatus))
+  if (params.status && params.status !== 'all' && !VALID_AD_STATUSES.has(params.status)) {
+    throw Errors.VALIDATION_ERROR(`Invalid status filter: ${params.status}`)
+  }
+
   const where: Prisma.AdWhereInput = {
     coin: 'USDT',
     // Admin-only: 'all' means no status filter at all; otherwise default to
     // active (public callers never pass `status`, so their behavior is unchanged).
-    ...(params.status === 'all' ? {} : { status: (params.status as AdStatus) ?? 'active' }),
+    ...(params.status === 'all' ? {} : { status: (params.status as AdStatus | undefined) ?? 'active' }),
     ...(params.side ? { side: params.side as 'buy' | 'sell' } : {}),
     ...(params.network && ALLOWED_NETWORKS.includes(params.network) ? { network: params.network } : {}),
     ...(paymentMethodIdFilter
