@@ -18,6 +18,7 @@ import { closeEpisode, reopenEpisode } from '../services/chatThread.service'
 import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscriptions } from '../services/moralisStreams.service'
 import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
+import { runChannelRetention } from '../jobs/channelRetention.job'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
@@ -3679,6 +3680,15 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/media-retention/run', { preHandler: superStepUp }, async (req, reply) => {
     const result = await runMediaRetention({ force: true })
     await createAuditLog(req.user!.id, 'MEDIA_RETENTION_RUN', 'PlatformConfig', 'media_retention', result ?? {}, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: result })
+  })
+
+  // POST /admin/channel-retention/run — manually trigger the channel-broadcast
+  // purge now (row + attached image). Still honours the configured retention
+  // window, so it can only delete already-past-cutoff broadcasts.
+  app.post('/admin/channel-retention/run', { preHandler: superStepUp }, async (req, reply) => {
+    const result = await runChannelRetention({ force: true })
+    await createAuditLog(req.user!.id, 'CHANNEL_RETENTION_RUN', 'PlatformConfig', 'channels_message_retention', result ?? {}, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: result })
   })
 

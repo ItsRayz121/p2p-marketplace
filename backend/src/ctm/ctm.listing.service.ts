@@ -7,6 +7,7 @@ import type { CtmSettlementType, CtmListingStatus, CtmTradeStatus } from '@prism
 import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
 import { getBondConfig, computeBondUsdt } from '../services/makerBond.service'
 import { notify } from '../lib/notify'
+import { autoShareToOwnerChannels } from '../services/channel.service'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
 import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
 import { getTokenMarketInsight } from './ctm.token.service'
@@ -234,6 +235,8 @@ export async function createListing(userId: string, data: CreateListingInput) {
     undefined,
     '/ctm/my-listings',
   )
+
+  void autoShareToOwnerChannels(userId, { market: 'ctm', id: listing.id })
 
   return listing
 }
@@ -482,7 +485,7 @@ export async function updateListing(userId: string, listingId: string, data: {
     usdtFields.paymentCurrency = finalPkr.length > 0 ? 'PKR' : (finalUsdt.length > 0 ? 'USDT' : 'PKR')
   }
 
-  return db.ctmListing.update({
+  const updated = await db.ctmListing.update({
     where: { id: listingId },
     data: {
       ...(data.pricePerUnit !== undefined ? { pricePerUnit: new Prisma.Decimal(data.pricePerUnit) } : {}),
@@ -501,6 +504,12 @@ export async function updateListing(userId: string, listingId: string, data: {
       ...usdtFields,
     },
   })
+
+  if (data.pricePerUnit !== undefined) {
+    void autoShareToOwnerChannels(userId, { market: 'ctm', id: listingId }, 'Price updated ⚡')
+  }
+
+  return updated
 }
 
 export async function pauseListing(userId: string, listingId: string) {

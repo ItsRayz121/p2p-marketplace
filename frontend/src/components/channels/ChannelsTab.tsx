@@ -77,7 +77,7 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
     <div>
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted flex-1">Discover</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted flex-1">Channels</h2>
           <button
             onClick={() => setCreateOpen(true)}
             aria-label="Create a channel"
@@ -95,6 +95,28 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
             className="w-full rounded-lg border border-border bg-surface pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-primary"
           />
         </div>
+      </div>
+
+      {mine.length > 0 && (
+        <div className="mb-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">My channels</h2>
+          <ul className="space-y-2">
+            {mine.map((c) => (
+              <li key={c.id}>
+                <ChannelRow
+                  channel={c}
+                  badge={
+                    <span className="text-[10px] text-text-muted flex-shrink-0">{fmtDateTime(c.lastMessageAt)}</span>
+                  }
+                />
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <div>
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">Discover</h2>
         {searching && !directory ? (
           <p className="text-xs text-text-muted px-1 py-2">Loading…</p>
         ) : discoverable.length === 0 ? (
@@ -124,24 +146,6 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
           </ul>
         )}
       </div>
-
-      {mine.length > 0 && (
-        <div className="mt-5">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">My channels</h2>
-          <ul className="space-y-2">
-            {mine.map((c) => (
-              <li key={c.id}>
-                <ChannelRow
-                  channel={c}
-                  badge={
-                    <span className="text-[10px] text-text-muted flex-shrink-0">{fmtDateTime(c.lastMessageAt)}</span>
-                  }
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
 
       <CreateChannelModal
         isOpen={createOpen}

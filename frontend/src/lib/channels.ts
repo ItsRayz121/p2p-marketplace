@@ -23,6 +23,7 @@ export interface ChannelCard {
   ownerId: string
   lastMessageAt: string
   createdAt: string
+  autoShareListings: boolean
   owner: ChannelOwner
 }
 
@@ -81,7 +82,7 @@ export const channelsApi = {
     apiRequest<ChannelMessage>(`/channels/${channelId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   join: (channelId: string) => apiRequest<{ joined: boolean }>(`/channels/${channelId}/join`, { method: 'POST' }),
   leave: (channelId: string) => apiRequest<{ left: boolean }>(`/channels/${channelId}/leave`, { method: 'POST' }),
-  update: (channelId: string, input: { name?: string; description?: string; visibility?: 'public' | 'private'; avatarUrl?: string }) =>
+  update: (channelId: string, input: { name?: string; description?: string; visibility?: 'public' | 'private'; avatarUrl?: string; autoShareListings?: boolean }) =>
     apiRequest<ChannelCard>(`/channels/${channelId}`, { method: 'PATCH', body: JSON.stringify(input) }),
   regenerateInvite: (channelId: string) => apiRequest<{ slug: string }>(`/channels/${channelId}/regenerate-invite`, { method: 'POST' }),
   delete: (channelId: string) => apiRequest<{ deleted: boolean }>(`/channels/${channelId}`, { method: 'DELETE' }),

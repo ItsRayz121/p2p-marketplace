@@ -1646,6 +1646,10 @@ model Channel {
   slug        String           @unique
   visibility  String           @default("public") // 'public' (listed in the directory) | 'private' (invite-link only)
   avatarUrl   String?
+  // When ON, every new USDT ad / CTM listing the owner creates (and every price
+  // edit on an existing one) auto-posts into this channel as a shared-listing
+  // broadcast — see channel.service.ts's autoShareToOwnerChannels().
+  autoShareListings Boolean    @default(false)
   // Cached count (owner included) so the directory/list views don't need a
   // COUNT(*) per channel; kept in sync inside joinChannel/leaveChannel.
   memberCount   Int              @default(1)

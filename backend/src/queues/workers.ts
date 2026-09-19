@@ -32,6 +32,7 @@ import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmation
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
 import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
+import { runChannelRetention } from '../jobs/channelRetention.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -117,6 +118,12 @@ export function startWorkers() {
   // creates `media_retention_enabled` / `media_retention_days` in Platform Config
   // for the admin to flip — it deletes nothing while disabled).
   void runMediaRetention().catch((err) => logger.error({ err }, 'Media-retention startup seed failed'))
+
+  // Channel-retention sweep — daily. Deletes channel broadcasts (row + any
+  // attached image) once they're older than `channels_message_retention_days`
+  // (default 20). ON by default — see channelRetention.job.ts.
+  scheduleSweep('channel-retention', () => runChannelRetention(), 24 * 60 * 60 * 1000)
+  void runChannelRetention().catch((err) => logger.error({ err }, 'Channel-retention startup seed failed'))
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)

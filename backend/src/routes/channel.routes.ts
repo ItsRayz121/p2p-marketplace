@@ -19,6 +19,7 @@ const updateSchema = z.object({
   description: z.string().trim().max(300).optional(),
   visibility: z.enum(['public', 'private']).optional(),
   avatarUrl: z.string().url().max(500).optional(),
+  autoShareListings: z.boolean().optional(),
 })
 const postSchema = z.object({
   body: z.string().max(4000).optional().default(''),

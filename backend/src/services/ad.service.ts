@@ -6,6 +6,7 @@ import { notify } from '../lib/notify'
 import { validateAddressForNetwork } from '../lib/addressValidation'
 import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
 import { getUsdtMarketInsight } from './marketplace.service'
+import { autoShareToOwnerChannels } from './channel.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -218,6 +219,8 @@ export async function createAd(userId: string, data: CreateAdInput) {
     '/my-ads',
   )
 
+  void autoShareToOwnerChannels(userId, { market: 'usdt', id: ad.id })
+
   return ad
 }
 
@@ -272,7 +275,13 @@ export async function updateAd(userId: string, adId: string, data: UpdateAdInput
     }
   }
 
-  return db.ad.update({ where: { id: adId }, data: updateData })
+  const updated = await db.ad.update({ where: { id: adId }, data: updateData })
+
+  if (data.price != null) {
+    void autoShareToOwnerChannels(userId, { market: 'usdt', id: adId }, 'Price updated ⚡')
+  }
+
+  return updated
 }
 
 export async function toggleAdStatus(userId: string, adId: string, status: 'active' | 'paused') {

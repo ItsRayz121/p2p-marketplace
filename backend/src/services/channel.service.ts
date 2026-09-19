@@ -52,7 +52,7 @@ function assertOwner(channel: { ownerId: string }, userId: string): void {
 
 const CHANNEL_CARD_SELECT = {
   id: true, name: true, description: true, slug: true, visibility: true, avatarUrl: true,
-  memberCount: true, ownerId: true, lastMessageAt: true, createdAt: true,
+  memberCount: true, ownerId: true, lastMessageAt: true, createdAt: true, autoShareListings: true,
   owner: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
 } as const
 
@@ -242,7 +242,7 @@ export async function leaveChannel(userId: string, channelId: string): Promise<v
   ])
 }
 
-export async function updateChannel(userId: string, channelId: string, input: { name?: string | undefined; description?: string | undefined; visibility?: 'public' | 'private' | undefined; avatarUrl?: string | undefined }) {
+export async function updateChannel(userId: string, channelId: string, input: { name?: string | undefined; description?: string | undefined; visibility?: 'public' | 'private' | undefined; avatarUrl?: string | undefined; autoShareListings?: boolean | undefined }) {
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)
@@ -258,6 +258,7 @@ export async function updateChannel(userId: string, channelId: string, input: { 
       ...(input.description !== undefined ? { description: input.description.trim() || null } : {}),
       ...(input.visibility !== undefined ? { visibility: input.visibility } : {}),
       ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl } : {}),
+      ...(input.autoShareListings !== undefined ? { autoShareListings: input.autoShareListings } : {}),
     },
     select: CHANNEL_CARD_SELECT,
   })
@@ -389,6 +390,34 @@ export async function postChannelMessage(
       if (existing) return existing
     }
     throw err
+  }
+}
+
+/**
+ * Auto-post a listing (new or price-updated) into every channel the maker owns
+ * with `autoShareListings` on — reuses the exact same "share a listing" path a
+ * human would tap in the composer (rich card: logo, name, price, buy/sell,
+ * deep link), so it gets the same validation, idempotency and member fan-out
+ * for free. Best-effort and NEVER throws: a channel broadcast must never break
+ * an ad create/edit for the maker.
+ */
+export async function autoShareToOwnerChannels(
+  ownerId: string,
+  sharedAd: { market: Market; id: string },
+  caption = '',
+) {
+  try {
+    const channels = await db.channel.findMany({
+      where: { ownerId, autoShareListings: true },
+      select: { id: true },
+    })
+    for (const { id } of channels) {
+      await postChannelMessage(ownerId, id, caption, undefined, sharedAd).catch((err) =>
+        logger.warn({ err, channelId: id, sharedAd }, 'Auto-share to channel failed (non-fatal)'),
+      )
+    }
+  } catch (err) {
+    logger.warn({ err, ownerId, sharedAd }, 'Auto-share lookup failed (non-fatal)')
   }
 }
 

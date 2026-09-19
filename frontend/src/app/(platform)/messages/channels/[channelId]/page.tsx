@@ -17,6 +17,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
+import { GasSharePicker } from '@/components/channels/GasSharePicker'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
@@ -72,6 +73,10 @@ export default function ChannelPage() {
   const [membersOpen, setMembersOpen] = useState(false)
   const [shareAdOpen, setShareAdOpen] = useState(false)
   const [sharingAd, setSharingAd] = useState(false)
+  const shareMenuAnchorRef = useRef<HTMLButtonElement>(null)
+  const [shareMenuOpen, setShareMenuOpen] = useState(false)
+  const [gasShareOpen, setGasShareOpen] = useState(false)
+  const [sharingGas, setSharingGas] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -226,6 +231,21 @@ export default function ChannelPage() {
       toast.error('Could not share listing', e instanceof Error ? e.message : 'Please try again')
     } finally {
       setSharingAd(false)
+    }
+  }
+
+  async function sendGasShare(message: string) {
+    if (!channel || sharingGas) return
+    setSharingGas(true)
+    try {
+      const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      await channelsApi.post(channel.id, message, clientId)
+      setGasShareOpen(false)
+      await load()
+    } catch (e) {
+      toast.error('Could not share gas fees', e instanceof Error ? e.message : 'Please try again')
+    } finally {
+      setSharingGas(false)
     }
   }
 
@@ -433,14 +453,31 @@ export default function ChannelPage() {
                   onChange={(e) => void onPickImage(e)}
                 />
                 <button
+                  ref={shareMenuAnchorRef}
                   type="button"
-                  onClick={() => setShareAdOpen(true)}
+                  onClick={() => setShareMenuOpen((v) => !v)}
                   disabled={sending || !!editingId}
-                  aria-label="Share a listing"
+                  aria-label="Share"
                   className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-muted transition-colors disabled:opacity-50"
                 >
                   <Tag className="w-5 h-5" />
                 </button>
+                <AnchoredMenu anchorRef={shareMenuAnchorRef} open={shareMenuOpen} onClose={() => setShareMenuOpen(false)} align="start" width={200}>
+                  <div className="bg-surface border border-border rounded-lg shadow-card py-1">
+                    <button
+                      onClick={() => { setShareMenuOpen(false); setShareAdOpen(true) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+                    >
+                      <Tag className="w-4 h-4" /> Share a listing
+                    </button>
+                    <button
+                      onClick={() => { setShareMenuOpen(false); setGasShareOpen(true) }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+                    >
+                      ⛽ Share gas fees
+                    </button>
+                  </div>
+                </AnchoredMenu>
                 <textarea
                   ref={draftRef}
                   value={draft}
@@ -475,6 +512,10 @@ export default function ChannelPage() {
       )}
 
       {isOwner && (
+        <GasSharePicker isOpen={gasShareOpen} onClose={() => setGasShareOpen(false)} onSelect={(message) => void sendGasShare(message)} sharing={sharingGas} />
+      )}
+
+      {isOwner && (
         <MembersModal isOpen={membersOpen} onClose={() => setMembersOpen(false)} channelId={channel.id} onKicked={() => void load()} />
       )}
 
@@ -490,22 +531,37 @@ export default function ChannelPage() {
   )
 }
 
+function AutoShareToggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${checked ? 'bg-primary' : 'bg-border'}`}
+    >
+      <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${checked ? 'translate-x-6' : 'translate-x-1'}`} />
+    </button>
+  )
+}
+
 function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
   isOpen: boolean
   onClose: () => void
   channel: ChannelDetail
-  onSaved: (updated: { name: string; description: string | null; visibility: 'public' | 'private'; avatarUrl: string | null }) => void
+  onSaved: (updated: { name: string; description: string | null; visibility: 'public' | 'private'; avatarUrl: string | null; autoShareListings: boolean }) => void
 }) {
   const [name, setName] = useState(channel.name)
   const [description, setDescription] = useState(channel.description ?? '')
   const [visibility, setVisibility] = useState<'public' | 'private'>(channel.visibility)
   const [avatarUrl, setAvatarUrl] = useState(channel.avatarUrl)
+  const [autoShareListings, setAutoShareListings] = useState(channel.autoShareListings)
   const [busy, setBusy] = useState(false)
   const avatarInputRef = useRef<HTMLInputElement>(null)
   const { upload: uploadAvatar, uploading: uploadingAvatar, error: uploadAvatarError, progress: avatarProgress } = useFileUpload('avatar')
 
   useEffect(() => {
-    if (isOpen) { setName(channel.name); setDescription(channel.description ?? ''); setVisibility(channel.visibility); setAvatarUrl(channel.avatarUrl) }
+    if (isOpen) { setName(channel.name); setDescription(channel.description ?? ''); setVisibility(channel.visibility); setAvatarUrl(channel.avatarUrl); setAutoShareListings(channel.autoShareListings) }
   }, [isOpen, channel])
 
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -522,10 +578,10 @@ function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
     setBusy(true)
     try {
       const updated = await channelsApi.update(channel.id, {
-        name: name.trim(), description: description.trim(), visibility,
+        name: name.trim(), description: description.trim(), visibility, autoShareListings,
         ...(avatarUrl && avatarUrl !== channel.avatarUrl ? { avatarUrl } : {}),
       })
-      onSaved({ name: updated.name, description: updated.description, visibility: updated.visibility, avatarUrl: updated.avatarUrl })
+      onSaved({ name: updated.name, description: updated.description, visibility: updated.visibility, avatarUrl: updated.avatarUrl, autoShareListings: updated.autoShareListings })
     } catch (e) {
       toast.error('Could not save changes', e instanceof Error ? e.message : 'Please try again')
     } finally {
@@ -590,6 +646,13 @@ function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
               </button>
             ))}
           </div>
+        </div>
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium text-text-primary">Auto-share my listings</p>
+            <p className="text-xs text-text-muted mt-0.5">Every new USDT ad or CTM listing you create — and any price update — auto-posts here.</p>
+          </div>
+          <AutoShareToggle checked={autoShareListings} onChange={setAutoShareListings} />
         </div>
         <div className="flex gap-3 pt-1">
           <button onClick={onClose} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">Cancel</button>
