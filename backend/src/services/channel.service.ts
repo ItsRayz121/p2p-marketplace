@@ -421,6 +421,18 @@ export async function autoShareToOwnerChannels(
   }
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// A channel can have up to CHANNELS_MAX_MEMBERS_DEFAULT (10,000) members —
+// firing notify() for every one of them in a single tight loop would dispatch
+// thousands of near-simultaneous DB writes/reads (each notify() call does its
+// own notification insert + push-subscription lookup), which can exhaust the
+// Postgres connection pool for the whole platform during that burst. Dispatch
+// in small chunks with a short pause between them instead, so a large
+// broadcast is spread over a few seconds rather than one instant spike.
+const NOTIFY_CHUNK_SIZE = 100
+const NOTIFY_CHUNK_DELAY_MS = 250
+
 /**
  * Fan the "new broadcast" bell + web-push out to every member except the
  * owner who just posted it. Best-effort and never throws — a notification
@@ -440,10 +452,13 @@ async function notifyChannelMembers(
       where: { channelId, userId: { not: ownerId } },
       select: { userId: true },
     })
-    for (const { userId } of members) {
-      // Channel broadcasts are never important enough for a Telegram DM —
-      // telegram: false keeps them web-push + in-app bell only.
-      notify(userId, 'channel_broadcast', channelName, preview, { channelId }, undefined, `/messages/channels/${channelSlug}`, { telegram: false })
+    for (let i = 0; i < members.length; i += NOTIFY_CHUNK_SIZE) {
+      for (const { userId } of members.slice(i, i + NOTIFY_CHUNK_SIZE)) {
+        // Channel broadcasts are never important enough for a Telegram DM —
+        // telegram: false keeps them web-push + in-app bell only.
+        notify(userId, 'channel_broadcast', channelName, preview, { channelId }, undefined, `/messages/channels/${channelSlug}`, { telegram: false })
+      }
+      if (i + NOTIFY_CHUNK_SIZE < members.length) await sleep(NOTIFY_CHUNK_DELAY_MS)
     }
   } catch (err) {
     logger.warn({ err, channelId }, 'Failed to fan out channel broadcast notifications (non-fatal)')

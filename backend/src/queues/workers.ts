@@ -120,8 +120,9 @@ export function startWorkers() {
   void runMediaRetention().catch((err) => logger.error({ err }, 'Media-retention startup seed failed'))
 
   // Channel-retention sweep — daily. Deletes channel broadcasts (row + any
-  // attached image) once they're older than `channels_message_retention_days`
-  // (default 20). ON by default — see channelRetention.job.ts.
+  // attached image) from before the start of the current calendar month, so
+  // each channel's history resets monthly. ON by default — see
+  // channelRetention.job.ts.
   scheduleSweep('channel-retention', () => runChannelRetention(), 24 * 60 * 60 * 1000)
   void runChannelRetention().catch((err) => logger.error({ err }, 'Channel-retention startup seed failed'))
 

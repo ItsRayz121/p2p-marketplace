@@ -75,8 +75,16 @@ function getNavTarget(notif: Notification): string | null {
   const meta = notif.metadata as Record<string, string> | undefined
   const t = notif.type
 
-  // P2P trade & dispute
-  if ((t === 'trade' || t === 'dispute') && meta?.tradeId) return `/trade/${meta.tradeId}`
+  // P2P trade & dispute — USDT carries a tradeId, CTM (e.g. its chat "New
+  // Message" notif) carries a tradeRef instead.
+  if (t === 'trade' || t === 'dispute') {
+    if (meta?.tradeId) return `/trade/${meta.tradeId}`
+    if (meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`
+  }
+
+  // Messaging inbox DM + channel broadcast
+  if (t === 'message' && meta?.threadId) return `/messages/${meta.threadId}`
+  if (t === 'channel_broadcast' && meta?.channelId) return `/messages/channels/${meta.channelId}`
 
   // "New review received" — open the trade where the review lives so the user can
   // see the rating + comment left for them (J1). CTM carries a tradeRef, USDT a tradeId.
