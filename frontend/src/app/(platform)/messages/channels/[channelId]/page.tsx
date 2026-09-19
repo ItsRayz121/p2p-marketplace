@@ -358,14 +358,20 @@ export default function ChannelPage() {
                 if (m.deletedAt) {
                   return (
                     <div key={m.id} className="rounded-2xl px-3 py-2 text-xs italic text-text-muted bg-muted/60 border border-dashed border-border max-w-[85%]">
-                      🚫 This broadcast was deleted
+                      🚫 This update was deleted
                     </div>
                   )
                 }
                 const withinMutateWindow = mine && Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
                 return (
                   <div key={m.id} className="group flex items-start gap-2">
-                    <UserAvatar name={channel.owner.fullName || channel.owner.username || 'Owner'} avatarUrl={channel.owner.avatarUrl} size="sm" />
+                    {channel.owner.username ? (
+                      <Link href={`/profile/${encodeURIComponent(channel.owner.username)}`} aria-label={`View ${channel.owner.fullName || channel.owner.username}'s profile`}>
+                        <UserAvatar name={channel.owner.fullName || channel.owner.username || 'Owner'} avatarUrl={channel.owner.avatarUrl} size="sm" />
+                      </Link>
+                    ) : (
+                      <UserAvatar name={channel.owner.fullName || 'Owner'} avatarUrl={channel.owner.avatarUrl} size="sm" />
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}

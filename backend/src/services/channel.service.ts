@@ -513,7 +513,7 @@ export async function editChannelMessage(userId: string, channelId: string, mess
   if (!message || message.channelId !== channelId || message.senderId !== userId || message.isSystem) {
     throw new AppError('NOT_FOUND', 'Message not found', 404)
   }
-  if (message.deletedAt) throw new AppError('VALIDATION_ERROR', 'This broadcast was deleted', 400)
+  if (message.deletedAt) throw new AppError('VALIDATION_ERROR', 'This update was deleted', 400)
   if (Date.now() - message.createdAt.getTime() > MESSAGE_MUTATE_WINDOW_MS) {
     throw new AppError('VALIDATION_ERROR', 'Messages can only be edited within 15 minutes of sending.', 400)
   }
