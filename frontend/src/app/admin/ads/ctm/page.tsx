@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { ctmApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
@@ -85,17 +85,7 @@ export default function AdminCtmAdsPage() {
     }
   }, [side, statusFilter, tokenId, page])
 
-  // usePolling already fetches once immediately on mount; this effect only
-  // needs to force an extra fetch when the filters change AFTER that first
-  // mount (skipping the first run avoids firing two concurrent requests).
-  const mountedRef = useRef(false)
-  useEffect(() => {
-    if (!mountedRef.current) { mountedRef.current = true; return }
-    setLoading(true)
-    fetchListings()
-  }, [fetchListings])
-
-  usePolling(fetchListings, 30_000)
+  usePolling(fetchListings, 30_000, true, [side, statusFilter, tokenId, page])
 
   if (loading) return <LoadingState message="Loading CTM listings..." />
   if (error && listings.length === 0) return <ErrorState title={error} onRetry={fetchListings} />
@@ -112,7 +102,7 @@ export default function AdminCtmAdsPage() {
           {(['buy', 'sell'] as const).map((s) => (
             <button
               key={s}
-              onClick={() => { setSide(s); setPage(1) }}
+              onClick={() => { setSide(s); setPage(1); setLoading(true) }}
               className={`px-4 py-1.5 text-sm font-medium capitalize transition-colors ${
                 side === s ? (s === 'buy' ? 'bg-success text-white' : 'bg-danger text-white') : 'bg-surface text-text-muted hover:text-text-secondary'
               }`}
@@ -123,7 +113,7 @@ export default function AdminCtmAdsPage() {
         </div>
         <select
           value={tokenId}
-          onChange={(e) => { setTokenId(e.target.value); setPage(1) }}
+          onChange={(e) => { setTokenId(e.target.value); setPage(1); setLoading(true) }}
           className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="all">All Tokens</option>
@@ -133,7 +123,7 @@ export default function AdminCtmAdsPage() {
         </select>
         <select
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+          onChange={(e) => { setStatusFilter(e.target.value); setPage(1); setLoading(true) }}
           className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="active">Active</option>
@@ -190,8 +180,8 @@ export default function AdminCtmAdsPage() {
             <div className="flex items-center justify-between px-4 py-3 border-t border-border">
               <p className="text-text-muted text-sm">Page {page} of {totalPages}</p>
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
-                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => { setPage((p) => p - 1); setLoading(true) }}>Prev</Button>
+                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => { setPage((p) => p + 1); setLoading(true) }}>Next</Button>
               </div>
             </div>
           )}

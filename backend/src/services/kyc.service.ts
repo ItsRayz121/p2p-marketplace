@@ -122,10 +122,13 @@ export async function submitKyc(
     },
   })
 
-  // Update user kycStatus to pending
+  // Update user kycStatus to pending. Also revoke the public-profile opt-in
+  // (see PATCH /users/me/social-profile) — it requires KYC-approved status,
+  // so an already-public user submitting a new tier (e.g. Level 1 -> Level 2)
+  // must not stay publicly listed while the new submission is outstanding.
   await db.user.update({
     where: { id: userId },
-    data: { kycStatus: 'pending' },
+    data: { kycStatus: 'pending', socialLinksPublic: false },
   })
 
   if (user?.email) {
