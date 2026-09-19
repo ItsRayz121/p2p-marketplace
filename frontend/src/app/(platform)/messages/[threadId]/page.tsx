@@ -435,7 +435,13 @@ export default function MessageThreadPage() {
         <Link href="/messages" className="p-1 -ml-1 rounded hover:bg-muted" aria-label="Back">
           <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
-        <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
+        {isSelf || !data.other.username ? (
+          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
+        ) : (
+          <Link href={`/profile/${encodeURIComponent(data.other.username)}`} aria-label={`View ${name}'s profile`}>
+            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
+          </Link>
+        )}
         <div className="min-w-0 flex-1">
           <p className="font-semibold text-text-primary truncate">{name}</p>
           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">

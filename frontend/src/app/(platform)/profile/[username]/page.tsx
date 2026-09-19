@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/Button'
 import { getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { Clock, Zap, Heart } from 'lucide-react'
+import { Clock, Zap, Heart, Lock } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
 
@@ -22,6 +22,7 @@ interface TraderProfile {
   isFavorited: boolean
   fullName: string
   avatarUrl: string | null
+  profilePublic: boolean
   role: string
   kycStatus: string
   kycLevel: string
@@ -175,6 +176,34 @@ export default function TraderProfilePage() {
 
   if (loading) return <LoadingState message="Loading profile..." />
   if (error || !profile) return <ErrorState title={error ?? 'Profile not found'} onRetry={fetchProfile} />
+
+  if (!profile.profilePublic) {
+    return (
+      <div className="max-w-md mx-auto px-4 sm:px-6 py-10">
+        <div className="bg-surface shadow-card rounded-xl border border-border p-6 text-center space-y-3">
+          <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" className="mx-auto" />
+          <div>
+            <h1 className="text-lg font-bold text-text-primary">{profile.fullName || profile.username}</h1>
+            <p className="text-xs text-text-muted">@{profile.username} · Member since {memberSince(profile.createdAt)}</p>
+          </div>
+          <div className="flex items-center justify-center gap-1.5 text-sm text-text-muted pt-1">
+            <Lock size={14} />
+            This profile is private
+          </div>
+          {me && me.username !== profile.username && (
+            <button
+              onClick={toggleFavorite}
+              disabled={favLoading}
+              className={`inline-flex items-center gap-1.5 mx-auto px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${favorited ? 'text-red-500 bg-red-500/10' : 'text-text-muted hover:text-red-500 hover:bg-red-500/10'}`}
+            >
+              <Heart size={14} className={favorited ? 'fill-current' : ''} />
+              {favorited ? 'Favorited' : 'Add to favorites'}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   const stats = profile.tradeStats
   const badge = (stats?.badge ?? 'new') as TraderBadge

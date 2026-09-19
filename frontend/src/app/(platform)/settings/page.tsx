@@ -13,6 +13,8 @@ import { PushToggle } from '@/components/ui/PushToggle'
 import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
 import { PriceAlertsManager, CtmPriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
+import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
+import Link from 'next/link'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
@@ -177,6 +179,27 @@ function ProfileTab() {
       >
         {saving ? <Spinner size="sm" /> : 'Save Changes'}
       </Button>
+
+      {/* Public profile — private by default. Only a KYC-verified user (the
+          same bar as creating an ad) can switch it on; everyone else sees why. */}
+      <div className="pt-2">
+        {user?.kycStatus === 'approved' ? (
+          <SocialProfilesManager />
+        ) : (
+          <div className="bg-surface border border-border rounded-xl px-5 py-4 flex items-start gap-3">
+            <Lock size={16} className="text-text-muted flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-text-primary">Public profile — KYC required</p>
+              <p className="text-xs text-text-muted mt-0.5">
+                Your profile is private by default. Complete KYC verification to optionally show your trade history and social links on a public trader profile.
+              </p>
+              <Link href="/kyc" className="text-xs font-medium text-primary hover:underline mt-1.5 inline-block">
+                Start KYC verification →
+              </Link>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

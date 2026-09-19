@@ -145,32 +145,59 @@ export async function userRoutes(app: FastifyInstance) {
     // The trader's full name is shown on their public profile (product decision):
     // both the header name and the reviewer names in the reviews list display the
     // real full name rather than a masked initials form.
-    // Hide social links if user has opted out
-    const profile = {
-      ...user,
-      fullName: user.fullName,
-      verifiedEmail: user.isEmailVerified,
-      isFavorited,
-      // Public profile shows only non-hidden links, and only when opted in.
-      socialLinks: user.socialLinksPublic
-        ? parseSocialLinks(user.socialLinks).filter((l) => !l.hidden).map((l) => ({ platform: l.platform, url: l.url, verified: l.verified }))
-        : null,
-      // Reviews display the reviewer's full name and link to their public profile.
-      ratings: enrichedRatings,
-      activeAds: user.ads.map((ad) => ({
-        ...ad,
-        price: ad.price.toString(),
-        minOrder: ad.minOrder.toString(),
-        maxOrder: ad.maxOrder.toString(),
-        availableAmount: ad.availableAmount.toString(),
-        // Resolve to method type; drop any unresolved cuids rather than show them.
-        paymentMethods: [...new Set(
-          ad.paymentMethods
-            .map((id) => pmTypeMap.get(id))
-            .filter((v): v is string => Boolean(v)),
-        )],
-      })),
-    }
+    //
+    // A profile is private by default — only a KYC-verified user who has
+    // explicitly opted in (User.socialLinksPublic) shows trade stats, merchant
+    // status, ratings, active ads, KYC level and social links to the public.
+    // Everyone else only ever gets the minimal, always-safe fields below (this
+    // matches what's already shown elsewhere in the app — e.g. a username next
+    // to an ad — so nothing is newly exposed, just not aggregated on one page).
+    const isPublic = user.socialLinksPublic === true
+    const profile = isPublic
+      ? {
+          ...user,
+          fullName: user.fullName,
+          verifiedEmail: user.isEmailVerified,
+          isFavorited,
+          profilePublic: true,
+          // Public profile shows only non-hidden links.
+          socialLinks: parseSocialLinks(user.socialLinks).filter((l) => !l.hidden).map((l) => ({ platform: l.platform, url: l.url, verified: l.verified })),
+          // Reviews display the reviewer's full name and link to their public profile.
+          ratings: enrichedRatings,
+          activeAds: user.ads.map((ad) => ({
+            ...ad,
+            price: ad.price.toString(),
+            minOrder: ad.minOrder.toString(),
+            maxOrder: ad.maxOrder.toString(),
+            availableAmount: ad.availableAmount.toString(),
+            // Resolve to method type; drop any unresolved cuids rather than show them.
+            paymentMethods: [...new Set(
+              ad.paymentMethods
+                .map((id) => pmTypeMap.get(id))
+                .filter((v): v is string => Boolean(v)),
+            )],
+          })),
+        }
+      : {
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+          createdAt: user.createdAt,
+          isFavorited,
+          profilePublic: false,
+          role: user.role,
+          kycStatus: 'none' as const,
+          kycLevel: 'none' as const,
+          isEmailVerified: false,
+          verifiedEmail: false,
+          lastSeenAt: null,
+          tradeStats: null,
+          merchant: null,
+          socialLinks: null,
+          ratings: [] as typeof enrichedRatings,
+          activeAds: [] as never[],
+        }
 
     return reply.send({ success: true, data: profile })
   })
@@ -354,9 +381,17 @@ export async function userRoutes(app: FastifyInstance) {
   })
 
   // PATCH /api/users/me/social-profile — toggle public visibility
+  // Only a KYC-verified user (the same bar as creating an ad) may go public —
+  // an unverified account has nothing on file to back up what it shows off.
   app.patch('/users/me/social-profile', { preHandler: [authenticate] }, async (req, reply) => {
     const parsed = z.object({ public: z.boolean() }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid input', 400)
+    if (parsed.data.public) {
+      const me = await db.user.findUnique({ where: { id: req.user!.id }, select: { kycStatus: true } })
+      if (me?.kycStatus !== 'approved') {
+        throw new AppError('FORBIDDEN', 'Complete KYC verification before making your profile public.', 403)
+      }
+    }
     await setSocialPublic(req.user!.id, parsed.data.public)
     return reply.send({ success: true })
   })
