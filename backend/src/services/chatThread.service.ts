@@ -347,6 +347,22 @@ export async function resolveSharedGasPreviews(slugs: string[]): Promise<Map<str
 }
 
 /**
+ * Validate a one-tap-shared gas-chain slug at send time and return its
+ * canonical (DB-cased) slug. Shared by both DM and channel message posting
+ * so the availability rule can never drift between the two surfaces.
+ */
+export async function assertSharedGasChainAvailable(slug: string): Promise<string> {
+  const chain = await db.gasChainConfig.findUnique({
+    where: { slug: slug.toUpperCase() },
+    select: { slug: true, isVisibleToUsers: true, isArchived: true },
+  })
+  if (!chain || !chain.isVisibleToUsers || chain.isArchived) {
+    throw new AppError('VALIDATION_ERROR', 'This gas chain is no longer available', 400)
+  }
+  return chain.slug
+}
+
+/**
  * Full thread view: messages + episode dividers + relationship stats.
  * `markRead` (default true) controls the per-message readAt receipt only —
  * pass false for a background poll while the tab isn't actually visible, so a
@@ -538,6 +554,7 @@ export async function postThreadMessage(
   const text = body.trim()
   if (!text && !attachmentUrl && !sharedAd && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
+  if (sharedAd && sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Cannot share a listing and gas fees in the same message', 400)
 
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
   if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
@@ -559,12 +576,7 @@ export async function postThreadMessage(
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
     }
   }
-  let gasChainSlug: string | undefined
-  if (sharedGasChainSlug) {
-    const chain = await db.gasChainConfig.findUnique({ where: { slug: sharedGasChainSlug.toUpperCase() }, select: { slug: true, isVisibleToUsers: true, isArchived: true } })
-    if (!chain || !chain.isVisibleToUsers || chain.isArchived) throw new AppError('VALIDATION_ERROR', 'This gas chain is no longer available', 400)
-    gasChainSlug = chain.slug
-  }
+  const gasChainSlug = sharedGasChainSlug ? await assertSharedGasChainAvailable(sharedGasChainSlug) : undefined
 
   // clientId is sent on every send, not just retries, so this must stay a
   // single round trip on the common path — attempt the create and only fall

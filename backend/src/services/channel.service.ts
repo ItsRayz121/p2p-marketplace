@@ -10,7 +10,7 @@ import {
   CHANNELS_MAX_MEMBERS_KEY, CHANNELS_MAX_MEMBERS_DEFAULT,
   getNumberConfig,
 } from './platformFlags.service'
-import { resolveSharedAdPreviews, resolveSharedGasPreviews, type Market } from './chatThread.service'
+import { resolveSharedAdPreviews, resolveSharedGasPreviews, assertSharedGasChainAvailable, type Market } from './chatThread.service'
 import { slugify as baseSlugify } from './blog.service'
 import { logger } from '../lib/logger'
 
@@ -354,6 +354,7 @@ export async function postChannelMessage(
   const text = body.trim()
   if (!text && !sharedAd && !attachmentUrl && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > MESSAGE_MAX_LEN) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
+  if (sharedAd && sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Cannot share a listing and gas fees in the same message', 400)
   if (text) assertSafeChannelText(text)
   // Broadcasts fan out to every member (up to the channel cap), unlike a DM —
   // only our own Cloudinary uploads are allowed, so nobody can post an arbitrary
@@ -375,12 +376,7 @@ export async function postChannelMessage(
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
     }
   }
-  let gasChainSlug: string | undefined
-  if (sharedGasChainSlug) {
-    const chain = await db.gasChainConfig.findUnique({ where: { slug: sharedGasChainSlug.toUpperCase() }, select: { slug: true, isVisibleToUsers: true, isArchived: true } })
-    if (!chain || !chain.isVisibleToUsers || chain.isArchived) throw new AppError('VALIDATION_ERROR', 'This gas chain is no longer available', 400)
-    gasChainSlug = chain.slug
-  }
+  const gasChainSlug = sharedGasChainSlug ? await assertSharedGasChainAvailable(sharedGasChainSlug) : undefined
 
   try {
     const [message] = await db.$transaction([
@@ -398,7 +394,7 @@ export async function postChannelMessage(
     // Broadcast a bell + push to every member (Telegram-style — every post
     // buzzes, since only the owner can post so volume is inherently low).
     // Fire-and-forget: never block the owner's send on a large member fan-out.
-    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text || (gasChainSlug ? '⛽ Shared gas fees' : text), attachmentUrl)
+    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text || (gasChainSlug ? '⛽ Shared gas fees' : ''), attachmentUrl)
     return message
   } catch (err) {
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
