@@ -8,6 +8,7 @@ import { assertCanOpenTrade } from '../services/tradeConcurrency.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from '../services/platformFlags.service'
+import { isTakerFirstForMarket } from '../services/settlementMode.service'
 
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash', easypaisa: 'Easypaisa', sadapay: 'SadaPay', nayapay: 'NayaPay', bank_transfer: 'Bank Transfer',
@@ -244,12 +245,20 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
   // Concurrency cap (anti-scam): pre-check BOTH parties before opening the
   // transaction (avoids nested DB reads inside the tx). Existence/status are
   // re-validated inside the tx below.
+  //
+  // Taker-first flow marker — mirrors createTradeFromListing/acceptListingBid:
+  // only a BUY request on a taker-first-ready market uses the reordered flow
+  // (the bidder/taker sends tokens first, the requester/maker pays second), so a
+  // request behaves the same whether the maker fills it directly or via a bid.
+  let usesTakerFirstFlow = false
   {
     const preBid = await db.ctmBid.findUnique({ where: { id: bidId }, select: { bidderId: true } })
     if (preBid) {
       await assertCanOpenTrade(userId, 'self')               // the requester accepting
       await assertCanOpenTrade(preBid.bidderId, 'counterparty') // the bidder
     }
+    const preRequest = await db.ctmRequest.findUnique({ where: { id: requestId }, select: { side: true } })
+    usesTakerFirstFlow = preRequest?.side === 'buy' && (await isTakerFirstForMarket('ctm'))
   }
 
   const created = await db.$transaction(async (tx) => {
@@ -314,6 +323,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
         buyerSettlementId: buyerAddr,
         ...(sellerPaymentSnapshot ? { sellerPaymentSnapshot: sellerPaymentSnapshot as never } : {}),
         ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
       },
     })
@@ -334,7 +344,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
     return trade
   })
 
-  await postCtmOpeningMessages(created.id, created.buyerId)
+  await postCtmOpeningMessages(created.id, created.buyerId, undefined, usesTakerFirstFlow)
 
   return created
 }

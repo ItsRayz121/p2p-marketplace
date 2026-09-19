@@ -141,11 +141,17 @@ export async function confirmBidDetails(
   await assertCanOpenTrade(bid.bidderId, 'self')      // the bidder confirming (taker)
   await assertCanOpenTrade(ad.userId, 'counterparty') // the ad owner (maker)
 
+  // Taker-first flow marker — mirrors createTrade()/trade.service.ts: only a BUY
+  // ad on a taker-first-ready market uses the reordered flow (taker sends crypto
+  // first, maker pays second); a SELL ad already has the taker (buyer) moving
+  // first under the classic order, so it never needs the flag.
+  const usesTakerFirstFlow = !isSellAd && (await isTakerFirstForMarket('usdt'))
+
   // KYC gate (taker = the bidder) — mirrors createTrade(): only the MAKER is ever
   // hard-blocked on KYC (enforced in-tx below). The taker is either verified or
   // allowed within no-KYC limits when they send their leg first (sell ads always;
   // buy ads once taker-first settlement is enabled).
-  const takerSendsFirst = isSellAd || (await isTakerFirstForMarket('usdt'))
+  const takerSendsFirst = isSellAd || usesTakerFirstFlow
   await assertNoKycTakerAllowed({ takerId: bid.bidderId, fiatAmount: bid.fiatAmount, takerSendsFirst })
 
   // Resolve the buyer's USDT receiving destination so the Send-Crypto step always
@@ -248,14 +254,25 @@ export async function confirmBidDetails(
         buyerDeliveryMethod,
         buyerDeliveryAddress,
         status: 'payment_pending',
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
       },
     })
 
     // Attribute to the seller so it sides on the counterparty's side — this
     // instruction is directed at the buyer, not from the buyer's own "You" side.
+    // Must match the trade's actual step order (see settlementFlow.ts) — a
+    // taker-first trade has the seller sending crypto FIRST, so telling the
+    // buyer to pay first here would contradict the real ladder.
     await tx.tradeMessage.create({
-      data: { tradeId: trade.id, senderId: sellerId, message: 'Trade opened via bid. Please upload payment proof within the trade window.', isSystem: true },
+      data: {
+        tradeId: trade.id,
+        senderId: sellerId,
+        message: usesTakerFirstFlow
+          ? 'Trade opened via bid. Seller: send the crypto first and upload proof within the trade window. Buyer: confirm once it arrives, then send the PKR payment.'
+          : 'Trade opened via bid. Please upload payment proof within the trade window.',
+        isSystem: true,
+      },
     })
 
     const newAdStatus = ad.availableAmount.lte(0) ? 'completed' : 'active'

@@ -48,12 +48,20 @@ function refLabel(displayRef: string | null | undefined): string {
  * the USDT marketplace's "Trade created…" message and adds the off-platform
  * safety basics (CTM settles peer-to-peer, so the platform holds no funds). If
  * the listing carries custom terms they are posted as a second line.
+ *
+ * Must match the trade's actual step order (see ctmSettlementFlow.ts) — a
+ * `takerFirst` trade has the seller sending tokens FIRST, so telling the buyer
+ * to pay first here would contradict the real ladder the trade room enforces.
+ * `takerFirst` defaults to false since only createTradeFromListing's direct-fill
+ * path currently sets it; bid/request-accepted trades are always classic-order.
  */
-export async function postCtmOpeningMessages(tradeId: string, senderId: string, terms?: string | null) {
+export async function postCtmOpeningMessages(tradeId: string, senderId: string, terms?: string | null, takerFirst = false) {
   await postCtmSystemMessage(
     tradeId,
     senderId,
-    'Trade started. Buyer: send the PKR payment to the seller’s account from your OWN account, then upload payment proof within the trade window. Seller: only confirm after the payment has actually arrived, then send the tokens. Keep all communication in this chat.',
+    takerFirst
+      ? 'Trade started. Seller: send the tokens first and upload transfer proof within the trade window. Buyer: only confirm once the tokens have actually arrived, then send the PKR payment and upload proof. Keep all communication in this chat.'
+      : 'Trade started. Buyer: send the PKR payment to the seller’s account from your OWN account, then upload payment proof within the trade window. Seller: only confirm after the payment has actually arrived, then send the tokens. Keep all communication in this chat.',
   )
   const t = terms?.trim()
   if (t) await postCtmSystemMessage(tradeId, senderId, `Merchant’s terms: ${t}`)
@@ -1415,7 +1423,9 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
       'ctm_trade_created',
       'New CTM trade opened',
       isBuyListing
-        ? `A seller filled your ${sym} buy listing. Trade ${lbl} is open — send the PKR payment and upload proof within the trade window.`
+        ? (usesTakerFirstFlow
+            ? `A seller filled your ${sym} buy listing. Trade ${lbl} is open — the seller will send the tokens first. Confirm once they arrive, then send the PKR payment.`
+            : `A seller filled your ${sym} buy listing. Trade ${lbl} is open — send the PKR payment and upload proof within the trade window.`)
         : `A buyer started a trade on your ${sym} listing. Trade ${lbl} is open — the buyer will send the PKR payment and upload proof. Confirm once it arrives, then send the tokens.`,
       { tradeRef: trade.tradeRef, displayRef: trade.displayRef },
     )
@@ -1431,7 +1441,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await postCtmOpeningMessages(created.id, created.buyerId, (listing as any).terms)
+  await postCtmOpeningMessages(created.id, created.buyerId, (listing as any).terms, usesTakerFirstFlow)
 
   // Persistent messaging (Phase 4): open the pair's episode. Best-effort, flag-gated.
   void openEpisode({ market: 'ctm', tradeId: created.id, tradeRef: created.displayRef ?? created.tradeRef, buyerId: created.buyerId, sellerId: created.sellerId, fiatAmount: created.fiatAmount })

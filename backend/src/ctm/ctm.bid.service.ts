@@ -8,6 +8,7 @@ import { openEpisode } from '../services/chatThread.service'
 import { postCtmOpeningMessages } from './ctm.trade.service'
 import { checkPriceMargin } from '../lib/priceGuardrail'
 import { getNumberConfig } from '../services/platformFlags.service'
+import { isTakerFirstForMarket } from '../services/settlementMode.service'
 
 // CTM bid notifications deep-link the web-push into the CTM trade room when a
 // trade ref is present (falls back to the notifications list otherwise).
@@ -192,6 +193,11 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   // Taker KYC is intentionally NOT required on CTM — the bidder (taker) never needs
   // verification to trade; only the maker is KYC-gated at listing creation.
 
+  // Only BUY listings on a taker-first-ready market use the reordered flow —
+  // mirrors createTradeFromListing's usesTakerFirstFlow so a listing behaves the
+  // same whether it's filled instantly or via an accepted bid.
+  const usesTakerFirstFlow = isBuyListing && (await isTakerFirstForMarket('ctm'))
+
   // Resolve payment method IDs
   const primaryPaymentMethodId = isBuyListing
     ? (bid.paymentMethods[0] ?? bid.paymentMethod ?? '')
@@ -283,6 +289,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
         status: 'awaiting_payment',
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
         platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
@@ -303,7 +310,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
     return newTrade
   })
 
-  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
+  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms, usesTakerFirstFlow)
 
   void openEpisode({ market: 'ctm', tradeId: trade.id, tradeRef: trade.displayRef ?? trade.tradeRef, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmount: trade.fiatAmount })
 
@@ -421,6 +428,11 @@ export async function confirmBidDetails(
   // Taker KYC is intentionally NOT required on CTM — the bidder (taker) never needs
   // verification to trade; only the maker is KYC-gated at listing creation.
 
+  // Only BUY listings on a taker-first-ready market use the reordered flow —
+  // mirrors createTradeFromListing's usesTakerFirstFlow so a listing behaves the
+  // same whether it's filled instantly or via an accepted bid.
+  const usesTakerFirstFlow = isBuyListing && (await isTakerFirstForMarket('ctm'))
+
   const primaryPaymentMethodId = isBuyListing
     ? ((data.paymentMethods?.[0]) ?? data.paymentMethod ?? '')
     : (data.paymentMethod ?? '')
@@ -509,6 +521,7 @@ export async function confirmBidDetails(
         sellerPaymentSnapshot: sellerPaymentSnapshot as never,
         ...(buyerPaymentSnapshot ? { buyerPaymentSnapshot: buyerPaymentSnapshot as never } : {}),
         status: 'awaiting_payment',
+        takerFirst: usesTakerFirstFlow,
         expiresAt,
         platformFeePkr,
         ...(escrowAddress ? { escrowAddress, escrowCurrency, escrowAmount } : {}),
@@ -520,7 +533,7 @@ export async function confirmBidDetails(
     return newTrade
   })
 
-  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms)
+  await postCtmOpeningMessages(trade.id, trade.buyerId, listing.terms, usesTakerFirstFlow)
 
   void openEpisode({ market: 'ctm', tradeId: trade.id, tradeRef: trade.displayRef ?? trade.tradeRef, buyerId: trade.buyerId, sellerId: trade.sellerId, fiatAmount: trade.fiatAmount })
 
