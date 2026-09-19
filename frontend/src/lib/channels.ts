@@ -3,7 +3,7 @@
 // backend/src/services/channel.service.ts for the full model.
 
 import { apiRequest } from '@/lib/api'
-import type { SharedAdPreview } from '@/lib/messaging'
+import type { SharedAdPreview, SharedGasPreview } from '@/lib/messaging'
 
 export interface ChannelOwner {
   id: string
@@ -51,6 +51,7 @@ export interface ChannelMessage {
   createdAt: string
   clientId?: string | null
   sharedAd?: SharedAdPreview | null
+  sharedGas?: SharedGasPreview | null
 }
 
 export interface ChannelMember {
@@ -66,7 +67,7 @@ export const channelsApi = {
     apiRequest<{ id: string; slug: string }>('/channels', { method: 'POST', body: JSON.stringify(input) }),
   get: (idOrSlug: string) => apiRequest<ChannelDetail>(`/channels/${idOrSlug}`),
   messages: (channelId: string) => apiRequest<ChannelMessage[]>(`/channels/${channelId}/messages`),
-  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, attachmentUrl?: string) =>
+  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, attachmentUrl?: string, sharedGasChainSlug?: string) =>
     apiRequest<ChannelMessage>(`/channels/${channelId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -74,6 +75,7 @@ export const channelsApi = {
         ...(clientId ? { clientId } : {}),
         ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
         ...(attachmentUrl ? { attachmentUrl } : {}),
+        ...(sharedGasChainSlug ? { sharedGasChainSlug } : {}),
       }),
     }),
   deleteMessage: (channelId: string, messageId: string) =>

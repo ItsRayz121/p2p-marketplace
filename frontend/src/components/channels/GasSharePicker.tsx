@@ -1,16 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { gasApi, type GasChain } from '@/lib/api'
-import { buildGasShareLinks } from '@/lib/telegram'
-import { useAuth } from '@/hooks/useAuth'
 import { Modal } from '@/components/ui/Modal'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 
 /**
- * Lets a channel owner post one chain's gas-fee page straight into the
- * broadcast — reuses the same universal link ShareGasButton builds
- * (rupchain.com/gas/<chain>, referral code riding along), just posted as
- * channel text instead of the native share sheet.
+ * Lets a channel owner (or DM sender) post one chain's gas-fee page as a rich
+ * card — mirrors ShareAdPicker: the caller passes back the chain slug, which
+ * the backend resolves live into a sharedGas card (icon, name, buy-with-PKR/
+ * USDT), same as a shared listing.
  */
 export function GasSharePicker({
   isOpen,
@@ -20,10 +18,9 @@ export function GasSharePicker({
 }: {
   isOpen: boolean
   onClose: () => void
-  onSelect: (message: string) => void
+  onSelect: (chain: GasChain) => void
   sharing: boolean
 }) {
-  const { user } = useAuth()
   const [chains, setChains] = useState<GasChain[] | null>(null)
   const [error, setError] = useState('')
 
@@ -35,11 +32,6 @@ export function GasSharePicker({
       .then((res) => setChains(res.chains.filter((c) => c.isAvailable)))
       .catch(() => setError('Failed to load gas chains'))
   }, [isOpen])
-
-  function pick(chain: GasChain) {
-    const { web } = buildGasShareLinks(chain.slug, undefined, user?.referralCode)
-    onSelect(`⛽ ${chain.name} gas fees — buy instantly with JazzCash, Easypaisa or USDT: ${web}`)
-  }
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Share gas fees">
@@ -56,7 +48,7 @@ export function GasSharePicker({
               key={c.id}
               type="button"
               disabled={sharing}
-              onClick={() => pick(c)}
+              onClick={() => onSelect(c)}
               className="w-full flex items-center gap-3 p-3 rounded-lg border border-border hover:border-primary/40 transition-colors text-left disabled:opacity-50"
             >
               <EntityLogo type="chain" slug={c.slug} size="sm" logoUrl={c.logoUrl} />

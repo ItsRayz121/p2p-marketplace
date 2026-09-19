@@ -18,6 +18,8 @@ const postSchema = z.object({
   // One-tap "share my listing" — both present or both absent.
   sharedAdMarket: z.enum(['usdt', 'ctm']).optional(),
   sharedAdId: z.string().min(1).max(64).optional(),
+  // One-tap "share gas fees" — a GasChainConfig slug.
+  sharedGasChainSlug: z.string().min(1).max(32).optional(),
 })
 
 const startSchema = z.object({ username: z.string().trim().min(1).max(30) })
@@ -73,7 +75,7 @@ export async function messagingRoutes(app: FastifyInstance) {
     const sharedAd = parsed.data.sharedAdMarket && parsed.data.sharedAdId
       ? { market: parsed.data.sharedAdMarket, id: parsed.data.sharedAdId }
       : undefined
-    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId, sharedAd)
+    const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId, sharedAd, parsed.data.sharedGasChainSlug)
     return reply.code(201).send({ success: true, data: message })
   })
 

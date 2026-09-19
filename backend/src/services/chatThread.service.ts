@@ -210,7 +210,7 @@ export async function getInbox(userId: string) {
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       episodes: { select: { outcome: true } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, deletedAt: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, sharedGasChainSlug: true, deletedAt: true } },
     },
   })
 
@@ -235,7 +235,7 @@ export async function getInbox(userId: string) {
       threadId: t.id,
       other,
       lastMessageAt: t.lastMessageAt,
-      lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : '')) : null,
+      lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : last.sharedGasChainSlug ? '⛽ Shared gas fees' : '')) : null,
       lastMessageStatus: last && last.senderId === userId
         ? (last.readAt ? 'read' : last.deliveredAt ? 'delivered' : 'sent')
         : null,
@@ -308,6 +308,44 @@ export async function resolveSharedAdPreviews(refs: { market: Market; id: string
   return map
 }
 
+export interface SharedGasPreview {
+  slug: string
+  /** True when the chain no longer exists, or has since been hidden/archived. */
+  deleted: boolean
+  name?: string
+  symbol?: string
+  logoUrl?: string | null
+  networkLabel?: string
+}
+
+/**
+ * Batch-resolve one-tap-shared gas-chain references to their CURRENT live
+ * config — mirrors resolveSharedAdPreviews. Gas chains aren't user-owned, so
+ * there's no ownership check, just a "is it still publicly shown" gate: a
+ * chain the admin has since hidden/archived resolves as deleted rather than
+ * still advertising a chain that's no longer available.
+ */
+export async function resolveSharedGasPreviews(slugs: string[]): Promise<Map<string, SharedGasPreview>> {
+  const map = new Map<string, SharedGasPreview>()
+  const uniqueSlugs = [...new Set(slugs.map((s) => s.toUpperCase()))]
+  if (uniqueSlugs.length === 0) return map
+  const chains = await db.gasChainConfig.findMany({
+    where: { slug: { in: uniqueSlugs } },
+    select: { slug: true, name: true, symbol: true, logoUrl: true, networkLabel: true, isVisibleToUsers: true, isArchived: true },
+  })
+  for (const c of chains) {
+    map.set(c.slug, {
+      slug: c.slug,
+      deleted: !c.isVisibleToUsers || c.isArchived,
+      name: c.name,
+      symbol: c.symbol,
+      logoUrl: c.logoUrl,
+      networkLabel: c.networkLabel,
+    })
+  }
+  return map
+}
+
 /**
  * Full thread view: messages + episode dividers + relationship stats.
  * `markRead` (default true) controls the per-message readAt receipt only —
@@ -322,7 +360,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -388,7 +426,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null; sharedGasChainSlug: string | null }
   // Prefix trade-message ids so they can never collide with thread-message ids.
   // Only the thread's own messages support soft delete + shared-ad references —
   // folded trade-room lines never carry a deletedAt, but DO carry their own real
@@ -397,28 +435,37 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
   ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
     // Redact retracted messages to a tombstone in the inbox view (the row itself
-    // is retained in the DB for dispute review). Also clear the shared-ad
-    // reference so a retracted "share my listing" message can't still resolve
-    // and surface the live listing (price/side/status) after retraction.
-    .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null } : m))
+    // is retained in the DB for dispute review). Also clear the shared-ad/
+    // shared-gas reference so a retracted "share" message can't still resolve
+    // and surface live data after retraction.
+    .map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null } : m))
 
-  // Resolve any shared-ad references to their CURRENT live state (price, side,
-  // whether it's still active) rather than a stale send-time snapshot — a
-  // one-tap-shared listing should always reflect what the recipient would
-  // actually see if they tapped through to it right now.
+  // Resolve any shared-ad/shared-gas references to their CURRENT live state
+  // (price, side, whether it's still active) rather than a stale send-time
+  // snapshot — a one-tap-shared card should always reflect what the recipient
+  // would actually see if they tapped through to it right now.
   const sharedRefs = messages
     .filter((m): m is Msg & { sharedAdMarket: string; sharedAdId: string } => !!m.sharedAdMarket && !!m.sharedAdId)
     .map((m) => ({ market: m.sharedAdMarket as Market, id: m.sharedAdId }))
-  const sharedAdMap = await resolveSharedAdPreviews(sharedRefs)
+  const sharedGasSlugs = messages
+    .filter((m): m is Msg & { sharedGasChainSlug: string } => !!m.sharedGasChainSlug)
+    .map((m) => m.sharedGasChainSlug)
+  const [sharedAdMap, sharedGasMap] = await Promise.all([
+    resolveSharedAdPreviews(sharedRefs),
+    resolveSharedGasPreviews(sharedGasSlugs),
+  ])
   const messagesWithSharedAd = messages.map((m) => ({
     ...m,
     sharedAd: m.sharedAdMarket && m.sharedAdId
       ? sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }
+      : null,
+    sharedGas: m.sharedGasChainSlug
+      ? sharedGasMap.get(m.sharedGasChainSlug.toUpperCase()) ?? { slug: m.sharedGasChainSlug, deleted: true }
       : null,
   }))
 
@@ -466,7 +513,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   }
 }
 
-const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true, sharedAdMarket: true, sharedAdId: true } as const
+const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } as const
 
 /**
  * Post a message to a thread. Sender must be a participant. Bumps the other's
@@ -475,7 +522,9 @@ const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: tr
  * response returns the original message instead of creating a duplicate.
  * `sharedAd` (optional) is a one-tap "share my listing" — the sender's OWN
  * active Ad/CtmListing, validated below so nobody can share someone else's
- * listing or a listing that's paused/deleted.
+ * listing or a listing that's paused/deleted. `sharedGasChainSlug` (optional)
+ * is a one-tap "share gas fees" — no ownership to check (chains aren't
+ * user-owned), just that the chain is real and still shown to users.
  */
 export async function postThreadMessage(
   userId: string,
@@ -484,9 +533,10 @@ export async function postThreadMessage(
   attachmentUrl?: string,
   clientId?: string,
   sharedAd?: { market: Market; id: string },
+  sharedGasChainSlug?: string,
 ) {
   const text = body.trim()
-  if (!text && !attachmentUrl && !sharedAd) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (!text && !attachmentUrl && !sharedAd && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
 
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
@@ -509,6 +559,12 @@ export async function postThreadMessage(
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
     }
   }
+  let gasChainSlug: string | undefined
+  if (sharedGasChainSlug) {
+    const chain = await db.gasChainConfig.findUnique({ where: { slug: sharedGasChainSlug.toUpperCase() }, select: { slug: true, isVisibleToUsers: true, isArchived: true } })
+    if (!chain || !chain.isVisibleToUsers || chain.isArchived) throw new AppError('VALIDATION_ERROR', 'This gas chain is no longer available', 400)
+    gasChainSlug = chain.slug
+  }
 
   // clientId is sent on every send, not just retries, so this must stay a
   // single round trip on the common path — attempt the create and only fall
@@ -522,6 +578,7 @@ export async function postThreadMessage(
           threadId, senderId: userId, body: text, clientId: clientId ?? null,
           ...(attachmentUrl ? { attachmentUrl } : {}),
           ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+          ...(gasChainSlug ? { sharedGasChainSlug: gasChainSlug } : {}),
         },
         select: MESSAGE_SELECT,
       }),
@@ -538,7 +595,7 @@ export async function postThreadMessage(
       void (async () => {
         const sender = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
         const senderLabel = sender?.username ?? 'Someone'
-        const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : 'New message')
+        const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : gasChainSlug ? '⛽ Shared gas fees' : 'New message')
         const buzzKey = `notif:chatbuzz:dm:${otherId}:${threadId}`
         const claimed = await redis.set(buzzKey, '1', 'EX', 300, 'NX').catch(() => 'OK')
         const silent = claimed === null

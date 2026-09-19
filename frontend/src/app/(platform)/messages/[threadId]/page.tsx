@@ -23,6 +23,9 @@ import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
+import { SharedGasCard } from '@/components/chat/SharedGasCard'
+import { GasSharePicker } from '@/components/channels/GasSharePicker'
+import type { GasChain } from '@/lib/api'
 import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
@@ -115,6 +118,24 @@ export default function MessageThreadPage() {
       toast.error('Could not share listing', e instanceof Error ? e.message : 'Please try again')
     } finally {
       setSharingAd(false)
+    }
+  }
+
+  // One-tap "share gas fees" picker.
+  const [gasShareOpen, setGasShareOpen] = useState(false)
+  const [sharingGas, setSharingGas] = useState(false)
+
+  async function sendGasShare(chain: GasChain) {
+    if (sharingGas) return
+    setSharingGas(true)
+    try {
+      await messagingApi.postMessage(threadId, '', undefined, undefined, undefined, chain.slug)
+      setGasShareOpen(false)
+      await load()
+    } catch (e) {
+      toast.error('Could not share gas fees', e instanceof Error ? e.message : 'Please try again')
+    } finally {
+      setSharingGas(false)
     }
   }
 
@@ -607,6 +628,7 @@ export default function MessageThreadPage() {
                   </a>
                 )}
                 {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} mine={mine} /></div>}
+                {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} mine={mine} /></div>}
                 {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
                 <div className={`flex items-center gap-1 mt-0.5 ${mine ? 'justify-end' : ''}`}>
                   {m.failed && <span className="text-[10px] text-red-200">Tap to retry ·</span>}
@@ -684,6 +706,16 @@ export default function MessageThreadPage() {
                 </span>
                 <span className="text-sm font-semibold text-text-primary">Share a listing</span>
               </button>
+              <button
+                type="button"
+                onClick={() => { setAttachOpen(false); setGasShareOpen(true) }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt"
+              >
+                <span className="flex-shrink-0 w-9 h-9 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center text-base">
+                  ⛽
+                </span>
+                <span className="text-sm font-semibold text-text-primary">Share gas fees</span>
+              </button>
             </div>
           </AnchoredMenu>
           <input
@@ -707,6 +739,13 @@ export default function MessageThreadPage() {
         onClose={() => setShareAdOpen(false)}
         onSelect={(item) => void sendSharedAd(item)}
         sharing={sharingAd}
+      />
+
+      <GasSharePicker
+        isOpen={gasShareOpen}
+        onClose={() => setGasShareOpen(false)}
+        onSelect={(chain) => void sendGasShare(chain)}
+        sharing={sharingGas}
       />
 
       <Modal isOpen={reportOpen} onClose={() => setReportOpen(false)} title={`Report ${name}`}>

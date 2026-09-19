@@ -1584,6 +1584,10 @@ model ChatThreadMessage {
   // ordinary message.
   sharedAdMarket String?
   sharedAdId     String?
+  // One-tap "share gas fees" — references a GasChainConfig by slug (chains
+  // aren't user-owned, so unlike sharedAd there's no ownership check, just a
+  // live lookup on read). Null for an ordinary message.
+  sharedGasChainSlug String?
 
   // Scoped by senderId too (not just threadId+clientId) so a clientId collision
   // between the thread's TWO DIFFERENT participants can never make one sender's
@@ -1693,6 +1697,8 @@ model ChannelMessage {
   // One-tap "share my listing" — mirrors ChatThreadMessage's sharedAd fields.
   sharedAdMarket String?
   sharedAdId     String?
+  // One-tap "share gas fees" — mirrors ChatThreadMessage's sharedGasChainSlug.
+  sharedGasChainSlug String?
 
   @@unique([channelId, senderId, clientId])
   @@index([channelId, createdAt])

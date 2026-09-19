@@ -45,6 +45,17 @@ export interface SharedAdPreview {
   price?: string
 }
 
+/** A one-tap-shared gas chain rendered inline in a chat/channel bubble. */
+export interface SharedGasPreview {
+  slug: string
+  /** True when the chain no longer exists, or has since been hidden/archived. */
+  deleted: boolean
+  name?: string
+  symbol?: string
+  logoUrl?: string | null
+  networkLabel?: string
+}
+
 export interface ThreadMessage {
   id: string
   senderId: string
@@ -63,6 +74,9 @@ export interface ThreadMessage {
   /** One-tap "share my listing" — the sender's OWN listing, resolved to its
    *  current live state server-side. Null for an ordinary message. */
   sharedAd?: SharedAdPreview | null
+  /** One-tap "share gas fees" — resolved to the chain's current live state
+   *  server-side. Null for an ordinary message. */
+  sharedGas?: SharedGasPreview | null
 }
 
 export interface TradeEpisode {
@@ -133,8 +147,9 @@ export const messagingApi = {
     apiRequest<ThreadView>(`/messages/${threadId}${opts?.markRead === false ? '?markRead=0' : ''}`),
   /** `clientId` makes a retried send idempotent — reuse the same id across retries
    *  of the same message so a lost-response retry can't create a duplicate.
-   *  `sharedAd` one-tap-shares the sender's own listing (see ShareAdPicker). */
-  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }) =>
+   *  `sharedAd` one-tap-shares the sender's own listing (see ShareAdPicker).
+   *  `sharedGasChainSlug` one-tap-shares a gas chain (see GasSharePicker). */
+  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, sharedGasChainSlug?: string) =>
     apiRequest<ThreadMessage>(`/messages/${threadId}`, {
       method: 'POST',
       body: JSON.stringify({
@@ -142,6 +157,7 @@ export const messagingApi = {
         ...(attachmentUrl ? { attachmentUrl } : {}),
         ...(clientId ? { clientId } : {}),
         ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+        ...(sharedGasChainSlug ? { sharedGasChainSlug } : {}),
       }),
     }),
   deleteMessage: (threadId: string, messageId: string) =>

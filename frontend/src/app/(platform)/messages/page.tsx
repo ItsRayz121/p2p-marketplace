@@ -46,6 +46,8 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
   const [searching, setSearching] = useState(false)
   const [starting, setStarting] = useState<string | null>(null)
   const [openingNotes, setOpeningNotes] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'unread'>('all')
 
   useEffect(() => {
     const q = query.trim()
@@ -108,115 +110,160 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
       {tabBar}
       <div className="flex items-center gap-2 mb-4">
         <MessageSquare className="w-5 h-5 text-indigo-500" />
-        <h1 className="text-xl font-bold text-text-primary">Messaging</h1>
+        <h1 className="text-xl font-bold text-text-primary flex-1">Messaging</h1>
+        <button
+          onClick={() => {
+            setShowSearch((v) => !v)
+            if (showSearch) setQuery('')
+          }}
+          aria-label={showSearch ? 'Close search' : 'Find someone to message'}
+          className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors flex-shrink-0 ${
+            showSearch ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-text-muted hover:text-text-primary'
+          }`}
+        >
+          <Search className="w-3.5 h-3.5" />
+        </button>
       </div>
-      <p className="text-sm text-text-muted mb-4">
-        Your conversations with people you&apos;ve traded with. Each person keeps one thread across all your trades.
-      </p>
 
       {/* Find-by-username — starts a new conversation even without a shared trade. */}
-      <div className="relative mb-4">
-        <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Find someone by name or username…"
-          className="w-full rounded-lg border border-border bg-surface pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-primary"
-        />
-        {query && (
-          <button onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
-            <X className="w-4 h-4" />
-          </button>
-        )}
-        {results !== null && (
-          <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-surface shadow-card max-h-72 overflow-y-auto">
-            {searching ? (
-              <p className="text-xs text-text-muted px-3 py-3">Searching…</p>
-            ) : results.length === 0 ? (
-              isOwnUsername(query, user?.username) ? (
-                <div className="px-3 py-3">
-                  <p className="text-xs text-text-muted">That&apos;s your own username — you can&apos;t start a chat with yourself.</p>
-                  <button
-                    onClick={() => void openMyNotes()}
-                    disabled={openingNotes}
-                    className="mt-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
-                  >
-                    {openingNotes ? 'Opening…' : 'Open My Notes →'}
-                  </button>
-                </div>
+      {showSearch && (
+        <div className="relative mb-4">
+          <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+          <input
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find someone by name or username…"
+            className="w-full rounded-lg border border-border bg-surface pl-9 pr-9 py-2.5 text-sm focus:outline-none focus:border-primary"
+          />
+          {query && (
+            <button onClick={() => setQuery('')} aria-label="Clear search" className="absolute right-3 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary">
+              <X className="w-4 h-4" />
+            </button>
+          )}
+          {results !== null && (
+            <div className="absolute z-20 mt-1 w-full rounded-lg border border-border bg-surface shadow-card max-h-72 overflow-y-auto">
+              {searching ? (
+                <p className="text-xs text-text-muted px-3 py-3">Searching…</p>
+              ) : results.length === 0 ? (
+                isOwnUsername(query, user?.username) ? (
+                  <div className="px-3 py-3">
+                    <p className="text-xs text-text-muted">That&apos;s your own username — you can&apos;t start a chat with yourself.</p>
+                    <button
+                      onClick={() => void openMyNotes()}
+                      disabled={openingNotes}
+                      className="mt-1.5 text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+                    >
+                      {openingNotes ? 'Opening…' : 'Open My Notes →'}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-xs text-text-muted px-3 py-3">No one found with that username.</p>
+                )
               ) : (
-                <p className="text-xs text-text-muted px-3 py-3">No one found with that username.</p>
-              )
-            ) : (
-              results.map((u) => (
-                <button
-                  key={u.id}
-                  onClick={() => u.username && startWith(u.username)}
-                  disabled={starting === u.username}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-alt disabled:opacity-50 text-left"
-                >
-                  <UserAvatar name={u.fullName || u.username || 'User'} avatarUrl={u.avatarUrl} size="sm" />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-medium text-text-primary truncate">{u.fullName || u.username}</span>
-                    {u.username && <span className="block text-xs text-text-muted truncate">@{u.username}</span>}
-                  </span>
-                  <span className="text-xs font-medium text-primary flex-shrink-0">{starting === u.username ? 'Opening…' : 'Message'}</span>
-                </button>
-              ))
-            )}
-          </div>
-        )}
+                results.map((u) => (
+                  <button
+                    key={u.id}
+                    onClick={() => u.username && startWith(u.username)}
+                    disabled={starting === u.username}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-surface-alt disabled:opacity-50 text-left"
+                  >
+                    <UserAvatar name={u.fullName || u.username || 'User'} avatarUrl={u.avatarUrl} size="sm" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-sm font-medium text-text-primary truncate">{u.fullName || u.username}</span>
+                      {u.username && <span className="block text-xs text-text-muted truncate">@{u.username}</span>}
+                    </span>
+                    <span className="text-xs font-medium text-primary flex-shrink-0">{starting === u.username ? 'Opening…' : 'Message'}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* All / Unread filter — narrows the thread list below. */}
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setFilter('all')}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+            filter === 'all' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-muted hover:text-text-primary'
+          }`}
+        >
+          All
+        </button>
+        <button
+          onClick={() => setFilter('unread')}
+          className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+            filter === 'unread' ? 'bg-primary text-white' : 'bg-surface border border-border text-text-muted hover:text-text-primary'
+          }`}
+        >
+          Unread
+        </button>
       </div>
 
-      {/* Official RupChain channel — pinned at the top; opens the full-page support
-          thread so it behaves like the trader threads below (not a floating popup). */}
-      <Link
-        href="/messages/support"
-        className="w-full flex items-center gap-3 p-3 mb-2 rounded-lg bg-primary/5 border border-primary/30 hover:border-primary/50 transition-colors text-left"
-      >
-        <span className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-          <Headphones className="w-5 h-5 text-primary" />
-        </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <span className="font-semibold text-text-primary">RupChain Official</span>
-            <BadgeCheck className="w-4 h-4 text-sky-500" aria-label="Verified" />
-          </div>
-          <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
-        </div>
-      </Link>
+      {filter === 'all' && (
+        <>
+          {/* Official RupChain channel — pinned at the top; opens the full-page support
+              thread so it behaves like the trader threads below (not a floating popup). */}
+          <Link
+            href="/messages/support"
+            className="w-full flex items-center gap-3 p-3 mb-2 rounded-lg bg-primary/5 border border-primary/30 hover:border-primary/50 transition-colors text-left"
+          >
+            <span className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
+              <Headphones className="w-5 h-5 text-primary" />
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1">
+                <span className="font-semibold text-text-primary">RupChain Official</span>
+                <BadgeCheck className="w-4 h-4 text-sky-500" aria-label="Verified" />
+              </div>
+              <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
+            </div>
+          </Link>
 
-      {/* My Notes — a private, self-only thread (Saved Messages style) for jotting
-          things down or holding onto text. Shows your own username since this is
-          also the "who am I" surface people were reaching for in the share-username
-          menu. */}
-      <button
-        onClick={() => void openMyNotes()}
-        disabled={openingNotes}
-        className="w-full flex items-center gap-3 p-3 mb-4 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors text-left disabled:opacity-60"
-      >
-        <UserAvatar name={user?.fullName || user?.username || 'You'} avatarUrl={user?.avatarUrl ?? null} size="md" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="font-semibold text-text-primary">My Notes</span>
-            <FileText className="w-3.5 h-3.5 text-text-muted" />
-          </div>
-          <p className="text-xs text-text-muted truncate mt-0.5">
-            {user?.username ? `@${user.username} · private notes only you can see` : 'Private notes only you can see'}
-          </p>
-        </div>
-        {openingNotes && <span className="text-xs font-medium text-text-muted flex-shrink-0">Opening…</span>}
-      </button>
+          {/* My Notes — a private, self-only thread (Saved Messages style) for jotting
+              things down or holding onto text. Shows your own username since this is
+              also the "who am I" surface people were reaching for in the share-username
+              menu. */}
+          <button
+            onClick={() => void openMyNotes()}
+            disabled={openingNotes}
+            className="w-full flex items-center gap-3 p-3 mb-4 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors text-left disabled:opacity-60"
+          >
+            <UserAvatar name={user?.fullName || user?.username || 'You'} avatarUrl={user?.avatarUrl ?? null} size="md" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-text-primary">My Notes</span>
+                <FileText className="w-3.5 h-3.5 text-text-muted" />
+              </div>
+              <p className="text-xs text-text-muted truncate mt-0.5">
+                {user?.username ? `@${user.username} · private notes only you can see` : 'Private notes only you can see'}
+              </p>
+            </div>
+            {openingNotes && <span className="text-xs font-medium text-text-muted flex-shrink-0">Opening…</span>}
+          </button>
+        </>
+      )}
 
-      {items.length === 0 ? (
-        <EmptyState
-          icon={MessageSquare}
-          title="No conversations yet"
-          description="Once you trade with someone, a conversation opens here and stays for all your future trades together."
-        />
-      ) : (
+      {(() => {
+        const visibleItems = filter === 'unread' ? items.filter((t) => t.unread) : items
+        if (visibleItems.length === 0) {
+          return (
+            <EmptyState
+              icon={MessageSquare}
+              title={filter === 'unread' ? 'No unread messages' : 'No conversations yet'}
+              description={
+                filter === 'unread'
+                  ? "You're all caught up."
+                  : 'Once you trade with someone, a conversation opens here and stays for all your future trades together.'
+              }
+            />
+          )
+        }
+        return (
         <ul className="space-y-2">
-          {items.map((t) => {
+          {visibleItems.map((t) => {
             const name = t.other.fullName || t.other.username || 'Trader'
             return (
               <li key={t.threadId}>
@@ -248,7 +295,8 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
             )
           })}
         </ul>
-      )}
+        )
+      })()}
     </div>
   )
 }

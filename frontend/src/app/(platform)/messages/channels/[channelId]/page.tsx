@@ -17,7 +17,9 @@ import { Modal } from '@/components/ui/Modal'
 import { Spinner } from '@/components/ui/Spinner'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
+import { SharedGasCard } from '@/components/chat/SharedGasCard'
 import { GasSharePicker } from '@/components/channels/GasSharePicker'
+import type { GasChain } from '@/lib/api'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
@@ -234,12 +236,12 @@ export default function ChannelPage() {
     }
   }
 
-  async function sendGasShare(message: string) {
+  async function sendGasShare(chain: GasChain) {
     if (!channel || sharingGas) return
     setSharingGas(true)
     try {
       const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      await channelsApi.post(channel.id, message, clientId)
+      await channelsApi.post(channel.id, '', clientId, undefined, undefined, chain.slug)
       setGasShareOpen(false)
       await load()
     } catch (e) {
@@ -367,6 +369,7 @@ export default function ChannelPage() {
                     <div className="min-w-0 flex-1">
                       <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}
+                        {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} /></div>}
                         {isTrustedImageUrl(m.attachmentUrl) && (
                           <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                             <img src={m.attachmentUrl!} alt="Broadcast attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
@@ -512,7 +515,7 @@ export default function ChannelPage() {
       )}
 
       {isOwner && (
-        <GasSharePicker isOpen={gasShareOpen} onClose={() => setGasShareOpen(false)} onSelect={(message) => void sendGasShare(message)} sharing={sharingGas} />
+        <GasSharePicker isOpen={gasShareOpen} onClose={() => setGasShareOpen(false)} onSelect={(chain) => void sendGasShare(chain)} sharing={sharingGas} />
       )}
 
       {isOwner && (

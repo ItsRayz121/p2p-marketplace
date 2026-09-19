@@ -10,7 +10,7 @@ import {
   CHANNELS_MAX_MEMBERS_KEY, CHANNELS_MAX_MEMBERS_DEFAULT,
   getNumberConfig,
 } from './platformFlags.service'
-import { resolveSharedAdPreviews, type Market } from './chatThread.service'
+import { resolveSharedAdPreviews, resolveSharedGasPreviews, type Market } from './chatThread.service'
 import { slugify as baseSlugify } from './blog.service'
 import { logger } from '../lib/logger'
 
@@ -148,7 +148,7 @@ export async function getChannel(userId: string, idOrSlug: string) {
 
 const CHANNEL_MESSAGE_SELECT = {
   id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
-  clientId: true, sharedAdMarket: true, sharedAdId: true,
+  clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true,
 } as const
 
 /** Message history — members only (a non-member must join first, matching the invite-link model). */
@@ -168,19 +168,28 @@ export async function listChannelMessages(userId: string, channelId: string) {
     select: CHANNEL_MESSAGE_SELECT,
   })
   rows.reverse()
-  const messages = rows.map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null } : m))
+  const messages = rows.map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null } : m))
 
-  // Resolve one-tap-shared listings to their CURRENT live state, same as the DM
-  // inbox (see resolveSharedAdPreviews) — a shared card should never show a
-  // stale send-time price.
+  // Resolve one-tap-shared listings/gas chains to their CURRENT live state,
+  // same as the DM inbox (see resolveSharedAdPreviews/resolveSharedGasPreviews)
+  // — a shared card should never show stale send-time data.
   const refs = messages
     .filter((m): m is typeof m & { sharedAdMarket: string; sharedAdId: string } => !!m.sharedAdMarket && !!m.sharedAdId)
     .map((m) => ({ market: m.sharedAdMarket as Market, id: m.sharedAdId }))
-  const sharedAdMap = await resolveSharedAdPreviews(refs)
+  const gasSlugs = messages
+    .filter((m): m is typeof m & { sharedGasChainSlug: string } => !!m.sharedGasChainSlug)
+    .map((m) => m.sharedGasChainSlug)
+  const [sharedAdMap, sharedGasMap] = await Promise.all([
+    resolveSharedAdPreviews(refs),
+    resolveSharedGasPreviews(gasSlugs),
+  ])
   return messages.map((m) => ({
     ...m,
     sharedAd: m.sharedAdMarket && m.sharedAdId
       ? sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }
+      : null,
+    sharedGas: m.sharedGasChainSlug
+      ? sharedGasMap.get(m.sharedGasChainSlug.toUpperCase()) ?? { slug: m.sharedGasChainSlug, deleted: true }
       : null,
   }))
 }
@@ -329,7 +338,9 @@ export async function listMembers(userId: string, channelId: string) {
  * Post a broadcast message. Owner-only (broadcast, not group chat — see the
  * Channel model comment). `sharedAd` mirrors ChatThreadMessage's one-tap
  * "share my listing", validated the same way: must be the owner's own active
- * listing.
+ * listing. `sharedGasChainSlug` is the gas-fee equivalent — no ownership to
+ * check (chains aren't user-owned), just that the chain is real and still
+ * shown to users.
  */
 export async function postChannelMessage(
   userId: string,
@@ -338,9 +349,10 @@ export async function postChannelMessage(
   clientId?: string,
   sharedAd?: { market: Market; id: string },
   attachmentUrl?: string,
+  sharedGasChainSlug?: string,
 ) {
   const text = body.trim()
-  if (!text && !sharedAd && !attachmentUrl) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
+  if (!text && !sharedAd && !attachmentUrl && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > MESSAGE_MAX_LEN) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
   if (text) assertSafeChannelText(text)
   // Broadcasts fan out to every member (up to the channel cap), unlike a DM —
@@ -363,6 +375,12 @@ export async function postChannelMessage(
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
     }
   }
+  let gasChainSlug: string | undefined
+  if (sharedGasChainSlug) {
+    const chain = await db.gasChainConfig.findUnique({ where: { slug: sharedGasChainSlug.toUpperCase() }, select: { slug: true, isVisibleToUsers: true, isArchived: true } })
+    if (!chain || !chain.isVisibleToUsers || chain.isArchived) throw new AppError('VALIDATION_ERROR', 'This gas chain is no longer available', 400)
+    gasChainSlug = chain.slug
+  }
 
   try {
     const [message] = await db.$transaction([
@@ -371,6 +389,7 @@ export async function postChannelMessage(
           channelId, senderId: userId, body: text, clientId: clientId ?? null,
           ...(attachmentUrl ? { attachmentUrl } : {}),
           ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+          ...(gasChainSlug ? { sharedGasChainSlug: gasChainSlug } : {}),
         },
         select: CHANNEL_MESSAGE_SELECT,
       }),
@@ -379,7 +398,7 @@ export async function postChannelMessage(
     // Broadcast a bell + push to every member (Telegram-style — every post
     // buzzes, since only the owner can post so volume is inherently low).
     // Fire-and-forget: never block the owner's send on a large member fan-out.
-    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text, attachmentUrl)
+    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text || (gasChainSlug ? '⛽ Shared gas fees' : text), attachmentUrl)
     return message
   } catch (err) {
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {

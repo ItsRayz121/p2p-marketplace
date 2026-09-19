@@ -45,6 +45,7 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
   const [searching, setSearching] = useState(false)
   const [joining, setJoining] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
   useEffect(() => {
     setSearching(true)
@@ -79,6 +80,18 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
         <div className="flex items-center gap-2 mb-2">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted flex-1">Channels</h2>
           <button
+            onClick={() => {
+              setShowSearch((v) => !v)
+              if (showSearch) setQuery('')
+            }}
+            aria-label={showSearch ? 'Close search' : 'Search channels'}
+            className={`w-7 h-7 flex items-center justify-center rounded-full border transition-colors flex-shrink-0 ${
+              showSearch ? 'border-primary/40 bg-primary/10 text-primary' : 'border-border text-text-muted hover:text-text-primary'
+            }`}
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+          <button
             onClick={() => setCreateOpen(true)}
             aria-label="Create a channel"
             className="w-7 h-7 flex items-center justify-center rounded-full border border-dashed border-primary/40 text-primary hover:bg-primary/5 transition-colors flex-shrink-0"
@@ -86,15 +99,18 @@ export function ChannelsTab({ mine, reloadMine }: { mine: MyChannel[]; reloadMin
             <Plus className="w-4 h-4" />
           </button>
         </div>
-        <div className="relative mb-3">
-          <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search public channels…"
-            className="w-full rounded-lg border border-border bg-surface pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-primary"
-          />
-        </div>
+        {showSearch && (
+          <div className="relative mb-3">
+            <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search public channels…"
+              className="w-full rounded-lg border border-border bg-surface pl-9 pr-3 py-2.5 text-sm focus:outline-none focus:border-primary"
+            />
+          </div>
+        )}
       </div>
 
       {mine.length > 0 && (
