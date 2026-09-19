@@ -1,5 +1,8 @@
 import { env } from '../env'
 import { getEvmHotWalletAddress } from './gasWalletService'
+import { getSolanaHotWalletAddress } from './solanaWalletService'
+import { getTonHotWalletAddress } from './tonWalletService'
+import { getSuiHotWalletAddress } from './suiWalletService'
 
 // Extended GasChainId now includes non-EVM chains.
 // Note: DB GasChain enum uses 'ETH' (not 'ETHEREUM') and 'SUI'.
@@ -93,7 +96,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://basescan.org',
     nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BASE,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_BASE ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_BASE,
     getRpcUrl:           () => env.BASE_RPC_URL,
     deliveryImplemented: true,
@@ -106,7 +109,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://arbiscan.io',
     nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ARB,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_ARB ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_ARB,
     getRpcUrl:           () => env.ARBITRUM_RPC_URL,
     deliveryImplemented: true,
@@ -119,7 +122,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://optimistic.etherscan.io',
     nativeTierAmounts: { SMALL: 0.0005, MEDIUM: 0.001, LARGE: 0.003, XLARGE: 0.005, JUMBO: 0.01 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_OP,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_OP ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_OP,
     getRpcUrl:           () => env.OPTIMISM_RPC_URL,
     deliveryImplemented: true,
@@ -132,7 +135,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://polygonscan.com',
     nativeTierAmounts: { SMALL: 0.5, MEDIUM: 2, LARGE: 5, XLARGE: 10, JUMBO: 25 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_MATIC,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_MATIC ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_MATIC,
     getRpcUrl:           () => env.POLYGON_RPC_URL,
     deliveryImplemented: true,
@@ -145,7 +148,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://snowtrace.io',
     nativeTierAmounts: { SMALL: 0.05, MEDIUM: 0.1, LARGE: 0.25, XLARGE: 0.5, JUMBO: 1 },
     validateAddress:     (addr) => EVM_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_AVAX,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_AVAX ?? getEvmHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_AVAX,
     getRpcUrl:           () => env.AVALANCHE_RPC_URL,
     deliveryImplemented: true,
@@ -161,7 +164,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://solscan.io',
     nativeTierAmounts: { SMALL: 0.05, MEDIUM: 0.1, LARGE: 0.25, XLARGE: 0.5, JUMBO: 1 },
     validateAddress:     (addr) => SOL_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SOL,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SOL ?? getSolanaHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SOL,
     getRpcUrl:           () => env.SOL_RPC_URL,
     deliveryImplemented: true,
@@ -174,7 +177,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://tonscan.org',
     nativeTierAmounts: { SMALL: 0.5, MEDIUM: 1, LARGE: 2, XLARGE: 5, JUMBO: 10 },
     validateAddress:     (addr) => TON_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_TON,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_TON ?? getTonHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_TON,
     getRpcUrl:           () => env.TON_ENDPOINT_URL,
     deliveryImplemented: true,
@@ -187,7 +190,7 @@ export const GAS_CHAINS: Record<GasChainId, GasChainConfig> = {
     explorerBase: 'https://suivision.xyz',
     nativeTierAmounts: { SMALL: 0.5, MEDIUM: 1, LARGE: 2, XLARGE: 5, JUMBO: 10 },
     validateAddress:     (addr) => SUI_RE.test(addr),
-    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SUI,
+    getDepositAddress:   () => env.GAS_FEE_DEPOSIT_ADDRESS_SUI ?? getSuiHotWalletAddress() ?? undefined,
     getMarkupMultiplier: () => env.GAS_MARKUP_MULTIPLIER_SUI,
     getRpcUrl:           () => env.SUI_RPC_URL,
     deliveryImplemented: true,
