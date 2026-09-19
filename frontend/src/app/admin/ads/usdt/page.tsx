@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
@@ -73,6 +73,11 @@ export default function AdminUsdtAdsPage() {
       setLoading(false)
     }
   }, [side, statusFilter, page])
+
+  useEffect(() => {
+    setLoading(true)
+    fetchAds()
+  }, [fetchAds])
 
   usePolling(fetchAds, 30_000)
 

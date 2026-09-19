@@ -85,6 +85,11 @@ export default function AdminCtmAdsPage() {
     }
   }, [side, statusFilter, tokenId, page])
 
+  useEffect(() => {
+    setLoading(true)
+    fetchListings()
+  }, [fetchListings])
+
   usePolling(fetchListings, 30_000)
 
   if (loading) return <LoadingState message="Loading CTM listings..." />
