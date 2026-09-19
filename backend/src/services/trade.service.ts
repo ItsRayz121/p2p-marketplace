@@ -600,11 +600,16 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
     // counterparty's side: this is an instruction directed AT the buyer ("please
     // upload payment proof"), so it should read as coming from the seller, never
     // from the buyer's own "You" side.
+    // Must match the trade's actual step order (see settlementFlow.ts) — a
+    // taker-first trade has the seller sending crypto FIRST, so telling the
+    // buyer to pay first here would contradict the real ladder.
     await tx.tradeMessage.create({
       data: {
         tradeId: newTrade.id,
         senderId: sellerId,
-        message: 'Trade created. Please upload payment proof within the trade window.',
+        message: usesTakerFirstFlow
+          ? 'Trade created. Seller: send the crypto first and mark it sent within the trade window. Buyer: confirm once it arrives, then send the PKR payment and upload proof.'
+          : 'Trade created. Please upload payment proof within the trade window.',
         isSystem: true,
       },
     })
@@ -648,12 +653,15 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   // it later when payment proof is uploaded.
   if (isBuyAd) {
     // BUY ad: the buyer is the ad owner. The seller filled their listing, so ping
-    // the buyer to pay within the trade window.
+    // the buyer — taker-first: the seller sends crypto first and the buyer only
+    // pays once it arrives; classic: the buyer pays within the trade window.
     notify(
       buyerId,
       'trade',
       'A seller filled your buy listing',
-      `Trade ${trade.orderRef} is open — send the PKR payment and upload proof within the trade window.`,
+      usesTakerFirstFlow
+        ? `Trade ${trade.orderRef} is open — the seller will send the crypto first. Confirm once it arrives, then send the PKR payment.`
+        : `Trade ${trade.orderRef} is open — send the PKR payment and upload proof within the trade window.`,
       { tradeId: trade.id },
       trade.id,
     )

@@ -252,13 +252,15 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
   // request behaves the same whether the maker fills it directly or via a bid.
   let usesTakerFirstFlow = false
   {
-    const preBid = await db.ctmBid.findUnique({ where: { id: bidId }, select: { bidderId: true } })
+    const preBid = await db.ctmBid.findUnique({
+      where: { id: bidId },
+      select: { bidderId: true, request: { select: { side: true } } },
+    })
     if (preBid) {
       await assertCanOpenTrade(userId, 'self')               // the requester accepting
       await assertCanOpenTrade(preBid.bidderId, 'counterparty') // the bidder
     }
-    const preRequest = await db.ctmRequest.findUnique({ where: { id: requestId }, select: { side: true } })
-    usesTakerFirstFlow = preRequest?.side === 'buy' && (await isTakerFirstForMarket('ctm'))
+    usesTakerFirstFlow = preBid?.request.side === 'buy' && (await isTakerFirstForMarket('ctm'))
   }
 
   const created = await db.$transaction(async (tx) => {
