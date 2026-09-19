@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
@@ -74,7 +74,12 @@ export default function AdminUsdtAdsPage() {
     }
   }, [side, statusFilter, page])
 
+  // usePolling already fetches once immediately on mount; this effect only
+  // needs to force an extra fetch when the filters change AFTER that first
+  // mount (skipping the first run avoids firing two concurrent requests).
+  const mountedRef = useRef(false)
   useEffect(() => {
+    if (!mountedRef.current) { mountedRef.current = true; return }
     setLoading(true)
     fetchAds()
   }, [fetchAds])

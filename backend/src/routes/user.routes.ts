@@ -94,6 +94,42 @@ export async function userRoutes(app: FastifyInstance) {
         }))
       : false
 
+    // A profile is private by default — only a KYC-verified user who has
+    // explicitly opted in (User.socialLinksPublic) shows trade stats, merchant
+    // status, ratings, active ads, KYC level and social links to the public.
+    // Everyone else only ever gets the minimal, always-safe fields below (this
+    // matches what's already shown elsewhere in the app — e.g. a username next
+    // to an ad — so nothing is newly exposed, just not aggregated on one page).
+    // Bail out here (before the ratings/reviewer/payment-method lookups below,
+    // which only the public branch needs) rather than running them and
+    // discarding the result on every visit to the — likely majority — private
+    // profiles.
+    if (!user.socialLinksPublic) {
+      return reply.send({
+        success: true,
+        data: {
+          id: user.id,
+          username: user.username,
+          fullName: user.fullName,
+          avatarUrl: user.avatarUrl,
+          createdAt: user.createdAt,
+          isFavorited,
+          profilePublic: false,
+          role: user.role,
+          kycStatus: 'none' as const,
+          kycLevel: 'none' as const,
+          isEmailVerified: false,
+          verifiedEmail: false,
+          lastSeenAt: null,
+          tradeStats: null,
+          merchant: null,
+          socialLinks: null,
+          ratings: [],
+          activeAds: [],
+        },
+      })
+    }
+
     // Fetch last 10 ratings where this user was rated
     const ratings = await db.tradeRating.findMany({
       where: { ratedUserId: user.id },
@@ -144,60 +180,32 @@ export async function userRoutes(app: FastifyInstance) {
 
     // The trader's full name is shown on their public profile (product decision):
     // both the header name and the reviewer names in the reviews list display the
-    // real full name rather than a masked initials form.
-    //
-    // A profile is private by default — only a KYC-verified user who has
-    // explicitly opted in (User.socialLinksPublic) shows trade stats, merchant
-    // status, ratings, active ads, KYC level and social links to the public.
-    // Everyone else only ever gets the minimal, always-safe fields below (this
-    // matches what's already shown elsewhere in the app — e.g. a username next
-    // to an ad — so nothing is newly exposed, just not aggregated on one page).
-    const isPublic = user.socialLinksPublic === true
-    const profile = isPublic
-      ? {
-          ...user,
-          fullName: user.fullName,
-          verifiedEmail: user.isEmailVerified,
-          isFavorited,
-          profilePublic: true,
-          // Public profile shows only non-hidden links.
-          socialLinks: parseSocialLinks(user.socialLinks).filter((l) => !l.hidden).map((l) => ({ platform: l.platform, url: l.url, verified: l.verified })),
-          // Reviews display the reviewer's full name and link to their public profile.
-          ratings: enrichedRatings,
-          activeAds: user.ads.map((ad) => ({
-            ...ad,
-            price: ad.price.toString(),
-            minOrder: ad.minOrder.toString(),
-            maxOrder: ad.maxOrder.toString(),
-            availableAmount: ad.availableAmount.toString(),
-            // Resolve to method type; drop any unresolved cuids rather than show them.
-            paymentMethods: [...new Set(
-              ad.paymentMethods
-                .map((id) => pmTypeMap.get(id))
-                .filter((v): v is string => Boolean(v)),
-            )],
-          })),
-        }
-      : {
-          id: user.id,
-          username: user.username,
-          fullName: user.fullName,
-          avatarUrl: user.avatarUrl,
-          createdAt: user.createdAt,
-          isFavorited,
-          profilePublic: false,
-          role: user.role,
-          kycStatus: 'none' as const,
-          kycLevel: 'none' as const,
-          isEmailVerified: false,
-          verifiedEmail: false,
-          lastSeenAt: null,
-          tradeStats: null,
-          merchant: null,
-          socialLinks: null,
-          ratings: [] as typeof enrichedRatings,
-          activeAds: [] as never[],
-        }
+    // real full name rather than a masked initials form. Reached only once we
+    // know the profile is public (private profiles returned above already).
+    const profile = {
+      ...user,
+      fullName: user.fullName,
+      verifiedEmail: user.isEmailVerified,
+      isFavorited,
+      profilePublic: true,
+      // Public profile shows only non-hidden links.
+      socialLinks: parseSocialLinks(user.socialLinks).filter((l) => !l.hidden).map((l) => ({ platform: l.platform, url: l.url, verified: l.verified })),
+      // Reviews display the reviewer's full name and link to their public profile.
+      ratings: enrichedRatings,
+      activeAds: user.ads.map((ad) => ({
+        ...ad,
+        price: ad.price.toString(),
+        minOrder: ad.minOrder.toString(),
+        maxOrder: ad.maxOrder.toString(),
+        availableAmount: ad.availableAmount.toString(),
+        // Resolve to method type; drop any unresolved cuids rather than show them.
+        paymentMethods: [...new Set(
+          ad.paymentMethods
+            .map((id) => pmTypeMap.get(id))
+            .filter((v): v is string => Boolean(v)),
+        )],
+      })),
+    }
 
     return reply.send({ success: true, data: profile })
   })

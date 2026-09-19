@@ -1580,7 +1580,10 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await db.user.update({
       where: { id: submission.userId },
-      data: { kycStatus: 'rejected' },
+      // Also revoke the public-profile opt-in — it requires KYC-approved status
+      // (see PATCH /users/me/social-profile), so a user whose approval is
+      // rejected (e.g. a later re-verification) must not stay publicly listed.
+      data: { kycStatus: 'rejected', socialLinksPublic: false },
     })
 
     await createAuditLog(req.user!.id, 'KYC_REJECTED', 'KycSubmission', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
