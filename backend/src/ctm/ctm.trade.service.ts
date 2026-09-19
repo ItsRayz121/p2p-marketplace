@@ -1,4 +1,5 @@
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { assertTokenAddressFormat } from './ctm.address'
 import { computeMerchantTier } from './ctm.tier'
@@ -1456,9 +1457,27 @@ export async function sendMessage(tradeRef: string, senderId: string, message: s
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== senderId && trade.sellerId !== senderId) throw new AppError('FORBIDDEN', 'Access denied', 403)
 
-  const msg = await db.ctmTradeMessage.create({
-    data: { tradeId: trade.id, senderId, message, attachmentUrl: attachmentUrl ?? null },
-  })
+  const [msg, sender] = await Promise.all([
+    db.ctmTradeMessage.create({
+      data: { tradeId: trade.id, senderId, message, attachmentUrl: attachmentUrl ?? null },
+    }),
+    db.user.findUnique({ where: { id: senderId }, select: { username: true } }),
+  ])
+
+  // Notify the other party — mirrors trade.service.ts's USDT chat: bell always
+  // updates live (SSE), but the device buzz is COALESCED to one per 5-minute
+  // window per trade so a fast back-and-forth can't fire a push storm.
+  const recipientId = trade.buyerId === senderId ? trade.sellerId : trade.buyerId
+  const senderLabel = sender?.username ?? 'Someone'
+  const preview = message.length > 60 ? message.slice(0, 57) + '…' : message
+
+  const buzzKey = `notif:chatbuzz:ctm:${recipientId}:${trade.id}`
+  const claimed = await redis.set(buzzKey, '1', 'EX', 300, 'NX').catch(() => 'OK')
+  const silent = claimed === null
+
+  // Chat messages are NOT important enough for a Telegram DM (too frequent);
+  // telegram: false force-excludes them even though they share type 'trade'.
+  centralNotify(recipientId, 'trade', 'New Message', `${senderLabel}: ${preview}`, { tradeRef }, undefined, `/ctm/trade/${tradeRef}`, { silent, telegram: false })
 
   // Keep the unified inbox thread fresh (ordering + unread). Best-effort, flag-gated.
   void bumpThreadForTradeMessage({ buyerId: trade.buyerId, sellerId: trade.sellerId, senderId })

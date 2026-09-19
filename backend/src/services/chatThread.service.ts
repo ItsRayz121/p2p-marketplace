@@ -1,7 +1,9 @@
 import { Prisma } from '@prisma/client'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { notify } from '../lib/notify'
 import { logger } from '../lib/logger'
 
 /**
@@ -529,6 +531,20 @@ export async function postThreadMessage(
         data: { lastMessageAt: new Date(), ...(isA ? { unreadByB: true } : { unreadByA: true }) },
       }),
     ])
+    // Notify the other party (self-notes thread has no "other" side). Bell
+    // always updates live (SSE); the device buzz is coalesced to one per
+    // 5-minute window per thread, mirroring trade chat's chatbuzz key.
+    if (otherId !== userId) {
+      void (async () => {
+        const sender = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
+        const senderLabel = sender?.username ?? 'Someone'
+        const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : 'New message')
+        const buzzKey = `notif:chatbuzz:dm:${otherId}:${threadId}`
+        const claimed = await redis.set(buzzKey, '1', 'EX', 300, 'NX').catch(() => 'OK')
+        const silent = claimed === null
+        notify(otherId, 'message', senderLabel, preview, { threadId }, undefined, '/messages/' + threadId, { silent, telegram: false })
+      })().catch(() => {})
+    }
     return message
   } catch (err) {
     // A retry of the same clientId (lost response, or a race between two

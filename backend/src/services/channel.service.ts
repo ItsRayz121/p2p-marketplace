@@ -4,6 +4,7 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { assertCloudinaryUrl } from '../lib/upload'
 import { assertSafeChannelText } from '../lib/channelTextSafety'
+import { notify } from '../lib/notify'
 import {
   CHANNELS_MAX_PER_USER_KEY, CHANNELS_MAX_PER_USER_DEFAULT,
   CHANNELS_MAX_MEMBERS_KEY, CHANNELS_MAX_MEMBERS_DEFAULT,
@@ -346,7 +347,7 @@ export async function postChannelMessage(
   // third-party URL (tracking pixel, phishing image) to a public audience.
   if (attachmentUrl) assertCloudinaryUrl(attachmentUrl, 'attachmentUrl')
 
-  const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true } })
+  const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true, name: true, slug: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)
 
@@ -374,6 +375,10 @@ export async function postChannelMessage(
       }),
       db.channel.update({ where: { id: channelId }, data: { lastMessageAt: new Date() } }),
     ])
+    // Broadcast a bell + push to every member (Telegram-style — every post
+    // buzzes, since only the owner can post so volume is inherently low).
+    // Fire-and-forget: never block the owner's send on a large member fan-out.
+    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text, attachmentUrl)
     return message
   } catch (err) {
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -384,6 +389,35 @@ export async function postChannelMessage(
       if (existing) return existing
     }
     throw err
+  }
+}
+
+/**
+ * Fan the "new broadcast" bell + web-push out to every member except the
+ * owner who just posted it. Best-effort and never throws — a notification
+ * failure must never surface as an error on the owner's send.
+ */
+async function notifyChannelMembers(
+  channelId: string,
+  channelName: string,
+  channelSlug: string,
+  ownerId: string,
+  text: string,
+  attachmentUrl?: string,
+) {
+  try {
+    const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : 'New broadcast')
+    const members = await db.channelMember.findMany({
+      where: { channelId, userId: { not: ownerId } },
+      select: { userId: true },
+    })
+    for (const { userId } of members) {
+      // Channel broadcasts are never important enough for a Telegram DM —
+      // telegram: false keeps them web-push + in-app bell only.
+      notify(userId, 'channel_broadcast', channelName, preview, { channelId }, undefined, `/messages/channels/${channelSlug}`, { telegram: false })
+    }
+  } catch (err) {
+    logger.warn({ err, channelId }, 'Failed to fan out channel broadcast notifications (non-fatal)')
   }
 }
 
