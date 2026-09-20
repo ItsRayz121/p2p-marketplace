@@ -9,6 +9,7 @@ export interface ChatUser {
   username: string | null
   fullName: string | null
   avatarUrl: string | null
+  badge?: string | null
 }
 
 export interface InboxItem {

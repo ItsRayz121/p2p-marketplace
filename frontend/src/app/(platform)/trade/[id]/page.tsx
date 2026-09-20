@@ -910,7 +910,7 @@ export default function TradePage() {
           block (no lone "status" row dangling on its own line on mobile). */}
       <div className="mb-6">
         <div className="flex items-center gap-2 flex-wrap">
-          <UserAvatar name={counterparty} avatarUrl={counterpartyUser?.avatarUrl} size="md" />
+          <UserAvatar name={counterparty} avatarUrl={counterpartyUser?.avatarUrl} size="md" tier={counterpartyBadge} />
           <h1 className="text-lg sm:text-xl font-bold text-text-primary">
             Trade with {counterparty}
           </h1>

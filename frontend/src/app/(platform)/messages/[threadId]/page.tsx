@@ -11,6 +11,7 @@ import {
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Button } from '@/components/ui/Button'
 import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
@@ -436,10 +437,10 @@ export default function MessageThreadPage() {
           <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
         {isSelf || !data.other.username ? (
-          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
+          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} />
         ) : (
           <Link href={`/profile/${encodeURIComponent(data.other.username)}`} aria-label={`View ${name}'s profile`}>
-            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" />
+            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} />
           </Link>
         )}
         <div className="min-w-0 flex-1">

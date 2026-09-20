@@ -253,7 +253,7 @@ export default function TraderProfilePage() {
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative flex-shrink-0">
-            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" />
+            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" tier={badge} />
             <span className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
           </div>
           <div className="flex-1 min-w-0">

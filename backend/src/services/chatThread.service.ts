@@ -38,6 +38,16 @@ function excludeSelfThread(userId: string) {
   return { NOT: { userAId: userId, userBId: userId } }
 }
 
+/** Flattens `tradeStats.badge` onto the user object as `badge`, matching the
+ *  shape every other surface (marketplace/profile/trade) exposes it in — keeps
+ *  getInbox and getThread from independently drifting on this transform. */
+function toChatUser<T extends { tradeStats: { badge: string } | null }>(
+  raw: T,
+): Omit<T, 'tradeStats'> & { badge: string | null } {
+  const { tradeStats, ...rest } = raw
+  return { ...rest, badge: tradeStats?.badge ?? null }
+}
+
 /** Get or create the thread for a pair. Idempotent under concurrency (upsert). */
 async function getOrCreateThread(x: string, y: string): Promise<{ id: string; userAId: string; userBId: string }> {
   const { userAId, userBId } = canonicalPair(x, y)
@@ -207,8 +217,8 @@ export async function getInbox(userId: string) {
     take: 100,
     select: {
       id: true, userAId: true, userBId: true, lastMessageAt: true, unreadByA: true, unreadByB: true,
-      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
       episodes: { select: { outcome: true } },
       messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, sharedGasChainSlug: true, deletedAt: true } },
     },
@@ -227,7 +237,7 @@ export async function getInbox(userId: string) {
 
   return threads.map((t) => {
     const isA = t.userAId === userId
-    const other = isA ? t.userB : t.userA
+    const other = toChatUser(isA ? t.userB : t.userA)
     const unread = isA ? t.unreadByA : t.unreadByB
     const activeTrades = t.episodes.filter((e) => e.outcome === 'active').length
     const last = t.messages[0]
@@ -374,8 +384,8 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     where: { id: threadId },
     select: {
       id: true, userAId: true, userBId: true,
-      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
-      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true } },
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
       messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
@@ -508,7 +518,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   ])
   const ratedByMe = new Set<string>([...uRatings, ...cRatings].map((r) => r.tradeId))
 
-  const other = isA ? thread.userB : thread.userA
+  const other = toChatUser(isA ? thread.userB : thread.userA)
   const [blockedByMe, blockedMe] = await Promise.all([
     db.blockedUser.findUnique({ where: { blockerId_blockedId: { blockerId: userId, blockedId: other.id } }, select: { id: true } }),
     db.blockedUser.findUnique({ where: { blockerId_blockedId: { blockerId: other.id, blockedId: userId } }, select: { id: true } }),

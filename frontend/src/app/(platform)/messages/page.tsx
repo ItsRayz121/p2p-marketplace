@@ -10,6 +10,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChannelsTab } from '@/components/channels/ChannelsTab'
 import { fmtDateTime } from '@/lib/fmt'
 import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck, FileText, Radio } from 'lucide-react'
@@ -271,7 +272,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                   href={`/messages/${t.threadId}`}
                   className="flex items-center gap-3 p-3 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors"
                 >
-                  <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" />
+                  <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" tier={(t.other.badge ?? 'new') as TraderBadge} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
