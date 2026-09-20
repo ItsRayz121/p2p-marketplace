@@ -21,6 +21,7 @@ import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
+import { previewAccountMerge, adminMergeAccounts, adminEraseIdentity } from '../services/accountLink.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
 import { processDepositEvent, creditDetectedDeposit } from '../services/depositWatcher.service'
 import { getDepositAddressBalances, sweepDepositAddress } from '../services/depositSweep.service'
@@ -863,6 +864,57 @@ export async function adminRoutes(app: FastifyInstance) {
     ])
     if (!user) throw Errors.NOT_FOUND('User')
     return reply.send({ success: true, data: { status: computeModerationStatus(user), statusLabel: moderationStatusLabel(computeModerationStatus(user)), banType: user.banType, bannedUntil: user.bannedUntil, suspendedUntil: user.suspendedUntil, underReview: user.underReview, moderationReason: user.moderationReason, actions } })
+  })
+
+  // ── Identity conflicts: admin-only merge / erase override ──────────────
+  // Routine self-service linking (settings → connect Telegram/email) still
+  // NEVER merges two established accounts — see accountLink.service header.
+  // These two endpoints are the deliberate, audited escape hatch for a
+  // support case where a real user genuinely owns both colliding accounts.
+
+  // Dry run: shows what a merge would do, and why it's blocked if it is.
+  app.get('/admin/identity/merge-preview', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const query = req.query as { survivorId?: string; otherId?: string }
+    if (!query.survivorId || !query.otherId) throw new AppError('VALIDATION_ERROR', 'survivorId and otherId are required', 400)
+    const preview = await previewAccountMerge(query.survivorId, query.otherId)
+    return reply.send({ success: true, data: preview })
+  })
+
+  // Commit: retires `otherId` into `survivorId`, transferring only the
+  // identity field survivor was missing. Step-up 2FA required — this is a
+  // hard-to-reverse account action.
+  app.post('/admin/identity/merge', { preHandler: adminStepUp, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const bodySchema = z.object({
+      survivorId: z.string().min(1),
+      otherId: z.string().min(1),
+      reason: z.string().min(10).max(1000),
+      acknowledgeFundsRisk: z.boolean().optional(),
+    })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { survivorId, otherId, reason, acknowledgeFundsRisk } = parsed.data
+
+    const result = await adminMergeAccounts({ survivorId, otherId, adminId: req.user!.id, reason, ...(acknowledgeFundsRisk !== undefined ? { acknowledgeFundsRisk } : {}) })
+    await createAuditLog(req.user!.id, 'ACCOUNT_IDENTITY_MERGED', 'User', otherId, { survivorId, reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: result })
+  })
+
+  // Erase: wipes a single account's login identity (no designated survivor)
+  // so the freed email/Telegram id can be claimed elsewhere. Step-up 2FA
+  // required.
+  app.post('/admin/identity/erase', { preHandler: adminStepUp, config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const bodySchema = z.object({
+      userId: z.string().min(1),
+      reason: z.string().min(10).max(1000),
+      acknowledgeFundsRisk: z.boolean().optional(),
+    })
+    const parsed = bodySchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { userId, reason, acknowledgeFundsRisk } = parsed.data
+
+    await adminEraseIdentity({ userId, adminId: req.user!.id, reason, ...(acknowledgeFundsRisk !== undefined ? { acknowledgeFundsRisk } : {}) })
+    await createAuditLog(req.user!.id, 'ACCOUNT_IDENTITY_ERASED', 'User', userId, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true })
   })
 
   // ── Appeals (admin review) ──────────────────────────────────────────────

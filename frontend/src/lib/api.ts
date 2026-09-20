@@ -2159,6 +2159,22 @@ export const adminApi = {
   overrideBadge: (id: string, data: { badge: string; badgeLabel?: string; reason?: string; clearOverride?: boolean }) =>
     apiRequest<void>(`/admin/users/${id}/badge`, { method: 'POST', body: JSON.stringify(data) }),
 
+  // Identity conflicts (admin-only merge/erase override — see accountLink.service)
+  previewIdentityMerge: (survivorId: string, otherId: string) =>
+    apiRequest<{
+      survivor: { id: string; username: string; fullName: string; email: string; telegramId: string | null }
+      other: { id: string; username: string; fullName: string; email: string; telegramId: string | null }
+      willTransferEmail: boolean
+      willTransferTelegram: boolean
+      eligible: boolean
+      blockedReason: string | null
+      otherHasWalletBalance: boolean
+    }>(`/admin/identity/merge-preview` + buildQs({ survivorId, otherId })),
+  mergeIdentity: (data: { survivorId: string; otherId: string; reason: string; acknowledgeFundsRisk?: boolean }) =>
+    apiRequest<{ survivorId: string; retiredId: string }>('/admin/identity/merge', { method: 'POST', body: JSON.stringify(data) }),
+  eraseIdentity: (data: { userId: string; reason: string; acknowledgeFundsRisk?: boolean }) =>
+    apiRequest<void>('/admin/identity/erase', { method: 'POST', body: JSON.stringify(data) }),
+
   // Appeals (admin)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAppeals: (params?: Record<string, string | number | undefined>) =>

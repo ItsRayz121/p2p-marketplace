@@ -19,6 +19,15 @@ import { generateOtp, hashOtp, verifyOtp, hashToken, hashPassword, verifyPasswor
 import { sendOtpEmail } from './email.service'
 import { logger } from '../lib/logger'
 import { env } from '../lib/env'
+import { computeModerationStatus, recordModerationAction } from '../lib/moderation'
+import type { TradeStatus, CtmTradeStatus, InstantBuyStatus, PrismaClient, Prisma } from '@prisma/client'
+
+// Accepted by every eligibility helper below so they can run either against
+// the live `db` (previews, the initial pre-transaction read) or against the
+// `tx` handed to a $transaction callback (the final re-check immediately
+// before mutating, which narrows the TOCTOU window between "admin looked at
+// the preview" and "admin clicked confirm" to the width of the transaction).
+type DbClient = PrismaClient | Prisma.TransactionClient
 import {
   getMe,
   isSyntheticEmail,
@@ -34,6 +43,13 @@ const LINK_TOKEN_TTL_MS = 15 * 60 * 1000 // telegram deep-link token — 15 min
 // email column, so the binding lives in the hash).
 function emailOtpPayload(code: string, email: string): string {
   return `${code}::${email.trim().toLowerCase()}`
+}
+
+// Shared by isEstablishedAccount below and the admin merge/erase eligibility
+// checks further down — one definition of "has money sitting in a wallet".
+async function hasWalletBalance(client: DbClient, userId: string): Promise<boolean> {
+  const wallets = await client.wallet.findMany({ where: { userId }, select: { balance: true, lockedBalance: true } })
+  return wallets.some((w) => w.balance.toNumber() > 0 || w.lockedBalance.toNumber() > 0)
 }
 
 // "Established" = a real human with a footprint we must never silently absorb.
@@ -53,14 +69,7 @@ export async function isEstablishedAccount(userId: string): Promise<boolean> {
   })
   if (tradeCount > 0) return true
 
-  const wallets = await db.wallet.findMany({
-    where: { userId },
-    select: { balance: true, lockedBalance: true },
-  })
-  for (const w of wallets) {
-    if (w.balance.toNumber() > 0 || w.lockedBalance.toNumber() > 0) return true
-  }
-  return false
+  return hasWalletBalance(db, userId)
 }
 
 // ─── Email linking (Telegram user adds a real email / any user changes email) ──
@@ -333,4 +342,358 @@ export async function unlinkTelegram(userId: string, password: string): Promise<
   logger.info({ userId }, 'Telegram disconnected by user')
 
   return getMe(userId)
+}
+
+// ─── Admin override: resolve a same-identity conflict (ADMIN-ONLY) ────────────
+//
+// The routine linking paths above NEVER merge two established accounts — that
+// invariant stays. This is a separate, deliberate escape hatch: when a real
+// user genuinely owns both colliding accounts (e.g. they traded on the website
+// years ago, then separately opened the Telegram Mini App) and files a support
+// request, an admin can pick which one survives. The other is fully retired —
+// its login identity is freed (same freed_/synthetic-email pattern already
+// used to absorb an empty stub) so it can never log in again, but every trade,
+// KYC, wallet and rating row it has stays in the database untouched, for
+// audit, disputes and compliance lookups. Nothing here ever deletes a row.
+//
+// Hard-blocked, no override possible: banned/suspended accounts, an account
+// already retired/erased, or either side having an unresolved dispute or a
+// trade in progress — closes the obvious ban-evasion / mid-trade-disappearance
+// paths. A non-zero wallet balance is only a warning (see previewAccountMerge)
+// since funds may be legitimately idle; the caller must set
+// acknowledgeFundsRisk to proceed past it.
+
+const ACTIVE_TRADE_STATUSES = [
+  'payment_pending', 'payment_uploaded', 'payment_confirmed', 'crypto_sent', 'disputed',
+] as unknown as TradeStatus[]
+const ACTIVE_CTM_TRADE_STATUSES = [
+  'awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming', 'disputed',
+] as unknown as CtmTradeStatus[]
+// InstantBuyOrder is single-user (no counterparty), but "admin_review" means
+// money has already been paid in and is awaiting an admin to credit it — the
+// user must still be reachable for that to resolve cleanly.
+const ACTIVE_INSTANT_BUY_STATUSES = [
+  'payment_pending', 'payment_uploaded', 'admin_review',
+] as unknown as InstantBuyStatus[]
+
+async function hasUnresolvedDispute(client: DbClient, userId: string): Promise<boolean> {
+  const [p2p, ctm] = await Promise.all([
+    client.dispute.count({
+      where: { status: { not: 'resolved' }, trade: { OR: [{ buyerId: userId }, { sellerId: userId }] } },
+    }),
+    client.ctmDispute.count({
+      where: { status: { not: 'resolved' }, trade: { OR: [{ buyerId: userId }, { sellerId: userId }] } },
+    }),
+  ])
+  return p2p > 0 || ctm > 0
+}
+
+async function hasActiveTrade(client: DbClient, userId: string): Promise<boolean> {
+  const [p2p, ctm, instantBuy] = await Promise.all([
+    client.trade.count({ where: { status: { in: ACTIVE_TRADE_STATUSES }, OR: [{ buyerId: userId }, { sellerId: userId }] } }),
+    client.ctmTrade.count({ where: { status: { in: ACTIVE_CTM_TRADE_STATUSES }, OR: [{ buyerId: userId }, { sellerId: userId }] } }),
+    client.instantBuyOrder.count({ where: { userId, status: { in: ACTIVE_INSTANT_BUY_STATUSES } } }),
+  ])
+  return p2p > 0 || ctm > 0 || instantBuy > 0
+}
+
+// A retired/erased account can't respond if a new taker opens a trade against
+// a listing it left live — same "disappears mid-trade" risk as an active
+// trade, just one step earlier. Paused/completed/expired listings can't take
+// new takers, so only 'active' matters here.
+async function hasActiveListing(client: DbClient, userId: string): Promise<boolean> {
+  const [ads, ctmListings] = await Promise.all([
+    client.ad.count({ where: { userId, status: 'active' } }),
+    client.ctmListing.count({ where: { status: 'active', merchantProfile: { userId } } }),
+  ])
+  return ads > 0 || ctmListings > 0
+}
+
+const MERGE_USER_SELECT = {
+  id: true,
+  username: true,
+  fullName: true,
+  email: true,
+  telegramId: true,
+  telegramUsername: true,
+  telegramPhotoUrl: true,
+  telegramAuthAt: true,
+  isEmailVerified: true,
+  isBanned: true,
+  isSuspended: true,
+  bannedUntil: true,
+  suspendedUntil: true,
+  underReview: true,
+  mergedIntoId: true,
+  historyMaskedAt: true,
+  identityErasedAt: true,
+} as const
+
+type MergeCandidate = NonNullable<Awaited<ReturnType<typeof loadMergeCandidate>>>
+
+async function loadMergeCandidate(client: DbClient, userId: string) {
+  return client.user.findUnique({ where: { id: userId }, select: MERGE_USER_SELECT })
+}
+
+/** Blocks that apply to EITHER side of a merge or a standalone identity erase — never overridable by an admin. */
+async function assertEligibleForIdentityAction(client: DbClient, user: MergeCandidate): Promise<void> {
+  if (user.isBanned || user.isSuspended) {
+    throw new AppError('CONFLICT', `${user.username} is banned or suspended — resolve that first`, 409)
+  }
+  if (user.mergedIntoId || user.historyMaskedAt) {
+    throw new AppError('CONFLICT', `${user.username} was already retired into another account`, 409)
+  }
+  if (user.identityErasedAt) {
+    throw new AppError('CONFLICT', `${user.username}'s identity was already erased`, 409)
+  }
+  if (await hasUnresolvedDispute(client, user.id)) {
+    throw new AppError('CONFLICT', `${user.username} has an unresolved dispute — resolve it first`, 409)
+  }
+  if (await hasActiveTrade(client, user.id)) {
+    throw new AppError('CONFLICT', `${user.username} has a trade in progress — wait for it to finish first`, 409)
+  }
+  if (await hasActiveListing(client, user.id)) {
+    throw new AppError('CONFLICT', `${user.username} has a live ad/listing — pause or remove it first so a new taker can't open a trade against it`, 409)
+  }
+}
+
+export interface MergeConflictPreview {
+  survivor: { id: string; username: string; fullName: string; email: string; telegramId: string | null }
+  other: { id: string; username: string; fullName: string; email: string; telegramId: string | null }
+  willTransferEmail: boolean
+  willTransferTelegram: boolean
+  eligible: boolean
+  blockedReason: string | null
+  otherHasWalletBalance: boolean
+}
+
+// Admin-facing dry run: shows what a merge would do and why it might be
+// blocked, before the admin commits to it.
+export async function previewAccountMerge(survivorId: string, otherId: string): Promise<MergeConflictPreview> {
+  if (survivorId === otherId) throw new AppError('VALIDATION_ERROR', 'Pick two different accounts', 400)
+
+  const [survivor, other] = await Promise.all([loadMergeCandidate(db, survivorId), loadMergeCandidate(db, otherId)])
+  if (!survivor || !other) throw new AppError('NOT_FOUND', 'Account not found', 404)
+
+  const willTransferEmail = isSyntheticEmail(survivor.email) && !isSyntheticEmail(other.email)
+  const willTransferTelegram = survivor.telegramId == null && other.telegramId != null
+
+  let blockedReason: string | null = null
+  let eligible = true
+  if (!willTransferEmail && !willTransferTelegram) {
+    eligible = false
+    blockedReason = "These accounts don't collide on an identity — nothing to transfer. Use identity-erase instead if the goal is just to free up the other account."
+  } else {
+    try {
+      await Promise.all([assertEligibleForIdentityAction(db, survivor), assertEligibleForIdentityAction(db, other)])
+    } catch (err) {
+      eligible = false
+      blockedReason = err instanceof AppError ? err.message : 'Not eligible'
+    }
+  }
+
+  return {
+    survivor: { id: survivor.id, username: survivor.username, fullName: survivor.fullName, email: survivor.email, telegramId: survivor.telegramId?.toString() ?? null },
+    other: { id: other.id, username: other.username, fullName: other.fullName, email: other.email, telegramId: other.telegramId?.toString() ?? null },
+    willTransferEmail,
+    willTransferTelegram,
+    eligible,
+    blockedReason,
+    otherHasWalletBalance: await hasWalletBalance(db, otherId),
+  }
+}
+
+export interface AdminMergeResult { survivorId: string; retiredId: string }
+
+export async function adminMergeAccounts(input: {
+  survivorId: string
+  otherId: string
+  adminId: string
+  reason: string
+  acknowledgeFundsRisk?: boolean
+}): Promise<AdminMergeResult> {
+  const { survivorId, otherId, adminId } = input
+  const reason = input.reason.trim()
+  if (reason.length < 10) {
+    throw new AppError('VALIDATION_ERROR', 'A reason of at least 10 characters is required', 400)
+  }
+  if (survivorId === otherId) throw new AppError('VALIDATION_ERROR', 'Pick two different accounts', 400)
+
+  const [survivor, other] = await Promise.all([loadMergeCandidate(db, survivorId), loadMergeCandidate(db, otherId)])
+  if (!survivor || !other) throw new AppError('NOT_FOUND', 'Account not found', 404)
+
+  await Promise.all([assertEligibleForIdentityAction(db, survivor), assertEligibleForIdentityAction(db, other)])
+
+  const transferEmailNow = isSyntheticEmail(survivor.email) && !isSyntheticEmail(other.email)
+  const transferTelegramNow = survivor.telegramId == null && other.telegramId != null
+  if (!transferEmailNow && !transferTelegramNow) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      "These accounts don't actually collide on an identity — nothing to transfer. Use identity-erase instead if the goal is just to free up the other account.",
+      400,
+    )
+  }
+
+  if (!input.acknowledgeFundsRisk && (await hasWalletBalance(db, otherId))) {
+    throw new AppError(
+      'CONFLICT',
+      'The retired account has a non-zero wallet balance that will become inaccessible after masking. Confirm with acknowledgeFundsRisk to proceed.',
+      409,
+    )
+  }
+
+  // Computed once, outside the transaction, but only USED inside it against
+  // freshly re-read rows — never against the `other` snapshot above, which
+  // could be stale by the time the transaction runs.
+  const unusablePasswordHash = await hashPassword(randomBytes(32).toString('hex'))
+
+  const { transferEmail, transferTelegram } = await db.$transaction(async (tx) => {
+    // Re-read + re-check eligibility AND recompute what actually needs
+    // transferring against these fresh rows — closes the window where the
+    // `other`/`survivor` snapshot read above went stale (e.g. `other`
+    // unlinked/relinked Telegram) between the read and this write.
+    const [survivorNow, otherNow] = await Promise.all([loadMergeCandidate(tx, survivorId), loadMergeCandidate(tx, otherId)])
+    if (!survivorNow || !otherNow) throw new AppError('NOT_FOUND', 'Account not found', 404)
+    await Promise.all([assertEligibleForIdentityAction(tx, survivorNow), assertEligibleForIdentityAction(tx, otherNow)])
+
+    const transferEmail = isSyntheticEmail(survivorNow.email) && !isSyntheticEmail(otherNow.email)
+    const transferTelegram = survivorNow.telegramId == null && otherNow.telegramId != null
+    if (!transferEmail && !transferTelegram) {
+      throw new AppError(
+        'CONFLICT',
+        "These accounts no longer collide on an identity (something changed since the preview) — nothing to transfer. Re-run the preview.",
+        409,
+      )
+    }
+
+    // Free `other`'s identity fields FIRST — unique constraints on email and
+    // telegramId are checked per-statement, so the survivor's update (which
+    // may claim these exact values) must run after they're vacated. Password
+    // and 2FA are invalidated too — email alone isn't enough to guarantee the
+    // retired account "can never log in again" if some future path doesn't
+    // gate on isEmailVerified.
+    await tx.user.update({
+      where: { id: otherId },
+      data: {
+        mergedIntoId: survivorId,
+        historyMaskedAt: new Date(),
+        telegramId: null,
+        telegramUsername: null,
+        telegramPhotoUrl: null,
+        telegramAuthAt: null,
+        email: `merged_${otherId}@${SYNTHETIC_EMAIL_DOMAIN}`,
+        isEmailVerified: false,
+        passwordHash: unusablePasswordHash,
+        twoFaEnabled: false,
+        twoFaSecret: null,
+      },
+    })
+    await tx.session.updateMany({ where: { userId: otherId, revokedAt: null }, data: { revokedAt: new Date() } })
+
+    await tx.user.update({
+      where: { id: survivorId },
+      data: {
+        ...(transferEmail ? { email: otherNow.email, isEmailVerified: otherNow.isEmailVerified } : {}),
+        ...(transferTelegram
+          ? {
+              telegramId: otherNow.telegramId,
+              telegramUsername: otherNow.telegramUsername,
+              telegramPhotoUrl: otherNow.telegramPhotoUrl,
+              telegramAuthAt: otherNow.telegramAuthAt,
+            }
+          : {}),
+      },
+    })
+
+    return { transferEmail, transferTelegram }
+  })
+
+  await recordModerationAction({
+    targetUserId: otherId,
+    moderatorId: adminId,
+    action: 'account_merge_retired',
+    reason: `Retired into ${survivor.username} (${survivorId}). ${reason}`,
+    previousStatus: computeModerationStatus(other),
+    newStatus: computeModerationStatus(other),
+  })
+  await recordModerationAction({
+    targetUserId: survivorId,
+    moderatorId: adminId,
+    action: 'account_merge_survivor',
+    reason: `Absorbed ${other.username}'s ${transferEmail ? 'email' : ''}${transferEmail && transferTelegram ? ' + ' : ''}${transferTelegram ? 'Telegram' : ''} identity (${otherId}). ${reason}`,
+    previousStatus: computeModerationStatus(survivor),
+    newStatus: computeModerationStatus(survivor),
+  })
+
+  logger.info({ survivorId, retiredId: otherId, adminId, transferEmail, transferTelegram }, 'Admin resolved identity conflict by merging accounts')
+  return { survivorId, retiredId: otherId }
+}
+
+// ─── Admin override: erase an account's login identity (ADMIN-ONLY) ───────────
+//
+// Standalone counterpart to the merge above — no designated survivor. At the
+// account owner's request (via support), an admin wipes this account's
+// email/Telegram identity so those identifiers are free to be claimed by a
+// different or brand-new account. Trade/KYC/wallet rows are preserved for
+// compliance; only the login identity is wiped, and the password is replaced
+// with an unusable random hash so the account can never be signed into again.
+export async function adminEraseIdentity(input: {
+  userId: string
+  adminId: string
+  reason: string
+  acknowledgeFundsRisk?: boolean
+}): Promise<void> {
+  const { userId, adminId } = input
+  const reason = input.reason.trim()
+  if (reason.length < 10) {
+    throw new AppError('VALIDATION_ERROR', 'A reason of at least 10 characters is required', 400)
+  }
+
+  const user = await loadMergeCandidate(db, userId)
+  if (!user) throw new AppError('NOT_FOUND', 'Account not found', 404)
+  await assertEligibleForIdentityAction(db, user)
+
+  if (!input.acknowledgeFundsRisk && (await hasWalletBalance(db, userId))) {
+    throw new AppError(
+      'CONFLICT',
+      'This account has a non-zero wallet balance that will become inaccessible once its identity is erased. Confirm with acknowledgeFundsRisk to proceed.',
+      409,
+    )
+  }
+
+  const unusablePasswordHash = await hashPassword(randomBytes(32).toString('hex'))
+
+  await db.$transaction(async (tx) => {
+    const userNow = await loadMergeCandidate(tx, userId)
+    if (!userNow) throw new AppError('NOT_FOUND', 'Account not found', 404)
+    await assertEligibleForIdentityAction(tx, userNow)
+
+    await tx.user.update({
+      where: { id: userId },
+      data: {
+        identityErasedAt: new Date(),
+        telegramId: null,
+        telegramUsername: null,
+        telegramPhotoUrl: null,
+        telegramAuthAt: null,
+        email: `erased_${userId}@${SYNTHETIC_EMAIL_DOMAIN}`,
+        isEmailVerified: false,
+        passwordHash: unusablePasswordHash,
+        twoFaEnabled: false,
+        twoFaSecret: null,
+      },
+    })
+    await tx.session.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } })
+  })
+
+  await recordModerationAction({
+    targetUserId: userId,
+    moderatorId: adminId,
+    action: 'identity_erased',
+    reason,
+    previousStatus: computeModerationStatus(user),
+    newStatus: computeModerationStatus(user),
+  })
+
+  logger.info({ userId, adminId }, 'Admin erased account login identity at user request')
 }

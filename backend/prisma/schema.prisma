@@ -476,6 +476,26 @@ model User {
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
+  // ── Admin-approved identity resolution (admin-only, never automatic) ──
+  // linkTelegramViaToken/startEmailLink block a link when the colliding
+  // identity belongs to another ESTABLISHED account ("never merge" — see
+  // accountLink.service). An admin can override that block for a specific
+  // pair: one account survives and gains whichever identity field it was
+  // missing, the other is fully retired — mergedIntoId/historyMaskedAt are
+  // set, its email/Telegram identity is freed (same freed_ pattern as an
+  // absorbed empty stub) so it can never log in again, but its trade/KYC/
+  // wallet rows stay in the DB untouched for audit and dispute lookups.
+  mergedIntoId     String?
+  mergedInto       User?      @relation("AccountMerge", fields: [mergedIntoId], references: [id], onDelete: SetNull)
+  mergedFrom       User[]     @relation("AccountMerge")
+  historyMaskedAt  DateTime?
+  // Admin-triggered, at the user's request: wipes this account's login
+  // identity (email → freed_ synthetic, Telegram cleared) so those
+  // identifiers are free to be claimed by a different/new account. Distinct
+  // from a merge — there is no designated survivor. Trade/KYC/wallet rows
+  // are preserved for compliance.
+  identityErasedAt DateTime?
+
   // Relations â€” onDelete rules are explicit (no implicit RESTRICT surprises)
   wallets                Wallet[]
   trades                 Trade[]             @relation("TradeBuyer")
@@ -541,6 +561,7 @@ model User {
   @@index([email])
   @@index([username])
   @@index([referralCode])
+  @@index([mergedIntoId])
 }
 
 model Wallet {
