@@ -101,6 +101,19 @@ export const FLAGS = {
    */
   AIRDROP_LEVELS: 'airdrop_levels_enabled',
   /**
+   * Points → USDT redemption (gift-style cash-out). When ON (AND airdrop_enabled
+   * is ON), a KYC'd user past the minimum account age can burn points into real
+   * USDT credited to their internal wallet balance, at the admin-tunable rate
+   * `airdrop_usdt_redeem_rate` (points per 1 USDT). Unlike the TGE token-pool
+   * split (which can never over-issue, since it's a fixed pie), this pays real
+   * money, so it is double-capped: a platform-wide monthly budget
+   * (`airdrop_usdt_redeem_monthly_budget_usdt`) AND a per-user monthly ceiling
+   * (`airdrop_usdt_redeem_user_cap_usdt`), both atomically guarded so concurrent
+   * redemptions can never push either past its cap. OFF (default) = the redeem
+   * endpoint is rejected; points only ever count toward levels/TGE share.
+   */
+  AIRDROP_USDT_REDEEM: 'airdrop_usdt_redeem_enabled',
+  /**
    * Community / influencer giveaways (task-gated address collection, off-platform
    * reward). When ON, affiliates and admins can create PromoGiveaway campaigns
    * from the Referral page and users can enter them. No platform funds are ever

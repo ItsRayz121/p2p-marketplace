@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { airdropApi, type AirdropStatus, type AirdropLedgerEntry } from '@/lib/api'
+import { airdropApi, type AirdropStatus, type AirdropLedgerEntry, type AirdropRedeemQuote } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { toast } from '@/lib/toast'
@@ -21,6 +21,7 @@ import {
   Wrench,
   Trophy,
   Percent,
+  Banknote,
 } from 'lucide-react'
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -42,6 +43,7 @@ const SOURCE_META: Record<string, { label: string; Icon: React.ElementType; cls:
   streak_bonus: { label: 'Streak Bonus',           Icon: Flame,          cls: 'text-red-500',     bg: 'bg-red-500/10' },
   admin_adjust: { label: 'Adjustment',             Icon: Settings2,      cls: 'text-slate-500',   bg: 'bg-slate-400/10' },
   clawback:     { label: 'Reversal',               Icon: RotateCcw,      cls: 'text-slate-500',   bg: 'bg-slate-400/10' },
+  redeem:       { label: 'Redeemed for USDT',      Icon: Banknote,       cls: 'text-emerald-500', bg: 'bg-emerald-500/10' },
 }
 function sourceMeta(s: string) {
   return SOURCE_META[s] ?? { label: s, Icon: Sparkles, cls: 'text-primary', bg: 'bg-primary/10' }
@@ -278,6 +280,103 @@ function LevelCard({ status }: { status: AirdropStatus }) {
   )
 }
 
+// ─── Redeem card (points → USDT) ───────────────────────────────────────────────
+function RedeemCard({ onChange }: { onChange: () => void }) {
+  const [quote, setQuote] = useState<AirdropRedeemQuote | null>(null)
+  const [points, setPoints] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const fetchQuote = useCallback(async () => {
+    try {
+      const q = await airdropApi.getRedeemQuote()
+      setQuote(q)
+    } catch {
+      // Redemption is an optional add-on — a failed fetch just hides the card.
+    }
+  }, [])
+
+  useEffect(() => {
+    void fetchQuote()
+  }, [fetchQuote])
+
+  if (!quote || !quote.enabled) return null
+
+  const usdtPreview = points ? Math.floor((Number(points) / quote.ratePointsPerUsdt) * 100) / 100 : 0
+  // The smallest of "points you actually have" and "points the remaining monthly
+  // budget (global + your own cap) can still pay out" — redemption can never
+  // succeed past whichever runs out first.
+  const maxByBudget = Math.min(quote.monthlyBudgetRemainingUsdt, quote.userMonthlyRemainingUsdt) * quote.ratePointsPerUsdt
+  const maxPoints = Math.floor(Math.min(quote.availablePoints, maxByBudget))
+  const blocked = !quote.kycOk
+    ? 'Complete KYC verification to redeem points.'
+    : !quote.accountAgeOk
+    ? `Your account must be at least ${quote.minAccountAgeDays} days old to redeem points.`
+    : quote.userMonthlyRemainingUsdt <= 0
+    ? "You've reached your redemption limit for this month."
+    : quote.monthlyBudgetRemainingUsdt <= 0
+    ? "This month's redemption pool is fully claimed — try again next month."
+    : null
+
+  const doRedeem = async () => {
+    const n = Number(points)
+    if (!Number.isFinite(n) || n <= 0) return
+    setBusy(true)
+    try {
+      const r = await airdropApi.redeem(n)
+      toast.success(`Redeemed ${r.pointsBurned} points`, `+$${r.usdtAmount.toFixed(2)} USDT credited to your wallet`)
+      setPoints('')
+      await Promise.all([fetchQuote(), onChange()])
+    } catch (e) {
+      toast.error('Redemption failed', e instanceof Error ? e.message : undefined)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-3 mb-3">
+        <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-emerald-500/10 flex-shrink-0">
+          <Banknote className="w-5 h-5 text-emerald-500" aria-hidden />
+        </span>
+        <div>
+          <h2 className="text-sm font-semibold text-text-primary">Redeem points for USDT</h2>
+          <p className="text-xs text-text-muted">{quote.ratePointsPerUsdt.toLocaleString()} points = $1.00 USDT</p>
+        </div>
+      </div>
+
+      {blocked ? (
+        <p className="text-sm text-text-muted">{blocked}</p>
+      ) : (
+        <>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              min={quote.minPoints}
+              max={Math.max(quote.minPoints, maxPoints)}
+              value={points}
+              onChange={(e) => setPoints(e.target.value)}
+              placeholder={`Min ${quote.minPoints.toLocaleString()} points`}
+              className="flex-1 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/40"
+            />
+            <button
+              onClick={doRedeem}
+              disabled={busy || !points || Number(points) < quote.minPoints || Number(points) > maxPoints}
+              className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-white hover:bg-primary-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex-shrink-0"
+            >
+              {busy ? 'Redeeming…' : 'Redeem'}
+            </button>
+          </div>
+          {usdtPreview > 0 && <p className="mt-1.5 text-xs text-text-muted">≈ ${usdtPreview.toFixed(2)} USDT credited to your wallet balance</p>}
+          <p className="mt-2 text-xs text-text-muted">
+            You have {fmtPoints(quote.availablePoints)} points available. Up to ${quote.userMonthlyRemainingUsdt.toFixed(2)} left this month.
+          </p>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function AirdropPage() {
   const [status, setStatus] = useState<AirdropStatus | null>(null)
@@ -336,6 +435,9 @@ export default function AirdropPage() {
 
       {/* Streak */}
       <StreakCard status={status} onChange={fetchData} />
+
+      {/* Redeem points for USDT (hidden entirely unless the redeem flag is on) */}
+      <RedeemCard onChange={fetchData} />
 
       {/* Milestone */}
       <MilestoneBar current={status.milestone.current} target={status.milestone.target} />

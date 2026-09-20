@@ -136,6 +136,7 @@ enum TransactionType {
   gas_fee_payment
   bond_seized
   bond_received
+  airdrop_redeem
 }
 
 enum ReferralRewardStatus {
@@ -3142,6 +3143,7 @@ enum AirdropSource {
   streak_bonus
   admin_adjust
   clawback
+  redeem
 }
 
 model AirdropSeason {
@@ -3198,6 +3200,37 @@ model AirdropLedger {
   @@index([userId, source, createdAt])
   @@index([seasonId, createdAt])
   @@index([pairKey])
+}
+
+// Points → USDT redemption (gift-style cash-out). Audit trail of every burn; the
+// actual point deduction lives in AirdropLedger (source 'redeem') + the cached
+// AirdropAccount total, same as every other award. Unlike the TGE token-pool
+// split, this pays out REAL USDT, so it is guarded by AirdropRedemptionBudget
+// below rather than the pool-share model.
+model AirdropRedemption {
+  id           String   @id @default(cuid())
+  userId       String
+  seasonId     String
+  pointsBurned Decimal  @db.Decimal(18, 4)
+  usdtAmount   Decimal  @db.Decimal(18, 8)
+  monthKey     String // UTC "YYYY-MM" this redemption counted against
+  createdAt    DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([monthKey])
+}
+
+// Atomic budget counters for points→USDT redemption. `scope` is either "global"
+// (the platform-wide monthly pool) or "user:<userId>" (that user's monthly cap) —
+// both guarded by the exact same conditional-increment pattern (see
+// reserveMonthlyRedeemBudget in airdrop.service.ts), so concurrent redemptions can
+// never push either counter past its cap.
+model AirdropRedemptionBudget {
+  scope    String
+  monthKey String // UTC "YYYY-MM"
+  usedUsdt Decimal @default(0) @db.Decimal(18, 8)
+
+  @@id([scope, monthKey])
 }
 
 

@@ -18,11 +18,13 @@
  *    retries), so it opens its own transaction and swallows the unique-violation as
  *    an idempotent no-op.
  */
+import { randomBytes } from 'crypto'
 import { db } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { isFlagEnabled, FLAGS, getNumberConfig, getBoolConfig } from './platformFlags.service'
 import { logger } from '../lib/logger'
 import { AppError } from '../lib/errors'
+import { notify } from '../lib/notify'
 import type { GasFeeOrder, AirdropSource } from '@prisma/client'
 
 type Tx = Prisma.TransactionClient
@@ -50,6 +52,12 @@ const CFG = {
   freezeEarnEvery: 'airdrop_streak_freeze_earn_every',     // earn 1 freeze every N streak days
   // ── Levels (Phase 4) ──
   levelDiscountCap: 'airdrop_level_discount_cap',          // hard ceiling on level fee discount %
+  // ── Points → USDT redemption ──
+  redeemRate: 'airdrop_usdt_redeem_rate',                       // points per 1 USDT
+  redeemMinPoints: 'airdrop_usdt_redeem_min_points',            // smallest redeemable amount
+  redeemMonthlyBudgetUsdt: 'airdrop_usdt_redeem_monthly_budget_usdt', // platform-wide pool, resets monthly
+  redeemUserMonthlyCapUsdt: 'airdrop_usdt_redeem_user_cap_usdt',      // per-user ceiling, resets monthly
+  redeemMinAccountAgeDays: 'airdrop_usdt_redeem_min_account_age_days',
 } as const
 
 const DEF = {
@@ -71,6 +79,11 @@ const DEF = {
   freezeMax: 3,
   freezeEarnEvery: 30,
   levelDiscountCap: 50,
+  redeemRate: 750,
+  redeemMinPoints: 1000,
+  redeemMonthlyBudgetUsdt: 200,
+  redeemUserMonthlyCapUsdt: 20,
+  redeemMinAccountAgeDays: 30,
 }
 
 // JSON-array config keys (admin-tunable tier tables; fall back to the defaults).
@@ -154,6 +167,11 @@ export interface AirdropConfig {
   levelDiscountCap: number
   streakTiers: StreakTier[]
   levelTiers: LevelTier[]
+  redeemRate: number
+  redeemMinPoints: number
+  redeemMonthlyBudgetUsdt: number
+  redeemUserMonthlyCapUsdt: number
+  redeemMinAccountAgeDays: number
 }
 
 // Short in-memory TTL cache so hot paths (every trade completion / gas order)
@@ -173,6 +191,7 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     gasPerOrder, gasMinUsd, gasDailyCap, referralPct, targetUsers, requireKyc,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
     levelDiscountCap, streakTiers, levelTiers,
+    redeemRate, redeemMinPoints, redeemMonthlyBudgetUsdt, redeemUserMonthlyCapUsdt, redeemMinAccountAgeDays,
   ] = await Promise.all([
     getNumberConfig(CFG.pkrPerPoint, DEF.pkrPerPoint),
     getNumberConfig(CFG.minTradePkr, DEF.minTradePkr),
@@ -194,12 +213,18 @@ export async function loadAirdropConfig(): Promise<AirdropConfig> {
     getNumberConfig(CFG.levelDiscountCap, DEF.levelDiscountCap),
     loadStreakTiers(),
     loadLevelTiers(),
+    getNumberConfig(CFG.redeemRate, DEF.redeemRate),
+    getNumberConfig(CFG.redeemMinPoints, DEF.redeemMinPoints),
+    getNumberConfig(CFG.redeemMonthlyBudgetUsdt, DEF.redeemMonthlyBudgetUsdt),
+    getNumberConfig(CFG.redeemUserMonthlyCapUsdt, DEF.redeemUserMonthlyCapUsdt),
+    getNumberConfig(CFG.redeemMinAccountAgeDays, DEF.redeemMinAccountAgeDays),
   ])
   const value: AirdropConfig = {
     pkrPerPoint, minTradePkr, dailyTradeCap, decayStep, decayMin, gasPerOrder, gasMinUsd, gasDailyCap,
     referralPct, requireKyc, targetUsers,
     checkinPoints, repairCost, repairWindowDays, repairMax, freezeMax, freezeEarnEvery,
     levelDiscountCap, streakTiers, levelTiers,
+    redeemRate, redeemMinPoints, redeemMonthlyBudgetUsdt, redeemUserMonthlyCapUsdt, redeemMinAccountAgeDays,
   }
   cfgCache = { value, expires: now + CFG_TTL_MS }
   return value
@@ -338,9 +363,16 @@ async function resolveActiveSeasonId(client: Tx | typeof db): Promise<string | n
   return s?.id ?? null
 }
 
+/** Shared eligibility rule ("has completed at least basic KYC") so every caller
+ *  — including ones that already have the level in hand from a wider select —
+ *  agrees on exactly one definition instead of re-deriving it inline. */
+function kycLevelOk(level: string | null | undefined): boolean {
+  return !!level && level !== 'none'
+}
+
 async function isKycOk(client: Tx | typeof db, userId: string): Promise<boolean> {
   const u = await client.user.findUnique({ where: { id: userId }, select: { kycLevel: true } })
-  return !!u && u.kycLevel !== 'none'
+  return kycLevelOk(u?.kycLevel)
 }
 
 function startOfUtcDayOf(d: Date): Date {
@@ -796,4 +828,213 @@ export async function getAirdropLedger(userId: string, limit = 50): Promise<Aird
     select: { id: true, source: true, points: true, createdAt: true, metadata: true },
   })
   return rows.map((r) => ({ id: r.id, source: r.source as string, points: Number(r.points), createdAt: r.createdAt, metadata: r.metadata }))
+}
+
+// ── Public: points → USDT redemption ────────────────────────────────────────
+// Real USDT leaves the platform here (unlike the TGE token-pool share, which can
+// never over-issue), so redemption is double-capped by AirdropRedemptionBudget:
+// a platform-wide monthly pool AND a per-user monthly ceiling, both reserved via
+// the exact same guarded conditional-increment (never an aggregate-then-write
+// race). See FLAGS.AIRDROP_USDT_REDEEM.
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function currentMonthKey(): string {
+  return new Date().toISOString().slice(0, 7) // UTC "YYYY-MM"
+}
+
+/**
+ * Atomically reserve `amount` USDT against a monthly budget scoped to either
+ * "global" or "user:<userId>". The upsert seeds a zero row on first use; the
+ * guarded updateMany only succeeds when the scope's already-used total leaves
+ * enough headroom under `capUsdt` — since usedUsdt can never be negative, a
+ * `capUsdt` smaller than `amount` naturally matches zero rows. Caller must run
+ * this inside a transaction so a later failure (e.g. insufficient points) rolls
+ * the reservation back along with everything else.
+ */
+async function reserveMonthlyRedeemBudget(tx: Tx, scope: string, monthKey: string, amount: number, capUsdt: number): Promise<boolean> {
+  await tx.airdropRedemptionBudget.upsert({
+    where: { scope_monthKey: { scope, monthKey } },
+    create: { scope, monthKey, usedUsdt: new Prisma.Decimal(0) },
+    update: {},
+  })
+  const threshold = new Prisma.Decimal(capUsdt).minus(amount)
+  const res = await tx.airdropRedemptionBudget.updateMany({
+    where: { scope, monthKey, usedUsdt: { lte: threshold } },
+    data: { usedUsdt: { increment: amount } },
+  })
+  return res.count === 1
+}
+
+export interface RedeemQuote {
+  enabled: boolean
+  ratePointsPerUsdt: number
+  minPoints: number
+  availablePoints: number
+  monthlyBudgetUsdt: number
+  monthlyBudgetRemainingUsdt: number
+  userMonthlyCapUsdt: number
+  userMonthlyRemainingUsdt: number
+  kycOk: boolean
+  accountAgeOk: boolean
+  minAccountAgeDays: number
+}
+
+/** Read model for the redemption card on the Airdrop tab. */
+export async function getRedeemQuote(userId: string): Promise<RedeemQuote> {
+  const [airdropOn, redeemFlag, cfg, seasonId] = await Promise.all([
+    isAirdropEnabled(),
+    isFlagEnabled(FLAGS.AIRDROP_USDT_REDEEM),
+    loadAirdropConfig(),
+    resolveActiveSeasonId(db),
+  ])
+  const monthKey = currentMonthKey()
+  const [account, user, globalBudget, userBudget] = await Promise.all([
+    seasonId ? db.airdropAccount.findUnique({ where: { userId_seasonId: { userId, seasonId } }, select: { totalPoints: true } }) : Promise.resolve(null),
+    db.user.findUnique({ where: { id: userId }, select: { kycLevel: true, createdAt: true } }),
+    db.airdropRedemptionBudget.findUnique({ where: { scope_monthKey: { scope: 'global', monthKey } }, select: { usedUsdt: true } }),
+    db.airdropRedemptionBudget.findUnique({ where: { scope_monthKey: { scope: `user:${userId}`, monthKey } }, select: { usedUsdt: true } }),
+  ])
+  const accountAgeDays = user ? Math.floor((Date.now() - user.createdAt.getTime()) / 86_400_000) : 0
+
+  return {
+    enabled: airdropOn && redeemFlag && !!seasonId,
+    ratePointsPerUsdt: cfg.redeemRate,
+    minPoints: cfg.redeemMinPoints,
+    availablePoints: Number(account?.totalPoints ?? 0),
+    monthlyBudgetUsdt: cfg.redeemMonthlyBudgetUsdt,
+    monthlyBudgetRemainingUsdt: Math.max(0, round2(cfg.redeemMonthlyBudgetUsdt - Number(globalBudget?.usedUsdt ?? 0))),
+    userMonthlyCapUsdt: cfg.redeemUserMonthlyCapUsdt,
+    userMonthlyRemainingUsdt: Math.max(0, round2(cfg.redeemUserMonthlyCapUsdt - Number(userBudget?.usedUsdt ?? 0))),
+    kycOk: kycLevelOk(user?.kycLevel),
+    accountAgeOk: accountAgeDays >= cfg.redeemMinAccountAgeDays,
+    minAccountAgeDays: cfg.redeemMinAccountAgeDays,
+  }
+}
+
+export interface RedeemResult {
+  pointsBurned: number
+  usdtAmount: number
+  newBalanceUsdt: number
+}
+
+/**
+ * Burn `pointsToRedeem` points into a real USDT credit on the user's internal
+ * wallet balance. Rounds DOWN to the nearest cent, then re-derives the exact
+ * points that pays for that rounded amount — any fractional remainder stays in
+ * the user's point balance rather than being burned for nothing.
+ *
+ * Guards, in order: flags ON, KYC'd, account old enough, monthly budget (global
+ * then per-user) reserved, and finally a CAS-guarded points decrement so a
+ * double-submit can never spend the same points twice. All of it — budget
+ * reservation, point burn, ledger row, audit row, and the wallet credit — runs
+ * inside one transaction, so a failure at any step leaves nothing partially
+ * applied.
+ */
+export async function redeemPointsForUsdt(userId: string, pointsToRedeem: number): Promise<RedeemResult> {
+  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  if (!(await isFlagEnabled(FLAGS.AIRDROP_USDT_REDEEM))) {
+    throw new AppError('REDEEM_DISABLED', 'Points redemption is not available right now.', 400)
+  }
+  if (!Number.isFinite(pointsToRedeem) || pointsToRedeem <= 0) {
+    throw new AppError('VALIDATION_ERROR', 'Enter a valid number of points.', 400)
+  }
+
+  const cfg = await loadAirdropConfig()
+  if (pointsToRedeem < cfg.redeemMinPoints) {
+    throw new AppError('REDEEM_MIN_POINTS', `You need at least ${cfg.redeemMinPoints} points to redeem.`, 400)
+  }
+
+  const user = await db.user.findUnique({ where: { id: userId }, select: { kycLevel: true, createdAt: true } })
+  if (!user || !kycLevelOk(user.kycLevel)) {
+    throw new AppError('KYC_REQUIRED', 'Complete identity verification (KYC) to redeem points for USDT.', 403)
+  }
+  const accountAgeDays = Math.floor((Date.now() - user.createdAt.getTime()) / 86_400_000)
+  if (accountAgeDays < cfg.redeemMinAccountAgeDays) {
+    throw new AppError('ACCOUNT_TOO_NEW', `Your account must be at least ${cfg.redeemMinAccountAgeDays} days old to redeem points.`, 400)
+  }
+
+  const usdtAmount = Math.floor((pointsToRedeem / cfg.redeemRate) * 100) / 100
+  if (usdtAmount <= 0) {
+    throw new AppError('REDEEM_MIN_POINTS', `You need at least ${cfg.redeemMinPoints} points to redeem.`, 400)
+  }
+  // Re-derive the points that actually pay for the rounded USDT amount, so no
+  // point is burned without a matching cent of value credited.
+  const actualPointsBurned = Math.round(usdtAmount * cfg.redeemRate * 10_000) / 10_000
+  const monthKey = currentMonthKey()
+
+  const result = await db.$transaction(async (tx) => {
+    const seasonId = await resolveActiveSeasonId(tx)
+    if (!seasonId) throw new AppError('AIRDROP_OFF', 'No active airdrop season.', 400)
+
+    const globalOk = await reserveMonthlyRedeemBudget(tx, 'global', monthKey, usdtAmount, cfg.redeemMonthlyBudgetUsdt)
+    if (!globalOk) {
+      throw new AppError('REDEEM_BUDGET_EXHAUSTED', "This month's redemption pool is fully claimed — please try again next month.", 400)
+    }
+    const userOk = await reserveMonthlyRedeemBudget(tx, `user:${userId}`, monthKey, usdtAmount, cfg.redeemUserMonthlyCapUsdt)
+    if (!userOk) {
+      throw new AppError('REDEEM_USER_CAP', `You've reached your redemption limit of $${cfg.redeemUserMonthlyCapUsdt.toFixed(2)} for this month.`, 400)
+    }
+
+    const pointsBurnedDec = dec(actualPointsBurned)
+    // Guarded conditional decrement — the account's totalPoints only drops when
+    // it's still enough to cover the burn, so a concurrent double-submit can
+    // never take the same points twice (the second attempt's count is 0).
+    const flip = await tx.airdropAccount.updateMany({
+      where: { userId, seasonId, totalPoints: { gte: pointsBurnedDec } },
+      data: { totalPoints: { decrement: pointsBurnedDec } },
+    })
+    if (flip.count !== 1) throw new AppError('INSUFFICIENT_POINTS', 'You do not have enough points for this redemption.', 400)
+
+    // Random suffix (not just Date.now()) — two redemptions by the same user in
+    // the same millisecond must never collide on this globally-unique column.
+    const eventKey = `redeem:${userId}:${Date.now()}:${randomBytes(4).toString('hex')}`
+    await tx.airdropLedger.create({
+      data: {
+        userId, seasonId, source: 'redeem', points: pointsBurnedDec.negated(), eventKey,
+        metadata: { usdtAmount, rate: cfg.redeemRate },
+      },
+    })
+    await tx.airdropRedemption.create({
+      data: { userId, seasonId, pointsBurned: pointsBurnedDec, usdtAmount: new Prisma.Decimal(usdtAmount), monthKey },
+    })
+
+    // Credit the user's internal USDT balance — reuses the wallet/withdrawal
+    // rails everything else on the platform already relies on, instead of a new
+    // payout path (same pattern as withdrawReferralEarnings in gas.referral.ts).
+    const existingUsdt = await tx.wallet.findFirst({ where: { userId, coin: 'USDT' }, select: { network: true } })
+    const network = existingUsdt?.network ?? 'BEP20'
+    const amountDec = new Prisma.Decimal(usdtAmount)
+    const wallet = await tx.wallet.upsert({
+      where: { userId_coin_network: { userId, coin: 'USDT', network } },
+      create: { userId, coin: 'USDT', network, balance: amountDec, lockedBalance: new Prisma.Decimal(0) },
+      update: { balance: { increment: amountDec } },
+    })
+    await tx.transaction.create({
+      data: {
+        walletId: wallet.id,
+        type: 'airdrop_redeem',
+        amount: amountDec,
+        fee: new Prisma.Decimal(0),
+        status: 'completed',
+        metadata: { source: 'airdrop_redeem', pointsBurned: actualPointsBurned, rate: cfg.redeemRate },
+      },
+    })
+
+    return { pointsBurned: actualPointsBurned, usdtAmount, newBalanceUsdt: Number(wallet.balance) }
+  })
+
+  logger.info({ userId, ...result }, 'airdrop points redeemed for USDT')
+  notify(
+    userId,
+    'airdrop_redeem',
+    'Points redeemed 🎉',
+    `You redeemed ${result.pointsBurned} points for $${result.usdtAmount.toFixed(2)} USDT, credited to your wallet balance.`,
+    { pointsBurned: result.pointsBurned, usdtAmount: result.usdtAmount },
+    undefined,
+    '/airdrop',
+  )
+  return result
 }

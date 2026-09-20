@@ -1505,6 +1505,20 @@ export interface AirdropLedgerEntry {
   metadata?: unknown
 }
 
+export interface AirdropRedeemQuote {
+  enabled: boolean
+  ratePointsPerUsdt: number
+  minPoints: number
+  availablePoints: number
+  monthlyBudgetUsdt: number
+  monthlyBudgetRemainingUsdt: number
+  userMonthlyCapUsdt: number
+  userMonthlyRemainingUsdt: number
+  kycOk: boolean
+  accountAgeOk: boolean
+  minAccountAgeDays: number
+}
+
 export const airdropApi = {
   getStatus: () => apiRequest<AirdropStatus>('/airdrop'),
   getLedger: () => apiRequest<{ entries: AirdropLedgerEntry[] }>('/airdrop/ledger'),
@@ -1514,6 +1528,11 @@ export const airdropApi = {
     ),
   repairStreak: () => apiRequest<{ restored: number; cost: number }>('/airdrop/streak/repair', { method: 'POST' }),
   resetStreak: () => apiRequest<Record<string, never>>('/airdrop/streak/reset', { method: 'POST' }),
+  getRedeemQuote: () => apiRequest<AirdropRedeemQuote>('/airdrop/redeem/quote'),
+  redeem: (points: number) =>
+    apiRequest<{ pointsBurned: number; usdtAmount: number; newBalanceUsdt: number }>(
+      '/airdrop/redeem', { method: 'POST', body: JSON.stringify({ points }) },
+    ),
 }
 
 export interface AdminAirdropSeason {

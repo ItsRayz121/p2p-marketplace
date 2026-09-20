@@ -86,6 +86,9 @@ function getNavTarget(notif: Notification): string | null {
   if (t === 'message' && meta?.threadId) return `/messages/${meta.threadId}`
   if (t === 'channel_broadcast' && meta?.channelId) return `/messages/channels/${meta.channelId}`
 
+  // Points → USDT redemption confirmation
+  if (t === 'airdrop_redeem') return '/airdrop'
+
   // "New review received" — open the trade where the review lives so the user can
   // see the rating + comment left for them (J1). CTM carries a tradeRef, USDT a tradeId.
   if (t === 'rating') {

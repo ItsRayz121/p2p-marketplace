@@ -1,11 +1,15 @@
 import type { FastifyInstance } from 'fastify'
+import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
+import { AppError } from '../lib/errors'
 import {
   getAirdropStatus,
   getAirdropLedger,
   dailyCheckin,
   repairStreak,
   resetStreak,
+  getRedeemQuote,
+  redeemPointsForUsdt,
 } from '../services/airdrop.service'
 
 export async function airdropRoutes(app: FastifyInstance) {
@@ -40,5 +44,22 @@ export async function airdropRoutes(app: FastifyInstance) {
   app.post('/airdrop/streak/reset', { preHandler: [authenticate] }, async (req, reply) => {
     await resetStreak(req.user!.id)
     return reply.send({ success: true })
+  })
+
+  // GET /api/v1/airdrop/redeem/quote — rate, caps, and eligibility for the
+  // points→USDT redemption card. Always 200; `enabled:false` locks the form.
+  app.get('/airdrop/redeem/quote', { preHandler: [authenticate] }, async (req, reply) => {
+    const data = await getRedeemQuote(req.user!.id)
+    return reply.send({ success: true, data })
+  })
+
+  // POST /api/v1/airdrop/redeem — burn points into a real USDT credit on the
+  // user's internal wallet balance, subject to the monthly budget + per-user cap.
+  app.post('/airdrop/redeem', { preHandler: [authenticate] }, async (req, reply) => {
+    const schema = z.object({ points: z.number().positive() })
+    const parsed = schema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const data = await redeemPointsForUsdt(req.user!.id, parsed.data.points)
+    return reply.send({ success: true, data })
   })
 }
