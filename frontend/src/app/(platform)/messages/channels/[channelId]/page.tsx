@@ -33,13 +33,27 @@ function SharedAdCard({ ad }: { ad: NonNullable<ChannelMessage['sharedAd']> }) {
     return <div className="rounded-lg border border-border px-3 py-2 text-xs italic text-text-muted">This listing is no longer available.</div>
   }
   const href = ad.market === 'usdt' ? `/marketplace/listings/${ad.id}` : `/ctm/listings/${ad.id}`
+  // prevPrice is only set on a "Price updated" post, and only when the price
+  // actually changed — shows what changed, frozen as of when this was posted
+  // (see backend sharedAdPriceSnapshot; the current listing price may have
+  // moved again since).
+  const showChange = ad.prevPrice != null && ad.price != null && ad.prevPrice !== ad.price
   return (
     <Link href={href} className="flex items-center gap-2 rounded-lg border border-border p-2 hover:bg-surface-alt transition-colors">
       <EntityLogo type="token" slug={ad.symbol ?? '?'} size="sm" logoUrl={ad.logoUrl} />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-semibold truncate text-text-primary">{ad.name} ({ad.symbol})</p>
         <p className="text-[11px] text-text-muted">
-          {ad.side === 'sell' ? 'Selling' : 'Buying'} · PKR {ad.price ? Number(ad.price).toLocaleString() : '—'}
+          {ad.side === 'sell' ? 'Selling' : 'Buying'} · PKR{' '}
+          {showChange ? (
+            <>
+              <span className="line-through">{Number(ad.prevPrice).toLocaleString()}</span>
+              {' → '}
+              <span className="font-semibold text-text-primary">{Number(ad.price).toLocaleString()}</span>
+            </>
+          ) : (
+            ad.price ? Number(ad.price).toLocaleString() : '—'
+          )}
         </p>
       </div>
       <ExternalLink className="w-3.5 h-3.5 flex-shrink-0 text-text-muted" />

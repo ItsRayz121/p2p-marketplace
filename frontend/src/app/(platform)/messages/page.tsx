@@ -284,7 +284,6 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                     <div className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
                       {t.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
-                      {activity && <span className={`text-[10px] flex-shrink-0 ${activity.cls}`}>{activity.text}</span>}
                     </div>
                     <p className="text-xs text-text-muted truncate mt-0.5 flex items-center gap-1">
                       <LastMessageTick status={t.lastMessageStatus} />

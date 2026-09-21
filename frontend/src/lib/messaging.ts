@@ -45,6 +45,8 @@ export interface SharedAdPreview {
   network?: string | null
   /** PKR price. */
   price?: string
+  /** Channels only: the price just before this post's update, so the card can show old → new. */
+  prevPrice?: string
 }
 
 /** A one-tap-shared gas chain rendered inline in a chat/channel bubble. */

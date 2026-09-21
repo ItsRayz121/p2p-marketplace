@@ -506,7 +506,7 @@ export async function updateListing(userId: string, listingId: string, data: {
   })
 
   if (data.pricePerUnit !== undefined) {
-    void autoShareToOwnerChannels(userId, { market: 'ctm', id: listingId }, 'Price updated ⚡')
+    void autoShareToOwnerChannels(userId, { market: 'ctm', id: listingId }, 'Price updated ⚡', listing.pricePerUnit.toString())
   }
 
   return updated

@@ -278,7 +278,7 @@ export async function updateAd(userId: string, adId: string, data: UpdateAdInput
   const updated = await db.ad.update({ where: { id: adId }, data: updateData })
 
   if (data.price != null) {
-    void autoShareToOwnerChannels(userId, { market: 'usdt', id: adId }, 'Price updated ⚡')
+    void autoShareToOwnerChannels(userId, { market: 'usdt', id: adId }, 'Price updated ⚡', ad.price.toString())
   }
 
   return updated

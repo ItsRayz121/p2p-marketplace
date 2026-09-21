@@ -148,7 +148,7 @@ export async function getChannel(userId: string, idOrSlug: string) {
 
 const CHANNEL_MESSAGE_SELECT = {
   id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
-  clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true,
+  clientId: true, sharedAdMarket: true, sharedAdId: true, sharedAdPriceSnapshot: true, sharedAdPrevPriceSnapshot: true, sharedGasChainSlug: true,
 } as const
 
 /** Message history — members only (a non-member must join first, matching the invite-link model). */
@@ -168,11 +168,16 @@ export async function listChannelMessages(userId: string, channelId: string) {
     select: CHANNEL_MESSAGE_SELECT,
   })
   rows.reverse()
-  const messages = rows.map((m) => (m.deletedAt ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null } : m))
+  const messages = rows.map((m) => (m.deletedAt
+    ? { ...m, body: '', attachmentUrl: null, sharedAdMarket: null, sharedAdId: null, sharedAdPriceSnapshot: null, sharedAdPrevPriceSnapshot: null, sharedGasChainSlug: null }
+    : m))
 
   // Resolve one-tap-shared listings/gas chains to their CURRENT live state,
   // same as the DM inbox (see resolveSharedAdPreviews/resolveSharedGasPreviews)
-  // — a shared card should never show stale send-time data.
+  // for everything EXCEPT price: a channel post's price is overridden below
+  // with the per-message sharedAdPriceSnapshot taken at send time, so a
+  // broadcast history of "Price updated" posts keeps showing what each post
+  // actually announced instead of drifting to today's price.
   const refs = messages
     .filter((m): m is typeof m & { sharedAdMarket: string; sharedAdId: string } => !!m.sharedAdMarket && !!m.sharedAdId)
     .map((m) => ({ market: m.sharedAdMarket as Market, id: m.sharedAdId }))
@@ -183,15 +188,24 @@ export async function listChannelMessages(userId: string, channelId: string) {
     resolveSharedAdPreviews(refs),
     resolveSharedGasPreviews(gasSlugs),
   ])
-  return messages.map((m) => ({
-    ...m,
-    sharedAd: m.sharedAdMarket && m.sharedAdId
-      ? sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }
-      : null,
-    sharedGas: m.sharedGasChainSlug
-      ? sharedGasMap.get(m.sharedGasChainSlug.toUpperCase()) ?? { slug: m.sharedGasChainSlug, deleted: true }
-      : null,
-  }))
+  return messages.map((m) => {
+    const { sharedAdPriceSnapshot, sharedAdPrevPriceSnapshot, ...rest } = m
+    return {
+      ...rest,
+      sharedAd: m.sharedAdMarket && m.sharedAdId
+        ? {
+            ...(sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }),
+            // Rows sent before the snapshot column existed have no stored price —
+            // fall back to the live-resolved one rather than showing nothing.
+            ...(sharedAdPriceSnapshot != null ? { price: sharedAdPriceSnapshot.toString() } : {}),
+            ...(sharedAdPrevPriceSnapshot != null ? { prevPrice: sharedAdPrevPriceSnapshot.toString() } : {}),
+          }
+        : null,
+      sharedGas: m.sharedGasChainSlug
+        ? sharedGasMap.get(m.sharedGasChainSlug.toUpperCase()) ?? { slug: m.sharedGasChainSlug, deleted: true }
+        : null,
+    }
+  })
 }
 
 /**
@@ -350,6 +364,8 @@ export async function postChannelMessage(
   sharedAd?: { market: Market; id: string },
   attachmentUrl?: string,
   sharedGasChainSlug?: string,
+  /** Only passed by autoShareToOwnerChannels on a price-update post — the price the listing had just before this update, so the card can show old → new. */
+  sharedAdPrevPriceSnapshot?: string,
 ) {
   const text = body.trim()
   if (!text && !sharedAd && !attachmentUrl && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
@@ -365,15 +381,21 @@ export async function postChannelMessage(
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)
 
+  // Price at THIS post's send time — stored on the row so it stays frozen even
+  // after the listing's live price later changes (see the schema comment on
+  // ChannelMessage.sharedAdPriceSnapshot).
+  let sharedAdPriceSnapshot: string | undefined
   if (sharedAd) {
     if (sharedAd.market === 'usdt') {
-      const ad = await db.ad.findUnique({ where: { id: sharedAd.id }, select: { userId: true, status: true } })
+      const ad = await db.ad.findUnique({ where: { id: sharedAd.id }, select: { userId: true, status: true, price: true } })
       if (!ad || ad.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
       if (ad.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
+      sharedAdPriceSnapshot = ad.price.toString()
     } else {
-      const listing = await db.ctmListing.findUnique({ where: { id: sharedAd.id }, select: { status: true, merchantProfile: { select: { userId: true } } } })
+      const listing = await db.ctmListing.findUnique({ where: { id: sharedAd.id }, select: { status: true, pricePerUnit: true, merchantProfile: { select: { userId: true } } } })
       if (!listing || listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
+      sharedAdPriceSnapshot = listing.pricePerUnit.toString()
     }
   }
   const gasChainSlug = sharedGasChainSlug ? await assertSharedGasChainAvailable(sharedGasChainSlug) : undefined
@@ -384,7 +406,12 @@ export async function postChannelMessage(
         data: {
           channelId, senderId: userId, body: text, clientId: clientId ?? null,
           ...(attachmentUrl ? { attachmentUrl } : {}),
-          ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
+          ...(sharedAd ? {
+            sharedAdMarket: sharedAd.market,
+            sharedAdId: sharedAd.id,
+            ...(sharedAdPriceSnapshot !== undefined ? { sharedAdPriceSnapshot } : {}),
+            ...(sharedAdPrevPriceSnapshot !== undefined ? { sharedAdPrevPriceSnapshot } : {}),
+          } : {}),
           ...(gasChainSlug ? { sharedGasChainSlug: gasChainSlug } : {}),
         },
         select: CHANNEL_MESSAGE_SELECT,
@@ -420,6 +447,8 @@ export async function autoShareToOwnerChannels(
   ownerId: string,
   sharedAd: { market: Market; id: string },
   caption = '',
+  /** The listing's price just before this update — only passed on a price-change edit, so the posted card can show old → new. */
+  prevPriceSnapshot?: string,
 ) {
   try {
     const channels = await db.channel.findMany({
@@ -427,7 +456,7 @@ export async function autoShareToOwnerChannels(
       select: { id: true },
     })
     for (const { id } of channels) {
-      await postChannelMessage(ownerId, id, caption, undefined, sharedAd).catch((err) =>
+      await postChannelMessage(ownerId, id, caption, undefined, sharedAd, undefined, undefined, prevPriceSnapshot).catch((err) =>
         logger.warn({ err, channelId: id, sharedAd }, 'Auto-share to channel failed (non-fatal)'),
       )
     }

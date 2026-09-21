@@ -1721,6 +1721,14 @@ model ChannelMessage {
   // One-tap "share my listing" — mirrors ChatThreadMessage's sharedAd fields.
   sharedAdMarket String?
   sharedAdId     String?
+  // Price at the moment THIS message was posted — unlike ChatThreadMessage's
+  // sharedAd (resolved live, by design, for a one-off DM share), a channel is a
+  // broadcast history of price-update posts: once posted, a message must keep
+  // showing the price it announced, or old posts would silently reflect today's
+  // price and the feed couldn't show what changed. sharedAdPrevPriceSnapshot is
+  // only set for a 'Price updated' post, so the card can show old → new.
+  sharedAdPriceSnapshot     Decimal? @db.Decimal(14, 2)
+  sharedAdPrevPriceSnapshot Decimal? @db.Decimal(14, 2)
   // One-tap "share gas fees" — mirrors ChatThreadMessage's sharedGasChainSlug.
   sharedGasChainSlug String?
 
