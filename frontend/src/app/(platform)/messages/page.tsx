@@ -12,7 +12,6 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChannelsTab } from '@/components/channels/ChannelsTab'
-import { fmtDateTime } from '@/lib/fmt'
 import { activeLabel } from '@/lib/onlineStatus'
 import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck, FileText, Radio } from 'lucide-react'
 
@@ -284,6 +283,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                     <div className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
                       {t.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
+                      {activity && <span className={`text-[10px] flex-shrink-0 ${activity.cls}`}>{activity.text}</span>}
                     </div>
                     <p className="text-xs text-text-muted truncate mt-0.5 flex items-center gap-1">
                       <LastMessageTick status={t.lastMessageStatus} />
@@ -291,7 +291,6 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                    <span className="text-[10px] text-text-muted">{fmtDateTime(t.lastMessageAt)}</span>
                     {t.activeTrades > 0 && (
                       <span className="inline-flex items-center px-1.5 h-[18px] rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
                         {t.activeTrades} in progress
