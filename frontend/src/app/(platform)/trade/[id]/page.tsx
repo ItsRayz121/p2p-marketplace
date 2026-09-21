@@ -1418,7 +1418,15 @@ export default function TradePage() {
                   )
                 })()}
                 {!myTurn && isAction('send_crypto') && (
-                  <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is sending your {trade.coin} now. Once it arrives in your wallet, confirm receipt below to complete the trade.</div>
+                  <>
+                    <div className="bg-primary/5 border border-primary/15 rounded-lg p-3 text-xs text-primary/90">The seller is sending your {trade.coin} now. Once it arrives in your wallet, confirm receipt below to complete the trade.</div>
+                    {/* Buyer/maker may cancel while waiting for a taker-first seller's
+                        very first move — nothing has moved yet at this rung, same
+                        free-cancel window canCancel already grants everywhere else. */}
+                    {canCancel && (
+                      <Button variant="ghost" fullWidth className="mt-2" onClick={() => setShowCancelModal(true)}>Cancel Trade</Button>
+                    )}
+                  </>
                 )}
 
                 {/* Buyer: confirm receipt & release — no verification gate. The

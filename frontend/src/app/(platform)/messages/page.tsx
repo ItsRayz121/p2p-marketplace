@@ -13,6 +13,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChannelsTab } from '@/components/channels/ChannelsTab'
 import { fmtDateTime } from '@/lib/fmt'
+import { activeLabel } from '@/lib/onlineStatus'
 import { MessageSquare, BadgeCheck, Headphones, Search, X, Check, CheckCheck, FileText, Radio } from 'lucide-react'
 
 /** True when a search query (after trimming + stripping a leading "@") is the
@@ -266,17 +267,24 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
         <ul className="space-y-2">
           {visibleItems.map((t) => {
             const name = t.other.fullName || t.other.username || 'Trader'
+            const activity = activeLabel(t.other.lastSeenAt ?? null)
             return (
               <li key={t.threadId}>
                 <Link
                   href={`/messages/${t.threadId}`}
                   className="flex items-center gap-3 p-3 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors"
                 >
-                  <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" tier={(t.other.badge ?? 'new') as TraderBadge} />
+                  <div className="relative flex-shrink-0">
+                    <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" tier={(t.other.badge ?? 'new') as TraderBadge} />
+                    {activity?.text === 'Online now' && (
+                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-success border-2 border-surface" aria-label="Online now" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
                       {t.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
+                      {activity && <span className={`text-[10px] flex-shrink-0 ${activity.cls}`}>{activity.text}</span>}
                     </div>
                     <p className="text-xs text-text-muted truncate mt-0.5 flex items-center gap-1">
                       <LastMessageTick status={t.lastMessageStatus} />

@@ -18,6 +18,7 @@ import { AnchoredMenu } from '@/components/ui/AnchoredMenu'
 import { Modal } from '@/components/ui/Modal'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
+import { activeLabel } from '@/lib/onlineStatus'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
@@ -421,6 +422,7 @@ export default function MessageThreadPage() {
   // yourself, so the header menu is suppressed entirely for it below.
   const isSelf = data.other.id === user?.id
   const name = isSelf ? 'My Notes' : data.other.fullName || data.other.username || 'Trader'
+  const activity = isSelf ? null : activeLabel(data.other.lastSeenAt ?? null)
   const s = data.stats
   const blocked = data.blockedByMe || data.blockedMe
 
@@ -444,7 +446,10 @@ export default function MessageThreadPage() {
           </Link>
         )}
         <div className="min-w-0 flex-1">
-          <p className="font-semibold text-text-primary truncate">{name}</p>
+          <div className="flex items-center gap-1.5">
+            <p className="font-semibold text-text-primary truncate">{name}</p>
+            {activity && <span className={`text-[11px] flex-shrink-0 ${activity.cls}`}>{activity.text}</span>}
+          </div>
           <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
             {s.total > 0 && (
               <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
@@ -599,15 +604,9 @@ export default function MessageThreadPage() {
             )
           }
           const mine = m.senderId === user?.id
-          if (m.deletedAt) {
-            return (
-              <div key={m.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
-                <div className="max-w-[75%] rounded-2xl px-3 py-2 text-xs italic text-text-muted bg-muted/60 border border-dashed border-border">
-                  🚫 {mine ? 'You deleted this message' : 'This message was deleted'}
-                </div>
-              </div>
-            )
-          }
+          // A deleted message leaves no trace for either side — not even a "this was
+          // deleted" placeholder — so it's simply omitted from the rendered timeline.
+          if (m.deletedAt) return null
           const hasImage = isTrustedImageUrl(m.attachmentUrl)
           // Own free-chat message (not a folded trade line, not still-local) inside the 15-min window.
           const deletable =

@@ -217,8 +217,8 @@ export async function getInbox(userId: string) {
     take: 100,
     select: {
       id: true, userAId: true, userBId: true, lastMessageAt: true, unreadByA: true, unreadByB: true,
-      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
-      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
       episodes: { select: { outcome: true } },
       messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, sharedGasChainSlug: true, deletedAt: true } },
     },
@@ -384,8 +384,8 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     where: { id: threadId },
     select: {
       id: true, userAId: true, userBId: true,
-      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
-      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, tradeStats: { select: { badge: true } } } },
+      userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
+      userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
       messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },

@@ -355,13 +355,9 @@ export default function ChannelPage() {
             ) : (
               messages.map((m) => {
                 const mine = m.senderId === user?.id
-                if (m.deletedAt) {
-                  return (
-                    <div key={m.id} className="rounded-2xl px-3 py-2 text-xs italic text-text-muted bg-muted/60 border border-dashed border-border max-w-[85%]">
-                      🚫 This update was deleted
-                    </div>
-                  )
-                }
+                // A deleted broadcast leaves no trace — not even a "this was deleted"
+                // placeholder — so it's simply omitted from the rendered timeline.
+                if (m.deletedAt) return null
                 const withinMutateWindow = mine && Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
                 return (
                   <div key={m.id} className="group flex items-start gap-2">

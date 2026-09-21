@@ -99,7 +99,13 @@ function isReplayable(method: string, headers: Record<string, string>, path: str
   // /miniapp/auth re-validates HMAC-signed launch data. Replaying either is a
   // no-op, and NOT retrying them is what turns a dead socket into a spurious
   // logout — the worst failure of all.
-  return path === '/auth/refresh' || path === '/miniapp/auth'
+  //
+  // /messages/self and /messages/start are get-or-create upserts (see
+  // getOrCreateThread on the backend) — a second delivery just returns the same
+  // thread id, never creates a duplicate. Without this they got only ONE attempt
+  // as unsafe writes, so a single dropped socket on a weak connection stalled
+  // "My Notes" for a full 20s timeout before failing outright.
+  return path === '/auth/refresh' || path === '/miniapp/auth' || path === '/messages/self' || path === '/messages/start'
 }
 
 /** Park until the device reports a network again — capped, so we never hang. */

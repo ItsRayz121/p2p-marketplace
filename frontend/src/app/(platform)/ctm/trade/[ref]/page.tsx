@@ -1262,9 +1262,17 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 )}
                 {!myTurn && isAction('start_crypto') && (
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">
-                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">Payment confirmed by seller</p>
+                    <p className="font-semibold text-blue-800 dark:text-blue-300 mb-1">
+                      {takerFirst ? 'Waiting for seller to start the transfer' : 'Payment confirmed by seller'}
+                    </p>
                     <p className="text-blue-700 dark:text-blue-300">Seller is now sending your {trade.token.symbol} tokens. Please wait.</p>
                   </div>
+                )}
+                {/* Buyer/maker may cancel while waiting for a taker-first seller's very
+                    first move — nothing has moved yet at this rung, same free-cancel
+                    window the backend already grants the seller in the classic flow. */}
+                {!myTurn && isAction('start_crypto') && takerFirst && rung === 'awaiting_payment' && (
+                  <button onClick={() => doAction(() => ctmApi.cancelTrade(ref, { reason: 'Cancelled by buyer' }))} disabled={actionLoading} className="w-full mt-2 border border-red-500/30 text-red-600 dark:text-red-400 py-2 rounded-xl text-sm hover:bg-red-500/10">Cancel Trade</button>
                 )}
                 {!myTurn && isAction('prove_crypto') && (
                   <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm">

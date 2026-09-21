@@ -20,6 +20,7 @@ import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
+import { activeLabel } from '@/lib/onlineStatus'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -64,20 +65,6 @@ function listingAge(dateStr: string): string {
   const hrs = Math.floor(mins / 60)
   if (hrs < 24) return `${hrs}h ago`
   return `${Math.floor(hrs / 24)}d ago`
-}
-
-function activeLabel(lastSeenAt: string | null): { text: string; cls: string } | null {
-  if (!lastSeenAt) return null
-  const diff = Date.now() - new Date(lastSeenAt).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 10)  return { text: 'Online now',    cls: 'text-success' }
-  if (mins < 60)  return { text: `Active ${mins}m ago`, cls: 'text-success' }
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 6)    return { text: `Active ${hrs}h ago`,  cls: 'text-text-muted' }
-  if (hrs < 24)   return { text: 'Active today',        cls: 'text-text-muted' }
-  const days = Math.floor(hrs / 24)
-  if (days <= 3)  return { text: `Active ${days}d ago`,  cls: 'text-text-muted' }
-  return null
 }
 
 function memberSince(dateStr: string | null | undefined): string {

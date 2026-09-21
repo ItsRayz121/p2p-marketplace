@@ -1673,8 +1673,11 @@ model Channel {
   avatarUrl   String?
   // When ON, every new USDT ad / CTM listing the owner creates (and every price
   // edit on an existing one) auto-posts into this channel as a shared-listing
-  // broadcast — see channel.service.ts's autoShareToOwnerChannels().
-  autoShareListings Boolean    @default(false)
+  // broadcast — see channel.service.ts's autoShareToOwnerChannels(). Defaults ON:
+  // owners overwhelmingly expect their own channel to reflect their own listings
+  // without having to discover and flip a setting first; Edit Channel still lets
+  // them turn it off.
+  autoShareListings Boolean    @default(true)
   // Cached count (owner included) so the directory/list views don't need a
   // COUNT(*) per channel; kept in sync inside joinChannel/leaveChannel.
   memberCount   Int              @default(1)

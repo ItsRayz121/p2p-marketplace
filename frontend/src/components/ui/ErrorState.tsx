@@ -32,9 +32,16 @@ export function ErrorState({
     const onVisible = () => { if (!document.hidden) fire() }
     window.addEventListener('online', onOnline)
     document.addEventListener('visibilitychange', onVisible)
+    // 'online'/'visibilitychange' only fire on a hard offline→online transition or a tab
+    // refocus — a mobile radio that's merely slow (weak signal, not fully disconnected)
+    // triggers neither, so this screen would otherwise sit dead until the user taps "Try
+    // again" themselves. Quietly keep retrying in the background while the card is up, so
+    // the moment the link recovers the page swaps back to real content on its own.
+    const poll = setInterval(fire, 8000)
     return () => {
       window.removeEventListener('online', onOnline)
       document.removeEventListener('visibilitychange', onVisible)
+      clearInterval(poll)
     }
   }, [onRetry])
 
