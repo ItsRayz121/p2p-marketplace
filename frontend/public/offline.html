@@ -52,7 +52,11 @@
 </head>
 <body>
   <main class="card">
-    <img class="logo" src="/brand/icon-192.png" alt="" width="56" height="56">
+    <!-- The icon is precached separately from this page and is allowed to be
+         missing (see sw.js install). Hide it rather than show a broken-image
+         glyph on the one screen whose whole job is to look deliberate. -->
+    <img class="logo" src="/brand/icon-192.png" alt="" width="56" height="56"
+         onerror="this.style.display='none'">
     <h1>Reconnecting to RupChain</h1>
     <p>Your connection dropped for a moment. Nothing was lost — your trades, orders and balances are safe on our servers.</p>
     <button class="btn" id="retry" type="button">Try again</button>
@@ -94,21 +98,54 @@
     location.replace(target)
   }
 
+  // A manual tap is always honoured immediately.
   btn.addEventListener('click', retry)
-  window.addEventListener('online', function () { setStatus(true); retry() })
   window.addEventListener('offline', function () { setStatus(false) })
+
+  // Automatic retries need a brake. On mobile the OS reports "online" the
+  // instant the radio attaches, well before a request can actually complete —
+  // so retrying on that event alone navigates, fails, lands back here, and
+  // fires again. That is a reload loop, which looks far worse than the error
+  // page we are replacing.
+  //
+  // So: never navigate on the online event by itself. Only a request that
+  // genuinely completes is allowed to trigger a retry, and the attempt counter
+  // survives the reload so repeated failures back off instead of hammering.
+  var KEY = 'rc_offline_attempts'
+  var attempts = 0
+  try { attempts = parseInt(sessionStorage.getItem(KEY) || '0', 10) || 0 } catch (e) { attempts = 0 }
+
+  function noteAttempt() {
+    try { sessionStorage.setItem(KEY, String(attempts + 1)) } catch (e) { /* private mode */ }
+  }
+  function clearAttempts() {
+    try { sessionStorage.removeItem(KEY) } catch (e) { /* private mode */ }
+  }
+
+  window.addEventListener('online', function () { setStatus(true) })
   setStatus(navigator.onLine)
 
-  // The radio is usually back long before the user taps anything. Poll a tiny
-  // same-origin asset and self-heal the moment it answers, so in the common
-  // case this screen disappears on its own.
-  var tries = 0
+  // Probe a tiny same-origin asset and self-heal only once one actually answers,
+  // so in the common case this screen disappears on its own. Backs off as
+  // failures accumulate: 3s, then 6s, 12s, capped at 30s.
+  var delay = Math.min(3000 * Math.pow(2, attempts), 30000)
+  var probes = 0
   var timer = setInterval(function () {
-    if (++tries > 40) { clearInterval(timer); return }   // ~2 minutes, then idle
+    if (++probes > 20) { clearInterval(timer); return }
     fetch('/manifest.json', { method: 'HEAD', cache: 'no-store' })
-      .then(function (r) { if (r && r.ok) { clearInterval(timer); retry() } })
+      .then(function (r) {
+        if (r && r.ok) {
+          clearInterval(timer)
+          // The network answered for real — this retry is not a blind one, so
+          // reset the counter before navigating.
+          clearAttempts()
+          retry()
+        }
+      })
       .catch(function () { /* still down */ })
-  }, 3000)
+  }, delay)
+
+  noteAttempt()
 })()
 </script>
 </body>

@@ -8,7 +8,6 @@ import { SERVER_API_ORIGIN, USING_ORIGIN_OVERRIDE } from './serverApiOrigin'
 
 const API = SERVER_API_ORIGIN
 
-
 async function unwrap<T>(res: Response): Promise<T | null> {
   if (!res.ok) return null
   try {

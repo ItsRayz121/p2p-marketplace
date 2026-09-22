@@ -33,13 +33,30 @@ const PRECACHE_URLS = [OFFLINE_URL, '/brand/icon-192.png']
 const STATIC_MAX = 120
 const PAGES_MAX = 30
 
-// Only these prefixes get their html retained. Everything else — dashboard,
-// wallet, orders, trade rooms, admin — falls back to the offline screen, so no
-// signed-in markup can ever be replayed to a different session on a shared
-// device.
+// Only these prefixes get their html retained. Everything else falls back to
+// the offline screen, so no signed-in markup can ever be replayed to a
+// different session on a shared device.
 const CACHEABLE_PAGES = [
   '/', '/markets', '/gas', '/blog', '/about', '/fees', '/help',
   '/levels', '/leaderboard', '/terms', '/privacy', '/community',
+]
+
+// Checked BEFORE the allowlist above, and it wins. Two prefixes overlap: '/gas'
+// is public, but '/gas/orders' is a signed-in surface that sits underneath it.
+// Without this, a prefix match on '/gas' would both store authenticated html
+// AND serve it straight from cache — skipping the middleware redirect that is
+// supposed to bounce a signed-out visitor off that route.
+//
+// Mirror of AUTH_REQUIRED in src/middleware.ts. Keep the two in sync: anything
+// gated there must be denied here, or this cache silently becomes a way around
+// the gate.
+const PRIVATE_PREFIXES = [
+  '/dashboard', '/trade', '/wallet', '/profile', '/settings', '/setup-username',
+  '/kyc', '/orders', '/payment-methods', '/my-ads', '/create-ad',
+  '/notifications', '/referral', '/ctm', '/gas/orders', '/gas/referral',
+  '/gas/giveaway', '/admin', '/account', '/messages', '/favorites',
+  '/merchant', '/mini-app', '/login', '/register', '/forgot-password',
+  '/verify-email', '/confirm-withdrawal',
 ]
 
 // A navigation that is merely slow should not sit on a white screen forever
@@ -51,12 +68,24 @@ const SLOW_NAV_MS = 8000
 // ─── Install / activate ──────────────────────────────────────────────────────
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(PRECACHE)
-      .then((c) => c.addAll(PRECACHE_URLS))
-      .catch(() => { /* a failed precache must never block activation */ })
-      .then(() => self.skipWaiting())
-  )
+  event.waitUntil((async () => {
+    // Deliberately NOT cache.addAll: that is all-or-nothing, so one flaky
+    // request for the icon would reject the whole batch and leave the offline
+    // page uncached — silently turning this entire worker back into the
+    // browser's error screen, which is the one outcome it exists to prevent.
+    // Each entry is stored independently; the offline page must never depend on
+    // the icon succeeding.
+    try {
+      const cache = await caches.open(PRECACHE)
+      await Promise.all(PRECACHE_URLS.map(async (u) => {
+        try {
+          const res = await fetch(u, { cache: 'reload' })
+          if (res && res.ok) await cache.put(u, res)
+        } catch (e) { /* this one entry is unavailable; others still land */ }
+      }))
+    } catch (e) { /* a failed precache must never block activation */ }
+    await self.skipWaiting()
+  })())
 })
 
 self.addEventListener('activate', (event) => {
@@ -85,17 +114,30 @@ async function trim(cacheName, max) {
   } catch (e) { /* eviction is best-effort */ }
 }
 
-function isCacheablePage(pathname) {
-  return CACHEABLE_PAGES.some((p) =>
-    p === '/' ? pathname === '/' : (pathname === p || pathname.startsWith(p + '/'))
-  )
+function matchesPrefix(pathname, prefix) {
+  return prefix === '/'
+    ? pathname === '/'
+    : (pathname === prefix || pathname.startsWith(prefix + '/'))
 }
 
-// Content-hashed build output and static brand art: safe to serve from cache
-// indefinitely, because a change always arrives under a new filename.
-function isImmutableAsset(pathname) {
+function isCacheablePage(pathname) {
+  if (PRIVATE_PREFIXES.some((p) => matchesPrefix(pathname, p))) return false
+  return CACHEABLE_PAGES.some((p) => matchesPrefix(pathname, p))
+}
+
+// Content-hashed build output: the filename changes whenever the bytes do, so a
+// cache hit can never be stale and never needs revalidating.
+function isHashedAsset(pathname) {
   return pathname.startsWith('/_next/static/')
-    || pathname.startsWith('/brand/')
+}
+
+// Static art served from stable URLs. These are NOT content-hashed — /brand/
+// icons, /logos/ and the favicons keep the same path across releases — so
+// cache-first alone would pin a retired logo on every existing install forever.
+// They get stale-while-revalidate instead: instant from cache, refreshed behind
+// the user so the next load is current.
+function isRevalidatingAsset(pathname) {
+  return pathname.startsWith('/brand/')
     || pathname.startsWith('/logos/')
     || /\.(?:woff2?|ttf|otf|png|jpe?g|svg|webp|avif|ico)$/i.test(pathname)
 }
@@ -151,8 +193,13 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
-  if (isImmutableAsset(url.pathname)) {
-    event.respondWith(handleImmutable(request))
+  if (isHashedAsset(url.pathname)) {
+    event.respondWith(handleHashed(request))
+    return
+  }
+
+  if (isRevalidatingAsset(url.pathname)) {
+    event.respondWith(handleRevalidating(event, request))
   }
 })
 
@@ -162,7 +209,10 @@ async function handleNavigation(event, request, url) {
   const fromNetwork = (async () => {
     const preload = event.preloadResponse ? await event.preloadResponse : null
     const response = preload || await fetch(request)
-    if (cacheable && response && response.ok && response.type === 'basic') {
+    // response.redirected is excluded on purpose: replaying a redirected
+    // response to a navigation is a SecurityError in Chrome, so storing one
+    // would swap a recoverable offline screen for a hard failure.
+    if (cacheable && response && response.ok && response.type === 'basic' && !response.redirected) {
       const copy = response.clone()
       event.waitUntil(
         caches.open(PAGES)
@@ -212,7 +262,13 @@ async function handleNavigation(event, request, url) {
   }
 }
 
-async function handleImmutable(request) {
+// Cache-first, no revalidation. Only ever called for content-hashed URLs, where
+// a hit is correct by construction.
+//
+// This is also what keeps the offline fallback coherent across a deploy: html
+// served from PAGES is the OLD document and references the OLD chunk names, and
+// they are still sitting here because STATIC is never versioned.
+async function handleHashed(request) {
   const cache = await caches.open(STATIC)
   const hit = await cache.match(request, { ignoreVary: true })
   if (hit) return hit
@@ -225,6 +281,32 @@ async function handleImmutable(request) {
     void trim(STATIC, STATIC_MAX)
   }
   return response
+}
+
+// Stale-while-revalidate for stable-URL art. Serve the cached copy instantly,
+// then refresh it in the background so a replaced logo or favicon reaches the
+// user on their next load instead of never.
+async function handleRevalidating(event, request) {
+  const cache = await caches.open(STATIC)
+  const hit = await cache.match(request, { ignoreVary: true })
+
+  const refresh = fetch(request).then(async (response) => {
+    if (response && response.ok && response.type === 'basic') {
+      await cache.put(request, response.clone())
+      void trim(STATIC, STATIC_MAX)
+    }
+    return response
+  })
+
+  if (hit) {
+    // Keep the worker alive for the background refresh, and absorb its failure:
+    // being offline is the normal case here and must not surface as an
+    // unhandled rejection.
+    event.waitUntil(refresh.catch(() => { /* offline — the hit already served */ }))
+    return hit
+  }
+
+  return refresh
 }
 
 // ─── Web push (unchanged behaviour) ──────────────────────────────────────────
