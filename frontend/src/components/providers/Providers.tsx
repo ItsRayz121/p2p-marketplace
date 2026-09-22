@@ -7,6 +7,7 @@ import { useAuthStore } from '@/store/auth.store'
 import { initPostHog, identifyUser } from '@/lib/analytics'
 import { isTelegramMiniApp } from '@/lib/telegram'
 import { initConnectionWarmup } from '@/lib/connectionWarmup'
+import { ensureServiceWorker } from '@/lib/installApp'
 import { TotpPrompt } from '@/components/providers/TotpPrompt'
 
 interface ProvidersProps {
@@ -57,6 +58,13 @@ export default function Providers({ children }: ProvidersProps) {
   // Replace connections the carrier reaped while we were backgrounded, BEFORE the
   // page's real reads go out — see lib/connectionWarmup.
   useEffect(() => initConnectionWarmup(), [])
+
+  // Register the service worker on EVERY route, public ones included. It is
+  // what stands between a dropped navigation and the browser's own
+  // "This site can't be reached" page — see public/sw.js. Previously this only
+  // ran inside the signed-in shell, so the landing page, blog and gas pages
+  // were left unprotected.
+  useEffect(() => { void ensureServiceWorker() }, [])
 
   useEffect(() => {
     initPostHog()

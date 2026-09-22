@@ -60,12 +60,21 @@ export function tryTelegramAddToHomeScreen(): boolean {
   return false
 }
 
-/** Register the push/PWA service worker on load (idempotent). Required so the
- *  browser considers the app installable. Safe no-op without SW support. */
+/** Register the service worker (idempotent). Safe no-op without SW support.
+ *
+ *  This is called from Providers, i.e. on EVERY page including the public
+ *  marketing routes — not just the signed-in shell. That matters: an
+ *  unregistered worker cannot catch a failed navigation, so before this the
+ *  landing page had no protection at all and a dropped connection went
+ *  straight to the browser's ERR_CONNECTION_RESET screen.
+ *
+ *  register() is called unconditionally rather than only when getRegistration()
+ *  comes back empty: register() on an already-registered scope is a no-op that
+ *  also triggers the browser's update check, which is how a new sw.js
+ *  reaches installs that never navigate anywhere new. */
 export async function ensureServiceWorker(): Promise<void> {
   if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
   try {
-    const existing = await navigator.serviceWorker.getRegistration('/sw.js')
-    if (!existing) await navigator.serviceWorker.register('/sw.js')
+    await navigator.serviceWorker.register('/sw.js', { scope: '/' })
   } catch { /* ignore — SW is best-effort */ }
 }

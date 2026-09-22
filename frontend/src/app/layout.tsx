@@ -13,6 +13,14 @@ const GA_ID = 'G-8RBC5X1N38'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
+// Origin of the API the browser talks to. Every page opens a fresh TLS
+// connection to it, and on the mobile links our users are on that handshake
+// was measured at 0.3–11s — all of it otherwise spent AFTER the html has been
+// parsed. Preconnecting starts it in parallel with the document instead.
+const API_ORIGIN = (() => {
+  try { return new URL(process.env.NEXT_PUBLIC_API_URL ?? '').origin } catch { return '' }
+})()
+
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
@@ -103,6 +111,15 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           create a scroll container, so sticky navbars/headers keep working, and
           it's ignored gracefully on older WebViews (no regression). */}
       <body className="min-h-screen bg-canvas antialiased overflow-x-clip">
+        {/* Warm the API connection while the document is still parsing. Must
+            come before the blocking scripts below so the handshake overlaps
+            them rather than queueing behind them. */}
+        {API_ORIGIN && (
+          <>
+            <link rel="preconnect" href={API_ORIGIN} crossOrigin="use-credentials" />
+            <link rel="dns-prefetch" href={API_ORIGIN} />
+          </>
+        )}
         {/* Anti-FOUC theme script — must be the very first child of <body>
             so it runs synchronously before any paint or React hydration.
             Not wrapped in <head> because Next.js App Router owns <head>

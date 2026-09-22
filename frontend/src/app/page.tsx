@@ -1,10 +1,25 @@
-// Force dynamic rendering — prevents Next.js from attempting to pre-render
-// this page during the Vercel build (which would require the backend to be
-// reachable). Fresh marketplace data on every request is correct for a live
-// trading platform.
-export const dynamic = 'force-dynamic'
+// ISR, not force-dynamic.
+//
+// This page used to render on every single request with all five backend reads
+// set to `no-store`. Every visitor — and the Cloudflare edge — paid the full
+// Karachi → Vercel → Railway → Neon round trip before the first byte of HTML,
+// measured at 0.7–2.2s TTFB. On a lossy mobile link that time-on-the-wire is
+// what turns a dropped packet into ERR_CONNECTION_RESET: the longer the socket
+// is held open waiting on the origin, the more chances the carrier NAT has to
+// reap it. Cached HTML is therefore not only a speed fix, it is the main
+// defence against the blank "site can't be reached" page.
+//
+// 60s of staleness on homepage marketing numbers is acceptable — nothing a user
+// acts on (trade rooms, orders, balances, chat) is rendered here.
+//
+// Still safe at build time: getHomeData uses Promise.allSettled and yields
+// nulls when the backend is unreachable, so a prerender during the Vercel build
+// degrades to an empty-state homepage rather than failing — which was the
+// original reason this page was pinned to force-dynamic.
+export const revalidate = 60
 
 import Link from 'next/link'
+import { SERVER_API_ORIGIN } from '@/lib/serverApiOrigin'
 import type { LucideIcon } from 'lucide-react'
 import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headphones, UserPlus, BadgeCheck, Handshake, Check, X } from 'lucide-react'
 import { RateCalculator } from './_components/home/RateCalculator'
@@ -72,15 +87,25 @@ interface HomeData {
 // ─── Server-side data fetch ───────────────────────────────────────────────────
 
 async function getHomeData(): Promise<HomeData> {
-  // Use NEXT_PUBLIC_API_URL in production; fall back to local backend in dev.
-  const api = (process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001').replace(/\/$/, '')
+  // SSR talks to the backend origin directly (see lib/serverApiOrigin) instead
+  // of looping back out through Cloudflare — one less CDN hop on the render
+  // path, and immune to Cloudflare bot rules blocking Vercel datacenter IPs.
+  const api = SERVER_API_ORIGIN
+
+  // Each read is revalidated on the same 60s clock as the page, and capped by
+  // an 8s deadline. The cap matters: ISR regeneration happens in the
+  // background while visitors are still served the previous HTML, so a slow or
+  // waking Railway/Neon must never be able to hold a render open indefinitely.
+  // A timed-out read resolves to null and the section falls back to its empty
+  // state — exactly as it already does when the backend returns an error.
+  const opts = { next: { revalidate: 60 }, signal: AbortSignal.timeout(8_000) }
 
   const [statsRes, topAdsRes, configRes, topCtmRes, gasRes] = await Promise.allSettled([
-    fetch(`${api}/api/v1/marketplace/stats`,   { cache: 'no-store' }),
-    fetch(`${api}/api/v1/marketplace/top-ads`, { cache: 'no-store' }),
-    fetch(`${api}/api/v1/marketplace/config`,   { cache: 'no-store' }),
-    fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, { cache: 'no-store' }),
-    fetch(`${api}/api/v1/gas-fee/chains`, { cache: 'no-store' }),
+    fetch(`${api}/api/v1/marketplace/stats`,   opts),
+    fetch(`${api}/api/v1/marketplace/top-ads`, opts),
+    fetch(`${api}/api/v1/marketplace/config`,   opts),
+    fetch(`${api}/api/v1/ctm/listings?limit=6&side=sell&status=active`, opts),
+    fetch(`${api}/api/v1/gas-fee/chains`, opts),
   ])
 
   // All backend routes wrap responses in { success: true, data: ... } — unwrap here.

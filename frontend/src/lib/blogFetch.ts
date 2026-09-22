@@ -2,29 +2,12 @@
 // against the backend (no client-only imports).
 import type { BlogPost, BlogPostSummary } from './api'
 
-// These run on the Vercel server, not in the browser. If the public API host
-// (NEXT_PUBLIC_API_URL, e.g. api.rupchain.com) sits behind Cloudflare bot
-// protection, Cloudflare can block server-to-server requests from Vercel's
-// datacenter IPs — the browser passes, but SSR gets nothing, so every post
-// 404s and the list shows "No posts yet". Set BACKEND_ORIGIN_URL (server-only,
-// NOT NEXT_PUBLIC_) to the backend's raw origin (e.g. the *.up.railway.app URL)
-// so SSR talks to the origin directly and bypasses Cloudflare. Falls back to
-// the public URL when unset, so existing setups keep working.
-// Normalise the configured origin: strip a trailing slash and, if someone set
-// BACKEND_ORIGIN_URL to a bare host (e.g. "foo.up.railway.app" with no scheme),
-// prepend https:// so `fetch` gets an absolute URL instead of throwing.
-function normaliseOrigin(raw: string): string {
-  let v = raw.trim().replace(/\/$/, '')
-  if (v && !/^https?:\/\//i.test(v)) v = `https://${v}`
-  return v
-}
+// Server-side origin selection lives in one place — see lib/serverApiOrigin.
+// The homepage SSR reads the same constant, so the two can never drift.
+import { SERVER_API_ORIGIN, USING_ORIGIN_OVERRIDE } from './serverApiOrigin'
 
-const API = normaliseOrigin(process.env.BACKEND_ORIGIN_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001')
+const API = SERVER_API_ORIGIN
 
-// One-time visibility into which origin SSR is using (server logs only). Helps
-// confirm whether BACKEND_ORIGIN_URL took effect on the deployment vs. silently
-// falling back to the Cloudflare-fronted public host.
-const USING_ORIGIN_OVERRIDE = !!process.env.BACKEND_ORIGIN_URL
 
 async function unwrap<T>(res: Response): Promise<T | null> {
   if (!res.ok) return null
