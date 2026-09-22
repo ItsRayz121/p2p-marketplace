@@ -30,6 +30,7 @@ import {
   HelpCircle,
   Users,
   MessageSquare,
+  LineChart,
 } from 'lucide-react'
 
 // ─── Nav items ────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; ic
   { href: '/leaderboard', Icon: Trophy,            label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10', group: 'social'  },
   { href: '/favorites',   Icon: Heart,             label: 'Favorites',        iconCls: 'text-red-500',     bgCls: 'bg-red-500/10',    group: 'social'  },
   { href: '/community',   Icon: Users,             label: 'Community',        iconCls: 'text-teal-500',    bgCls: 'bg-teal-500/10',   group: 'social'  },
+  { href: '/markets',     Icon: LineChart,         label: 'Markets',          iconCls: 'text-indigo-500',  bgCls: 'bg-indigo-500/10', group: 'social'  },
   // Account — set-and-forget
   { href: '/kyc',         Icon: ShieldCheck,       label: 'KYC Verification', iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10',  group: 'account' },
   { href: '/settings',    Icon: Settings,          label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10',  group: 'account' },

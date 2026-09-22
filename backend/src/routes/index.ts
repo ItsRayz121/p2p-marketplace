@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { healthRoutes } from './health.routes'
 import { authRoutes } from './auth.routes'
 import { marketplaceRoutes } from './marketplace.routes'
+import { marketsRoutes } from './markets.routes'
 import { adRoutes } from './ad.routes'
 import { tradeRoutes } from './trade.routes'
 import { walletRoutes } from './wallet.routes'
@@ -49,6 +50,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(healthRoutes)
   await app.register(authRoutes, { prefix: '/api/v1/auth' })
   await app.register(marketplaceRoutes, { prefix: '/api/v1/marketplace' })
+  await app.register(marketsRoutes, { prefix: '/api/v1' })
   await app.register(adRoutes, { prefix: '/api/v1' })
   await app.register(tradeRoutes, { prefix: '/api/v1' })
   await app.register(walletRoutes, { prefix: '/api/v1' })

@@ -14,6 +14,8 @@ export default function robots(): MetadataRoute.Robots {
           '/gas',
           '/ctm',
           '/ctm/tokens/',
+          '/markets',
+          '/markets/',
           '/register',
           '/login',
           '/fees',

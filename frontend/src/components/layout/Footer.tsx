@@ -32,6 +32,7 @@ export default function Footer() {
               <FooterLink href="/marketplace">USDT Marketplace</FooterLink>
               <FooterLink href="/ctm">Community Tokens</FooterLink>
               <FooterLink href="/gas">Crypto Gas Fees</FooterLink>
+              <FooterLink href="/markets">Token Markets</FooterLink>
               <FooterLink href="/fees">Fee Schedule</FooterLink>
             </nav>
           </div>

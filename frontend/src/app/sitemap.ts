@@ -1,5 +1,6 @@
 import type { MetadataRoute } from 'next'
 import { fetchPublishedForSitemap } from '@/lib/blogFetch'
+import { fetchMarketSlugsForSitemap } from '@/lib/marketsFetch'
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 
@@ -17,11 +18,24 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }))
   } catch { /* sitemap must never throw — degrade to static routes */ }
 
+  let marketEntries: MetadataRoute.Sitemap = []
+  try {
+    const slugs = await fetchMarketSlugsForSitemap()
+    marketEntries = slugs.map((t) => ({
+      url: `${BASE_URL}/markets/${t.slug}`,
+      lastModified: t.lastModified,
+      changeFrequency: 'hourly' as const,
+      priority: 0.7,
+    }))
+  } catch { /* sitemap must never throw — degrade to static routes */ }
+
   return [
     { url: BASE_URL,                       lastModified: now, changeFrequency: 'daily',   priority: 1.0 },
     { url: `${BASE_URL}/blog`,             lastModified: now, changeFrequency: 'daily',   priority: 0.7 },
     ...blogEntries,
     { url: `${BASE_URL}/marketplace`,      lastModified: now, changeFrequency: 'always',  priority: 0.9 },
+    { url: `${BASE_URL}/markets`,          lastModified: now, changeFrequency: 'hourly',  priority: 0.8 },
+    ...marketEntries,
     { url: `${BASE_URL}/ctm`,              lastModified: now, changeFrequency: 'daily',   priority: 0.9 },
     { url: `${BASE_URL}/gas`,              lastModified: now, changeFrequency: 'daily',   priority: 0.8 },
     { url: `${BASE_URL}/register`,         lastModified: now, changeFrequency: 'monthly', priority: 0.8 },

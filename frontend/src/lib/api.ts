@@ -987,6 +987,60 @@ export const marketplaceApi = {
   },
 }
 
+// ─── Token Markets (public price overview: USDT + all approved CTM tokens) ────
+
+export interface MarketRow {
+  kind: 'usdt' | 'ctm'
+  slug: string
+  symbol: string
+  name: string
+  logoUrl: string | null
+  lastPricePkr: number | null
+  lastPriceUsdt: number | null
+  buyPricePkr: number | null
+  sellPricePkr: number | null
+  changePercent24h: number | null
+  sparkline: number[]
+  totalVolumePkr: string | null
+  totalTrades: number | null
+  lastTradedAt: string | null
+  dataSource: 'completed_trades' | 'active_listings' | 'none'
+  lowData: boolean
+}
+
+export interface MarketsOverview {
+  rows: MarketRow[]
+  usdtPkrRate: number | null
+  updatedAt: string
+}
+
+export interface MarketTrade {
+  at: string
+  amount: number
+  pricePkr: number
+  side: 'buy' | 'sell'
+}
+
+export interface MarketActivity {
+  buyOffers: number
+  sellOffers: number
+  bestBuyPkr: number | null
+  bestSellPkr: number | null
+  availableBuy: number | null
+  availableSell: number | null
+  high24hPkr: number | null
+  low24hPkr: number | null
+  volume24hUnits: number | null
+  recentTrades: MarketTrade[]
+}
+
+// Activity (order-book + recent trades) for a token's detail page is fetched
+// server-side only (see frontend/src/lib/marketsFetch.ts) — there is no
+// client-side poll for it, so no getActivity() belongs here.
+export const marketsApi = {
+  getOverview: () => apiRequest<MarketsOverview>('/markets/overview'),
+}
+
 export const favoritesApi = {
   getFavorites: () =>
     apiRequest<unknown[]>('/users/me/favorites'),
