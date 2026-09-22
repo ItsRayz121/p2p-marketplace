@@ -111,8 +111,8 @@ function MarketRowCard({ row }: { row: MarketRow }) {
       {/* Mobile: price + change inline under the identity row */}
       <div className="mt-2.5 flex items-center justify-between md:hidden">
         <div>
-          <div className="font-bold text-text-primary tabular-nums">PKR {fmtPkr(row.lastPricePkr)}</div>
-          <div className="text-xs text-text-muted tabular-nums">${fmtUsdt(row.lastPriceUsdt)}</div>
+          <div className="font-bold text-text-primary tabular-nums">${fmtUsdt(row.lastPriceUsdt)}</div>
+          <div className="text-xs text-text-muted tabular-nums">PKR {fmtPkr(row.lastPricePkr)}</div>
         </div>
         <ChangeChip pct={row.changePercent24h} />
       </div>
@@ -123,8 +123,8 @@ function MarketRowCard({ row }: { row: MarketRow }) {
 
       {/* Desktop columns */}
       <span className="hidden md:block text-right tabular-nums">
-        <span className="block font-bold text-text-primary">PKR {fmtPkr(row.lastPricePkr)}</span>
-        <span className="block text-xs text-text-muted">${fmtUsdt(row.lastPriceUsdt)}</span>
+        <span className="block font-bold text-text-primary">${fmtUsdt(row.lastPriceUsdt)}</span>
+        <span className="block text-xs text-text-muted">PKR {fmtPkr(row.lastPricePkr)}</span>
       </span>
       <span className="hidden md:flex justify-end"><ChangeChip pct={row.changePercent24h} /></span>
       <span className="hidden md:block text-right text-xs text-text-muted tabular-nums">

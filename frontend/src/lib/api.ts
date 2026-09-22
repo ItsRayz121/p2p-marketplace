@@ -987,10 +987,10 @@ export const marketplaceApi = {
   },
 }
 
-// ─── Token Markets (public price overview: USDT + all approved CTM tokens) ────
+// ─── Token Markets (public price overview: USDT + all approved CTM tokens + live gas-fee tokens) ────
 
 export interface MarketRow {
-  kind: 'usdt' | 'ctm'
+  kind: 'usdt' | 'ctm' | 'gas'
   slug: string
   symbol: string
   name: string
@@ -1004,7 +1004,7 @@ export interface MarketRow {
   totalVolumePkr: string | null
   totalTrades: number | null
   lastTradedAt: string | null
-  dataSource: 'completed_trades' | 'active_listings' | 'none'
+  dataSource: 'completed_trades' | 'active_listings' | 'live_market' | 'none'
   lowData: boolean
 }
 

@@ -5,19 +5,19 @@ import Link from 'next/link'
 import { Search, SlidersHorizontal } from 'lucide-react'
 import type { MarketRow } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { fmtMarketPkr as fmtPkr } from '@/lib/marketsFmt'
+import { fmtMarketUsdt as fmtUsdt } from '@/lib/marketsFmt'
 
 // Compact "other tokens" browser shown on a token detail page — mirrors the
 // tabbed Tokens list from the reference design. Tabs are data-driven off the
-// same overview rows the list page uses, so a newly approved CTM token shows
-// up here automatically. A "Gas" tab drops in cleanly once Gas Fee tokens join
-// the Markets data model (phase 2) — no structural change needed here.
+// same overview rows the list page uses, so a newly approved CTM token (or a
+// newly enabled Gas Fee token) shows up here automatically.
 
-type Tab = 'top' | 'ctm' | 'usdt'
+type Tab = 'top' | 'ctm' | 'usdt' | 'gas'
 const TABS: { key: Tab; label: string }[] = [
   { key: 'top', label: 'Top Gainers' },
   { key: 'ctm', label: 'CTM' },
   { key: 'usdt', label: 'USDT' },
+  { key: 'gas', label: 'Gas' },
 ]
 
 export function RelatedTokens({ rows }: { rows: MarketRow[] }) {
@@ -28,6 +28,7 @@ export function RelatedTokens({ rows }: { rows: MarketRow[] }) {
     let list = rows
     if (tab === 'ctm') list = list.filter((r) => r.kind === 'ctm')
     else if (tab === 'usdt') list = list.filter((r) => r.kind === 'usdt')
+    else if (tab === 'gas') list = list.filter((r) => r.kind === 'gas')
     else list = [...list].sort((a, b) => (b.changePercent24h ?? -Infinity) - (a.changePercent24h ?? -Infinity))
 
     const q = query.trim().toLowerCase()
@@ -72,7 +73,7 @@ export function RelatedTokens({ rows }: { rows: MarketRow[] }) {
 
       <div className="flex items-center justify-between px-1 pb-1.5 text-[10px] font-semibold uppercase tracking-wide text-text-muted">
         <span>Token</span>
-        <span>Price (PKR) · 24h</span>
+        <span>Price (USDT) · 24h</span>
       </div>
 
       <div className="space-y-0.5">
@@ -90,7 +91,7 @@ export function RelatedTokens({ rows }: { rows: MarketRow[] }) {
               </div>
             </div>
             <div className="text-right shrink-0">
-              <p className="text-xs font-semibold text-text-primary tabular-nums">{fmtPkr(r.lastPricePkr)}</p>
+              <p className="text-xs font-semibold text-text-primary tabular-nums">${fmtUsdt(r.lastPriceUsdt)}</p>
               <p className={`text-[10px] font-medium tabular-nums ${
                 r.changePercent24h === null || r.changePercent24h === undefined ? 'text-text-muted'
                   : r.changePercent24h > 0 ? 'text-emerald-600'

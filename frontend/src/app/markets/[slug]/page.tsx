@@ -55,12 +55,26 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   // this matches the case-insensitive lookups below and a mixed-case URL for a
   // real token doesn't 404.
   const token = await fetchCtmTokenBySlug(lower)
-  if (!token) return { title: 'Token not found' }
-  return buildMeta(
-    `${token.symbol} Price in PKR — ${token.name} Live Chart`,
-    `Live ${token.symbol} (${token.name}) price in PKR on RupChain, built from real completed P2P trades — 24h change, buy/sell averages, and the full price history chart.`,
-    `/markets/${token.slug}`,
-  )
+  if (token) {
+    return buildMeta(
+      `${token.symbol} Price in PKR — ${token.name} Live Chart`,
+      `Live ${token.symbol} (${token.name}) price in PKR on RupChain, built from real completed P2P trades — 24h change, buy/sell averages, and the full price history chart.`,
+      `/markets/${token.slug}`,
+    )
+  }
+
+  // Not a CTM token or USDT — check the live gas-fee token rows before giving up.
+  const overview = await fetchMarketsOverview()
+  const gasRow = overview?.rows.find((r) => r.kind === 'gas' && r.slug.toLowerCase() === lower)
+  if (gasRow) {
+    return buildMeta(
+      `${gasRow.symbol} Price in USDT — ${gasRow.name} Live Rate`,
+      `Live ${gasRow.symbol} (${gasRow.name}) market price in USDT and PKR on RupChain, sourced from live exchange rates — used for Gas Fee top-ups.`,
+      `/markets/${gasRow.slug}`,
+    )
+  }
+
+  return { title: 'Token not found' }
 }
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
@@ -78,6 +92,10 @@ export default async function MarketTokenPage({ params }: { params: Promise<{ sl
 
   if (lower === 'usdt') {
     return <UsdtDetail row={row} activity={activity} otherRows={otherRows} />
+  }
+
+  if (row?.kind === 'gas') {
+    return <GasDetail row={row} activity={activity} otherRows={otherRows} />
   }
 
   // Same normalization as generateMetadata above — keeps this in sync with the
@@ -257,10 +275,10 @@ function CtmDetail({ token, row, activity, otherRows }: {
           <div className="flex items-end justify-between flex-wrap gap-3">
             <div>
               <div className="flex items-baseline gap-3 flex-wrap">
-                <span className="text-3xl font-bold text-text-primary tabular-nums">PKR {fmtPkr(row?.lastPricePkr ?? null)}</span>
+                <span className="text-3xl font-bold text-text-primary tabular-nums">${fmtUsdt(row?.lastPriceUsdt ?? null)}</span>
                 <ChangeChip pct={row?.changePercent24h ?? null} />
               </div>
-              <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ ${fmtUsdt(row?.lastPriceUsdt ?? null)} · per {token.symbol} · 24h</p>
+              <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per {token.symbol} · 24h</p>
             </div>
           </div>
 
@@ -342,10 +360,10 @@ function UsdtDetail({ row, activity, otherRows }: { row: MarketRow | null; activ
 
           <div>
             <div className="flex items-baseline gap-3 flex-wrap">
-              <span className="text-3xl font-bold text-text-primary tabular-nums">PKR {fmtPkr(row?.lastPricePkr ?? null)}</span>
+              <span className="text-3xl font-bold text-text-primary tabular-nums">$1.00</span>
               <ChangeChip pct={row?.changePercent24h ?? null} />
             </div>
-            <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ $1.00 · per USDT · 24h</p>
+            <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per USDT · 24h</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -366,6 +384,67 @@ function UsdtDetail({ row, activity, otherRows }: { row: MarketRow | null; activ
 
           <MarketActivityCard activity={activity} unit="USDT" />
           <RecentTradesCard activity={activity} unit="USDT" />
+
+          <Link href="/markets" className="inline-block text-sm text-primary hover:underline">← All markets</Link>
+        </div>
+
+        <aside className="lg:sticky lg:top-20 lg:self-start">
+          <RelatedTokens rows={otherRows} />
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+// ─── Gas-fee token detail ──────────────────────────────────────────────────────
+// Native tokens sold on the Gas Fee product (BNB, TRX, SOL, TON, SUI, APT, ETH, ...).
+// Unlike USDT/CTM these aren't traded P2P here — the price is the same live
+// external market rate that drives Gas Fee checkout — so there's no order book
+// or trade tape to show; MarketActivityCard/RecentTradesCard render their own
+// "no data yet" states when passed an all-null/empty activity object.
+
+function GasDetail({ row, activity, otherRows }: { row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[] }) {
+  const symbol = row?.symbol ?? ''
+  const name = row?.name ?? symbol
+  const url = `${BASE_URL}/markets/${row?.slug ?? symbol.toLowerCase()}`
+  const jsonLd = buildJsonLd({
+    name, symbol, url, pricePkr: row?.lastPricePkr ?? null,
+    description: `Live ${symbol} market price on RupChain, sourced from live exchange rates and used to price Gas Fee top-ups.`,
+  })
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
+      <Breadcrumb label={symbol} />
+
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_18rem] gap-6">
+        <div className="min-w-0 space-y-6">
+          <div className="bg-surface shadow-card border border-border rounded-xl p-6">
+            <div className="flex items-center gap-4">
+              <EntityLogo type="token" slug={symbol} logoUrl={row?.logoUrl ?? null} size="2xl" />
+              <div>
+                <h1 className="text-2xl font-bold text-text-primary">{name} <span className="text-text-muted font-medium">({symbol})</span></h1>
+                <p className="text-sm text-text-muted">Live market rate — used to price Gas Fee top-ups on RupChain.</p>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-baseline gap-3 flex-wrap">
+              <span className="text-3xl font-bold text-text-primary tabular-nums">${fmtUsdt(row?.lastPriceUsdt ?? null)}</span>
+              <ChangeChip pct={row?.changePercent24h ?? null} />
+            </div>
+            <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per {symbol} · live rate</p>
+          </div>
+
+          <div className="flex gap-3 flex-wrap">
+            <Link href="/gas">
+              <button className="bg-primary text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-primary/90 transition-colors">Buy {symbol} (Gas Fee)</button>
+            </Link>
+          </div>
+
+          <MarketActivityCard activity={activity} unit={symbol} />
+          <RecentTradesCard activity={activity} unit={symbol} />
 
           <Link href="/markets" className="inline-block text-sm text-primary hover:underline">← All markets</Link>
         </div>

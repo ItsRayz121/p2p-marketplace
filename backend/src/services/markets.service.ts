@@ -22,7 +22,7 @@ import { getTokenMarketInsight, getTokenPriceHistory, getTokenBySlug } from '../
 // per-token, since that only runs for the one token being viewed.
 
 export interface MarketRow {
-  kind: 'usdt' | 'ctm'
+  kind: 'usdt' | 'ctm' | 'gas'
   slug: string
   symbol: string
   name: string
@@ -36,7 +36,7 @@ export interface MarketRow {
   totalVolumePkr: string | null
   totalTrades: number | null
   lastTradedAt: string | null
-  dataSource: 'completed_trades' | 'active_listings' | 'none'
+  dataSource: 'completed_trades' | 'active_listings' | 'live_market' | 'none'
   lowData: boolean
 }
 
@@ -99,6 +99,107 @@ async function getUsdtInsight(): Promise<{
     dataSource: sparkTrades.length ? 'completed_trades' : 'none',
     sampleSize: sparkTrades.length,
     lowData: sparkTrades.length < 3,
+  }
+}
+
+// ─── Gas fee tokens ───────────────────────────────────────────────────────────
+// Rows for the native tokens the Gas Fee product sells (BNB, TRX, SOL, TON, SUI,
+// APT, ETH, ...). Unlike USDT/CTM above, these aren't traded P2P on this
+// platform — there's no order book to average — so the price is the same live
+// external market price (rate:{SYMBOL} in Redis) that already drives Gas Fee
+// checkout, refreshed every 5 minutes by rateUpdater.job.ts. No 24h change or
+// sparkline yet: Redis only ever holds the current value, not a history.
+// Stablecoins are skipped (USDT already has its own row above; the rest peg to
+// $1 and would just be duplicate noise).
+
+const GAS_STABLECOIN_SYMBOLS = new Set(['USDT', 'USDC', 'BUSD', 'DAI', 'TUSD', 'USDP'])
+
+async function getGasTokenRows(excludeSlugs: Set<string>): Promise<MarketRow[]> {
+  const chains = await db.gasChainConfig.findMany({
+    where: { isVisibleToUsers: true, isArchived: false },
+    include: {
+      tokens: { where: { isActive: true, isVisibleToUsers: true, isArchived: false }, orderBy: { displayOrder: 'asc' } },
+    },
+  })
+
+  const seen = new Map<string, { name: string; logoUrl: string | null }>()
+  for (const chain of chains) {
+    for (const token of chain.tokens) {
+      const sym = token.priceSymbol.toUpperCase()
+      if (GAS_STABLECOIN_SYMBOLS.has(sym)) continue
+      if (excludeSlugs.has(sym.toLowerCase())) continue
+      if (!seen.has(sym)) seen.set(sym, { name: token.name, logoUrl: token.logoUrl ?? chain.logoUrl ?? null })
+    }
+  }
+  if (seen.size === 0) return []
+
+  const symbols = [...seen.keys()]
+  const cachedRates = await redis.mget(symbols.map((s) => `rate:${s}`))
+
+  return symbols.map((sym, i) => {
+    const meta = seen.get(sym)!
+    let pricePkr: number | null = null
+    let priceUsdt: number | null = null
+    let updatedAt: string | null = null
+    const raw = cachedRates[i]
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { rate?: number; usdPrice?: number; updatedAt?: string }
+        pricePkr = typeof parsed.rate === 'number' ? parsed.rate : null
+        priceUsdt = typeof parsed.usdPrice === 'number' ? parsed.usdPrice : null
+        updatedAt = parsed.updatedAt ?? null
+      } catch { /* fall through to null prices below */ }
+    }
+    return {
+      kind: 'gas',
+      slug: sym.toLowerCase(),
+      symbol: sym,
+      name: meta.name,
+      logoUrl: meta.logoUrl,
+      lastPricePkr: pricePkr,
+      lastPriceUsdt: priceUsdt,
+      buyPricePkr: null,
+      sellPricePkr: null,
+      changePercent24h: null,
+      sparkline: [],
+      totalVolumePkr: null,
+      totalTrades: null,
+      lastTradedAt: updatedAt,
+      dataSource: pricePkr !== null ? 'live_market' : 'none',
+      lowData: false,
+    }
+  })
+}
+
+/** Is `symbol` a currently offered Gas Fee native token? Used so /markets/[slug] can
+ * route a gas symbol to its own detail view instead of 404ing as an unknown CTM slug. */
+async function isKnownGasSymbol(symbol: string): Promise<boolean> {
+  const sym = symbol.toUpperCase()
+  if (GAS_STABLECOIN_SYMBOLS.has(sym)) return false
+  const count = await db.gasTokenConfig.count({
+    where: {
+      priceSymbol: sym,
+      isActive: true,
+      isVisibleToUsers: true,
+      isArchived: false,
+      chain: { isVisibleToUsers: true, isArchived: false },
+    },
+  })
+  return count > 0
+}
+
+async function getGasTokenActivity(): Promise<MarketActivity> {
+  return {
+    buyOffers: 0,
+    sellOffers: 0,
+    bestBuyPkr: null,
+    bestSellPkr: null,
+    availableBuy: null,
+    availableSell: null,
+    high24hPkr: null,
+    low24hPkr: null,
+    volume24hUnits: null,
+    recentTrades: [],
   }
 }
 
@@ -171,8 +272,11 @@ export async function getMarketsOverview(): Promise<MarketsOverview> {
     lowData: usdtInsight.lowData,
   }
 
+  const usedSlugs = new Set(['usdt', ...tokens.map((t) => t.slug.toLowerCase())])
+  const gasRows = await getGasTokenRows(usedSlugs)
+
   const result: MarketsOverview = {
-    rows: [usdtRow, ...ctmRows],
+    rows: [usdtRow, ...ctmRows, ...gasRows],
     usdtPkrRate: usdtRate.rate,
     updatedAt: new Date().toISOString(),
   }
@@ -322,9 +426,22 @@ export async function getUsdtActivity(): Promise<MarketActivity> {
   return result
 }
 
-/** Resolves a /markets/[slug] activity lookup for either 'usdt' or a CTM token slug. Throws AppError NOT_FOUND (via getTokenBySlug) for an unknown CTM slug. */
+/** Resolves a /markets/[slug] activity lookup for 'usdt', a live gas-fee token symbol,
+ * or a CTM token slug. Throws AppError NOT_FOUND (via getTokenBySlug) for an unknown slug. */
 export async function getMarketActivityBySlug(slug: string): Promise<MarketActivity> {
-  if (slug.toLowerCase() === 'usdt') return getUsdtActivity()
+  const lower = slug.toLowerCase()
+  if (lower === 'usdt') return getUsdtActivity()
+
+  // A CTM token's slug wins any collision with a gas-fee symbol (e.g. a
+  // community token slugged "sol" or "trx") — same precedence the overview
+  // uses when it excludes a gas row for a symbol an existing CTM slug already
+  // claims. Checked with a cheap existence query rather than getTokenBySlug()
+  // below, which throws NOT_FOUND (would require a throw/catch here).
+  const ctmToken = await db.ctmToken.findUnique({ where: { slug: lower }, select: { id: true } })
+  if (ctmToken) return getCtmTokenActivity(ctmToken.id)
+
+  if (await isKnownGasSymbol(slug)) return getGasTokenActivity()
+
   const token = await getTokenBySlug(slug)
   return getCtmTokenActivity(token.id)
 }
