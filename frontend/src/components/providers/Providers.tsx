@@ -59,11 +59,10 @@ export default function Providers({ children }: ProvidersProps) {
   // page's real reads go out — see lib/connectionWarmup.
   useEffect(() => initConnectionWarmup(), [])
 
-  // Register the service worker on EVERY route, public ones included. It is
-  // what stands between a dropped navigation and the browser's own
-  // "This site can't be reached" page — see public/sw.js. Previously this only
-  // ran inside the signed-in shell, so the landing page, blog and gas pages
-  // were left unprotected.
+  // Register the service worker on EVERY route, public ones included — not
+  // because navigations need it (see public/sw.js for why that was tried and
+  // reverted), but so push subscriptions stay registered everywhere push can
+  // be opted into, not just the signed-in shell.
   useEffect(() => { void ensureServiceWorker() }, [])
 
   useEffect(() => {
