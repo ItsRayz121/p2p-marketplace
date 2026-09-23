@@ -13,9 +13,26 @@ import { BlogSearchBox } from '@/components/blog/BlogSearchBox'
 import { extractHeadings } from '@/lib/blogHeadings'
 import { fetchBlogPost } from '@/lib/blogFetch'
 
-// Render on each request: a freshly published post must be live immediately,
-// and a cached `notFound()` must never linger after publishing.
-export const dynamic = 'force-dynamic'
+// ISR, not force-dynamic — see lib/blogFetch.ts for why. A cached `notFound()`
+// can now linger for up to 60s after publishing rather than never; that bound
+// was already being imposed at the Cloudflare edge regardless of what this
+// page did, so this brings Vercel's own cache into agreement with it instead
+// of the two fighting each other.
+export const revalidate = 60
+
+// Required for `revalidate` above to do anything on a dynamic segment. Without
+// generateStaticParams (even an empty one), Next.js 15 renders every request
+// to /blog/[slug] fresh regardless of the revalidate export — it only takes
+// effect on the fetch-level Data Cache, not the page itself, which is why this
+// route still showed up as `ƒ` (fully dynamic) in the build output. Returning
+// [] pre-generates nothing at build time (correct — the backend isn't
+// reachable during the Vercel build), but leaves `dynamicParams` at its
+// default of true, so the FIRST visit to any slug still renders live and every
+// visit after that within the 60s window is served from the page cache
+// instead of re-invoking the function.
+export async function generateStaticParams() {
+  return []
+}
 
 const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
 

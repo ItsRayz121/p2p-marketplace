@@ -28,6 +28,26 @@ export interface BlogList {
   pageSize: number
 }
 
+// Both reads below are cached on the same 60s clock as their pages (see
+// `revalidate` in page.tsx / [slug]/page.tsx) instead of `no-store`, and capped
+// by an 8s deadline for the same reason as the homepage: ISR regeneration runs
+// in the background while visitors still get the previous page, so a slow or
+// waking backend must never be able to hold that regeneration open. A
+// timed-out read resolves through the same empty-state fallback as a genuine
+// backend error.
+//
+// This used to be `no-store`, specifically on fetchBlogPost, to stop a 404
+// visited before publish from being cached for the whole revalidate window.
+// That protection is moot now regardless of what happens here: the Cloudflare
+// Cache Rule in front of Vercel matches `/blog*` and is configured to IGNORE
+// origin cache-control and force its own 60s edge TTL — so a pre-publish 404
+// was already being frozen at the edge for up to 60s no matter what this file
+// sent. Matching Vercel's own cache to that same 60s window, instead of
+// fighting it with no-store, means the two layers agree and a stale response
+// self-heals on the same schedule everywhere. See
+// memory/project_connection_reset_edge_caching.md.
+const READ_OPTS = { next: { revalidate: 60 }, signal: AbortSignal.timeout(8_000) } as const
+
 export async function fetchBlogList(params: { page?: number; category?: string; tag?: string; q?: string } = {}): Promise<BlogList> {
   const qs = new URLSearchParams()
   if (params.page) qs.set('page', String(params.page))
@@ -36,7 +56,7 @@ export async function fetchBlogList(params: { page?: number; category?: string; 
   if (params.q) qs.set('q', params.q)
   const url = `${API}/api/v1/blog?${qs.toString()}`
   try {
-    const res = await fetch(url, { cache: 'no-store' })
+    const res = await fetch(url, READ_OPTS)
     if (!res.ok) console.error(`[blogFetch] list ${res.status} from ${url} (originOverride=${USING_ORIGIN_OVERRIDE})`)
     return (await unwrap<BlogList>(res)) ?? { posts: [], total: 0, page: 1, pageSize: 12 }
   } catch (err) {
@@ -46,12 +66,9 @@ export async function fetchBlogList(params: { page?: number; category?: string; 
 }
 
 export async function fetchBlogPost(slug: string): Promise<BlogPost | null> {
-  // `no-store`: never cache an individual post (especially a "not found"
-  // result). Without this, opening a slug before it was published cached the
-  // 404 for the whole revalidate window, so publishing didn't make it live.
   const url = `${API}/api/v1/blog/post/${encodeURIComponent(slug)}`
   try {
-    const res = await fetch(url, { cache: 'no-store' })
+    const res = await fetch(url, READ_OPTS)
     if (!res.ok) console.error(`[blogFetch] post ${res.status} from ${url} (originOverride=${USING_ORIGIN_OVERRIDE})`)
     return await unwrap<BlogPost>(res)
   } catch (err) {

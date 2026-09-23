@@ -13,8 +13,12 @@ export const metadata: Metadata = buildMeta(
   '/blog',
 )
 
-// Render fresh so newly published posts appear in the listing right away.
-export const dynamic = 'force-dynamic'
+// ISR, not force-dynamic — see lib/blogFetch.ts for why. This used to render
+// on every request so a new post would appear immediately; a new post can now
+// take up to 60s to appear, the same bound already forced by the Cloudflare
+// Cache Rule sitting in front of this page, and the same tradeoff already
+// accepted on the homepage.
+export const revalidate = 60
 
 function fmtDate(d: string | null): string {
   if (!d) return ''
