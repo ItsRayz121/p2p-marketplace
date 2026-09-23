@@ -70,7 +70,13 @@ export default function Providers({ children }: ProvidersProps) {
     initPostHog()
 
     async function init() {
-      setLoading(true)
+      // Only force the spinner on a genuinely cold load (see auth.store.ts) —
+      // when a cached snapshot already rendered the shell, this reconciliation
+      // must run silently in the background. Setting loading=true here
+      // unconditionally would re-introduce the exact blank-spinner flash the
+      // cache exists to remove, on every single app open.
+      const hadCachedUser = useAuthStore.getState().user !== null
+      if (!hadCachedUser) setLoading(true)
       // CSRF doesn't depend on the session, so fetch it in PARALLEL with the
       // refresh→me auth chain instead of after it — removes one sequential
       // round-trip from the cold-start critical path (noticeable on mobile).
@@ -110,6 +116,16 @@ export default function Providers({ children }: ProvidersProps) {
           // Not logged in — drop any stale hint cookie so the middleware
           // doesn't keep us on /dashboard with an expired backend session.
           clearAuth()
+          // A warm reopen may have already rendered a signed-in page straight
+          // from the cached snapshot (see auth.store.ts) before this
+          // reconciliation found the session actually dead — the user would
+          // otherwise be left staring at a real page with a suddenly-null
+          // user instead of being sent to sign in again. Telegram is exempt:
+          // the /mini-app bridge already renders its own "couldn't sign you
+          // in" state once isLoading clears with no user (see that page).
+          if (hadCachedUser && !isTelegramMiniApp() && pathname !== '/login') {
+            router.replace('/login')
+          }
         }
       }
 
