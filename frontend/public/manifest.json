@@ -1,8 +1,10 @@
 {
+  "id": "/",
   "name": "RupChain",
   "short_name": "RupChain",
   "description": "Pakistan's P2P Crypto Marketplace",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#0D1B2A",
   "theme_color": "#0D1B2A",

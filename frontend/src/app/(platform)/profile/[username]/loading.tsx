@@ -1,0 +1,13 @@
+import { Skeleton } from '@/components/ui/Skeleton'
+
+export default function Loading() {
+  return (
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
+      <Skeleton className="h-8 w-1/2" />
+      <div className="flex flex-col gap-5 lg:flex-row">
+        <Skeleton className="h-72 w-full rounded-xl lg:flex-1" />
+        <Skeleton className="h-72 w-full rounded-xl lg:w-64" />
+      </div>
+    </div>
+  )
+}
