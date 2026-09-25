@@ -1,4 +1,4 @@
-# FRONTEND_STANDARDS.md — PakSwap Frontend Development Standards
+# FRONTEND_STANDARDS.md — RupChain Frontend Development Standards
 ## Tailwind CSS · Component Library · Hooks · Form Standards · Version 1.0 · 2026-05-12
 
 > **Relationship to FULL_SPEC.md:** This is a satellite document. FULL_SPEC.md Section 21 (Design System) references this file for the complete component and styling standards. Overrides the inline styles mandate from earlier spec versions.
@@ -14,18 +14,17 @@
 | 1 | Tailwind Configuration |
 | 2 | Design Tokens |
 | 3 | Atomic Component Library |
-| 4 | Page Layout Components |
-| 5 | Custom Hooks |
-| 6 | Form Standards |
-| 7 | API Error Handling Pattern |
-| 8 | Loading & Empty States |
-| 9 | Responsive Design Rules |
-| 10 | Dark Mode Strategy |
-| 11 | Typography & Fonts |
-| 12 | Animation Standards |
-| 13 | Icon Strategy |
-| 14 | Image & Asset Optimization |
-| 15 | Accessibility Requirements |
+| 4 | Custom Hooks |
+| 5 | Form Standards |
+| 6 | API Error Handling Pattern |
+| 7 | Loading & Empty States |
+| 8 | Responsive Design Rules |
+| 9 | Dark Mode Strategy |
+| 10 | Typography & Fonts |
+| 11 | Animation Standards |
+| 12 | Icon Strategy |
+| 13 | Image & Asset Optimization |
+| 14 | Accessibility Requirements |
 
 ---
 
@@ -455,42 +454,9 @@ export function CountdownTimer({ expiresAt, onExpired }: { expiresAt: string; on
 }
 ```
 
-### StalenessBadge
-
-```tsx
-// src/components/ui/StalenessBadge.tsx
-export function StalenessBadge({ updatedAt }: { updatedAt: string }) {
-  const ageMinutes = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60000)
-
-  if (ageMinutes < 6) return null  // Fresh — don't show anything
-
-  return (
-    <Badge variant={ageMinutes > 60 ? 'danger' : 'warning'}>
-      Rate {ageMinutes}m old
-    </Badge>
-  )
-}
-```
-
 ---
 
-## 4. Page Layout Components
-
-```tsx
-// src/components/layout/PageContainer.tsx
-export function PageContainer({ children, maxWidth = 'lg' }: { children: React.ReactNode; maxWidth?: 'sm' | 'md' | 'lg' | 'xl' }) {
-  const widths = { sm: 'max-w-sm', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' }
-  return (
-    <main className={cn('mx-auto w-full px-4 py-6 sm:px-6', widths[maxWidth])}>
-      {children}
-    </main>
-  )
-}
-```
-
----
-
-## 5. Custom Hooks
+## 4. Custom Hooks
 
 ### usePolling
 
@@ -643,7 +609,7 @@ export function useOfflineDetection() {
 
 ---
 
-## 6. Form Standards
+## 5. Form Standards
 
 ### Form Library
 
@@ -704,7 +670,7 @@ const FIELD_MAX_LENGTHS = {
 
 ---
 
-## 7. API Error Handling Pattern
+## 6. API Error Handling Pattern
 
 ```typescript
 // src/lib/api.ts
@@ -749,7 +715,7 @@ export async function apiRequest<T>(
 
 ---
 
-## 8. Loading & Empty States
+## 7. Loading & Empty States
 
 Use consistent states across all pages. Never show a blank white screen.
 
@@ -797,7 +763,7 @@ export function ErrorState({ title = 'Something went wrong', onRetry }: { title?
 
 ---
 
-## 9. Responsive Design Rules
+## 8. Responsive Design Rules
 
 - **Mobile-first:** Write mobile styles first, add `md:` and `lg:` variants for larger screens
 - **Minimum width:** 375px (iPhone SE). Nothing should break below 375px.
@@ -815,7 +781,7 @@ export function ErrorState({ title = 'Something went wrong', onRetry }: { title?
 
 ---
 
-## 10. Dark Mode Strategy
+## 9. Dark Mode Strategy
 
 **Decision: Dark mode is Phase 3. Do not implement in Phase 1 or Phase 2.**
 
@@ -825,7 +791,7 @@ For now, use only light mode styles. Do not add `dark:` classes prematurely.
 
 ---
 
-## 11. Typography & Fonts
+## 10. Typography & Fonts
 
 Use system font stack only (defined in Tailwind config). Never add Google Fonts or custom font files in Phase 1-2.
 
@@ -849,7 +815,7 @@ Benefit: No FOUT (Flash of Unstyled Text).
 
 ---
 
-## 12. Animation Standards
+## 11. Animation Standards
 
 Use animations sparingly. Animations must not impede usability.
 
@@ -866,7 +832,7 @@ Never use animations that loop indefinitely on non-loading states (distracting).
 
 ---
 
-## 13. Icon Strategy
+## 12. Icon Strategy
 
 Use **Lucide React** (`lucide-react` package). Consistent sizing via props.
 
@@ -883,7 +849,7 @@ Never use emoji as icons in UI (inconsistent rendering across devices). Never mi
 
 ---
 
-## 14. Image & Asset Optimization
+## 13. Image & Asset Optimization
 
 - Use Next.js `<Image>` component for all images (automatic WebP conversion, lazy loading, size optimization)
 - Logo: SVG format only (never PNG)
@@ -903,7 +869,7 @@ import Image from 'next/image'
 
 ---
 
-## 15. Accessibility Requirements
+## 14. Accessibility Requirements
 
 Minimum accessibility requirements for launch:
 

@@ -1,5 +1,5 @@
 'use client'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
@@ -56,17 +56,46 @@ const ordersNavItem: NavItem = {
   icon: <ClipboardList className="w-6 h-6" />,
 }
 
+// Cached across mounts so a fresh page load renders the right last tab
+// immediately instead of flashing "Orders" until the summary fetch resolves
+// (visible as a "disappearing tab" on slow mobile connections).
+const ENABLED_CACHE_KEY = 'rc_msg_inbox_enabled'
+
+function readCachedEnabled(): boolean | null {
+  try {
+    const raw = localStorage.getItem(ENABLED_CACHE_KEY)
+    return raw === null ? null : raw === '1'
+  } catch {
+    return null
+  }
+}
+
+function writeCachedEnabled(enabled: boolean) {
+  try {
+    localStorage.setItem(ENABLED_CACHE_KEY, enabled ? '1' : '0')
+  } catch {
+    // ignore (private browsing / storage disabled)
+  }
+}
+
 export default function BottomNav() {
   const pathname = usePathname()
   const { user } = useAuth()
   const [msgSummary, setMsgSummary] = useState<InboxSummary | null>(null)
+  const [cachedEnabled, setCachedEnabled] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    setCachedEnabled(readCachedEnabled())
+  }, [])
 
   // Messaging inbox summary drives whether the last tab is "Messages" (feature
   // ON) or falls back to "Orders" (feature OFF) — plus its unread/active badge.
   const fetchMsgSummary = useCallback(async () => {
     if (!user) return
     try {
-      setMsgSummary(await messagingApi.getSummary())
+      const summary = await messagingApi.getSummary()
+      setMsgSummary(summary)
+      writeCachedEnabled(summary.enabled)
     } catch {
       // silently fail — fall back to Orders
     }
@@ -76,13 +105,16 @@ export default function BottomNav() {
 
   // Last tab: Messages when the messaging feature is enabled, else Orders. This
   // realises "replace Orders with Messaging" without leaving a dead tab while
-  // `messaging_inbox_enabled` is still OFF in production.
-  const lastNavItem: NavItem = msgSummary?.enabled
+  // `messaging_inbox_enabled` is still OFF in production. Before the summary
+  // fetch resolves, fall back to the cached enabled state (not straight to
+  // Orders) so the tab doesn't flicker on every page load.
+  const enabled = msgSummary?.enabled ?? cachedEnabled
+  const lastNavItem: NavItem = enabled
     ? {
         href: '/messages',
         label: 'Messages',
         icon: <MessageSquare className="w-6 h-6" />,
-        badge: msgSummary.activeTrades || msgSummary.unreadThreads || 0,
+        badge: msgSummary?.activeTrades || msgSummary?.unreadThreads || 0,
       }
     : ordersNavItem
 
