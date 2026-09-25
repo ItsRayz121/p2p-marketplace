@@ -1,0 +1,24 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "ignore": [
+    "audit/**",
+    ".audit-npm-cache/**"
+  ],
+  "workspaces": {
+    "backend": {
+      "entry": [
+        "src/server.ts",
+        "src/scripts/**/*.ts",
+        "scripts/**/*.ts",
+        "prisma/seed-*.ts",
+        "prisma/seeds/**/*.ts"
+      ]
+    },
+    "frontend": {
+      "ignore": [
+        "public/sw.js",
+        "src/lib/web3/empty-module.js"
+      ]
+    }
+  }
+}

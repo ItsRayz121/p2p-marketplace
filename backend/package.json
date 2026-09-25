@@ -38,10 +38,10 @@
     "telegram:setup": "tsx src/scripts/telegramSetup.ts",
     "deploy:verify": "tsx src/scripts/deployVerify.ts",
     "deploy:verify:full": "tsx src/scripts/deployVerify.ts --full",
-    "check:chains": "ts-node src/scripts/validateChainSync.ts",
-    "check:chains:rpc": "ts-node src/scripts/validateChainSync.ts --rpc",
-    "verify:token": "ts-node src/scripts/verifyToken.ts",
-    "seed:chains": "ts-node --project tsconfig.json prisma/seeds/depositChains.seed.ts",
+    "check:chains": "tsx src/scripts/validateChainSync.ts",
+    "check:chains:rpc": "tsx src/scripts/validateChainSync.ts --rpc",
+    "verify:token": "tsx src/scripts/verifyToken.ts",
+    "seed:chains": "tsx prisma/seeds/depositChains.seed.ts",
     "test": "vitest run",
     "test:watch": "vitest"
   },
@@ -86,6 +86,7 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "eslint": "^8.57.0",
     "tsx": "^4.16.2",
     "vitest": "^4.1.8"
   },
