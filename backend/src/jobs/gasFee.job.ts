@@ -13,6 +13,7 @@ import { recordGasAudit } from '../lib/gas/gas.matching'
 import { accrueReferralForDelivery } from '../lib/gas/gas.referral'
 import { awardGasPointsForDelivery } from '../services/airdrop.service'
 import { REFUND_WINDOW_MS, AUTO_REFUND_SAFETY_MS, RETRY_INTERVAL_MS } from '../lib/gas/gas.refundWindow'
+import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
 import type { GasFeeOrder } from '@prisma/client'
 
 type HotWallet = Awaited<ReturnType<typeof selectHotWallet>> | null
@@ -82,6 +83,7 @@ async function finalizeDeliverySuccess(
   // Gas orders count toward user trade stats — trigger unified badge recalculate
   if (order.userId) {
     queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})
+    void maybeSendTrustpilotReviewNudge(order.userId)
   }
   void createAdminNotif({
     category: 'GAS',

@@ -400,6 +400,11 @@ model User {
   // ban trigger. Cleared automatically when they next /start the bot.
   telegramBlockedAt DateTime?
 
+  // Set once the user self-reports leaving a Trustpilot review (honor system —
+  // no reward is attached, so there's no fraud incentive to verify against).
+  // Stops the review-nudge notification + support-thread message forever.
+  trustpilotReviewedAt DateTime?
+
   role          UserRole  @default(user)
   intendedRole  String    @default("user")
 
@@ -1292,6 +1297,8 @@ model SupportMessage {
   // is an admin-issued prompt that renders as a refund-destination form in the user's
   // chat (metadata: { orderRef, chain, paymentNetwork }). "refund_response" is the
   // user's structured answer (metadata: { requestId, address, network, orderRef }).
+  // "review_nudge" is a system-issued Trustpilot review ask; "review_ack" is the
+  // user's self-reported "I left a review" response (metadata: { requestId, stars }).
   kind           String              @default("text")
   metadata       Json?
   createdAt      DateTime            @default(now())

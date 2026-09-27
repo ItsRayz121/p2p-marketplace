@@ -6,6 +6,7 @@ import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { RefundAddressForm } from '@/components/support/RefundAddressForm'
+import { ReviewNudgeCard } from '@/components/support/ReviewNudgeCard'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
@@ -62,6 +63,14 @@ export function SupportChatThread() {
   function answerFor(requestId: string): SupportMessage | null {
     for (const m of messages) {
       if (m.kind === 'refund_response' && (m.metadata?.requestId as string | undefined) === requestId) return m
+    }
+    return null
+  }
+
+  // Same lookup for a review_nudge's review_ack.
+  function reviewAckFor(requestId: string): SupportMessage | null {
+    for (const m of messages) {
+      if (m.kind === 'review_ack' && (m.metadata?.requestId as string | undefined) === requestId) return m
     }
     return null
   }
@@ -200,6 +209,16 @@ export function SupportChatThread() {
               />
             ) : item.msg.kind === 'refund_response' ? (
               // Rendered inside the request form's "answered" state — skip the standalone bubble.
+              null
+            ) : item.msg.kind === 'review_nudge' ? (
+              <ReviewNudgeCard
+                key={item.key}
+                request={item.msg}
+                answer={reviewAckFor(item.msg.id)}
+                onSubmitted={(msg) => setMessages((prev) => [...prev, msg])}
+              />
+            ) : item.msg.kind === 'review_ack' ? (
+              // Rendered inside the nudge card's "answered" state — skip the standalone bubble.
               null
             ) : item.msg.sender === 'system' ? (
               item.msg.rating != null ? (

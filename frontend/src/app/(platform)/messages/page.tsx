@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api'
 import { messagingApi, type InboxItem, type ChatUser } from '@/lib/messaging'
 import { channelsApi, type MyChannel } from '@/lib/channels'
+import { supportChatApi } from '@/lib/supportChat'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -49,6 +50,11 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
   const [openingNotes, setOpeningNotes] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [officialUnread, setOfficialUnread] = useState(false)
+
+  useEffect(() => {
+    supportChatApi.get().then((s) => setOfficialUnread(!!s.conversation?.unreadByUser)).catch(() => {})
+  }, [])
 
   useEffect(() => {
     const q = query.trim()
@@ -218,6 +224,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
               <div className="flex items-center gap-1">
                 <span className="font-semibold text-text-primary">RupChain Official</span>
                 <BadgeCheck className="w-4 h-4 text-sky-500" aria-label="Verified" />
+                {officialUnread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
               </div>
               <p className="text-xs text-text-muted truncate mt-0.5">Support &amp; account help — tap to chat with our team.</p>
             </div>

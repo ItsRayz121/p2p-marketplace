@@ -22,8 +22,10 @@ export interface SupportMessage {
   deletedAt?: string | null
   rating?: number | null
   // Structured messages: 'refund_request' renders a refund-destination form for the
-  // user; 'refund_response' is their submitted answer. Plain chat omits kind ('text').
-  kind?: 'text' | 'refund_request' | 'refund_response'
+  // user; 'refund_response' is their submitted answer. 'review_nudge' is a system
+  // Trustpilot review ask; 'review_ack' is the user's self-reported response.
+  // Plain chat omits kind ('text').
+  kind?: 'text' | 'refund_request' | 'refund_response' | 'review_nudge' | 'review_ack'
   metadata?: Record<string, unknown> | null
   createdAt: string
 }
@@ -144,5 +146,10 @@ export const supportChatApi = {
     apiRequest<SupportMessage>('/support/chat/refund-response', {
       method: 'POST',
       body: JSON.stringify({ requestId, network, address }),
+    }),
+  reviewAck: (requestId: string, stars: number) =>
+    apiRequest<SupportMessage>('/support/chat/review-ack', {
+      method: 'POST',
+      body: JSON.stringify({ requestId, stars }),
     }),
 }

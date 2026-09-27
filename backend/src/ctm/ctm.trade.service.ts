@@ -15,6 +15,7 @@ import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute 
 import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { TRUSTPILOT_CHAT_NUDGE, TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
+import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
 import { isTakerFirstForMarket } from '../services/settlementMode.service'
 import { ctmStepForAction, ctmDisputeLock, ctmResumeDeadline, ctmStepFromStatus } from '../services/ctmSettlementFlow'
@@ -689,6 +690,8 @@ async function finalizeCtmTrade(tradeRef: string) {
 
   notify(trade.sellerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `Buyer confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
   notify(buyerId, 'CTM_TRADE_COMPLETED', 'Trade completed', `You confirmed receipt. Trade ${refLabel(trade.displayRef)} is complete.`, { tradeRef, displayRef: trade.displayRef })
+  void maybeSendTrustpilotReviewNudge(trade.sellerId)
+  void maybeSendTrustpilotReviewNudge(buyerId)
 
   if (promotedTo) {
     notify(trade.sellerId, 'CTM_TIER_PROMOTED', 'Merchant tier upgraded 🎉', `Your clean track record promoted you to the ${promotedTo} tier — your per-trade limit just went up.`, { tier: promotedTo })

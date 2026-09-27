@@ -15,6 +15,7 @@ import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
 import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
 import { TRUSTPILOT_CHAT_NUDGE, TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
+import { maybeSendTrustpilotReviewNudge } from './trustpilotReview.service'
 import { stepForAction, flowSteps, stepFromStatus } from './settlementFlow'
 import {
   ladderStatus, advanceTo, claimRung,
@@ -1295,6 +1296,8 @@ export async function finalizeUsdtTrade(tradeId: string) {
   notify(tradeDetails.sellerId, 'trade', 'Trade Completed', 'The trade is complete. 🎉', { tradeId }, tradeId)
   notify(tradeDetails.buyerId, 'trade', 'Trade Completed', 'The trade is complete. 🎉', { tradeId }, tradeId)
   createAdminNotif({ category: 'TRADE', title: 'Trade Completed', body: `Trade #${tradeDetails.orderRef} has been completed.`, href: `/admin/trades/${tradeId}` })
+  void maybeSendTrustpilotReviewNudge(tradeDetails.sellerId)
+  void maybeSendTrustpilotReviewNudge(tradeDetails.buyerId)
 
   // Send completion emails
   await sendTradeEmail(

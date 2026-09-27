@@ -302,6 +302,52 @@ export async function supportRoutes(app: FastifyInstance) {
     })
   })
 
+  // POST /support/chat/review-ack — user self-reports leaving a Trustpilot review
+  // in response to a review_nudge message. Honor system: no verification, since
+  // nothing is rewarded for it (matches the on-page TrustpilotPrompt's own rule).
+  // Sets User.trustpilotReviewedAt so the nudge never fires again anywhere.
+  const reviewAckSchema = z.object({
+    requestId: z.string().min(1),
+    stars: z.number().int().min(1).max(5),
+  })
+  app.post('/support/chat/review-ack', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { requestId, stars } = reviewAckSchema.parse(req.body)
+
+    const request = await db.supportMessage.findUnique({
+      where: { id: requestId },
+      include: { conversation: { select: { id: true, userId: true } } },
+    })
+    if (!request || request.kind !== 'review_nudge' || request.conversation.userId !== userId) {
+      throw Errors.NOT_FOUND('Review prompt')
+    }
+
+    // Idempotent: an ack for this exact nudge already exists — return it, don't duplicate.
+    const priorAck = await db.supportMessage.findFirst({
+      where: { conversationId: request.conversation.id, kind: 'review_ack' },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (priorAck && (priorAck.metadata as { requestId?: string } | null)?.requestId === requestId) {
+      return reply.send({ success: true, data: serializeMessage(priorAck) })
+    }
+
+    const [message] = await db.$transaction([
+      db.supportMessage.create({
+        data: {
+          conversationId: request.conversation.id,
+          sender: 'user',
+          senderId: userId,
+          kind: 'review_ack',
+          body: `⭐ Reviewed RupChain on Trustpilot (${stars}★)`,
+          metadata: { requestId, stars },
+        },
+      }),
+      db.user.update({ where: { id: userId }, data: { trustpilotReviewedAt: new Date() } }),
+    ])
+
+    return reply.send({ success: true, data: serializeMessage(message) })
+  })
+
   // POST /support/chat/refund-response — user answers an admin refund_request with
   // their USDT destination. Stores a structured refund_response message, stamps the
   // referenced gas order with the suggested address so the admin refund modal can
