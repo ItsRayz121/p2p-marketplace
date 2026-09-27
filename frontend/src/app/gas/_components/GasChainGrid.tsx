@@ -1,11 +1,16 @@
 'use client'
+import { useEffect, useState } from 'react'
 import { gasApi } from '@/lib/api'
+import type { GasRecentPurchase } from '@/lib/api'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Badge } from '@/components/ui/Badge'
 import { Fuel } from 'lucide-react'
 import { useGasCtx } from './GasContext'
 import { ChainLogo, ChainSkeleton, catGradient, CAT_LABELS } from './GasPrimitives'
 import { CustomGasRequest } from './CustomGasRequest'
+import { TickerBanner } from '@/components/shared/TickerBanner'
+import { gasTickerItem } from '@/components/shared/tickerItems'
+import { usePolling } from '@/hooks/usePolling'
 
 export function GasChainGrid() {
   const {
@@ -14,12 +19,27 @@ export function GasChainGrid() {
     selectedChain, handleSelectChain,
   } = useGasCtx()
 
+  const [recentPurchases, setRecentPurchases] = useState<GasRecentPurchase[]>([])
+  const fetchRecentPurchases = async () => {
+    try {
+      setRecentPurchases(await gasApi.getRecentPurchases())
+    } catch { /* social-proof ticker is non-critical — suppress */ }
+  }
+  useEffect(() => { fetchRecentPurchases() }, [])
+  usePolling(fetchRecentPurchases, 60_000, true)
+
   return (
     <div>
       <div className="text-center mb-6">
         <h2 className="text-xl font-bold text-text-primary">Select Blockchain</h2>
         <p className="text-sm text-text-muted mt-1">Choose a blockchain to view gas fee and create gas orders</p>
       </div>
+
+      {/* Recent purchases ticker */}
+      <TickerBanner
+        label="Recent Purchases"
+        items={recentPurchases.map((p) => ({ key: p.id, node: gasTickerItem(p) }))}
+      />
 
       {chainsLoading && <ChainSkeleton />}
       {chainsError && (

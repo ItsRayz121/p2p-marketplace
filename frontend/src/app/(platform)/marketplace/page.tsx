@@ -21,6 +21,8 @@ import { toast } from '@/lib/toast'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
 import { activeLabel } from '@/lib/onlineStatus'
+import { TickerBanner } from '@/components/shared/TickerBanner'
+import { tradeTickerItem } from '@/components/shared/tickerItems'
 
 const NETWORKS = [
   { value: '', label: 'All Networks' },
@@ -412,51 +414,6 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   )
 }
 
-// ─── Recent Trades Feed ───────────────────────────────────────────────────────
-
-function tradeFeedAge(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const mins = Math.floor(diff / 60_000)
-  if (mins < 1)  return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  return hrs < 24 ? `${hrs}h ago` : `${Math.floor(hrs / 24)}d ago`
-}
-
-function RecentTradesFeed({ trades }: { trades: RecentTrade[] }) {
-  if (!trades.length) return null
-  // Duplicate list for seamless infinite scroll
-  const items = [...trades, ...trades]
-  // Constant, readable scroll speed regardless of trade count (~6s per trade) —
-  // shared with the CTM ticker so both markets scroll at the same pace.
-  const marqueeDuration = Math.max(trades.length * 6, 30)
-  return (
-    <div className="relative bg-surface border border-border rounded-xl overflow-hidden mb-4">
-      <div className="flex items-center gap-2 px-3 py-1.5 border-b border-border bg-surface-alt">
-        <span className="w-1.5 h-1.5 rounded-full bg-success animate-pulse flex-shrink-0" />
-        <span className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Recent Trades</span>
-      </div>
-      <div className="flex overflow-hidden">
-        <div className="flex gap-3 px-3 py-2 whitespace-nowrap" style={{ animation: `marquee ${marqueeDuration}s linear infinite` }}>
-          {items.map((t, i) => (
-            <span
-              key={`${t.id}-${i}`}
-              className="inline-flex items-center gap-1.5 text-xs text-text-secondary flex-shrink-0 border-r border-border pr-3 last:border-0"
-            >
-              <CheckCircle2 size={11} className="text-success flex-shrink-0" />
-              <span className="font-semibold text-text-primary">
-                {parseFloat(t.amount).toFixed(2)} {t.coin}
-              </span>
-              <span className="text-text-muted">{t.buyerFullName || t.buyerUsername} ← {t.sellerFullName || t.sellerUsername}</span>
-              <span className="text-text-muted/60">{tradeFeedAge(t.completedAt)}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // ─── Marketplace Stats Strip ──────────────────────────────────────────────────
 
 interface MarketStats {
@@ -707,7 +664,9 @@ export default function MarketplacePage() {
       </div>
 
       {/* Recent trades ticker */}
-      <RecentTradesFeed trades={recentTrades} />
+      <TickerBanner
+        items={recentTrades.map((t) => ({ key: t.id, node: tradeTickerItem(t, { amountFormat: 'fixed2' }) }))}
+      />
 
       {/* Filters — 2-col grid on phones (no ragged wrap), flex row on sm+ */}
       <div className="grid grid-cols-2 gap-2 mb-6 sm:flex sm:flex-wrap sm:items-center sm:gap-3">

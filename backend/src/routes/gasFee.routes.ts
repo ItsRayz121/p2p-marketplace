@@ -345,6 +345,37 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { chains: visibleChains, promoEnabled, referralEnabled, freeCodeEnabled } })
   })
 
+  // ── GET /api/gas-fee/recent-purchases — recent delivered orders feed ───────
+
+  app.get('/gas-fee/recent-purchases', async (_req, reply) => {
+    const orders = await db.gasFeeOrder.findMany({
+      where: { status: 'delivered' },
+      orderBy: { deliveredAt: 'desc' },
+      take: 20,
+      select: {
+        id: true,
+        chain: true,
+        gasAmountNative: true,
+        deliveredAt: true,
+        user: { select: { username: true, fullName: true } },
+      },
+    })
+    const chainConfigs = await db.gasChainConfig.findMany({ select: { slug: true, symbol: true } })
+    const symbolBySlug = new Map(chainConfigs.map((c) => [c.slug, c.symbol]))
+    return reply.send({
+      success: true,
+      data: orders.map((o) => ({
+        id: o.id,
+        amount: o.gasAmountNative.toString(),
+        token: symbolBySlug.get(o.chain) ?? o.chain,
+        chain: o.chain,
+        completedAt: (o.deliveredAt ?? new Date()).toISOString(),
+        buyerUsername: o.user?.username,
+        buyerFullName: o.user?.fullName ?? null,
+      })),
+    })
+  })
+
   // ── GET /api/gas-fee/chains/:chainSlug/tokens — tokens with live pricing ───
 
   app.get('/gas-fee/chains/:chainSlug/tokens', async (req, reply) => {

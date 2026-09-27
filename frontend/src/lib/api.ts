@@ -777,6 +777,16 @@ export interface RecentTrade {
   sellerFullName?: string | null
 }
 
+export interface GasRecentPurchase {
+  id: string
+  amount: string
+  token: string
+  chain: string
+  completedAt: string
+  buyerUsername?: string
+  buyerFullName?: string | null
+}
+
 export interface MarketRateToken {
   symbol: string
   name: string
@@ -1857,6 +1867,9 @@ export const gasApi = {
 
   getChainTokens: (chainSlug: string) =>
     apiRequest<GasTokensResponse>(`/gas-fee/chains/${chainSlug}/tokens`),
+
+  getRecentPurchases: () =>
+    apiRequest<GasRecentPurchase[]>('/gas-fee/recent-purchases'),
 
   createOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; idempotencyKey?: string; promoCode?: string; freeCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders', { method: 'POST', body: JSON.stringify(data) }),
