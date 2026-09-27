@@ -396,7 +396,7 @@ export async function updateListing(userId: string, listingId: string, data: {
     where: { id: listingId },
     include: {
       merchantProfile: { select: { userId: true, tier: true } },
-      token: { select: { maxListingAmount: true } },
+      token: { select: { maxListingAmount: true, symbol: true } },
     },
   })
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
@@ -433,11 +433,18 @@ export async function updateListing(userId: string, listingId: string, data: {
     }
   }
 
-  if (data.pricePerUnit) {
-    const activeTrades = await db.ctmTrade.count({
-      where: { listingId, status: { in: ['awaiting_payment', 'payment_uploaded', 'payment_confirmed', 'seller_transferring', 'proof_submitted', 'buyer_confirming'] } },
-    })
-    if (activeTrades > 0) throw new AppError('CONFLICT', 'Cannot change price while there are active trades', 409)
+  // Price can be changed at any time, including with trades active on this listing —
+  // each CtmTrade snapshots pricePerUnit at creation (ctm.trade.service.ts), so an
+  // in-progress trade's terms are unaffected by the maker updating their live quote.
+  // Re-apply the margin guardrail on every price edit (mirrors createListing) so a
+  // maker can't drift the price off-market through a string of small edits.
+  if (data.pricePerUnit !== undefined) {
+    const marginPct = await getNumberConfig('ctm_price_margin_pct', 5)
+    const insight = await getTokenMarketInsight(listing.tokenId)
+    const check = checkPriceMargin(data.pricePerUnit, insight.avg12h, marginPct)
+    if (!check.ok && check.min != null && check.max != null) {
+      throw new AppError('PRICE_OUT_OF_RANGE', marginRejectionMessage({ unitLabel: listing.token.symbol, marginPct, min: check.min, max: check.max }), 400)
+    }
   }
 
   // Validate any newly-selected PKR payment methods belong to this maker.

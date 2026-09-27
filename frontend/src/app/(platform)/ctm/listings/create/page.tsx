@@ -410,7 +410,7 @@ function CreateListingInner() {
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Price per token (PKR) *</label>
             <input type="number" min="0" step="0.01" value={form.pricePerUnit} onChange={(e) => setForm((f) => ({ ...f, pricePerUnit: e.target.value }))} className="w-full border border-border rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" required />
-            {isEdit && <p className="mt-1 text-xs text-text-muted">Price can’t be changed while there are active trades on this listing.</p>}
+            {isEdit && <p className="mt-1 text-xs text-text-muted">Updating the price won’t affect trades already in progress on this listing.</p>}
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-1.5">Total amount (tokens) *</label>
