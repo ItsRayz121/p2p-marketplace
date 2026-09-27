@@ -25,6 +25,7 @@ import { ArrowLeftRight, Fuel, FileText, Coins, ShieldCheck, Users, Lock, Headph
 import { RateCalculator } from './_components/home/RateCalculator'
 import { AnimatedStatsBar } from './_components/home/AnimatedStatsBar'
 import { TopAdsSection } from './_components/home/TopAdsSection'
+import { HomeActivityFeed } from './_components/home/HomeActivityFeed'
 import { FaqAccordion } from './_components/home/FaqAccordion'
 import { MarketingHeader } from '@/components/layout/MarketingHeader'
 import Footer from '@/components/layout/Footer'
@@ -313,6 +314,11 @@ export default async function HomePage() {
 
       {/* ── 3. TOP ADS — client island (tab toggle) ── */}
       <TopAdsSection topAds={topAds} topCtm={topCtm} topGas={topGas} />
+
+      {/* ── 3b. LIVE ACTIVITY — combined CTM+USDT+Gas recent-activity ticker,
+          client island. Keeps social proof flowing right after Top Offers,
+          before the trust pitch. Renders nothing until real data loads. ── */}
+      <HomeActivityFeed />
 
       {/* ── 4. TRUST BADGES ── */}
       <section className="py-10 bg-surface border-t border-border">
