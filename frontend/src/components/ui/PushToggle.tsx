@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react'
 import { subscribeToPush, savePushSubscription, unsubscribeFromPush } from '@/lib/push'
 import { analytics } from '@/lib/analytics'
+import { isTelegramMiniApp } from '@/lib/telegram'
 import { Button } from './Button'
 
 type PushState = 'loading' | 'unsupported' | 'denied' | 'subscribed' | 'unsubscribed'
@@ -58,7 +59,15 @@ export function PushToggle() {
 
   if (state === 'loading') return null
   if (state === 'unsupported') return (
-    <p className="text-sm text-text-muted">Push notifications are not supported in this browser.</p>
+    <p className="text-sm text-text-muted">
+      {isTelegramMiniApp()
+        // Telegram's in-app WebView doesn't expose the Web Push API on every
+        // platform (most consistently on iOS) — this is a Telegram/OS limit,
+        // not an account setting. The bot DM already covers trade/security
+        // alerts for linked accounts, so nothing is missed while this is off.
+        ? "Browser push isn't available inside Telegram's app view on this device — you're still covered by alerts from this bot's DM. Open rupchain.com in your phone's regular browser to also enable browser push there."
+        : 'Push notifications are not supported in this browser.'}
+    </p>
   )
   if (state === 'denied') return (
     <p className="text-sm text-text-muted">
