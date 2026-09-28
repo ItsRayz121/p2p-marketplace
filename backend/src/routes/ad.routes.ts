@@ -7,6 +7,8 @@ import {
   updateAd,
   toggleAdStatus,
   deleteAd,
+  archiveAd,
+  unarchiveAd,
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
@@ -134,6 +136,7 @@ export async function adRoutes(app: FastifyInstance) {
       const query = req.query as Record<string, string>
       const result = await getUserAds(userId, {
         ...(query.status ? { status: query.status } : {}),
+        ...(query.archived !== undefined ? { archived: query.archived === 'true' } : {}),
         ...(query.page ? { page: parseInt(query.page) } : {}),
         ...(query.limit ? { limit: parseInt(query.limit) } : {}),
       })
@@ -196,6 +199,22 @@ export async function adRoutes(app: FastifyInstance) {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
     const ad = await deleteAd(userId, id)
+    return reply.send({ success: true, data: ad })
+  })
+
+  // POST /api/ads/:id/archive — hide a completed/cancelled ad from "My Ads"
+  app.post('/ads/:id/archive', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const ad = await archiveAd(userId, id)
+    return reply.send({ success: true, data: ad })
+  })
+
+  // POST /api/ads/:id/unarchive — restore an archived ad to "My Ads"
+  app.post('/ads/:id/unarchive', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const ad = await unarchiveAd(userId, id)
     return reply.send({ success: true, data: ad })
   })
 }

@@ -76,6 +76,8 @@ export interface ListingsFilter {
   sortBy?: string
   sortDir?: 'asc' | 'desc'
   seller?: string
+  /** "My Listings" only — defaults to false (hide archived); true shows only archived. */
+  archived?: boolean
 }
 
 export async function createListing(userId: string, data: CreateListingInput) {
@@ -242,7 +244,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
 }
 
 export async function getListings(filters: ListingsFilter = {}) {
-  const { tokenId, side, paymentMethod, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc', seller } = filters
+  const { tokenId, side, paymentMethod, page = 1, limit = 20, merchantProfileId, status, adminView = false, tier, sortBy, sortDir = 'desc', seller, archived } = filters
   const skip = (page - 1) * limit
 
   const where: Record<string, unknown> = adminView ? {} : { status: 'active' }
@@ -250,6 +252,10 @@ export async function getListings(filters: ListingsFilter = {}) {
   if (side) where.side = side
   if (merchantProfileId) where.merchantProfileId = merchantProfileId
   if (status) where.status = status
+  // "My Listings" (merchantProfileId set): hide archived by default; pass
+  // archived=true to see only archived ones. Admin's all-listings view is
+  // unaffected unless it also scopes to a merchantProfileId.
+  if (merchantProfileId) where.archived = archived ?? false
   if (paymentMethod) {
     // The dropdown sends a human label ("JazzCash"), but paymentMethods holds
     // PaymentMethod IDs (cuids) — match the label to its IDs before filtering.
@@ -555,6 +561,37 @@ export async function deleteListing(userId: string, listingId: string) {
   if (activeTrades > 0) throw new AppError('CONFLICT', 'Cannot delete listing with active trades', 409)
 
   return db.ctmListing.update({ where: { id: listingId }, data: { status: 'cancelled' } })
+}
+
+const ARCHIVABLE_LISTING_STATUSES: CtmListingStatus[] = ['cancelled', 'completed', 'expired']
+
+// Archiving just hides a terminal (cancelled/completed/expired) listing from the
+// default "My Listings" view — it never touches trade history or the listing itself.
+export async function archiveListing(userId: string, listingId: string) {
+  const listing = await db.ctmListing.findUnique({
+    where: { id: listingId },
+    include: { merchantProfile: { select: { userId: true } } },
+  })
+  if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
+  if (listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'Not your listing', 403)
+  if (!ARCHIVABLE_LISTING_STATUSES.includes(listing.status)) {
+    throw new AppError('CONFLICT', 'Only a cancelled, completed, or expired listing can be archived', 409)
+  }
+  if (listing.archived) return listing
+
+  return db.ctmListing.update({ where: { id: listingId }, data: { archived: true, archivedAt: new Date() } })
+}
+
+export async function unarchiveListing(userId: string, listingId: string) {
+  const listing = await db.ctmListing.findUnique({
+    where: { id: listingId },
+    include: { merchantProfile: { select: { userId: true } } },
+  })
+  if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
+  if (listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'Not your listing', 403)
+  if (!listing.archived) return listing
+
+  return db.ctmListing.update({ where: { id: listingId }, data: { archived: false, archivedAt: null } })
 }
 
 export async function incrementLockedAmount(listingId: string, amount: Prisma.Decimal, tx: Tx) {

@@ -22,6 +22,7 @@ interface CtmListing {
   id: string
   side: string
   status: string
+  archived?: boolean
   pricePerUnit: string
   availableAmount: string
   totalAmount: string
@@ -85,10 +86,12 @@ function UsdtAdsTab() {
   const [toggling, setToggling] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
-  const fetchAds = useCallback(async () => {
+  const fetchAds = useCallback(async (archived: boolean) => {
+    setLoading(true)
     try {
-      const res = await adsApi.getMyAds({ limit: 100 })
+      const res = await adsApi.getMyAds({ limit: 100, archived })
       setAds(res.items ?? [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load ads')
@@ -97,7 +100,7 @@ function UsdtAdsTab() {
     }
   }, [])
 
-  useEffect(() => { fetchAds() }, [fetchAds])
+  useEffect(() => { fetchAds(showArchived) }, [fetchAds, showArchived])
 
   const handleToggle = async (ad: Ad) => {
     setToggling(ad.id)
@@ -106,6 +109,17 @@ function UsdtAdsTab() {
         ? await adsApi.pauseAd(ad.id)
         : await adsApi.activateAd(ad.id)
       setAds((prev) => prev.map((a) => a.id === ad.id ? updated : a))
+    } catch { /* silent */ } finally {
+      setToggling(null)
+    }
+  }
+
+  const handleArchiveToggle = async (ad: Ad) => {
+    setToggling(ad.id)
+    try {
+      ad.archived ? await adsApi.unarchiveAd(ad.id) : await adsApi.archiveAd(ad.id)
+      // Archiving/unarchiving moves the ad out of the list currently shown.
+      setAds((prev) => prev.filter((a) => a.id !== ad.id))
     } catch { /* silent */ } finally {
       setToggling(null)
     }
@@ -124,24 +138,33 @@ function UsdtAdsTab() {
   }
 
   if (loading) return <LoadingState message="Loading your ads..." />
-  if (error) return <ErrorState title={error} onRetry={fetchAds} />
+  if (error) return <ErrorState title={error} onRetry={() => fetchAds(showArchived)} />
 
   return (
     <>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-text-muted">{ads.length} listing{ads.length !== 1 ? 's' : ''}</p>
-        <Link href="/create-ad">
-          <Button size="sm">+ Create Listing</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Button size="sm" variant="secondary" onClick={() => setShowArchived((v) => !v)}>
+            {showArchived ? 'Back to active' : 'Show archived'}
+          </Button>
+          <Link href="/create-ad">
+            <Button size="sm">+ Create Listing</Button>
+          </Link>
+        </div>
       </div>
 
       {ads.length === 0 ? (
-        <EmptyState
-          icon={Tag}
-          title="No USDT listings yet"
-          description="Create your first buy or sell listing to start trading on RupChain."
-          action={{ label: 'Create Your First Listing', onClick: () => router.push('/create-ad') }}
-        />
+        showArchived ? (
+          <EmptyState icon={Tag} title="No archived ads" description="Ads you archive after they're cancelled or completed will show up here." />
+        ) : (
+          <EmptyState
+            icon={Tag}
+            title="No USDT listings yet"
+            description="Create your first buy or sell listing to start trading on RupChain."
+            action={{ label: 'Create Your First Listing', onClick: () => router.push('/create-ad') }}
+          />
+        )
       ) : (
         <>
           <div className="hidden md:block bg-surface shadow-card border border-border rounded-xl overflow-hidden">
@@ -173,15 +196,27 @@ function UsdtAdsTab() {
                         <Link href={`/marketplace/listings/${ad.id}`}>
                           <Button size="sm" variant="secondary">View</Button>
                         </Link>
-                        <Button size="sm" variant="secondary" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
-                          {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
-                        </Button>
-                        <Link href={`/create-ad?edit=${ad.id}`}>
-                          <Button size="sm" variant="secondary">Edit</Button>
-                        </Link>
-                        <Button size="sm" variant="secondary" onClick={() => setDeleteTarget(ad)} className="text-danger hover:bg-danger/10">
-                          Delete
-                        </Button>
+                        {ad.archived ? (
+                          <Button size="sm" variant="secondary" onClick={() => handleArchiveToggle(ad)} disabled={toggling === ad.id}>
+                            {toggling === ad.id ? <Spinner size="sm" /> : 'Unarchive'}
+                          </Button>
+                        ) : ad.status === 'completed' ? (
+                          <Button size="sm" variant="secondary" onClick={() => handleArchiveToggle(ad)} disabled={toggling === ad.id}>
+                            {toggling === ad.id ? <Spinner size="sm" /> : 'Archive'}
+                          </Button>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
+                              {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
+                            </Button>
+                            <Link href={`/create-ad?edit=${ad.id}`}>
+                              <Button size="sm" variant="secondary">Edit</Button>
+                            </Link>
+                            <Button size="sm" variant="secondary" onClick={() => setDeleteTarget(ad)} className="text-danger hover:bg-danger/10">
+                              Delete
+                            </Button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -237,15 +272,27 @@ function UsdtAdsTab() {
                   <Link href={`/marketplace/listings/${ad.id}`} className="flex-1">
                     <Button size="sm" variant="secondary" className="w-full">View</Button>
                   </Link>
-                  <Button size="sm" variant="secondary" className="flex-1" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
-                    {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
-                  </Button>
-                  <Link href={`/create-ad?edit=${ad.id}`}>
-                    <Button size="sm" variant="secondary">Edit</Button>
-                  </Link>
-                  <Button size="sm" variant="secondary" className="text-danger hover:bg-danger/10" onClick={() => setDeleteTarget(ad)}>
-                    Delete
-                  </Button>
+                  {ad.archived ? (
+                    <Button size="sm" variant="secondary" className="flex-1" onClick={() => handleArchiveToggle(ad)} disabled={toggling === ad.id}>
+                      {toggling === ad.id ? <Spinner size="sm" /> : 'Unarchive'}
+                    </Button>
+                  ) : ad.status === 'completed' ? (
+                    <Button size="sm" variant="secondary" className="flex-1" onClick={() => handleArchiveToggle(ad)} disabled={toggling === ad.id}>
+                      {toggling === ad.id ? <Spinner size="sm" /> : 'Archive'}
+                    </Button>
+                  ) : (
+                    <>
+                      <Button size="sm" variant="secondary" className="flex-1" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
+                        {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
+                      </Button>
+                      <Link href={`/create-ad?edit=${ad.id}`}>
+                        <Button size="sm" variant="secondary">Edit</Button>
+                      </Link>
+                      <Button size="sm" variant="secondary" className="text-danger hover:bg-danger/10" onClick={() => setDeleteTarget(ad)}>
+                        Delete
+                      </Button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
@@ -277,10 +324,12 @@ function CtmListingsTab() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
-  const fetchListings = useCallback(async () => {
+  const fetchListings = useCallback(async (archived: boolean) => {
+    setLoading(true)
     try {
-      const res = await ctmApi.getMyListings()
+      const res = await ctmApi.getMyListings({ archived })
       setListings((res as { listings: CtmListing[] }).listings ?? [])
     } catch {
       // ignore
@@ -289,16 +338,18 @@ function CtmListingsTab() {
     }
   }, [])
 
-  useEffect(() => { fetchListings() }, [fetchListings])
+  useEffect(() => { fetchListings(showArchived) }, [fetchListings, showArchived])
 
-  const handleAction = async (id: string, action: 'pause' | 'activate' | 'delete') => {
+  const handleAction = async (id: string, action: 'pause' | 'activate' | 'delete' | 'archive' | 'unarchive') => {
     if (action === 'delete') { setConfirmDelete(id); return }
     setActionLoading(id)
     setActionError('')
     try {
       if (action === 'pause') await ctmApi.pauseListing(id)
-      else await ctmApi.activateListing(id)
-      await fetchListings()
+      else if (action === 'activate') await ctmApi.activateListing(id)
+      else if (action === 'archive') await ctmApi.archiveListing(id)
+      else await ctmApi.unarchiveListing(id)
+      await fetchListings(showArchived)
     } catch (err: unknown) {
       setActionError((err as Error).message ?? 'Action failed')
     } finally {
@@ -313,7 +364,7 @@ function CtmListingsTab() {
     setActionError('')
     try {
       await ctmApi.deleteListing(id)
-      await fetchListings()
+      await fetchListings(showArchived)
     } catch (err: unknown) {
       setActionError((err as Error).message ?? 'Failed to cancel listing')
     } finally {
@@ -326,9 +377,14 @@ function CtmListingsTab() {
     <>
       <div className="flex items-center justify-between mb-4">
         <p className="text-sm text-text-muted">{listings.length} listing{listings.length !== 1 ? 's' : ''}</p>
-        <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">
-          + New Listing
-        </Link>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowArchived((v) => !v)} className="text-xs border border-border px-3 py-2 rounded-xl text-text-primary hover:bg-surface font-semibold">
+            {showArchived ? 'Back to active' : 'Show archived'}
+          </button>
+          <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">
+            + New Listing
+          </Link>
+        </div>
       </div>
 
       {actionError && (
@@ -351,12 +407,16 @@ function CtmListingsTab() {
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : listings.length === 0 ? (
-        <EmptyState
-          icon={LayoutList}
-          title="No CTM listings yet"
-          description="Post a listing to start selling community tokens on RupChain."
-          action={{ label: 'Create a Listing', onClick: () => window.location.href = '/ctm/listings/create' }}
-        />
+        showArchived ? (
+          <EmptyState icon={LayoutList} title="No archived listings" description="Listings you archive after they're cancelled, completed, or expired will show up here." />
+        ) : (
+          <EmptyState
+            icon={LayoutList}
+            title="No CTM listings yet"
+            description="Post a listing to start selling community tokens on RupChain."
+            action={{ label: 'Create a Listing', onClick: () => window.location.href = '/ctm/listings/create' }}
+          />
+        )
       ) : (
         <div className="space-y-3">
           {listings.map((l) => (
@@ -394,6 +454,15 @@ function CtmListingsTab() {
                   {(l.status === 'active' || l.status === 'paused') && (
                     <button onClick={() => handleAction(l.id, 'delete')} disabled={actionLoading === l.id} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 disabled:opacity-50">
                       Cancel
+                    </button>
+                  )}
+                  {l.archived ? (
+                    <button onClick={() => handleAction(l.id, 'unarchive')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">
+                      {actionLoading === l.id ? '…' : 'Unarchive'}
+                    </button>
+                  ) : ['cancelled', 'completed', 'expired'].includes(l.status) && (
+                    <button onClick={() => handleAction(l.id, 'archive')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">
+                      {actionLoading === l.id ? '…' : 'Archive'}
                     </button>
                   )}
                 </div>

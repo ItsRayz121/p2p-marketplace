@@ -686,6 +686,8 @@ export interface Ad {
   tradeWindow: number
   terms?: string
   status: 'active' | 'paused' | 'completed'
+  archived?: boolean
+  archivedAt?: string | null
   createdAt: string
   updatedAt: string
   user?: Partial<AuthUser>
@@ -1246,7 +1248,7 @@ export const adsApi = {
     apiRequest<void>(`/ads/${id}`, { method: 'DELETE' }),
   getAd: (id: string) =>
     apiRequest<Ad & { resolvedPaymentMethods: Array<{ id: string; type: string; label: string }>; user: { id: string; username: string; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null } }>(`/ads/${id}`),
-  getMyAds: (params?: { page?: number; limit?: number; status?: string }) => {
+  getMyAds: (params?: { page?: number; limit?: number; status?: string; archived?: boolean }) => {
     const qs = params
       ? '?' + new URLSearchParams(
           Object.entries(params)
@@ -1260,6 +1262,10 @@ export const adsApi = {
     apiRequest<Ad>(`/ads/${id}/pause`, { method: 'POST' }),
   activateAd: (id: string) =>
     apiRequest<Ad>(`/ads/${id}/activate`, { method: 'POST' }),
+  archiveAd: (id: string) =>
+    apiRequest<Ad>(`/ads/${id}/archive`, { method: 'POST' }),
+  unarchiveAd: (id: string) =>
+    apiRequest<Ad>(`/ads/${id}/unarchive`, { method: 'POST' }),
   getAdActivity: (id: string) =>
     apiRequest<AdActivity>(`/ads/${id}/activity`),
   placeBid: (adId: string, data: { pricePerUnit: number; usdtAmount: number; message?: string }) =>
@@ -3278,13 +3284,16 @@ export const ctmApi = {
   // Listings
   getListings: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ listings: unknown[]; total: number; page: number; limit: number; totalPages: number }>('/ctm/listings' + buildQs(params)),
-  getMyListings: () => apiRequest<{ listings: unknown[]; total: number }>('/ctm/listings/me'),
+  getMyListings: (params?: { archived?: boolean }) =>
+    apiRequest<{ listings: unknown[]; total: number }>('/ctm/listings/me' + buildQs(params ? { archived: params.archived !== undefined ? String(params.archived) : undefined } : undefined)),
   getListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}`),
   createListing: (data: object) => apiRequest<unknown>('/ctm/listings', { method: 'POST', body: JSON.stringify(data) }),
   updateListing: (id: string, data: object) => apiRequest<unknown>(`/ctm/listings/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   pauseListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/pause`, { method: 'POST' }),
   activateListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/activate`, { method: 'POST' }),
   deleteListing: (id: string) => apiRequest<void>(`/ctm/listings/${id}`, { method: 'DELETE' }),
+  archiveListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/archive`, { method: 'POST' }),
+  unarchiveListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/unarchive`, { method: 'POST' }),
   startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; tokenAmount: number; usdtMethod?: string; usdtAddress?: string; usdtFromAddress?: string }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/listings/${id}/trade`, { method: 'POST', body: JSON.stringify(data) }),
 

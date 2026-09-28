@@ -10,6 +10,7 @@ interface Listing {
   id: string
   side: string
   status: string
+  archived?: boolean
   pricePerUnit: string
   availableAmount: string
   totalAmount: string
@@ -26,10 +27,11 @@ export default function MyListingsPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [actionError, setActionError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   const fetchListings = async () => {
     try {
-      const res = await ctmApi.getMyListings()
+      const res = await ctmApi.getMyListings({ archived: showArchived })
       setListings((res as { listings: Listing[] }).listings ?? [])
     } catch {
       // ignore
@@ -38,9 +40,9 @@ export default function MyListingsPage() {
     }
   }
 
-  usePolling(fetchListings, 30000)
+  usePolling(fetchListings, 30000, true, [showArchived])
 
-  const handleAction = async (id: string, action: 'pause' | 'activate' | 'delete') => {
+  const handleAction = async (id: string, action: 'pause' | 'activate' | 'delete' | 'archive' | 'unarchive') => {
     if (action === 'delete') {
       setConfirmDelete(id)
       return
@@ -50,6 +52,8 @@ export default function MyListingsPage() {
     try {
       if (action === 'pause') await ctmApi.pauseListing(id)
       else if (action === 'activate') await ctmApi.activateListing(id)
+      else if (action === 'archive') await ctmApi.archiveListing(id)
+      else await ctmApi.unarchiveListing(id)
       await fetchListings()
     } catch (err: unknown) {
       setActionError((err as Error).message ?? 'Action failed')
@@ -78,7 +82,12 @@ export default function MyListingsPage() {
     <div className="max-w-4xl mx-auto px-4 py-8">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-text-primary">My Listings</h1>
-        <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">+ New Listing</Link>
+        <div className="flex items-center gap-2">
+          <button onClick={() => setShowArchived((v) => !v)} className="text-xs border border-border px-3 py-2.5 rounded-xl text-text-primary hover:bg-surface font-semibold">
+            {showArchived ? 'Back to active' : 'Show archived'}
+          </button>
+          <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors">+ New Listing</Link>
+        </div>
       </div>
 
       {actionError && (
@@ -102,8 +111,8 @@ export default function MyListingsPage() {
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : listings.length === 0 ? (
         <div className="text-center py-16 text-text-muted">
-          <p className="mb-4">No listings yet.</p>
-          <Link href="/ctm/listings/create" className="text-primary hover:underline">Create your first listing →</Link>
+          <p className="mb-4">{showArchived ? 'No archived listings.' : 'No listings yet.'}</p>
+          {!showArchived && <Link href="/ctm/listings/create" className="text-primary hover:underline">Create your first listing →</Link>}
         </div>
       ) : (
         <div className="space-y-3">
@@ -136,6 +145,15 @@ export default function MyListingsPage() {
                   {(l.status === 'active' || l.status === 'paused') && (
                     <button onClick={() => handleAction(l.id, 'delete')} disabled={actionLoading === l.id} className="text-xs border border-red-500/30 text-red-600 dark:text-red-400 px-3 py-1.5 rounded-lg hover:bg-red-500/10 disabled:opacity-50">
                       Cancel
+                    </button>
+                  )}
+                  {l.archived ? (
+                    <button onClick={() => handleAction(l.id, 'unarchive')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">
+                      {actionLoading === l.id ? '…' : 'Unarchive'}
+                    </button>
+                  ) : ['cancelled', 'completed', 'expired'].includes(l.status) && (
+                    <button onClick={() => handleAction(l.id, 'archive')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">
+                      {actionLoading === l.id ? '…' : 'Archive'}
                     </button>
                   )}
                 </div>

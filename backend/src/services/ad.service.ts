@@ -43,6 +43,7 @@ export interface UpdateAdInput {
 
 export interface GetUserAdsParams {
   status?: string
+  archived?: boolean
   page?: number
   limit?: number
 }
@@ -232,6 +233,8 @@ export async function getUserAds(userId: string, params: GetUserAdsParams) {
   const where: Prisma.AdWhereInput = {
     userId,
     ...(params.status ? { status: params.status as 'active' | 'paused' | 'completed' } : {}),
+    // Archived ads are hidden from the default list; pass archived=true to see only them.
+    archived: params.archived ?? false,
   }
 
   const [items, total] = await Promise.all([
@@ -310,4 +313,27 @@ export async function deleteAd(userId: string, adId: string) {
   }
 
   return db.ad.update({ where: { id: adId }, data: { status: 'completed' } })
+}
+
+// USDT ads have no dedicated "cancelled" status — deleteAd() above reuses
+// 'completed' for both a genuinely fulfilled ad and one the maker cancelled.
+// Archiving just hides either kind from the default "My Ads" list once it's
+// no longer active/paused; it never touches trade history.
+export async function archiveAd(userId: string, adId: string) {
+  const ad = await db.ad.findUnique({ where: { id: adId } })
+  if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
+  if (ad.userId !== userId) throw new AppError('FORBIDDEN', 'You do not own this ad', 403)
+  if (ad.status !== 'completed') throw new AppError('CONFLICT', 'Only a completed or cancelled ad can be archived', 409)
+  if (ad.archived) return ad
+
+  return db.ad.update({ where: { id: adId }, data: { archived: true, archivedAt: new Date() } })
+}
+
+export async function unarchiveAd(userId: string, adId: string) {
+  const ad = await db.ad.findUnique({ where: { id: adId } })
+  if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
+  if (ad.userId !== userId) throw new AppError('FORBIDDEN', 'You do not own this ad', 403)
+  if (!ad.archived) return ad
+
+  return db.ad.update({ where: { id: adId }, data: { archived: false, archivedAt: null } })
 }

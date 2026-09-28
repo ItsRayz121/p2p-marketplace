@@ -702,6 +702,10 @@ model Ad {
   tradeWindow       Int       @default(30)
   terms             String    @default("") @db.VarChar(2000)
   status            AdStatus  @default(active)
+  // Hides a completed/cancelled ad from the default "My Ads" list without deleting
+  // it — only settable once the ad is out of the active/paused lifecycle.
+  archived        Boolean   @default(false)
+  archivedAt      DateTime?
   lastPriceUpdate DateTime  @default(now())
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
@@ -2815,6 +2819,10 @@ model CtmListing {
   tradeWindowMins   Int                @default(45)
   terms             String             @default("") @db.VarChar(2000)
   status            CtmListingStatus   @default(active)
+  // Hides a cancelled/completed/expired listing from the default "My Listings"
+  // list without deleting it — only settable once the listing is terminal.
+  archived          Boolean            @default(false)
+  archivedAt        DateTime?
   requiresProof     Boolean            @default(true)
   proofInstructions String?            @db.VarChar(500)
   expiresAt         DateTime?

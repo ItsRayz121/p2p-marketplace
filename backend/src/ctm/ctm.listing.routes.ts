@@ -11,6 +11,8 @@ import {
   pauseListing,
   activateListing,
   deleteListing,
+  archiveListing,
+  unarchiveListing,
 } from './ctm.listing.service'
 import { createTradeFromListing } from './ctm.trade.service'
 import { isCtmUsdtPaymentEnabled } from './ctm.usdtPayment'
@@ -141,7 +143,13 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     if (!profile) return reply.send({ success: true, data: { listings: [], total: 0, page: 1, limit: 20, totalPages: 0 } })
     // Update lastActiveAt fire-and-forget
     db.ctmMerchantProfile.update({ where: { id: profile.id }, data: { lastActiveAt: new Date() } }).catch(() => {})
-    const result = await getListings({ merchantProfileId: profile.id, adminView: true })
+    const q = req.query as Record<string, string>
+    const result = await getListings({
+      merchantProfileId: profile.id,
+      adminView: true,
+      limit: 100,
+      ...(q.archived !== undefined ? { archived: q.archived === 'true' } : {}),
+    })
     return reply.send({ success: true, data: result })
   })
 
@@ -237,5 +245,19 @@ export async function ctmListingRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     await deleteListing(req.user!.id, id)
     return reply.send({ success: true })
+  })
+
+  // POST /ctm/listings/:id/archive — hide a cancelled/completed/expired listing from "My Listings"
+  app.post('/ctm/listings/:id/archive', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const listing = await archiveListing(req.user!.id, id)
+    return reply.send({ success: true, data: listing })
+  })
+
+  // POST /ctm/listings/:id/unarchive — restore an archived listing to "My Listings"
+  app.post('/ctm/listings/:id/unarchive', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const listing = await unarchiveListing(req.user!.id, id)
+    return reply.send({ success: true, data: listing })
   })
 }
