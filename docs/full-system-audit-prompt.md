@@ -56,16 +56,20 @@ ctm.merchant.routes   ctm.admin.routes   ctm.bid.routes
 - **Auth:** `/login` `/register` `/forgot-password` `/verify-email` `/setup-username` `/2fa`
   `/auth/google/success`
 - **Platform:** `/dashboard` `/marketplace` `/marketplace/listings/[id]` `/create-ad` `/my-ads`
-  `/trade/new` `/trade/[id]` `/orders` `/wallet` `/payment-methods` `/kyc` `/favorites`
-  `/notifications` `/profile/[username]` `/settings` `/referral` `/merchant-apply`
-- **Instant Buy:** `/instant-buy` `/instant-buy/payment/[id]` `/instant-buy/crypto-deposit/[id]`
-  `/instant-buy/status/[id]`
-- **CTM:** `/ctm` `/ctm/dashboard` `/ctm/tokens` `/ctm/tokens/[slug]` `/ctm/listings`
-  `/ctm/listings/[id]` `/ctm/listings/create` `/ctm/requests` `/ctm/requests/create`
-  `/ctm/my-listings` `/ctm/my-bids` `/ctm/my-requests` `/ctm/my-trades` `/ctm/incoming-bids`
-  `/ctm/trade/[ref]` `/ctm/merchant-setup`
+  `/trade/[id]` `/orders` `/wallet` `/kyc` `/favorites`
+  `/notifications` `/profile/[username]` `/settings` `/referral`
+- **Compatibility redirects (not real pages — verify still needed before treating as live):**
+  `/trade/new` → `/marketplace`, `/payment-methods` → `/wallet#payment-methods`,
+  `/merchant-apply` → `/kyc`, `/merchant/dashboard` → `/dashboard`,
+  `/ctm/merchant-setup` → `/ctm`, `/instant-buy` (+ `payment/[id]`, `crypto-deposit/[id]`,
+  `status/[id]`) → `/gas`. Instant Buy's backend order lifecycle is still live for
+  pre-existing orders; new-order creation returns 410.
+- **CTM:** `/ctm` `/ctm/dashboard` (redirect → `/my-ads?tab=analytics`) `/ctm/tokens`
+  `/ctm/tokens/[slug]` `/ctm/listings` `/ctm/listings/[id]` `/ctm/listings/create`
+  `/ctm/requests` `/ctm/requests/create` `/ctm/my-listings` `/ctm/my-bids` `/ctm/my-requests`
+  `/ctm/my-trades` `/ctm/incoming-bids` `/ctm/trade/[ref]`
 - **Gas:** `/gas` `/gas/orders` `/gas/orders/[orderRef]`
-- **Merchant:** `/merchant/[id]` `/merchant/dashboard`
+- **Merchant:** `/merchant/[id]`
 - **Public/SEO:** `/about` `/fees` `/help` `/leaderboard` `/levels` `/terms` `/privacy`
   `/r/[code]` (referral) `/confirm-withdrawal`
 - **Admin:** `/admin` + analytics, audit-log, chains, chains/[slug]/tokens, config, disputes,

@@ -5,6 +5,17 @@ const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // This repo shipped with no committed ESLint config, so `next build` never
+  // ran lint at all (Next.js silently skips it when no config is found) — the
+  // ~70 pre-existing violations across the codebase were never surfaced or
+  // blocking. Adding .eslintrc.json for `npm run lint` to actually work would
+  // otherwise turn those into a new build failure unrelated to any real change.
+  // `npm run lint` still runs the real checks; this only keeps the build
+  // decoupled from that pre-existing debt, matching the build's prior behavior.
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Stub out optional/Node-only deps that wagmi/WalletConnect import but
   // must not be bundled in the browser.
   //

@@ -6,7 +6,6 @@ import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
 import { usePolling } from '@/hooks/usePolling'
 import { marketplaceApi } from '@/lib/api'
-import { Web3Provider } from '@/lib/web3/Web3Provider'
 import { useAuthStore } from '@/store/auth.store'
 import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
 import { InstallAppBanner } from '@/components/ui/InstallAppBanner'
@@ -97,48 +96,46 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const showNotice = notice && !dismissed
 
   return (
-    <Web3Provider>
-      <div className="flex flex-col min-h-screen">
-        <Navbar />
+    <div className="flex flex-col min-h-screen">
+      <Navbar />
 
-        {showNotice && (
-          <div className={`border-b px-4 py-2 flex items-center justify-between gap-4 text-sm ${noticeColors[noticeType] ?? noticeColors.info}`}>
-            <p className="flex-1 text-center">{notice}</p>
-            <button
-              onClick={handleDismiss}
-              aria-label="Dismiss notice"
-              className="flex-shrink-0 p-1 rounded hover:opacity-70 transition-opacity"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        )}
-
-        {user && <AnnouncementBanner />}
-
-        {/* Hold page content until auth hydration finishes to avoid unauthenticated
-            API calls racing with the refresh cycle in Providers.tsx */}
-        {/* pb reserves space for the mobile BottomNav (FAB clears 64-80px) plus
-            the device safe-area inset (home indicator / gesture bar), so content
-            is never hidden behind the nav on notched phones or in Telegram.
-            individual pages no longer need to add it themselves. */}
-        <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
-          {authLoading ? (
-            <div className="flex items-center justify-center min-h-[60vh]">
-              <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : children}
-        </main>
-
-        <div className={isHomeTab ? '' : 'hidden lg:block'}>
-          <Footer />
+      {showNotice && (
+        <div className={`border-b px-4 py-2 flex items-center justify-between gap-4 text-sm ${noticeColors[noticeType] ?? noticeColors.info}`}>
+          <p className="flex-1 text-center">{notice}</p>
+          <button
+            onClick={handleDismiss}
+            aria-label="Dismiss notice"
+            className="flex-shrink-0 p-1 rounded hover:opacity-70 transition-opacity"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
-        <BottomNav />
-        {user && <PushOptInBanner />}
-        <InstallAppBanner />
+      )}
+
+      {user && <AnnouncementBanner />}
+
+      {/* Hold page content until auth hydration finishes to avoid unauthenticated
+          API calls racing with the refresh cycle in Providers.tsx */}
+      {/* pb reserves space for the mobile BottomNav (FAB clears 64-80px) plus
+          the device safe-area inset (home indicator / gesture bar), so content
+          is never hidden behind the nav on notched phones or in Telegram.
+          individual pages no longer need to add it themselves. */}
+      <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
+        {authLoading ? (
+          <div className="flex items-center justify-center min-h-[60vh]">
+            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+          </div>
+        ) : children}
+      </main>
+
+      <div className={isHomeTab ? '' : 'hidden lg:block'}>
+        <Footer />
       </div>
-    </Web3Provider>
+      <BottomNav />
+      {user && <PushOptInBanner />}
+      <InstallAppBanner />
+    </div>
   )
 }

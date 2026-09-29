@@ -1506,25 +1506,6 @@ export const merchantsApi = {
     apiRequest<void>(`/merchants/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
 }
 
-export const instantBuyApi = {
-  getQuote: (data: { coin: string; amountPkr: number }) =>
-    apiRequest<{ coin: string; amountPkr: number; amountCrypto: string; rate: number; fee: string; expiresAt: string }>('/instant-buy/quote', { method: 'POST', body: JSON.stringify(data) }),
-  executeOrder: (data: { quoteId: string; paymentMethod: string }) =>
-    apiRequest<{ orderId: string; status: string; paymentInstructions: Record<string, string> }>('/instant-buy/orders', { method: 'POST', body: JSON.stringify(data) }),
-  getOrder: (id: string) =>
-    apiRequest<{ id: string; status: string; coin: string; amount: string; amountPkr: string; createdAt: string }>(`/instant-buy/orders/${id}`),
-  getMyOrders: (params?: { limit?: number; status?: string }) => {
-    const qs = params
-      ? '?' + new URLSearchParams(
-          Object.entries(params)
-            .filter(([, v]) => v !== undefined)
-            .map(([k, v]) => [k, String(v)])
-        ).toString()
-      : ''
-    return apiRequest<{ orders: Array<{ id: string; status: string; coin: string; amount: string; amountPkr: string; createdAt: string }>; total: number }>('/instant-buy/orders' + qs)
-  },
-}
-
 export const referralApi = {
   getStats: () =>
     apiRequest<{ referralCode: string; totalReferrals: number; totalEarned: string; pendingEarnings: string }>('/referral/stats'),
@@ -2230,8 +2211,8 @@ export const adminApi = {
     apiRequest<{ users: AuthUser[]; total: number }>('/admin/users' + buildQs(params)),
   getUser: (id: string) =>
     apiRequest<AuthUser>(`/admin/users/${id}`),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getUserProfile: (id: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<any>(`/admin/users/${id}/profile`),
   updateUser: (id: string, data: Partial<AuthUser>) =>
     apiRequest<AuthUser>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -2249,8 +2230,8 @@ export const adminApi = {
     apiRequest<void>(`/admin/users/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   resetTrustScore: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/users/${id}/reset-trust`, { method: 'POST', body: JSON.stringify(data) }),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getUserModeration: (id: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<any>(`/admin/users/${id}/moderation`),
   seizeCollateral: (id: string) =>
     apiRequest<void>(`/admin/users/${id}/seize-collateral`, { method: 'POST' }),
@@ -2274,11 +2255,11 @@ export const adminApi = {
     apiRequest<void>('/admin/identity/erase', { method: 'POST', body: JSON.stringify(data) }),
 
   // Appeals (admin)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAppeals: (params?: Record<string, string | number | undefined>) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<any>('/admin/appeals' + buildQs(params)),
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getAppeal: (id: string) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     apiRequest<any>(`/admin/appeals/${id}`),
   approveAppeal: (id: string, data?: { note?: string }) =>
     apiRequest<void>(`/admin/appeals/${id}/approve`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
@@ -2364,7 +2345,7 @@ export const adminApi = {
 
   // Instant Buy
   getInstantBuyOrders: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ orders: unknown[]; total: number }>('/admin/instant-buy' + buildQs(params)),
+    apiRequest<{ orders: unknown[]; pagination: { page: number; limit: number; total: number; pages: number } }>('/admin/instant-buy' + buildQs(params)),
   getInstantBuyOrder: (id: string) =>
     apiRequest<unknown>(`/admin/instant-buy/${id}`),
   approveInstantBuy: (id: string, data: { txHash: string }) =>

@@ -4,6 +4,24 @@
 > Hand this document to any developer. Everything they need is here.
 > Every piece of data shown in the UI must come from the API. No exceptions.
 
+> **⚠ Historical founding spec — partially superseded.** This document predates
+> the RupChain rebrand and describes several features as originally designed
+> that have since changed in the live codebase:
+> - **Instant Buy (OTC)** was retired from the product; `/instant-buy` and
+>   `/admin/instant-buy` now redirect to the Crypto Gas Fees experience
+>   (`/gas`, `/admin/gas`). The backend order lifecycle for pre-existing
+>   orders is preserved but new-order creation is disabled.
+> - **Merchant role / `/merchant/dashboard` / `/merchant-apply`** were retired
+>   from the platform direction; both routes are now compatibility redirects
+>   (`/dashboard` and `/kyc` respectively), kept only in case old links are
+>   still shared externally.
+> - **`/trade/new`** (referenced throughout as the buy/sell entry point) was
+>   replaced by the listing+bid+trade flow at `/marketplace/listings/[id]`;
+>   `/trade/new` is now a redirect to `/marketplace`.
+>
+> Treat any section below describing these as current behavior as historical
+> context only — check the actual route/service code for what's live today.
+
 ---
 
 ## Quick Navigation

@@ -1098,16 +1098,21 @@ export async function adminRoutes(app: FastifyInstance) {
     if (body.userId) {
       userIds = [body.userId]
     } else {
-      const [usdt, ctm, gas] = await Promise.all([
-        db.trade.findMany({ select: { buyerId: true, sellerId: true } }),
-        db.ctmTrade.findMany({ select: { buyerId: true, sellerId: true } }),
-        db.gasFeeOrder.findMany({ where: { userId: { not: null } }, select: { userId: true } }),
-      ])
-      const set = new Set<string>()
-      for (const t of usdt) { set.add(t.buyerId); set.add(t.sellerId) }
-      for (const t of ctm) { set.add(t.buyerId); set.add(t.sellerId) }
-      for (const o of gas) { if (o.userId) set.add(o.userId) }
-      userIds = [...set]
+      // Distinct participant ids computed by Postgres (UNION dedups) instead of
+      // pulling every buyer/seller/userId row from all three trade tables into
+      // Node just to build a Set — same complete result, no full-table transfer.
+      const rows = await db.$queryRaw<Array<{ userId: string }>>`
+        SELECT "buyerId" AS "userId" FROM "Trade"
+        UNION
+        SELECT "sellerId" AS "userId" FROM "Trade"
+        UNION
+        SELECT "buyerId" AS "userId" FROM "CtmTrade"
+        UNION
+        SELECT "sellerId" AS "userId" FROM "CtmTrade"
+        UNION
+        SELECT "userId" AS "userId" FROM "GasFeeOrder" WHERE "userId" IS NOT NULL
+      `
+      userIds = rows.map((r) => r.userId)
     }
 
     await Promise.all(
@@ -3780,18 +3785,26 @@ export async function adminRoutes(app: FastifyInstance) {
       }
     }
 
-    const [badgeRows, topTraderRows, recentUsers, recentTrades, recentCtmTrades, p2pTotal, ctmTotal, gasTotal, p2pPeriod, ctmPeriod, gasPeriod] = await Promise.all([
+    // User growth is bucketed at the database with date_trunc instead of pulling
+    // every signup in the window into Node — the 12m window otherwise loaded one
+    // row per user created in the last year with no cap.
+    const truncUnit = granularity === 'month' ? 'month' : 'day'
+    const userGrowthRowsPromise = db.$queryRaw<Array<{ bucket: Date; count: bigint }>>`
+      SELECT date_trunc(${truncUnit}, "createdAt") AS bucket, count(*)::bigint AS count
+      FROM "User"
+      WHERE "createdAt" >= ${since}
+      GROUP BY bucket
+      ORDER BY bucket
+    `
+
+    const [badgeRows, topTraderRows, userGrowthRows, recentTrades, recentCtmTrades, p2pTotal, ctmTotal, gasTotal, p2pPeriod, ctmPeriod, gasPeriod] = await Promise.all([
       db.tradeStats.groupBy({ by: ['badge'], _count: { badge: true } }),
       db.tradeStats.findMany({
         orderBy: { completedTrades: 'desc' },
         take: 15,
         include: { user: { select: { username: true, kycStatus: true } } },
       }),
-      db.user.findMany({
-        where: { createdAt: { gte: since } },
-        select: { createdAt: true },
-        orderBy: { createdAt: 'asc' },
-      }),
+      userGrowthRowsPromise,
       db.trade.findMany({
         where: { status: 'crypto_released', updatedAt: { gte: since } },
         select: { updatedAt: true, fiatAmount: true },
@@ -3823,9 +3836,9 @@ export async function adminRoutes(app: FastifyInstance) {
     // Dense series: seed every bucket with 0 so the chart always renders a full axis.
     const userGrowthMap: Record<string, number> = {}
     for (const k of buckets) userGrowthMap[k] = 0
-    for (const u of recentUsers) {
-      const k = bucketKey(u.createdAt)
-      if (k in userGrowthMap) userGrowthMap[k] = (userGrowthMap[k] ?? 0) + 1
+    for (const row of userGrowthRows) {
+      const k = bucketKey(row.bucket)
+      if (k in userGrowthMap) userGrowthMap[k] = (userGrowthMap[k] ?? 0) + Number(row.count)
     }
 
     const tradeVolumeMap: Record<string, { count: number; volume: number }> = {}
