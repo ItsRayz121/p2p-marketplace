@@ -6,6 +6,8 @@ import { getMarketsOverview, getMarketActivityBySlug } from '../services/markets
 export async function marketsRoutes(app: FastifyInstance) {
   app.get('/markets/overview', async (_req, reply) => {
     const data = await getMarketsOverview()
+    // Backend already caches this snapshot ~45s; let the browser/CDN reuse it briefly too.
+    reply.header('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=60')
     return reply.send({ success: true, data })
   })
 

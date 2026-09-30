@@ -1,31 +1,51 @@
-import posthog from 'posthog-js'
+// posthog-js is a large bundle and analytics is never needed for first paint, so
+// it is imported on demand: the first page load defers it until the browser is
+// idle, and any event fired sooner (e.g. a signup) loads it immediately.
+type PostHogClient = typeof import('posthog-js').default
+
+let posthogReady: Promise<PostHogClient> | null = null
+let idleTimer: ReturnType<typeof setTimeout> | null = null
+
+function startPostHog(): Promise<PostHogClient> {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null }
+  if (!posthogReady) {
+    posthogReady = import('posthog-js').then((m) => {
+      const ph = m.default
+      ph.init(process.env.NEXT_PUBLIC_POSTHOG_KEY as string, {
+        api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
+        capture_pageview: true,
+        autocapture: false,
+        persistence: 'localStorage',
+        disable_session_recording: true,
+      })
+      return ph
+    })
+  }
+  return posthogReady
+}
+
+function withPostHog(fn: (ph: PostHogClient) => void) {
+  if (typeof window === 'undefined' || !process.env.NEXT_PUBLIC_POSTHOG_KEY) return
+  void startPostHog().then(fn).catch(() => { /* analytics must never break the app */ })
+}
 
 export function initPostHog() {
   if (typeof window === 'undefined') return
-  const key = process.env.NEXT_PUBLIC_POSTHOG_KEY
-  if (!key) return
-  posthog.init(key, {
-    api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? 'https://us.i.posthog.com',
-    capture_pageview: true,
-    autocapture: false,
-    persistence: 'localStorage',
-    disable_session_recording: true,
-  })
+  if (!process.env.NEXT_PUBLIC_POSTHOG_KEY || posthogReady || idleTimer) return
+  // Wait for the page to settle; fall back to a timer where idle callbacks don't exist.
+  idleTimer = setTimeout(() => { idleTimer = null; void startPostHog().catch(() => {}) }, 3000)
 }
 
 export function identifyUser(userId: string, props?: Record<string, unknown>) {
-  if (typeof window === 'undefined') return
-  posthog.identify(userId, props)
+  withPostHog((ph) => ph.identify(userId, props))
 }
 
 export function resetAnalyticsUser() {
-  if (typeof window === 'undefined') return
-  posthog.reset()
+  withPostHog((ph) => ph.reset())
 }
 
 function capture(event: string, props?: Record<string, unknown>) {
-  if (typeof window === 'undefined') return
-  posthog.capture(event, props)
+  withPostHog((ph) => ph.capture(event, props))
 }
 
 // ─── Funnel events (§27.8) ────────────────────────────────────────────────────

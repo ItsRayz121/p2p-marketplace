@@ -334,7 +334,93 @@ async function reauth(): Promise<string> {
   return doRefresh()
 }
 
+// ── Read cache + in-flight de-duplication ───────────────────────────────────
+//
+// Pages fetch in useEffect with no shared cache, so every visit to a page (and every
+// back navigation) used to re-download data that had not changed. Two safe layers
+// live here, in the one place every request already passes through:
+//
+//  1. De-duplication (ALL GETs): identical requests issued at the same time share one
+//     network call — e.g. two components mounting with the same query.
+//  2. Stale-while-revalidate (an explicit allow-list ONLY): slow-changing, mostly
+//     public data (gas chains, payment-method details, markets overview) is served
+//     from memory instantly on a repeat visit and refreshed in the background.
+//     Anything user-specific or time-critical (trades, balances, orders, messages,
+//     notifications) is deliberately NOT listed, so it can never show stale state.
+//
+// Entries are keyed by user id so an account switch never sees another user's data,
+// and every successful write (POST/PUT/PATCH/DELETE) clears the cache.
+const GET_CACHE_RULES: Array<[RegExp, number]> = [
+  [/^\/gas-fee\/chains(\?.*)?$/, 60_000],
+  [/^\/gas-fee\/chains\/[^/]+\/tokens/, 20_000],
+  [/^\/gas-fee\/(pkr-methods|crypto-methods)$/, 300_000],
+  [/^\/gas-fee\/exchange-accounts$/, 60_000],
+  [/^\/markets\/overview/, 20_000],
+]
+// Entries older than ttl are refreshed in the background; older than ttl * this are dropped.
+const SWR_MAX_STALE_FACTOR = 5
+
+interface CacheEntry { at: number; data: unknown }
+const readCache = new Map<string, CacheEntry>()
+const inflightReads = new Map<string, Promise<unknown>>()
+
+function cacheTtlFor(path: string): number {
+  for (const [re, ttl] of GET_CACHE_RULES) if (re.test(path)) return ttl
+  return 0
+}
+
+function cloneData<T>(v: T): T {
+  try { return structuredClone(v) } catch { return v }
+}
+
+export function clearApiCache(): void {
+  readCache.clear()
+}
+
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const method = (options?.method ?? 'GET').toUpperCase()
+
+  if (method !== 'GET') {
+    const result = await apiRequestUncached<T>(path, options)
+    readCache.clear()
+    return result
+  }
+  // An abortable request must stay its own request.
+  if (options?.signal) return apiRequestUncached<T>(path, options)
+
+  const scope = useAuthStore.getState().user?.id ?? 'anon'
+  const key = `${scope}|${path}`
+  const ttl = cacheTtlFor(path)
+
+  const load = (): Promise<unknown> => {
+    const existing = inflightReads.get(key)
+    if (existing) return existing
+    const p = apiRequestUncached<T>(path, options)
+      .then((data) => {
+        if (ttl > 0) readCache.set(key, { at: Date.now(), data })
+        return data
+      })
+      .finally(() => { inflightReads.delete(key) })
+    inflightReads.set(key, p)
+    return p
+  }
+
+  if (ttl > 0) {
+    const hit = readCache.get(key)
+    if (hit) {
+      const age = Date.now() - hit.at
+      if (age < ttl) return cloneData(hit.data as T)
+      if (age < ttl * SWR_MAX_STALE_FACTOR) {
+        void load().catch(() => { /* keep serving the cached copy */ })
+        return cloneData(hit.data as T)
+      }
+      readCache.delete(key)
+    }
+  }
+  return cloneData((await load()) as T)
+}
+
+async function apiRequestUncached<T>(path: string, options?: RequestInit): Promise<T> {
   const method = (options?.method ?? 'GET').toUpperCase()
   const url = `${API_BASE}/api/v1${path}`
 
@@ -1765,6 +1851,11 @@ export interface GasOrder {
   pkrPaymentMethod?: string | null
   paymentProofUrl?: string | null
   paymentTxHash?: string | null
+  // Exchange-transfer orders (paymentNetwork === 'EXCHANGE')
+  exchangeName?: string | null
+  exchangeAccountUid?: string | null
+  exchangeUserUid?: string | null
+  exchangeOrderId?: string | null
   gasAmountNative: string
   nativeSymbol?: string
   deliveryTxHash?: string
@@ -1780,6 +1871,14 @@ export interface GasOrder {
   expiresAt: string
   createdAt?: string
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
+}
+
+export interface GasExchangeAccount {
+  id: string
+  exchange: string
+  displayName: string
+  accountUid: string
+  note: string | null
 }
 
 export interface GasPkrMethods {
@@ -1866,6 +1965,15 @@ export const gasApi = {
 
   createCryptoOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; paymentNetwork: 'TRC20' | 'BEP20' | 'ERC20' | 'APTOS'; idempotencyKey?: string; promoCode?: string; freeCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/crypto', { method: 'POST', body: JSON.stringify(data) }),
+
+  getExchangeAccounts: () =>
+    apiRequest<{ accounts: GasExchangeAccount[] }>('/gas-fee/exchange-accounts'),
+
+  createExchangeOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; exchangeAccountId: string; idempotencyKey?: string; promoCode?: string }) =>
+    apiRequest<GasOrder>('/gas-fee/orders/exchange', { method: 'POST', body: JSON.stringify(data) }),
+
+  submitExchangeProof: (orderRef: string, data: { exchangeUserUid: string; exchangeOrderId: string; proofUrl?: string }) =>
+    apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/exchange-proof`, { method: 'POST', body: JSON.stringify(data) }),
 
   previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
     apiRequest<{ valid: boolean; code: string; discountUsdt: number; discountPct: number; slotsLeft: number | null; message: string }>('/gas-fee/promo/preview', { method: 'POST', body: JSON.stringify(data) }),
@@ -2710,6 +2818,14 @@ export const adminApi = {
       method: 'POST',
       body: JSON.stringify({ userId, orderRef, ...(body ? { body } : {}) }),
     }),
+  listGasExchangeAccounts: () =>
+    apiRequest<{ accounts: Array<GasExchangeAccount & { isActive: boolean; sortOrder: number }> }>('/admin/gas/exchange-accounts'),
+  createGasExchangeAccount: (data: { exchange: string; displayName: string; accountUid: string; note?: string | null; isActive?: boolean; sortOrder?: number }) =>
+    apiRequest<GasExchangeAccount>('/admin/gas/exchange-accounts', { method: 'POST', body: JSON.stringify(data) }),
+  updateGasExchangeAccount: (id: string, data: Partial<{ exchange: string; displayName: string; accountUid: string; note: string | null; isActive: boolean; sortOrder: number }>) =>
+    apiRequest<GasExchangeAccount>(`/admin/gas/exchange-accounts/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteGasExchangeAccount: (id: string) =>
+    apiRequest<unknown>(`/admin/gas/exchange-accounts/${id}`, { method: 'DELETE' }),
   approvePkrOrder: (id: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
   rejectPkrOrder: (id: string, reason?: string) =>

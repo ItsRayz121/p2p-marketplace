@@ -142,9 +142,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             component re-hydrates itself after client-side navigation. */}
         <Script
           src="https://widget.trustpilot.com/bootstrap/v5/tp.widget.bootstrap.min.js"
-          strategy="afterInteractive"
+          strategy="lazyOnload"
         />
-        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="afterInteractive" />
+        {/* gtag() only queues onto window.dataLayer, so the init snippet below can run
+            straight away while the (heavier) gtag.js download waits until the page is idle. */}
+        <Script src={`https://www.googletagmanager.com/gtag/js?id=${GA_ID}`} strategy="lazyOnload" />
         <Script id="gtag-init" strategy="afterInteractive">{`
           window.dataLayer = window.dataLayer || [];
           function gtag(){dataLayer.push(arguments);}
