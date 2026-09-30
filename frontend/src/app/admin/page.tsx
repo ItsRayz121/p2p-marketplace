@@ -115,7 +115,6 @@ export default function AdminDashboardPage() {
     { label: 'Trades',        href: '/admin/trades' },
     { label: 'Disputes',      href: '/admin/disputes' },
     { label: 'KYC Queue',     href: '/admin/kyc' },
-    { label: 'Merchant KYC',  href: '/admin/merchant-kyc' },
     { label: 'Withdrawals',   href: '/admin/withdrawals' },
     { label: 'Ratings',      href: '/admin/ratings' },
     { label: 'Wallet',        href: '/admin/wallet' },

@@ -1552,15 +1552,6 @@ export interface TradingAnalytics {
 }
 
 export const merchantsApi = {
-  apply: (data: {
-    businessName: string
-    description: string
-    proofUrl?: string
-    cnicFrontUrl?: string
-    cnicBackUrl?: string
-    selfieUrl?: string
-  }) =>
-    apiRequest<{ id: string; status: string }>('/merchants/apply', { method: 'POST', body: JSON.stringify(data) }),
   getProfile: () =>
     apiRequest<{ id: string; userId: string; status: string; businessName?: string; rating: number; totalTrades: number }>('/merchants/me'),
   getPublicProfile: (id: string) =>

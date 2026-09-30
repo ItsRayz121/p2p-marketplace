@@ -1,10 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, optionalAuth } from '../middleware/auth.middleware'
-import { createAdminNotif } from '../services/adminNotification.service'
 import {
   getMerchantProfile,
-  applyMerchant,
   activateMerchant,
   updateSpread,
   getMerchantInventory,
@@ -15,15 +13,6 @@ import {
 } from '../services/merchant.service'
 import { AppError, Errors } from '../lib/errors'
 import { db } from '../lib/prisma'
-
-const applySchema = z.object({
-  businessName: z.string().min(2).max(200),
-  description: z.string().min(10).max(1000),
-  proofUrl: z.string().url().optional(),
-  cnicFrontUrl: z.string().url().optional(),
-  cnicBackUrl: z.string().url().optional(),
-  selfieUrl: z.string().url().optional(),
-})
 
 const spreadSchema = z.object({
   spreadBps: z.number().int().min(0).max(2000),
@@ -43,29 +32,15 @@ export async function merchantRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: profile })
   })
 
-  // POST /api/merchants/apply
-  app.post('/merchants/apply', { preHandler: [authenticate] }, async (req, reply) => {
-    const parsed = applySchema.safeParse(req.body)
-    if (!parsed.success) {
-      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-    }
-    const { businessName, description, proofUrl, cnicFrontUrl, cnicBackUrl, selfieUrl } = parsed.data
-    const submission = await applyMerchant(req.user!.id, {
-      businessName,
-      description,
-      ...(proofUrl !== undefined ? { proofUrl } : {}),
-      ...(cnicFrontUrl !== undefined ? { cnicFrontUrl } : {}),
-      ...(cnicBackUrl !== undefined ? { cnicBackUrl } : {}),
-      ...(selfieUrl !== undefined ? { selfieUrl } : {}),
+  // POST /api/merchants/apply — RETIRED. There is a single KYC flow (POST /kyc/submit)
+  // for everything now; the separate merchant application no longer exists, so a
+  // stale client gets a clear 410 instead of creating a submission nobody reviews.
+  app.post('/merchants/apply', { preHandler: [authenticate] }, async (_req, reply) => {
+    return reply.code(410).send({
+      success: false,
+      error: 'GONE',
+      message: 'Merchant KYC has been merged into the standard KYC. Please use the KYC page.',
     })
-    void createAdminNotif({
-      category: 'KYC',
-      title:    'Merchant KYC Application',
-      body:     `New merchant KYC application from user ${req.user!.id}. Business: ${businessName}`,
-      href:     `/admin/merchant-kyc`,
-      metadata: { userId: req.user!.id, businessName },
-    })
-    return reply.code(201).send({ success: true, data: submission })
   })
 
   // POST /api/merchants/activate
