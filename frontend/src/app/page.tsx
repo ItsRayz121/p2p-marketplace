@@ -327,7 +327,7 @@ export default async function HomePage() {
             {[
               { Icon: ShieldCheck,     title: 'Trade Protection',   desc: 'Verified traders, on-chain proof, and a dispute team behind every trade',     color: 'text-success',    bg: 'bg-success/10'    },
               { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader is identity-checked, so you always know who you’re dealing with', color: 'text-primary',    bg: 'bg-primary/10'    },
-              { Icon: Lock,            title: 'Secure Withdrawals', desc: 'Nobody moves your funds without 2FA and email confirmation',                  color: 'text-warning',    bg: 'bg-warning/10'    },
+              { Icon: Lock,            title: 'Your Funds Stay Yours', desc: 'No deposit needed. Your crypto stays in your own wallet until you trade',       color: 'text-warning',    bg: 'bg-warning/10'    },
               { Icon: Headphones,      title: 'Dedicated Support',  desc: 'Real people to sort out any trade or dispute, fast',                          color: 'text-violet-500', bg: 'bg-violet-500/10' },
             ].map(({ Icon, title, desc, color, bg }) => (
               <div key={title} className="flex flex-col items-center text-center gap-2 px-3 py-4 bg-surface rounded-xl border border-border shadow-card">

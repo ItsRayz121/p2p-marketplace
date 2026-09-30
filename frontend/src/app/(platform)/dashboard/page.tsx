@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { dashboardApi, tradesApi, notificationsApi, marketplaceApi, gasApi } from '@/lib/api'
+import { dashboardApi, tradesApi, notificationsApi, gasApi } from '@/lib/api'
 import type { WalletBalance, Trade, Notification } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { Badge } from '@/components/ui/Badge'
@@ -22,14 +22,6 @@ import {
   BookUser,
 } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { EntityLogo } from '@/components/ui/EntityLogo'
-
-const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
-  coingecko: { label: 'CoinGecko', url: 'https://www.coingecko.com' },
-  kraken:    { label: 'Kraken',    url: 'https://www.kraken.com' },
-  bybit:     { label: 'Bybit',     url: 'https://www.bybit.com' },
-  binance:   { label: 'Binance',   url: 'https://www.binance.com' },
-}
 
 // Tints use the `/10` opacity pattern (same as the navbar dropdown) so each
 // colour stays vivid in light mode AND adapts correctly on dark surfaces —
@@ -106,8 +98,6 @@ export default function DashboardPage() {
   const [trades, setTrades] = useState<Trade[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [gasOrders, setGasOrders] = useState<RecentGasOrder[]>([])
-  const [usdtRate, setUsdtRate] = useState<number>(0)
-  const [usdtRateSource, setUsdtRateSource] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -125,14 +115,6 @@ export default function DashboardPage() {
       if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
       if (gasRes.status === 'fulfilled') setGasOrders((gasRes.value.orders ?? []).slice(0, 3) as RecentGasOrder[])
 
-      // USDT rate for PKR equivalent — optional, never block dashboard render.
-      // Use the API client so requests resolve to the configured backend origin
-      // (Vercel has no /api/v1 route — a relative fetch always 404s in prod).
-      try {
-        const rate = await marketplaceApi.getRate('USDT')
-        setUsdtRate(rate.rate)
-        setUsdtRateSource(rate.source ?? '')
-      } catch { /* optional */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
@@ -169,29 +151,6 @@ export default function DashboardPage() {
 
   const onboardingDone = emailVerified && hasCompletedTrade
 
-  // Aggregate raw wallet rows by coin (a coin can have rows on multiple networks)
-  // so we never render duplicate/phantom cards or collide on React keys.
-  const portfolioCards = (() => {
-    const byCoin = new Map<string, { coin: string; available: number; locked: number }>()
-    for (const w of summary?.wallets ?? []) {
-      const prev = byCoin.get(w.coin) ?? { coin: w.coin, available: 0, locked: 0 }
-      prev.available += parseFloat(w.available ?? '0') || 0
-      prev.locked += parseFloat(w.locked ?? '0') || 0
-      byCoin.set(w.coin, prev)
-    }
-    // Always show a USDT card (0.0000 if the user has none); show other coins
-    // (BNB / gas tokens) only when there is a real non-zero balance.
-    if (!byCoin.has('USDT')) byCoin.set('USDT', { coin: 'USDT', available: 0, locked: 0 })
-    return [...byCoin.values()]
-      .filter((c) => c.coin === 'USDT' || c.available + c.locked > 0)
-      .sort((a, b) => (a.coin === 'USDT' ? -1 : b.coin === 'USDT' ? 1 : 0))
-  })()
-
-  const usdtBalance = portfolioCards.find((b) => b.coin === 'USDT')
-  const totalPortfolioPkr = usdtRate > 0 && usdtBalance
-    ? usdtBalance.available * usdtRate
-    : null
-
   const notifIconColor: Record<string, string> = {
     trade:  'text-primary',
     kyc:    'text-warning',
@@ -221,13 +180,10 @@ export default function DashboardPage() {
             </div>
             </div>
           </div>
-          {totalPortfolioPkr !== null && totalPortfolioPkr > 0 && (
+          {(summary?.tradeStats?.totalVolumePKR ?? null) && (
             <div className="text-right">
-              <p className="text-xs text-text-muted">USDT Balance (PKR)</p>
-              <p className="text-2xl font-bold text-text-primary">PKR {Math.round(totalPortfolioPkr).toLocaleString()}</p>
-              {(summary?.tradeStats?.totalVolumePKR ?? null) && (
-                <p className="text-xs text-text-muted">Vol: PKR {Number(summary!.tradeStats!.totalVolumePKR).toLocaleString()}</p>
-              )}
+              <p className="text-xs text-text-muted">Total volume</p>
+              <p className="text-2xl font-bold text-text-primary">PKR {Number(summary!.tradeStats!.totalVolumePKR).toLocaleString()}</p>
             </div>
           )}
           {kycStatus !== 'approved' && (
@@ -251,73 +207,6 @@ export default function DashboardPage() {
           </div>
         )}
       </div>
-
-      {/* ── 2. Portfolio ── */}
-      <section>
-        <h2 className="text-base font-semibold text-text-primary mb-3">Portfolio</h2>
-        {portfolioCards.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {portfolioCards.map((b) => (
-              <div key={b.coin} className="bg-surface rounded-xl border border-border shadow-card p-4 hover:shadow-card-md transition-shadow">
-                <div className="flex items-center gap-2 mb-2">
-                  <EntityLogo type="token" slug={b.coin} size="sm" className="flex-shrink-0" />
-                  <span className="text-sm font-medium text-text-primary">{b.coin}</span>
-                </div>
-                {(() => {
-                  const avail = b.available
-                  const locked = b.locked
-                  const total = avail + locked
-                  const pkr = avail * usdtRate
-                  return (
-                    <>
-                      <div className="space-y-0.5 mt-1">
-                        <div className="flex justify-between items-baseline">
-                          <span className="text-xs text-text-muted">Available</span>
-                          <span className="text-base font-bold text-text-primary">{avail.toFixed(4)}</span>
-                        </div>
-                        {locked > 0 && (
-                          <div className="flex justify-between items-baseline">
-                            <span className="text-xs text-text-muted">Locked</span>
-                            <span className="text-xs text-text-secondary">{locked.toFixed(4)}</span>
-                          </div>
-                        )}
-                        <div className="flex justify-between items-baseline border-t border-border pt-0.5">
-                          <span className="text-xs text-text-muted">Total</span>
-                          <span className="text-xs text-text-secondary">{total.toFixed(4)}</span>
-                        </div>
-                      </div>
-                      {usdtRate > 0 && b.coin === 'USDT' && (
-                        <div className="mt-1">
-                          <p className="text-xs text-text-muted">
-                            ≈ PKR {Math.round(pkr).toLocaleString()}
-                          </p>
-                          {SOURCE_LABELS[usdtRateSource] && (
-                            <a
-                              href={SOURCE_LABELS[usdtRateSource].url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-[10px] text-text-muted hover:text-primary"
-                            >
-                              via {SOURCE_LABELS[usdtRateSource].label}
-                            </a>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  )
-                })()}
-                <Link href="/wallet">
-                  <Button size="sm" variant="secondary" className="w-full mt-3">Withdraw</Button>
-                </Link>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-surface rounded-xl border border-border shadow-card p-6 text-center text-sm text-text-muted">
-            No balances yet.
-          </div>
-        )}
-      </section>
 
       {/* ── 3. Quick Actions ── */}
       <section>

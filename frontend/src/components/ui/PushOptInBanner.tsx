@@ -13,7 +13,7 @@ const SHOW_AFTER_MS = 3 * 60 * 1000
 const COPY: Record<PushPromptTrigger, { title: string; body: string }> = {
   timer: {
     title: 'Stay updated on your trades',
-    body: 'Get alerts for trade updates, disputes, deposits, withdrawals and support replies — even when this tab is closed.',
+    body: 'Get alerts for trade updates, disputes, gas orders and support replies — even when this tab is closed.',
   },
   trade: {
     title: "Don't miss the other trader's reply",

@@ -45,19 +45,15 @@ const FAQS = [
     ],
   },
   {
-    category: 'Wallet & Withdrawals',
+    category: 'Payments & Funds',
     items: [
       {
-        q: 'How do I deposit crypto?',
-        a: 'Go to Wallet → select the coin and network → copy your unique deposit address. Send crypto to that address and it will be credited after the required network confirmations.',
+        q: 'Do I need to deposit crypto to trade or buy gas?',
+        a: 'No. You do not need to deposit anything to buy, sell or purchase gas. Your crypto stays in your own wallet until a trade starts, and gas is paid per order.',
       },
       {
-        q: 'How long do withdrawals take?',
-        a: 'Withdrawals are processed within a few minutes during business hours. Network congestion can add delays. You will receive an email confirmation once the transaction is broadcast.',
-      },
-      {
-        q: 'Is there a withdrawal fee?',
-        a: 'Network (gas) fees apply and vary by blockchain. We show the exact fee before you confirm. Our platform does not add a markup on withdrawals.',
+        q: 'I already have a RupChain balance. How do I withdraw it?',
+        a: 'Open Payment Methods from the menu. If your account holds a balance, it appears there with a Withdraw button. You will confirm with 2FA and email. Network fees apply and we show the exact fee before you confirm.',
       },
     ],
   },

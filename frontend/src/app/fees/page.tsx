@@ -137,24 +137,6 @@ export default function FeesPage() {
         />
       </section>
 
-      {/* Escrow Wallet Withdrawal Fees */}
-      <section>
-        <h2 className="text-lg font-bold text-text-primary mb-3">Escrow Wallet Withdrawal Fees</h2>
-        {withdrawalFees && Object.keys(withdrawalFees).length > 0 ? (
-          <Table
-            headers={['Coin', 'Network', 'Withdrawal Fee']}
-            rows={Object.entries(withdrawalFees).flatMap(([coin, networks]) =>
-              Object.entries(networks).map(([network, fee]) => [coin.toUpperCase(), network.toUpperCase(), fee])
-            )}
-          />
-        ) : withdrawalFeesFetched ? (
-          <p className="text-sm text-text-muted py-4 text-center">No withdrawal fees configured.</p>
-        ) : (
-          <p className="text-sm text-text-muted py-4 text-center">Loading…</p>
-        )}
-        <p className="text-xs text-text-muted mt-2">These fees cover blockchain network withdrawal costs from the RupChain escrow wallet and may vary based on network conditions.</p>
-      </section>
-
       {/* Crypto Gas Fees */}
       <section>
         <h2 className="text-lg font-bold text-text-primary mb-3">Crypto Gas Fees (Instant Gas Buy)</h2>
