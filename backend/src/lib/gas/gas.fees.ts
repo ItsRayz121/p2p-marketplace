@@ -16,6 +16,7 @@ import { redis } from '../redis'
 import { db } from '../prisma'
 import { getEvmGasPrice } from '../evmRpc'
 import { GAS_CHAINS, type GasChainId } from './gas.chains'
+import { getWorkingRpcUrlOrPrimary } from './rpcFallback'
 
 export interface NetworkFeeResult {
   feeUsd: number
@@ -88,7 +89,7 @@ async function evmFee(chainId: GasChainId, nativeSymbol: string, defaultUsd: num
   if (cached) return cached
 
   try {
-    const gasPriceWei = await getEvmGasPrice(GAS_CHAINS[chainId].getRpcUrl(), chainId)
+    const gasPriceWei = await getEvmGasPrice(await getWorkingRpcUrlOrPrimary(chainId, GAS_CHAINS[chainId].getRpcUrl()), chainId)
     const feeNative = Number(gasPriceWei * ERC20_GAS_LIMIT) / 1e18
     const nativeUsd = await getUsdPrice(nativeSymbol)
     if (nativeUsd > 0) {

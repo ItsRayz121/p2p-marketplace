@@ -503,7 +503,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     try {
       const { getEvmGasPrice } = await import('../lib/evmRpc')
-      const gasPriceWei = await getEvmGasPrice(gasChain.getRpcUrl(), dbChain)
+      const { getWorkingRpcUrlOrPrimary } = await import('../lib/gas/rpcFallback')
+      const gasPriceWei = await getEvmGasPrice(await getWorkingRpcUrlOrPrimary(legacyId as GasChainId, gasChain.getRpcUrl()), dbChain)
       const feeWei = gasPriceWei * 21_000n
       const feeNative = Number(feeWei) / 1e18
 

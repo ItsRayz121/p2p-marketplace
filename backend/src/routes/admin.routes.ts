@@ -4239,7 +4239,9 @@ export async function adminRoutes(app: FastifyInstance) {
       ids.map(async (id) => {
         const cfg = GAS_CHAINS[id as keyof typeof GAS_CHAINS]
         const health = await testRpcHealth(id)
-        const status: 'green' | 'yellow' | 'red' = !health.reachable ? 'red' : health.isStale ? 'yellow' : 'green'
+        // Yellow when the chain works only through a fallback (primary down) so the problem is
+        // visible without being a false outage: delivery/balances keep working on the fallback.
+        const status: 'green' | 'yellow' | 'red' = !health.reachable ? 'red' : (health.isStale || health.usingFallback) ? 'yellow' : 'green'
         return {
           chain: id as string,
           name: cfg.name,
@@ -4251,6 +4253,7 @@ export async function adminRoutes(app: FastifyInstance) {
           latencyMs: health.latencyMs,
           isStale: !!health.isStale,
           error: health.error ?? null,
+          usingFallback: health.usingFallback ?? null,
           deliveryImplemented: cfg.deliveryImplemented,
         }
       }),

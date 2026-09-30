@@ -5,6 +5,7 @@ import { redis } from '../redis'
 import { env } from '../env'
 import { logger } from '../logger'
 import type { GasChainId } from './gas.chains'
+import { getWorkingRpcUrlOrPrimary } from './rpcFallback'
 import { getSolanaBalance, checkSolanaRpc } from './solanaWalletService'
 import { getTonBalance, checkTonRpc } from './tonWalletService'
 import { getSuiBalance, checkSuiRpc } from './suiWalletService'
@@ -18,6 +19,8 @@ export interface RpcHealthResult {
   error?: string
   /** true when block number hasn't advanced in 5+ min (stale node) */
   isStale?: boolean
+  /** Set when the configured primary failed and a fallback endpoint served the check. */
+  usingFallback?: string
 }
 
 // ── Native → USD price ────────────────────────────────────────────────────────
@@ -327,17 +330,31 @@ async function checkTronRpc(rpcUrl: string): Promise<RpcHealthResult> {
   }
 }
 
+// EVM health: the chain counts as reachable when ANY endpoint in its failover list
+// works (that is what delivery, balances and fee quotes actually use). When the
+// configured primary is down we say which fallback is serving instead of going red.
+async function checkEvmWithFallback(viemChain: Chain, chain: GasChainId, primary: string): Promise<RpcHealthResult> {
+  const url = await getWorkingRpcUrlOrPrimary(chain, primary)
+  const result = await checkEvmRpc(viemChain, url)
+  if (result.reachable && url !== primary) {
+    let host = url
+    try { host = new URL(url).host } catch { /* keep raw */ }
+    return { ...result, usingFallback: host }
+  }
+  return result
+}
+
 export async function testRpcHealth(chain: GasChainId): Promise<RpcHealthResult> {
   switch (chain) {
     case 'TRON':     return checkTronRpc(env.TRON_FULLNODE_URL)
-    case 'BSC':      return checkEvmRpc(bsc,       env.BSC_RPC_URL)
-    case 'OPBNB':    return checkEvmRpc(opBNB,     env.OPBNB_RPC_URL)
-    case 'ETHEREUM': return checkEvmRpc(mainnet,   env.ETHEREUM_RPC_URL)
-    case 'BASE':     return checkEvmRpc(base,      env.BASE_RPC_URL)
-    case 'ARB':      return checkEvmRpc(arbitrum,  env.ARBITRUM_RPC_URL)
-    case 'OP':       return checkEvmRpc(optimism,  env.OPTIMISM_RPC_URL)
-    case 'MATIC':    return checkEvmRpc(polygon,   env.POLYGON_RPC_URL)
-    case 'AVAX':     return checkEvmRpc(avalanche, env.AVALANCHE_RPC_URL)
+    case 'BSC':      return checkEvmWithFallback(bsc,       'BSC',      env.BSC_RPC_URL)
+    case 'OPBNB':    return checkEvmWithFallback(opBNB,     'OPBNB',    env.OPBNB_RPC_URL)
+    case 'ETHEREUM': return checkEvmWithFallback(mainnet,   'ETHEREUM', env.ETHEREUM_RPC_URL)
+    case 'BASE':     return checkEvmWithFallback(base,      'BASE',     env.BASE_RPC_URL)
+    case 'ARB':      return checkEvmWithFallback(arbitrum,  'ARB',      env.ARBITRUM_RPC_URL)
+    case 'OP':       return checkEvmWithFallback(optimism,  'OP',       env.OPTIMISM_RPC_URL)
+    case 'MATIC':    return checkEvmWithFallback(polygon,   'MATIC',    env.POLYGON_RPC_URL)
+    case 'AVAX':     return checkEvmWithFallback(avalanche, 'AVAX',     env.AVALANCHE_RPC_URL)
     case 'SOL':      return checkSolanaRpc()
     case 'TON':      return checkTonRpc()
     case 'SUI':      return checkSuiRpc()
@@ -350,14 +367,14 @@ export async function testRpcHealth(chain: GasChainId): Promise<RpcHealthResult>
 export async function getHotWalletBalance(chain: GasChainId, address: string): Promise<number> {
   switch (chain) {
     case 'TRON':     return getTronBalanceTRX(address)
-    case 'BSC':      return getEvmNativeBalance(bsc,       env.BSC_RPC_URL,       address)
-    case 'OPBNB':    return getEvmNativeBalance(opBNB,     env.OPBNB_RPC_URL,     address)
-    case 'ETHEREUM': return getEvmNativeBalance(mainnet,   env.ETHEREUM_RPC_URL,  address)
-    case 'BASE':     return getEvmNativeBalance(base,      env.BASE_RPC_URL,      address)
-    case 'ARB':      return getEvmNativeBalance(arbitrum,  env.ARBITRUM_RPC_URL,  address)
-    case 'OP':       return getEvmNativeBalance(optimism,  env.OPTIMISM_RPC_URL,  address)
-    case 'MATIC':    return getEvmNativeBalance(polygon,   env.POLYGON_RPC_URL,   address)
-    case 'AVAX':     return getEvmNativeBalance(avalanche, env.AVALANCHE_RPC_URL, address)
+    case 'BSC':      return getEvmNativeBalance(bsc,       await getWorkingRpcUrlOrPrimary('BSC', env.BSC_RPC_URL),             address)
+    case 'OPBNB':    return getEvmNativeBalance(opBNB,     await getWorkingRpcUrlOrPrimary('OPBNB', env.OPBNB_RPC_URL),         address)
+    case 'ETHEREUM': return getEvmNativeBalance(mainnet,   await getWorkingRpcUrlOrPrimary('ETHEREUM', env.ETHEREUM_RPC_URL),   address)
+    case 'BASE':     return getEvmNativeBalance(base,      await getWorkingRpcUrlOrPrimary('BASE', env.BASE_RPC_URL),           address)
+    case 'ARB':      return getEvmNativeBalance(arbitrum,  await getWorkingRpcUrlOrPrimary('ARB', env.ARBITRUM_RPC_URL),        address)
+    case 'OP':       return getEvmNativeBalance(optimism,  await getWorkingRpcUrlOrPrimary('OP', env.OPTIMISM_RPC_URL),         address)
+    case 'MATIC':    return getEvmNativeBalance(polygon,   await getWorkingRpcUrlOrPrimary('MATIC', env.POLYGON_RPC_URL),       address)
+    case 'AVAX':     return getEvmNativeBalance(avalanche, await getWorkingRpcUrlOrPrimary('AVAX', env.AVALANCHE_RPC_URL),      address)
     case 'SOL':      return getSolanaBalance(address)
     case 'TON':      return getTonBalance(address)
     case 'SUI':      return getSuiBalance(address)

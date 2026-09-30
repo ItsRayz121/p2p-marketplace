@@ -11,6 +11,8 @@ import { createPublicClient, http, formatUnits } from 'viem'
 import type { Chain } from 'viem'
 import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import { env } from '../env'
+import { getWorkingRpcUrlOrPrimary } from './rpcFallback'
+import type { GasChainId } from './gas.chains'
 
 export interface TokenBalanceResult {
   balance: number
@@ -43,7 +45,8 @@ async function getEvmTokenBalance(
 ): Promise<TokenBalanceResult> {
   const m = EVM_MAP[dbChain]
   if (!m) throw new Error(`getEvmTokenBalance: unsupported EVM chain ${dbChain}`)
-  const client = createPublicClient({ chain: m.chain, transport: http(m.rpc, { timeout: 10_000 }) })
+  const rpc = await getWorkingRpcUrlOrPrimary(dbChain === 'ETH' ? 'ETHEREUM' : (dbChain as GasChainId), m.rpc)
+  const client = createPublicClient({ chain: m.chain, transport: http(rpc, { timeout: 10_000 }) })
   const address = contract as `0x${string}`
 
   const decimals = knownDecimals ?? Number(

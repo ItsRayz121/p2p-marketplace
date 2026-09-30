@@ -1,33 +1,45 @@
 /**
  * RPC fallback system for EVM gas chains.
  *
- * Each chain has:
- *   - primary: the operator-configured env var URL (first choice)
- *   - fallbacks: hardcoded reliable public endpoints (tried in order)
+ * Each chain has an ordered candidate list:
+ *   1. primary        — the operator-configured env var URL (first choice)
+ *   2. env extras     — comma-separated <CHAIN>_RPC_FALLBACK_URLS (add providers with
+ *                       no code change or redeploy of this file)
+ *   3. built-in list  — free public endpoints, verified to answer from production
  *
- * `getWorkingRpcUrl(chain, primaryUrl)` probes the primary and falls back
- * automatically. `getRpcFallbackStatus(chain, primaryUrl)` returns health
- * info for every URL in the list — used by the system-health endpoint.
+ * Failover is health-aware: an endpoint that fails is put on a short cool-down so the
+ * next calls skip it instead of each paying its full timeout, and the last endpoint
+ * that worked is remembered for a few seconds. A recovered endpoint is picked up again
+ * automatically once its cool-down ends.
  *
- * Call sites (delivery, refund, confirmation) pass the env-var URL as
- * `primaryUrl`; this module handles the rest without touching env directly.
+ * Call sites (delivery, refund, confirmation, balance, fee estimates, health) pass the
+ * env-var URL as `primaryUrl`; this module handles the rest without touching env.
  */
 
 import type { GasChainId } from './gas.chains'
 
 // ── Fallback RPC lists ────────────────────────────────────────────────────────
-// These are free, public endpoints that don't require API keys.
-// Operators should configure their own dedicated RPCs via env vars.
+// Free public endpoints that don't require API keys, ordered best-first. The BSC and
+// Ethereum entries were probed for eth_blockNumber + a real eth_getLogs range: the
+// dataseed/defibit BSC nodes reject getLogs (fine for delivery/balance, listed last),
+// and some free tiers (drpc, blastapi) rate-limit getLogs intermittently, so several
+// independent providers are kept rather than one.
 
 const FALLBACK_RPCS: Partial<Record<GasChainId, string[]>> = {
   ETHEREUM: [
-    'https://eth.llamarpc.com',
     'https://ethereum-rpc.publicnode.com',
-    'https://rpc.ankr.com/eth',
+    'https://eth.drpc.org',
+    'https://1rpc.io/eth',
+    'https://rpc.mevblocker.io',
+    'https://eth.llamarpc.com',
   ],
   BSC: [
-    'https://bsc-dataseed.binance.org',
     'https://bsc-rpc.publicnode.com',
+    'https://1rpc.io/bnb',
+    'https://bsc.drpc.org',
+    'https://bsc-mainnet.public.blastapi.io',
+    'https://bsc-dataseed.binance.org',
+    'https://bsc-dataseed1.defibit.io',
     'https://bsc-dataseed1.ninicoin.io',
   ],
   // opBNB (chainId 204) — free public endpoints. Alchemy does NOT serve opBNB, so
@@ -42,18 +54,21 @@ const FALLBACK_RPCS: Partial<Record<GasChainId, string[]>> = {
   ],
   BASE: [
     'https://mainnet.base.org',
-    'https://base.llamarpc.com',
     'https://base-rpc.publicnode.com',
+    'https://base.llamarpc.com',
+    'https://base.drpc.org',
   ],
   ARB: [
     'https://arb1.arbitrum.io/rpc',
-    'https://arbitrum.llamarpc.com',
     'https://arbitrum-one-rpc.publicnode.com',
+    'https://arbitrum.llamarpc.com',
+    'https://arbitrum.drpc.org',
   ],
   OP: [
     'https://mainnet.optimism.io',
-    'https://optimism.llamarpc.com',
     'https://optimism-rpc.publicnode.com',
+    'https://optimism.llamarpc.com',
+    'https://optimism.drpc.org',
   ],
   MATIC: [
     'https://polygon-bor-rpc.publicnode.com',
@@ -65,6 +80,65 @@ const FALLBACK_RPCS: Partial<Record<GasChainId, string[]>> = {
     'https://avalanche-c-chain-rpc.publicnode.com',
     'https://avalanche.drpc.org',
   ],
+}
+
+// Env vars that can add extra endpoints per chain (comma-separated https URLs).
+const EXTRA_URLS_ENV: Partial<Record<GasChainId, string>> = {
+  ETHEREUM: 'ETHEREUM_RPC_FALLBACK_URLS',
+  BSC:      'BSC_RPC_FALLBACK_URLS',
+  OPBNB:    'OPBNB_RPC_FALLBACK_URLS',
+  BASE:     'BASE_RPC_FALLBACK_URLS',
+  ARB:      'ARBITRUM_RPC_FALLBACK_URLS',
+  OP:       'OPTIMISM_RPC_FALLBACK_URLS',
+  MATIC:    'POLYGON_RPC_FALLBACK_URLS',
+  AVAX:     'AVALANCHE_RPC_FALLBACK_URLS',
+}
+
+/** Operator-supplied extra endpoints for a chain (validated, de-duplicated). */
+export function getExtraRpcUrls(chain: GasChainId): string[] {
+  const name = EXTRA_URLS_ENV[chain]
+  const raw = name ? process.env[name] : undefined
+  if (!raw) return []
+  const urls = raw
+    .split(',')
+    .map((u) => u.trim())
+    .filter((u) => /^https?:\/\/\S+$/i.test(u))
+  return [...new Set(urls)]
+}
+
+// ── Endpoint health memory (per process) ──────────────────────────────────────
+
+const COOLDOWN_MS = 60_000          // skip a failed endpoint for this long
+const LAST_WORKING_TTL_MS = 30_000  // reuse the last good endpoint without re-probing
+
+const failedAt = new Map<string, number>()
+const lastWorking = new Map<GasChainId, { url: string; at: number }>()
+
+function isCoolingDown(url: string): boolean {
+  const t = failedAt.get(url)
+  if (t === undefined) return false
+  if (Date.now() - t > COOLDOWN_MS) { failedAt.delete(url); return false }
+  return true
+}
+
+export function markRpcFailure(url: string): void {
+  failedAt.set(url, Date.now())
+}
+
+export function markRpcSuccess(url: string): void {
+  failedAt.delete(url)
+}
+
+/** Healthy endpoints first (original order kept), cooling-down ones last. */
+export function orderByRpcHealth(urls: string[]): string[] {
+  return [...urls.filter((u) => !isCoolingDown(u)), ...urls.filter((u) => isCoolingDown(u))]
+}
+
+function candidateUrls(chain: GasChainId, primaryUrl?: string): string[] {
+  const ordered = [primaryUrl, ...getExtraRpcUrls(chain), ...(FALLBACK_RPCS[chain] ?? [])].filter(
+    (u): u is string => typeof u === 'string' && u.length > 0,
+  )
+  return [...new Set(ordered)]
 }
 
 // ── Probe a single RPC endpoint ───────────────────────────────────────────────
@@ -84,7 +158,7 @@ async function probeRpc(url: string): Promise<ProbeResult> {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_blockNumber', params: [] }),
-      signal: AbortSignal.timeout(6_000),
+      signal: AbortSignal.timeout(5_000),
     })
     const latencyMs = Date.now() - start
     if (!res.ok) {
@@ -111,43 +185,62 @@ async function probeRpc(url: string): Promise<ProbeResult> {
 // ── Get the first working RPC URL ─────────────────────────────────────────────
 
 /**
- * Returns the first reachable RPC URL for the given chain, trying `primaryUrl`
- * first, then the hardcoded fallback list. Throws if all endpoints fail.
+ * Returns a reachable RPC URL for the chain: the last good one (for a few seconds),
+ * otherwise the first healthy candidate that answers, trying `primaryUrl` first, then
+ * operator extras, then the built-in list. Endpoints that fail go on a short
+ * cool-down. Throws only if every endpoint is unreachable.
  *
- * This is used at the point of need (delivery, refund, confirmation) — not
- * cached globally so that a recovered primary will be picked up on the next call.
+ * Used at the point of need (delivery, refund, confirmation, balances, fee quotes) —
+ * a recovered primary is picked up again once its cool-down ends.
  */
 export async function getWorkingRpcUrl(chain: GasChainId, primaryUrl: string): Promise<string> {
-  // Always probe primary first
-  const primaryResult = await probeRpc(primaryUrl)
-  if (primaryResult.reachable) return primaryUrl
+  const candidates = candidateUrls(chain, primaryUrl)
 
-  const fallbacks = FALLBACK_RPCS[chain] ?? []
-  for (const url of fallbacks) {
-    if (url === primaryUrl) continue // already tried
-    const result = await probeRpc(url)
-    if (result.reachable) return url
+  const cached = lastWorking.get(chain)
+  if (cached && Date.now() - cached.at < LAST_WORKING_TTL_MS && candidates.includes(cached.url) && !isCoolingDown(cached.url)) {
+    return cached.url
   }
 
+  for (const url of orderByRpcHealth(candidates)) {
+    const result = await probeRpc(url)
+    if (result.reachable) {
+      markRpcSuccess(url)
+      lastWorking.set(chain, { url, at: Date.now() })
+      return url
+    }
+    markRpcFailure(url)
+  }
+
+  lastWorking.delete(chain)
   throw new Error(
     `All RPC endpoints for ${chain} are unreachable. ` +
-    `Primary: ${primaryUrl}. Fallbacks tried: ${fallbacks.filter((u) => u !== primaryUrl).join(', ')}`,
+    `Primary: ${primaryUrl}. Fallbacks tried: ${candidates.filter((u) => u !== primaryUrl).join(', ')}`,
   )
 }
 
 /**
- * Returns the ordered, de-duplicated list of RPC URLs to try for a chain:
- * the operator-configured primary first (when set), then the hardcoded free
- * public fallbacks. Unlike `getWorkingRpcUrl`, this does NOT probe — callers
- * that need to retry an actual RPC method (e.g. eth_getTransactionByHash)
- * across endpoints can iterate this list and stop at the first success.
+ * Like getWorkingRpcUrl but never throws: if everything is unreachable it returns the
+ * primary so the caller's own request produces the real error. Use where a thrown
+ * probe error would hide the underlying failure (fee quotes, balance reads).
+ */
+export async function getWorkingRpcUrlOrPrimary(chain: GasChainId, primaryUrl: string): Promise<string> {
+  try {
+    return await getWorkingRpcUrl(chain, primaryUrl)
+  } catch {
+    return primaryUrl
+  }
+}
+
+/**
+ * Returns the ordered, de-duplicated list of RPC URLs to try for a chain: the
+ * operator-configured primary first (when set), operator extras, then the built-in
+ * public fallbacks — with recently-failed endpoints moved to the back. Unlike
+ * `getWorkingRpcUrl`, this does NOT probe — callers that need to retry an actual RPC
+ * method (e.g. eth_getTransactionByHash) across endpoints can iterate this list and
+ * stop at the first success.
  */
 export function getRpcUrlsInOrder(chain: GasChainId, primaryUrl?: string): string[] {
-  const fallbacks = FALLBACK_RPCS[chain] ?? []
-  const ordered = [primaryUrl, ...fallbacks].filter(
-    (u): u is string => typeof u === 'string' && u.length > 0,
-  )
-  return [...new Set(ordered)]
+  return orderByRpcHealth(candidateUrls(chain, primaryUrl))
 }
 
 // ── Full fallback status (for system-health) ──────────────────────────────────
@@ -171,7 +264,7 @@ export interface ChainRpcFallbackStatus {
 }
 
 /**
- * Probe all RPC endpoints for a chain (primary + fallbacks) in parallel.
+ * Probe all RPC endpoints for a chain (primary + extras + fallbacks) in parallel.
  * Returns status for each, and which one would be used as active.
  * Used by the system-health endpoint.
  */
@@ -179,16 +272,14 @@ export async function getChainRpcFallbackStatus(
   chain: GasChainId,
   primaryUrl: string,
 ): Promise<ChainRpcFallbackStatus> {
-  const fallbacks = FALLBACK_RPCS[chain] ?? []
-
-  // Deduplicate: primary may already appear in the fallback list
-  const allUrls = [primaryUrl, ...fallbacks.filter((u) => u !== primaryUrl)]
+  const allUrls = candidateUrls(chain, primaryUrl)
 
   const results = await Promise.all(allUrls.map((url) => probeRpc(url)))
+  for (const r of results) (r.reachable ? markRpcSuccess : markRpcFailure)(r.url)
 
-  const endpoints: RpcEndpointStatus[] = results.map((r, i) => ({
+  const endpoints: RpcEndpointStatus[] = results.map((r) => ({
     ...r,
-    isPrimary: i === 0,
+    isPrimary: r.url === primaryUrl,
   }))
 
   const activeEndpoint = endpoints.find((e) => e.reachable) ?? null

@@ -679,7 +679,7 @@ function PollerHealthCard() {
 interface ChainHealth {
   chain: string; name: string; nativeSymbol: string; networkLabel: string
   status: 'green' | 'yellow' | 'red'; reachable: boolean; blockNumber: number | null
-  latencyMs: number; isStale: boolean; error: string | null; deliveryImplemented: boolean
+  latencyMs: number; isStale: boolean; error: string | null; usingFallback?: string | null; deliveryImplemented: boolean
 }
 
 // Live RPC health for every supported gas chain (see GET /admin/gas/chain-health).
@@ -723,7 +723,10 @@ function ChainHealthCard() {
             <div className="text-[10px] text-text-muted mt-0.5 space-y-0.5">
               <p>{c.networkLabel} · {c.nativeSymbol}</p>
               {c.reachable ? (
-                <p>block {c.blockNumber?.toLocaleString() ?? '—'} · {c.latencyMs}ms{c.isStale ? ' · stale' : ''}</p>
+                <>
+                  <p>block {c.blockNumber?.toLocaleString() ?? '—'} · {c.latencyMs}ms{c.isStale ? ' · stale' : ''}</p>
+                  {c.usingFallback && <p className="text-warning truncate" title={c.usingFallback}>primary down · using {c.usingFallback}</p>}
+                </>
               ) : (
                 <p className="text-danger truncate" title={c.error ?? undefined}>unreachable{c.error ? `: ${c.error}` : ''}</p>
               )}

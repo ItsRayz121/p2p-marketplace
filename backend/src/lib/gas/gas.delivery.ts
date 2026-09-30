@@ -15,6 +15,7 @@ import {
   HOT_WALLET_INDEX,
 } from './gasWalletService'
 import { getHotWalletBalance } from './gas.balance'
+import { getWorkingRpcUrl } from './rpcFallback'
 import { getTransactionCount } from '../evmRpc'
 import { withHotWalletLock } from '../hotWalletLock'
 import type { GasChainId } from './gas.chains'
@@ -118,7 +119,10 @@ async function deliverEvmToken(order: GasFeeOrder, contract: string, decimals: n
   const seed = decryptGasSeed()
   try {
     const privateKey = deriveEvmPrivateKeyHex(seed, hdIndex)
-    return await deliverEvmTokenTransfer(order, m.chain, m.rpc, privateKey, order.chain, contract as `0x${string}`, decimals)
+    // Resolve a working endpoint (primary -> operator extras -> public fallbacks) so a dead
+    // primary can't strand a paid token-gas order.
+    const rpc = await getWorkingRpcUrl(order.chain === 'ETH' ? 'ETHEREUM' : (order.chain as GasChainId), m.rpc)
+    return await deliverEvmTokenTransfer(order, m.chain, rpc, privateKey, order.chain, contract as `0x${string}`, decimals)
   } finally {
     seed.fill(0)
   }
@@ -405,35 +409,35 @@ async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: 
 }
 
 async function deliverBsc(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, bsc, env.BSC_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, bsc, await getWorkingRpcUrl('BSC', env.BSC_RPC_URL), hdIndex)
 }
 
 async function deliverOpBnb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, opBNB, env.OPBNB_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, opBNB, await getWorkingRpcUrl('OPBNB', env.OPBNB_RPC_URL), hdIndex)
 }
 
 async function deliverEth(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, mainnet, env.ETHEREUM_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, mainnet, await getWorkingRpcUrl('ETHEREUM', env.ETHEREUM_RPC_URL), hdIndex)
 }
 
 async function deliverBase(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, base, env.BASE_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, base, await getWorkingRpcUrl('BASE', env.BASE_RPC_URL), hdIndex)
 }
 
 async function deliverArb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, arbitrum, env.ARBITRUM_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, arbitrum, await getWorkingRpcUrl('ARB', env.ARBITRUM_RPC_URL), hdIndex)
 }
 
 async function deliverOp(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, optimism, env.OPTIMISM_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, optimism, await getWorkingRpcUrl('OP', env.OPTIMISM_RPC_URL), hdIndex)
 }
 
 async function deliverMatic(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, polygon, env.POLYGON_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, polygon, await getWorkingRpcUrl('MATIC', env.POLYGON_RPC_URL), hdIndex)
 }
 
 async function deliverAvax(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, avalanche, env.AVALANCHE_RPC_URL, hdIndex)
+  return deliverEvmMnemonic(order, avalanche, await getWorkingRpcUrl('AVAX', env.AVALANCHE_RPC_URL), hdIndex)
 }
 
 // ── Solana delivery ───────────────────────────────────────────────────────────

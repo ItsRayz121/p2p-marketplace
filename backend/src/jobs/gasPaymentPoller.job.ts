@@ -21,6 +21,7 @@ import { logger } from '../lib/logger'
 import { env } from '../lib/env'
 import { getAptosHotWalletAddress } from '../lib/gas/aptosWalletService'
 import { getEvmHotWalletAddress } from '../lib/gas/gasWalletService'
+import { getExtraRpcUrls, orderByRpcHealth, markRpcFailure, markRpcSuccess } from '../lib/gas/rpcFallback'
 import { matchAndDeliverGasPayment } from '../lib/gas/gas.matching'
 import { getWalletErc20Transfers } from '../lib/moralisClient'
 import { createAdminNotif } from '../services/adminNotification.service'
@@ -116,10 +117,13 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
       env.ALCHEMY_API_KEY ? `https://bnb-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.BSC_RPC_URL_PRIMARY,
       env.BSC_RPC_URL_FALLBACK,
+      // Operator-added endpoints (BSC_RPC_FALLBACK_URLS, comma-separated) — extend the
+      // failover list without a code change.
+      ...getExtraRpcUrls('BSC'),
       'https://bsc-rpc.publicnode.com',
+      'https://1rpc.io/bnb',
       'https://bsc.drpc.org',
       'https://bsc-mainnet.public.blastapi.io',
-      'https://1rpc.io/bnb',
       'https://bsc-dataseed1.ninicoin.io',
       env.BSC_RPC_URL,
     ),
@@ -137,10 +141,12 @@ const NETWORK_CONFIGS: NetworkConfig[] = [
     rpcUrls:             () => uniqUrls(
       env.ALCHEMY_API_KEY ? `https://eth-mainnet.g.alchemy.com/v2/${env.ALCHEMY_API_KEY}` : undefined,
       env.ETHEREUM_RPC_URL,
+      ...getExtraRpcUrls('ETHEREUM'),
       'https://ethereum-rpc.publicnode.com',
       'https://eth.drpc.org',
-      'https://eth-mainnet.public.blastapi.io',
       'https://1rpc.io/eth',
+      'https://rpc.mevblocker.io',
+      'https://eth-mainnet.public.blastapi.io',
     ),
     usdtContract:        '0xdAC17F958D2ee523a2206206994597C13D831ec7',
     usdtDecimals:        6,
@@ -283,14 +289,15 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   // the client + which URL it used so getLogs can start there and fall through.
   let client: ReturnType<typeof createPublicClient> | undefined
   let currentBlock: bigint | undefined
-  for (let i = 0; i < rpcUrls.length; i++) {
+  for (const url of orderByRpcHealth(rpcUrls)) {
     try {
-      const c = createPublicClient({ chain: cfg.viemChain, transport: http(rpcUrls[i], { timeout: 10_000 }) })
+      const c = createPublicClient({ chain: cfg.viemChain, transport: http(url, { timeout: 10_000 }) })
       currentBlock = await c.getBlockNumber()
       client = c
+      markRpcSuccess(url)
       break
     } catch {
-      /* try next URL */
+      markRpcFailure(url) // cool it down so the next runs skip it instead of waiting out its timeout
     }
   }
   if (!client || currentBlock === undefined) {
@@ -313,7 +320,15 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     },
   })
   if (activeOrExpired === 0) {
-    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: syncedBlock ?? currentBlock })
+    // Nothing to match, so nothing can be missed: move the cursor up to the confirmed
+    // tip. Previously it stayed wherever the last real scan left it, so the admin card
+    // showed tens of thousands of blocks "behind" even though the poller was healthy
+    // (an order created later only ever scans the recent window anyway).
+    const idleTip = currentBlock - BigInt(cfg.minConfirmations)
+    if (idleTip > 0n && (syncedBlock === null || idleTip > syncedBlock)) {
+      await redis.set(redisKey, idleTip.toString())
+    }
+    await writePollerHeartbeat(cfg.paymentNetwork, { ok: true, found: 0, currentBlock, syncedBlock: idleTip > 0n ? idleTip : (syncedBlock ?? currentBlock) })
     return
   }
 
@@ -371,7 +386,7 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
   // means a single over-wide or rate-limited call can no longer stall detection: the
   // OLD code stopped at the failed chunk and never advanced the cursor, leaving BEP20
   // permanently stuck behind the chain head (the "Request exceeds defined limit" loop).
-  const logRpcUrls = getLogsCapable(rpcUrls)
+  const logRpcUrls = orderByRpcHealth(getLogsCapable(rpcUrls))
   if (logRpcUrls.length === 0) {
     await writePollerHeartbeat(cfg.paymentNetwork, { ok: false, error: 'No getLogs-capable RPC endpoint configured (only dataseed nodes, which reject getLogs)', currentBlock, syncedBlock: syncedBlock ?? effectiveFrom })
     return
@@ -397,9 +412,12 @@ async function scanNetwork(cfg: NetworkConfig): Promise<void> {
     for (let i = 0; i < logRpcUrls.length; i++) {
       const url = logRpcUrls[i]!
       try {
-        return await getLogsOnce(url, from, to)
+        const out = await getLogsOnce(url, from, to)
+        markRpcSuccess(url)
+        return out
       } catch (err) {
         if (i === 0) primaryErr = err
+        if (!isRangeLimitError(err)) markRpcFailure(url)
         // Too-wide range → split and retry (every endpoint, at the smaller size).
         if (isRangeLimitError(err) && to > from && depth < MAX_SPLIT_DEPTH) {
           const mid = from + (to - from) / 2n
