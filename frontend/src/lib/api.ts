@@ -2384,13 +2384,6 @@ export const adminApi = {
   rejectKyc: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/kyc/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
-  // Merchant KYC
-  getMerchantKycQueue: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ submissions: unknown[]; total: number }>('/admin/merchants/queue' + buildQs(params)),
-  approveMerchantKyc: (id: string) =>
-    apiRequest<void>(`/admin/merchants/${id}/approve`, { method: 'POST' }),
-  rejectMerchantKyc: (id: string, data: { reason: string }) =>
-    apiRequest<void>(`/admin/merchants/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
 
   // Trades
   // Referrals

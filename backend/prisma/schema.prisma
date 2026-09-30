@@ -288,12 +288,6 @@ enum KycSubmissionTier {
   enhanced
 }
 
-enum BusinessProofType {
-  ntn
-  bank_statement
-  trade_license
-}
-
 enum SessionType {
   refresh
 }
@@ -955,27 +949,6 @@ model KycSubmission {
 
   @@index([userId])
   @@index([cnicNumberHash])
-}
-
-model MerchantKycSubmission {
-  id                  String            @id @default(cuid())
-  userId              String
-  businessName        String
-  businessDescription String            @db.VarChar(1000)
-  contactPhone        String
-  businessProofType   BusinessProofType
-  cnicFrontUrl        String
-  cnicBackUrl         String
-  selfieUrl           String
-  businessProofUrl    String
-  socialLinks         Json              @default("[]")
-  status              KycStatus         @default(pending)
-  rejectionReason     String?           @db.VarChar(500)
-  reviewedAt          DateTime?
-  reviewedBy          String?
-  createdAt           DateTime          @default(now())
-
-  @@index([userId])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

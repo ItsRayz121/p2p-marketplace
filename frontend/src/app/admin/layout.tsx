@@ -137,17 +137,6 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'Merchant KYC',
-        href: '/admin/merchant-kyc',
-        roles: ['admin', 'super_admin'],
-        hidden: true, // Phase 3: merchant role retired from platform direction; route kept for re-enable
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-          </svg>
-        ),
-      },
-      {
         label: 'Referrals',
         href: '/admin/referrals',
         roles: ['admin', 'super_admin'],

@@ -184,7 +184,7 @@ export async function sendTradeEmail(
 }
 
 export async function sendKycEmail(
-  type: 'submitted' | 'approved' | 'rejected' | 'merchant_approved' | 'merchant_rejected',
+  type: 'submitted' | 'approved' | 'rejected',
   email: string,
   data?: { reason?: string; dailyLimit?: number; level?: string },
 ): Promise<void> {
@@ -197,22 +197,12 @@ export async function sendKycEmail(
     approved: {
       subject: 'KYC approved — account verified',
       heading: 'KYC Approved',
-      body: `Your identity has been verified${data?.level ? ` at <strong>${data.level}</strong> level` : ''}. You can now trade on RupChain${data?.dailyLimit ? ` with a daily limit of PKR ${data.dailyLimit.toLocaleString()}` : ''}.`,
+      body: `Your identity has been verified${data?.level ? ` at <strong>${data.level}</strong> level` : ''}. You can now post ads on RupChain${data?.dailyLimit ? `, with a daily limit of PKR ${data.dailyLimit.toLocaleString()}` : ''}.`,
     },
     rejected: {
       subject: 'KYC submission rejected',
       heading: 'KYC Rejected',
       body: `Your KYC submission was rejected.${data?.reason ? ` Reason: <em>${data.reason}</em>` : ''} Please resubmit with correct documents.`,
-    },
-    merchant_approved: {
-      subject: 'Merchant application approved',
-      heading: 'Merchant Account Approved',
-      body: 'Congratulations! Your merchant application has been approved. You can now post ads and trade as a merchant.',
-    },
-    merchant_rejected: {
-      subject: 'Merchant application rejected',
-      heading: 'Merchant Application Rejected',
-      body: `Your merchant application was rejected.${data?.reason ? ` Reason: <em>${data.reason}</em>` : ''}`,
     },
   }
 

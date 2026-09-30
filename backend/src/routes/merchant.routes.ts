@@ -3,7 +3,6 @@ import { z } from 'zod'
 import { authenticate, optionalAuth } from '../middleware/auth.middleware'
 import {
   getMerchantProfile,
-  activateMerchant,
   updateSpread,
   getMerchantInventory,
   addInventoryItem,
@@ -43,10 +42,10 @@ export async function merchantRoutes(app: FastifyInstance) {
     })
   })
 
-  // POST /api/merchants/activate
-  app.post('/merchants/activate', { preHandler: [authenticate] }, async (req, reply) => {
-    const result = await activateMerchant(req.user!.id)
-    return reply.send({ success: true, data: result })
+  // POST /api/merchants/activate — RETIRED with the merchant application. It needed an
+  // approved merchant KYC and locked 100 USDT collateral; neither exists any more.
+  app.post('/merchants/activate', { preHandler: [authenticate] }, async (_req, reply) => {
+    return reply.code(410).send({ success: false, error: 'GONE', message: 'Merchant activation is no longer available.' })
   })
 
   // PATCH /api/merchants/me/spread

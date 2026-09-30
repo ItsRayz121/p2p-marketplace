@@ -15,7 +15,7 @@ import '../lib/cloudinary'
 
 const presignSchema = z
   .object({
-    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'merchant-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image']),
+    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image']),
     mimeType: z.string(),
   })
   .refine(
@@ -32,7 +32,6 @@ const folderMap: Record<string, string> = {
   'kyc-selfie': CLOUDINARY_FOLDERS.KYC_SELFIE,
   'kyc-video': CLOUDINARY_FOLDERS.KYC_VIDEO,
   'payment-proof': CLOUDINARY_FOLDERS.PAYMENT_PROOF,
-  'merchant-proof': CLOUDINARY_FOLDERS.MERCHANT_PROOF,
   'avatar': CLOUDINARY_FOLDERS.AVATAR,
   'chat-image': CLOUDINARY_FOLDERS.CHAT_IMAGE,
   'channel-image': CLOUDINARY_FOLDERS.CHANNEL_IMAGE,
