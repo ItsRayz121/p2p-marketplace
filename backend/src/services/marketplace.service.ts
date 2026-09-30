@@ -91,6 +91,8 @@ export interface PublicConfig {
   nonCustodialMaxOrderUsdtL2: number
   makerBondEnabled: boolean
   makerBondRatioPct: number
+  /** Homepage layout switch — true renders the Terminal homepage, false (default) the classic one. */
+  homeTerminalEnabled: boolean
 }
 
 export interface GetAdsParams {
@@ -478,6 +480,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     'noncustodial_max_order_usdt_l2',
     'maker_bond_enabled',
     'maker_bond_ratio_pct',
+    'home_terminal_enabled',
   ]
 
   const rows = await db.platformConfig.findMany({
@@ -509,6 +512,7 @@ export async function getPublicConfig(): Promise<PublicConfig> {
     nonCustodialMaxOrderUsdtL2: parseFloat(map['noncustodial_max_order_usdt_l2'] ?? '500'),
     makerBondEnabled: map['maker_bond_enabled'] === 'true',
     makerBondRatioPct: parseFloat(map['maker_bond_ratio_pct'] ?? '10'),
+    homeTerminalEnabled: map['home_terminal_enabled'] === 'true',
   }
 
   await redis.set(cacheKey, JSON.stringify(result), 'EX', 60)

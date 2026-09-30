@@ -29,6 +29,8 @@ import { HomeActivityFeed } from './_components/home/HomeActivityFeed'
 import { FaqAccordion } from './_components/home/FaqAccordion'
 import { MarketingHeader } from '@/components/layout/MarketingHeader'
 import Footer from '@/components/layout/Footer'
+import { TerminalHome } from './_components/home/terminal/TerminalHome'
+import { getTerminalData } from './_components/home/terminal/terminalData'
 import type { MarketplaceAd } from '@/lib/api'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -83,6 +85,8 @@ interface HomeData {
   topCtm: CtmTopListing[] | null
   topGas: GasChainSummary[] | null
   faqs: FaqItem[]
+  /** `home_terminal_enabled` platform flag — ON renders the Terminal homepage. */
+  homeTerminal: boolean
 }
 
 // ─── Server-side data fetch ───────────────────────────────────────────────────
@@ -133,6 +137,7 @@ async function getHomeData(): Promise<HomeData> {
     topCtm: ctmData?.listings ?? null,
     topGas: gasData?.chains ?? null,
     faqs:   Array.isArray(config?.homeFaqs) ? (config!.homeFaqs as FaqItem[]) : [],
+    homeTerminal: config?.homeTerminalEnabled === true,
   }
 }
 
@@ -171,7 +176,7 @@ function QuickActionCard({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function HomePage() {
-  const { stats, topAds, topCtm, topGas, faqs } = await getHomeData()
+  const { stats, topAds, topCtm, topGas, faqs, homeTerminal } = await getHomeData()
 
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
   const jsonLd: object[] = [
@@ -202,6 +207,22 @@ export default async function HomePage() {
         }]
       : []),
   ]
+
+  // Terminal homepage, behind the `home_terminal_enabled` flag (Admin → Config →
+  // New & Beta Features). Flag OFF — the default — renders the classic page below,
+  // so switching back is a single toggle with no redeploy.
+  if (homeTerminal) {
+    const terminalData = await getTerminalData()
+    return (
+      <>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+        <TerminalHome data={terminalData} faqs={faqs} />
+      </>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-surface">
