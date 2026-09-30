@@ -27,6 +27,7 @@ interface GasOrder {
   gasAmountNative: string
   paymentAmount: string
   paymentCoin?: string | null
+  paymentNetwork?: string | null
   pkrAmount?: string | null
   toAddress: string
   status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded' | 'cancelled'
@@ -492,7 +493,7 @@ function GasPaymentConfirmModal({
     try { await onConfirm() } finally { setLoading(false) }
   }
 
-  const title = type === 'pkr' ? 'Approve PKR Payment' : 'Confirm Payment & Release Gas'
+  const title = type === 'pkr' ? (order?.paymentNetwork === 'EXCHANGE' ? 'Approve Exchange Transfer' : 'Approve PKR Payment') : 'Confirm Payment & Release Gas'
 
   const CHAIN_EXPLORER: Record<string, string> = {
     BSC: 'https://bscscan.com/tx/',
@@ -541,7 +542,7 @@ function GasPaymentConfirmModal({
           <InfoRow label="Gas Amount">
             {order.gasAmountNative} {CHAIN_SYMBOL[order.chain] ?? order.chain}
           </InfoRow>
-          {type === 'pkr' ? (
+          {type === 'pkr' && order.paymentNetwork !== 'EXCHANGE' ? (
             <InfoRow label="PKR Amount">
               <span className="font-semibold text-primary">PKR {Number(order.pkrAmount ?? 0).toLocaleString()}</span>
             </InfoRow>
@@ -751,7 +752,7 @@ export default function GasAdminPage() {
   const [statusFilter, setStatusFilter] = useState('all')
   // Strict PKR vs crypto separation — crypto payments must never appear in the
   // PKR proof-review flow and vice-versa.
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'PKR' | 'CRYPTO'>('all')
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'PKR' | 'EXCHANGE' | 'CRYPTO'>('all')
 
   // Analytics state
   const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
@@ -1205,7 +1206,7 @@ export default function GasAdminPage() {
       {/* ── PKR Proof Review Alert ───────────────────────────────────────────── */}
       {/* PKR-only: crypto payments auto-verify on-chain and must never enter the
           manual proof-review flow. */}
-      {orders.some(o => o.status === 'payment_uploaded' && o.paymentCoin === 'PKR') && statusFilter === 'all' && (
+      {orders.some(o => o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE')) && statusFilter === 'all' && (
         <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-800 dark:text-amber-300">
           <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
           <span><strong>PKR payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
@@ -1338,6 +1339,7 @@ export default function GasAdminPage() {
             {([
               { v: 'all',    label: 'All' },
               { v: 'PKR',    label: 'PKR (manual review)' },
+              { v: 'EXCHANGE', label: 'Exchange transfer (manual review)' },
               { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
             ] as const).map((pt) => (
               <button
@@ -1430,14 +1432,14 @@ export default function GasAdminPage() {
                         <Link href={`/admin/gas/orders/${o.orderRef}`}>
                           <Button size="sm" variant="ghost">View</Button>
                         </Link>
-                        {o.status === 'payment_uploaded' && o.paymentCoin === 'PKR' && (
+                        {o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE') && (
                           <>
                             <Button
                               size="sm"
                               variant="primary"
                               onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmApprovePkr(true) }}
                             >
-                              Approve PKR
+                              {o.paymentNetwork === 'EXCHANGE' ? 'Approve transfer' : 'Approve PKR'}
                             </Button>
                             <Button
                               size="sm"
@@ -1448,7 +1450,7 @@ export default function GasAdminPage() {
                             </Button>
                           </>
                         )}
-                        {o.status === 'payment_uploaded' && o.paymentCoin !== 'PKR' && (
+                        {o.status === 'payment_uploaded' && o.paymentCoin !== 'PKR' && o.paymentNetwork !== 'EXCHANGE' && (
                           <>
                             <Button
                               size="sm"

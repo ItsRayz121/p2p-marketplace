@@ -1851,6 +1851,16 @@ model GasFeeOrder {
   pkrPaymentMethod     String?
   pkrAmount            Decimal?          @db.Decimal(12, 2)
 
+  // Exchange internal-transfer payment (paymentNetwork = 'EXCHANGE'): the customer
+  // sends USDT from their exchange account to one of OUR exchange UIDs and submits
+  // their own UID + the transfer order id for manual review. exchangeAccountUid is
+  // a snapshot of OUR receiving UID at order time so later admin edits don't
+  // change what an in-flight order was told to pay.
+  exchangeName         String?
+  exchangeAccountUid   String?
+  exchangeUserUid      String?
+  exchangeOrderId      String?           @unique
+
   toAddress           String
   fromHotWallet       String?
   deliveryTxHash      String?
@@ -1895,6 +1905,23 @@ model GasFeeOrder {
   @@index([orderRef])
   @@index([promoCodeId])
   @@index([gasFreeCodeId])
+}
+
+// Our receiving accounts for the "Exchange transfer" gas payment option. Managed
+// from the admin panel; the customer is shown the active row for the exchange they
+// pick and sends an internal (off-chain) USDT transfer to accountUid.
+model GasExchangeAccount {
+  id          String   @id @default(cuid())
+  exchange    String   // lowercase logo slug: binance, bybit, okx, bitget, gate, mexc…
+  displayName String
+  accountUid  String
+  note        String?
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isActive, sortOrder])
 }
 
 // User-initiated gas-order cancellations, used to drive the abuse/cooldown ladder.

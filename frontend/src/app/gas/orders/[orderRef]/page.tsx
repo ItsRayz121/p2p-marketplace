@@ -201,10 +201,11 @@ function GasOrderTrackingPageInner() {
   if (error || !order) return <ErrorState title={error || 'Order not found'} onRetry={fetchOrder} />
 
   const isPkr = order.paymentCoin === 'PKR'
+  const isExchange = order.paymentNetwork === 'EXCHANGE'
   const nativeSymbol = order.nativeSymbol ?? NATIVE_SYMBOLS[order.chain] ?? order.chain
   const step = getTimelineStep(order.status)
   const isTerminal = ['failed', 'expired', 'refunded'].includes(order.status)
-  const paymentNetwork = isPkr ? null : (order.paymentNetwork ?? order.chain)
+  const paymentNetwork = isPkr || isExchange ? null : (order.paymentNetwork ?? order.chain)
 
   return (
     <div className="min-h-screen bg-canvas">
@@ -331,11 +332,15 @@ function GasOrderTrackingPageInner() {
               <span className="inline-flex items-center gap-1.5">
                 {isPkr && order.pkrPaymentMethod ? (
                   <EntityLogo type="payment_method" slug={order.pkrPaymentMethod} size="xs" />
+                ) : isExchange ? (
+                  <EntityLogo type="exchange" slug={(order.exchangeName ?? '').toLowerCase()} size="xs" />
                 ) : !isPkr ? (
                   <EntityLogo type="chain" slug={order.chain} size="xs" />
                 ) : null}
                 <span>{isPkr
                   ? `PKR · ${(order.pkrPaymentMethod ?? '').replace(/_/g, ' ')}`
+                  : isExchange
+                  ? `USDT · Exchange transfer${order.exchangeName ? ` (${order.exchangeName})` : ''}`
                   : `USDT · ${order.paymentNetwork ?? order.chain}`}
                 </span>
               </span>
@@ -380,8 +385,20 @@ function GasOrderTrackingPageInner() {
           </div>
         )}
 
-        {/* PKR payment proof */}
-        {isPkr && order.paymentProofUrl && (
+        {/* Exchange transfer details the customer submitted */}
+        {isExchange && (order.exchangeUserUid || order.exchangeOrderId) && (
+          <div className="bg-surface shadow-card rounded-xl border border-border p-5">
+            <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Exchange Transfer</h2>
+            {order.exchangeUserUid && <DetailRow label="Your UID" value={<span className="font-mono text-xs">{order.exchangeUserUid}</span>} />}
+            {order.exchangeOrderId && <DetailRow label="Transfer ID" value={<span className="font-mono text-xs break-all">{order.exchangeOrderId}</span>} />}
+            {order.status === 'payment_uploaded' && (
+              <p className="text-xs text-text-muted pt-3">Our team is checking your transfer. This usually takes 5 to 10 minutes and can take longer.</p>
+            )}
+          </div>
+        )}
+
+        {/* PKR / exchange payment proof */}
+        {(isPkr || isExchange) && order.paymentProofUrl && (
           <div className="bg-surface shadow-card rounded-xl border border-border p-5">
             <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Payment Proof</h2>
             <a

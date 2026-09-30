@@ -30,6 +30,10 @@ interface GasOrderDetail {
   paymentSenderAddress: string | null
   pkrAmount: string | null
   pkrPaymentMethod: string | null
+  exchangeName?: string | null
+  exchangeAccountUid?: string | null
+  exchangeUserUid?: string | null
+  exchangeOrderId?: string | null
   paymentProofUrl: string | null
   paymentVerifiedAt: string | null
   verifiedAmount: string | null
@@ -362,10 +366,12 @@ export default function GasOrderDetailPage() {
   // (INSUFFICIENT_HOT_WALLET_BALANCE). Surface refill/retry/refund controls.
   const isStuckDetected = order.status === 'payment_detected'
   const isInsufficientBalance = isStuckDetected && /insufficient|gas coins|not enough|lamports/i.test(order.failureReason ?? '')
-  const isPkrProof = order.status === 'payment_uploaded' && order.paymentCoin === 'PKR'
+  const isExchangeOrder = order.paymentNetwork === 'EXCHANGE'
+  // Manual-review orders: PKR proofs and exchange internal transfers.
+  const isPkrProof = order.status === 'payment_uploaded' && (order.paymentCoin === 'PKR' || isExchangeOrder)
   const isPaymentVerified = order.status === 'payment_verified'
   // USDT payment_uploaded = user submitted tx hash but deposit address wasn't configured for auto-verify
-  const isUsdtProofPending = order.status === 'payment_uploaded' && order.paymentCoin !== 'PKR'
+  const isUsdtProofPending = order.status === 'payment_uploaded' && order.paymentCoin !== 'PKR' && !isExchangeOrder
   const isAwaitingPayment = order.status === 'payment_pending' || order.status === 'expired' || isUsdtProofPending
   const isOrderExpired = order.expiresAt ? new Date(order.expiresAt) < new Date() : false
 
@@ -415,9 +421,9 @@ export default function GasOrderDetailPage() {
           )}
           <div className="flex gap-3 items-start">
             <div className="flex-1">
-              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>PKR Payment Proof Submitted</p>
+              <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>{isExchangeOrder ? 'Exchange Transfer Submitted' : 'PKR Payment Proof Submitted'}</p>
               <p className={`text-xs ${isOrderExpired ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : 'Verify the screenshot below, then approve or reject.'}
+                {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : (isExchangeOrder ? `Find transfer ${order.exchangeOrderId ?? ''} from UID ${order.exchangeUserUid ?? ''} in your ${order.exchangeName ?? 'exchange'} history, check the amount, then approve or reject.` : 'Verify the screenshot below, then approve or reject.')}
               </p>
             </div>
             <Button variant="primary" size="sm" onClick={() => setApprovePkrOpen(true)} disabled={isOrderExpired}>Approve</Button>
@@ -609,6 +615,14 @@ export default function GasOrderDetailPage() {
               <InfoRow label="PKR Method">{order.pkrPaymentMethod?.replace('_', ' ') ?? '—'}</InfoRow>
             </>
           )}
+          {isExchangeOrder && (
+            <>
+              <InfoRow label="Exchange">{order.exchangeName ?? '—'}</InfoRow>
+              <InfoRow label="Our UID (paid to)">{order.exchangeAccountUid ?? '—'}</InfoRow>
+              <InfoRow label="Customer UID">{order.exchangeUserUid ?? '—'}</InfoRow>
+              <InfoRow label="Transfer order ID">{order.exchangeOrderId ?? '—'}</InfoRow>
+            </>
+          )}
           <InfoRow label="Network">{order.paymentNetwork ?? '—'}</InfoRow>
           <InfoRow label="Payment Tx">
             {order.paymentTxHash
@@ -745,8 +759,8 @@ export default function GasOrderDetailPage() {
         isOpen={approvePkrOpen}
         onClose={() => setApprovePkrOpen(false)}
         onConfirm={handleApprovePkr}
-        title="Approve PKR Payment"
-        description={`Confirm you have received PKR ${order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : ''} for order ${order.orderRef}. Gas delivery will be queued immediately.`}
+        title={isExchangeOrder ? 'Approve Exchange Transfer' : 'Approve PKR Payment'}
+        description={isExchangeOrder ? `Confirm ${parseFloat(order.paymentAmount).toFixed(2)} USDT arrived on ${order.exchangeName ?? 'the exchange'} from UID ${order.exchangeUserUid ?? ''} (transfer ${order.exchangeOrderId ?? ''}) for order ${order.orderRef}. Gas delivery will be queued immediately.` : `Confirm you have received PKR ${order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : ''} for order ${order.orderRef}. Gas delivery will be queued immediately.`}
         confirmLabel="Approve & Release Gas"
         confirmVariant="primary"
       />
@@ -754,8 +768,8 @@ export default function GasOrderDetailPage() {
         isOpen={rejectPkrOpen}
         onClose={() => setRejectPkrOpen(false)}
         onConfirm={handleRejectPkr}
-        title="Reject PKR Payment"
-        description={`Reject the PKR payment proof for order ${order.orderRef}. The order will be marked as failed.`}
+        title={isExchangeOrder ? 'Reject Exchange Transfer' : 'Reject PKR Payment'}
+        description={`Reject the ${isExchangeOrder ? 'exchange transfer' : 'PKR payment proof'} for order ${order.orderRef}. The order will be marked as failed.`}
         confirmLabel="Reject Payment"
         confirmVariant="danger"
       />

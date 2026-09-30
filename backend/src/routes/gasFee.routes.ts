@@ -362,6 +362,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
     const chainConfigs = await db.gasChainConfig.findMany({ select: { slug: true, symbol: true } })
     const symbolBySlug = new Map(chainConfigs.map((c) => [c.slug, c.symbol]))
+    // Public, user-independent data: let the browser/CDN reuse it briefly.
+    reply.header('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=60')
     return reply.send({
       success: true,
       data: orders.map((o) => ({
@@ -433,6 +435,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       }),
     )
 
+    // Public, user-independent data: let the browser/CDN reuse it briefly.
+    reply.header('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=60')
     return reply.send({
       success: true,
       data: {
@@ -567,6 +571,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       pkrPrice:     (nativeAmount * nativePkrRate * markup).toFixed(0),
     }))
 
+    // Public, user-independent data: let the browser/CDN reuse it briefly.
+    reply.header('Cache-Control', 'public, max-age=10, s-maxage=20, stale-while-revalidate=60')
     return reply.send({
       success: true,
       data: {
@@ -1456,6 +1462,235 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         priceAtOrder:    nativeUsdRate.toFixed(4),
       },
     })
+  })
+
+  // ── Exchange transfer — pay USDT via an exchange internal transfer ─────────
+  //
+  // The customer sends USDT from their exchange account to one of OUR exchange
+  // UIDs (GasExchangeAccount, managed in admin) and submits their own UID + the
+  // transfer order id. Staff verify it against our exchange history and release
+  // gas. Same lifecycle as the PKR proof flow: payment_pending → payment_uploaded
+  // → (admin approve) payment_detected → delivery. The automatic on-chain matchers
+  // never see these orders (paymentNetwork 'EXCHANGE' matches no chain).
+
+  app.get('/gas-fee/exchange-accounts', { preHandler: [authenticate] }, async (_req, reply) => {
+    const rows = await db.gasExchangeAccount.findMany({
+      where: { isActive: true },
+      orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, exchange: true, displayName: true, accountUid: true, note: true },
+    })
+    return reply.send({ success: true, data: { accounts: rows } })
+  })
+
+  const createExchangeOrderSchema = z.object({
+    tokenConfigId:     z.string().min(1),
+    amount:            z.number().positive(),
+    toAddress:         z.string().min(1),
+    exchangeAccountId: z.string().min(1),
+    idempotencyKey:    z.string().optional(),
+    promoCode:         z.string().trim().min(1).max(40).optional(),
+  })
+
+  app.post('/gas-fee/orders/exchange', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = createExchangeOrderSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    }
+    const { tokenConfigId, amount, toAddress, exchangeAccountId, idempotencyKey, promoCode } = parsed.data
+    const userId = req.user!.id
+    await assertNotInGasCooldown(gasCancelIdentity(userId, req.ip))
+    await assertNoUnpaidGasOrder(userId)
+
+    const account = await db.gasExchangeAccount.findUnique({ where: { id: exchangeAccountId } })
+    if (!account || !account.isActive) throw new AppError('VALIDATION_ERROR', 'This exchange is not available right now', 400)
+
+    const tokenCfg = await db.gasTokenConfig.findUnique({ where: { id: tokenConfigId }, include: { chain: true } })
+    if (!tokenCfg || !tokenCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', 'Gas token not found or inactive', 404)
+    const chainCfg = tokenCfg.chain
+    if (!chainCfg.isActive) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas is not active`, 400)
+    if (tokenCfg.isArchived || chainCfg.isArchived) throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} is no longer available`, 400)
+    if (!chainCfg.backendChainId) throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery is coming soon`, 400)
+    if (!isTokenOrderable(chainCfg.backendChainId, tokenCfg)) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `${tokenCfg.symbol} delivery is coming soon`, 400)
+    }
+    if (!validateAddress(toAddress, chainCfg.addressType)) {
+      throw new AppError('INVALID_ADDRESS', `Invalid ${chainCfg.networkLabel} address format`, 400)
+    }
+
+    const legacyId = chainCfg.backendChainId === 'ETH' ? 'ETHEREUM' : chainCfg.backendChainId
+    const legacyChainConfig = GAS_CHAINS[legacyId as GasChainId]
+    if (!legacyChainConfig && chainCfg.backendChainId !== 'APT') throw new AppError('CHAIN_NOT_SUPPORTED', `${chainCfg.name} gas delivery not configured`, 400)
+
+    const dbHotWallet = await db.gasHotWallet.findFirst({ where: { chain: toDbChain(legacyId as GasChainId), isActive: true } })
+    const aptosHotAddr = chainCfg.backendChainId === 'APT' ? getAptosHotWalletAddress() : null
+    const hotWallet: { address: string } | null = dbHotWallet ?? (aptosHotAddr ? { address: aptosHotAddr } : null)
+    const isAutoPaused = await redis.get(`gas_wallet_paused:${chainCfg.backendChainId}`)
+    if (!hotWallet || isAutoPaused) throw new AppError('GAS_UNAVAILABLE', `Gas is temporarily unavailable for ${chainCfg.name}. Please try again later.`, 503)
+
+    const resolved = resolveTokenConfig(tokenCfg, chainCfg)
+    if (amount < resolved.minAmount) throw new AppError('VALIDATION_ERROR', `Minimum amount is ${resolved.minAmount} ${tokenCfg.symbol}`, 400)
+
+    const nativeUsdRate = await getNativeUsdRate(tokenCfg.priceSymbol)
+    if (!(nativeUsdRate > 0)) throw new AppError('RATE_UNAVAILABLE', 'Exchange rate is temporarily unavailable. Please try again.', 503)
+
+    const gasAmountUSD    = amount * nativeUsdRate
+    const platformFeeUsdt = resolved.platformFeeUsdt
+    if (gasAmountUSD > resolved.maxUsdValue) throw new AppError('VALIDATION_ERROR', `Maximum order value is $${resolved.maxUsdValue} USD. Reduce the amount.`, 400)
+    const paymentAmountUsd = gasAmountUSD + platformFeeUsdt
+
+    const idempKey = (req.headers['idempotency-key'] as string | undefined) ?? idempotencyKey
+    if (idempKey) {
+      const existingId = await redis.get(`idem:gasfee:exchange:${idempKey}`)
+      if (existingId) {
+        const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
+        if (existing) return reply.send({ success: true, data: existing })
+      }
+    }
+
+    const dbChainEnum   = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
+    const orderRef      = generateOrderRef('GF')
+    const trackingToken = generateTrackingToken()
+    // Manual review can take a while — same 24h window as the PKR proof flow.
+    const expiresAt     = new Date(Date.now() + 24 * 60 * 60 * 1000)
+
+    const promoIdent = promoIdentity(userId, req.ip ?? 'unknown')
+    const promoRes = await reserveOrderPromo(promoCode, paymentAmountUsd, platformFeeUsdt, promoIdent)
+    const promoDisc = promoRes?.discountUsdt ?? 0
+    const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
+    const affDisc = aff.discountUsdt
+    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
+    const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
+
+    const order = await (async () => {
+      try {
+        return await db.gasFeeOrder.create({
+          data: {
+            orderRef,
+            trackingToken,
+            userId,
+            ipAddress:        req.ip ?? 'unknown',
+            chain:            dbChainEnum,
+            gasTokenConfigId: tokenCfg.id,
+            gasAmountNative:  amount,
+            gasAmountUSD,
+            priceAtOrder:     nativeUsdRate,
+            paymentCoin:      'USDT',
+            paymentNetwork:   'EXCHANGE',
+            paymentAmount:    finalPaymentUsd,
+            platformMarginUsdt: platformFeeUsdt,
+            discountUsdt:     totalDiscount,
+            affiliateDiscountUsdt: affDisc,
+            affiliateReferrer:     aff.referrer,
+            ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
+            exchangeName:       account.displayName,
+            exchangeAccountUid: account.accountUid,
+            fromHotWallet:    hotWallet.address,
+            toAddress,
+            status:           'payment_pending',
+            expiresAt,
+          },
+        })
+      } catch (e) {
+        if (promoRes) await releaseReservation(promoRes)
+        throw e
+      }
+    })()
+
+    if (promoRes) {
+      await recordRedemption({ resolution: promoRes, orderId: order.id, identity: promoIdent, userId })
+        .catch((e) => logger.error({ err: e, orderId: order.id }, 'gas promo redemption row failed (discount stands)'))
+    }
+
+    if (idempKey) await redis.setex(`idem:gasfee:exchange:${idempKey}`, 86400, order.id)
+    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+
+    flagIfRisky(order, req.ip ?? 'unknown').catch(() => {})
+    logger.info({ orderId: order.id, userId, exchange: account.exchange, paymentAmount: finalPaymentUsd }, 'Exchange-transfer gas order created')
+
+    return reply.code(201).send({
+      success: true,
+      data: {
+        orderRef:        order.orderRef,
+        trackingToken:   order.trackingToken,
+        paymentCoin:     'USDT',
+        paymentNetwork:  'EXCHANGE',
+        paymentAmount:   finalPaymentUsd.toFixed(2),
+        gasAmountNative: order.gasAmountNative.toString(),
+        nativeSymbol:    tokenCfg.symbol,
+        chain:           order.chain,
+        status:          order.status,
+        expiresAt:       order.expiresAt.toISOString(),
+        gasValueUsd:     gasAmountUSD.toFixed(4),
+        platformFeeUsdt: platformFeeUsdt.toFixed(4),
+        discountUsdt:    totalDiscount.toFixed(4),
+        promoCode:       promoRes?.code ?? null,
+        priceAtOrder:    nativeUsdRate.toFixed(4),
+        exchangeName:       order.exchangeName,
+        exchangeAccountUid: order.exchangeAccountUid,
+      },
+    })
+  })
+
+  const exchangeProofSchema = z.object({
+    exchangeUserUid: z.string().trim().min(3).max(64),
+    exchangeOrderId: z.string().trim().min(4).max(80),
+    proofUrl:        z.string().url().optional(),
+  })
+
+  app.post('/gas-fee/orders/:orderRef/exchange-proof', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const parsed = exchangeProofSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Enter your exchange UID and the transfer order ID', 400)
+    const { exchangeUserUid, exchangeOrderId, proofUrl } = parsed.data
+    if (proofUrl && !isAllowedProofUrl(proofUrl)) {
+      throw new AppError('VALIDATION_ERROR', 'Screenshot must be uploaded via the platform uploader (invalid URL domain)', 400)
+    }
+
+    const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    if (order.userId !== req.user!.id) throw new AppError('FORBIDDEN', 'Not your order', 403)
+    if (order.paymentNetwork !== 'EXCHANGE') {
+      throw new AppError('INVALID_STATUS', 'This order is not an exchange-transfer order', 400)
+    }
+    if (order.expiresAt < new Date()) throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
+    if (order.status !== 'payment_pending') {
+      throw new AppError('INVALID_STATUS', `Cannot submit details for order in status ${order.status}`, 400)
+    }
+
+    // The same transfer order id can only ever pay for ONE order — otherwise a
+    // single real transfer could be replayed against several gas orders.
+    const dup = await db.gasFeeOrder.findFirst({ where: { exchangeOrderId, NOT: { id: order.id } }, select: { id: true } })
+    if (dup) throw new AppError('CONFLICT', 'That transfer order ID has already been used on another order.', 409)
+
+    let updated
+    try {
+      updated = await db.gasFeeOrder.update({
+        where: { orderRef },
+        data: {
+          status: 'payment_uploaded',
+          exchangeUserUid,
+          exchangeOrderId,
+          ...(proofUrl ? { paymentProofUrl: proofUrl } : {}),
+        },
+      })
+    } catch (e) {
+      if ((e as { code?: string }).code === 'P2002') {
+        throw new AppError('CONFLICT', 'That transfer order ID has already been used on another order.', 409)
+      }
+      throw e
+    }
+
+    logger.info({ orderRef, userId: req.user!.id }, 'Exchange-transfer details submitted')
+    void createAdminNotif({
+      category: 'GAS',
+      title:   `Exchange Transfer Submitted — $${Number(order.paymentAmount).toFixed(2)} USDT`,
+      body:    `Order ${orderRef} via ${order.exchangeName ?? 'exchange'}: user UID ${exchangeUserUid}, transfer ID ${exchangeOrderId}. Verify it in the exchange history, then release gas.`,
+      href:    `/admin/gas/orders/${orderRef}`,
+      metadata: { orderRef, orderId: order.id, exchange: order.exchangeName ?? null, exchangeUserUid, exchangeOrderId },
+    })
+
+    return reply.send({ success: true, data: { orderRef: updated.orderRef, status: updated.status } })
   })
 
   // ── POST /gas-fee/orders/crypto — create USDT order with BEP20 or Aptos ────

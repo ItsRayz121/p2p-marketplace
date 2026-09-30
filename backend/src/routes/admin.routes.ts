@@ -239,7 +239,7 @@ export async function adminRoutes(app: FastifyInstance) {
         }),
         // Gas fee stats
         db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] } } }),
-        db.gasFeeOrder.count({ where: { status: 'payment_uploaded', paymentCoin: 'PKR' } }),
+        db.gasFeeOrder.count({ where: { status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] } }),
         db.gasFeeOrder.count({ where: { ...createdSince } }),
         db.gasFeeOrder.aggregate({
           where: { status: 'delivered', ...deliveredSince },
@@ -4363,8 +4363,12 @@ export async function adminRoutes(app: FastifyInstance) {
     // straight to "PKR proof review" or "crypto" without mixing payment types.
     if (query.paymentType === 'PKR' || query.paymentCoin === 'PKR') {
       where.paymentCoin = 'PKR'
+    } else if (query.paymentType === 'EXCHANGE') {
+      where.paymentNetwork = 'EXCHANGE'
     } else if (query.paymentType === 'CRYPTO') {
+      // Auto-verified on-chain payments only — PKR and exchange transfers are manual.
       where.paymentCoin = { not: 'PKR' }
+      where.paymentNetwork = { not: 'EXCHANGE' }
     } else if (query.paymentCoin) {
       where.paymentCoin = query.paymentCoin
     }
@@ -6659,6 +6663,66 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // ── Exchange-transfer receiving accounts (the UIDs customers pay into) ────────
+  // Read: any admin. Write: super_admin only — these are the destinations for
+  // customer money, so changing one is as sensitive as changing a bank account.
+
+  const exchangeAccountBody = z.object({
+    exchange:    z.string().trim().toLowerCase().regex(/^[a-z0-9_-]{2,30}$/, 'Use a short lowercase slug, e.g. binance'),
+    displayName: z.string().trim().min(2).max(40),
+    accountUid:  z.string().trim().min(3).max(64),
+    note:        z.string().trim().max(200).nullish(),
+    isActive:    z.boolean().optional(),
+    sortOrder:   z.number().int().min(0).max(999).optional(),
+  })
+
+  app.get('/admin/gas/exchange-accounts', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const accounts = await db.gasExchangeAccount.findMany({ orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] })
+    return reply.send({ success: true, data: { accounts } })
+  })
+
+  app.post('/admin/gas/exchange-accounts', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const parsed = exchangeAccountBody.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const d = parsed.data
+    const created = await db.gasExchangeAccount.create({
+      data: { exchange: d.exchange, displayName: d.displayName, accountUid: d.accountUid, note: d.note ?? null, isActive: d.isActive ?? true, sortOrder: d.sortOrder ?? 0 },
+    })
+    await createAuditLog(req.user!.id, 'GAS_EXCHANGE_ACCOUNT_CREATED', 'GasExchangeAccount', created.id, { exchange: d.exchange, accountUid: d.accountUid }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.code(201).send({ success: true, data: created })
+  })
+
+  app.patch('/admin/gas/exchange-accounts/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = exchangeAccountBody.partial().safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const before = await db.gasExchangeAccount.findUnique({ where: { id } })
+    if (!before) throw Errors.NOT_FOUND('Exchange account')
+    const d = parsed.data
+    const updated = await db.gasExchangeAccount.update({
+      where: { id },
+      data: {
+        ...(d.exchange !== undefined ? { exchange: d.exchange } : {}),
+        ...(d.displayName !== undefined ? { displayName: d.displayName } : {}),
+        ...(d.accountUid !== undefined ? { accountUid: d.accountUid } : {}),
+        ...(d.note !== undefined ? { note: d.note ?? null } : {}),
+        ...(d.isActive !== undefined ? { isActive: d.isActive } : {}),
+        ...(d.sortOrder !== undefined ? { sortOrder: d.sortOrder } : {}),
+      },
+    })
+    await createAuditLog(req.user!.id, 'GAS_EXCHANGE_ACCOUNT_UPDATED', 'GasExchangeAccount', id, { before: { accountUid: before.accountUid, isActive: before.isActive }, after: { accountUid: updated.accountUid, isActive: updated.isActive } }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: updated })
+  })
+
+  app.delete('/admin/gas/exchange-accounts/:id', { preHandler: [authenticate, superAdminOnly] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const row = await db.gasExchangeAccount.findUnique({ where: { id } })
+    if (!row) throw Errors.NOT_FOUND('Exchange account')
+    await db.gasExchangeAccount.delete({ where: { id } })
+    await createAuditLog(req.user!.id, 'GAS_EXCHANGE_ACCOUNT_DELETED', 'GasExchangeAccount', id, { exchange: row.exchange, accountUid: row.accountUid }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true })
+  })
+
   // ── POST /admin/gas/orders/:id/approve-pkr — approve a payment_uploaded PKR order ──
 
   app.post('/admin/gas/orders/:id/approve-pkr', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -6668,8 +6732,9 @@ export async function adminRoutes(app: FastifyInstance) {
     const order = await db.gasFeeOrder.findUnique({ where: { id } })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
 
-    if (order.status !== 'payment_uploaded' || order.paymentCoin !== 'PKR') {
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only approve payment_uploaded PKR orders`, 409)
+    // Manual-proof orders: PKR transfers and exchange (internal USDT) transfers.
+    if (order.status !== 'payment_uploaded' || !(order.paymentCoin === 'PKR' || order.paymentNetwork === 'EXCHANGE')) {
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only approve payment_uploaded PKR or exchange-transfer orders`, 409)
     }
 
     if (order.expiresAt < new Date()) {
@@ -6678,7 +6743,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     // CAS: transition payment_uploaded → payment_detected (guards against race with another admin)
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: 'payment_uploaded', paymentCoin: 'PKR' },
+      where: { id, status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] },
       data:  { status: 'payment_detected' },
     })
     if (claimed.count === 0) {
@@ -6702,13 +6767,13 @@ export async function adminRoutes(app: FastifyInstance) {
     const body = req.body as { reason?: string }
     const reason = body?.reason ?? 'PKR payment rejected by admin'
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: 'payment_uploaded', paymentCoin: 'PKR' },
+      where: { id, status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] },
       data:  { status: 'failed', failureReason: reason },
     })
     if (claimed.count === 0) {
       const order = await db.gasFeeOrder.findUnique({ where: { id } })
       if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR orders`, 409)
+      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR or exchange-transfer orders`, 409)
     }
     await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'failed' } })

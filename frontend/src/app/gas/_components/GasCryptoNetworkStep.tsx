@@ -16,7 +16,7 @@ export function GasCryptoNetworkStep() {
 
   return (
     <div className="p-5 space-y-4">
-      <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
+      <CardHeader onBack={() => setPhase(PHASE.USDT_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
 
       <div className="flex items-center gap-2 flex-wrap text-xs">
         <span className="text-text-muted">You pay</span>

@@ -82,20 +82,20 @@ export function GasPaymentChoice() {
           </button>
 
           <button
-            onClick={() => setPhase(PHASE.CRYPTO_NETWORK)}
+            onClick={() => setPhase(PHASE.USDT_METHOD)}
             className="flex flex-col gap-3 p-5 rounded-xl border-2 border-border bg-surface hover:border-blue-500/50 hover:shadow-card transition-all text-left group"
           >
             <div className="flex items-center justify-between">
               <EntityLogo type="token" slug="USDT" size="2xl" className="w-12 h-12 shadow-card" />
-              <span className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold px-2.5 py-1 rounded-full">Low Fees</span>
+              <span className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-300 font-semibold px-2.5 py-1 rounded-full">Recommended</span>
             </div>
             <div>
-              <p className="text-sm font-bold text-text-primary mb-0.5">Pay with Crypto</p>
-              <p className="text-xs text-text-muted">USDT BEP20 · USDT Aptos</p>
+              <p className="text-sm font-bold text-text-primary mb-0.5">Pay with USDT</p>
+              <p className="text-xs text-text-muted">Blockchain · Exchange transfer</p>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-text-muted">
               <svg className="w-3.5 h-3.5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-              Instant payment detection
+              Fastest option
             </div>
           </button>
         </div>

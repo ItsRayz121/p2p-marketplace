@@ -5,7 +5,7 @@ import Link from 'next/link'
 import {
   gasApi,
   type GasChain, type GasToken, type GasTokensResponse, type GasOrder,
-  type GasPkrMethods, type GasCryptoMethods, type GasNetworkFee,
+  type GasPkrMethods, type GasCryptoMethods, type GasNetworkFee, type GasExchangeAccount,
 } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
@@ -24,6 +24,8 @@ import { GasPkrMethodStep }      from './GasPkrMethodStep'
 import { GasPkrProofStep }       from './GasPkrProofStep'
 import { GasPkrReviewStep }      from './GasPkrReviewStep'
 import { GasCryptoNetworkStep }  from './GasCryptoNetworkStep'
+import { GasUsdtMethodStep }     from './GasUsdtMethodStep'
+import { GasExchangeStep }       from './GasExchangeStep'
 import { GasCryptoQRStep }       from './GasCryptoQRStep'
 import { GasProcessingView }     from './GasProcessingView'
 import { GasCompleteView }       from './GasCompleteView'
@@ -82,6 +84,16 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
   const [proofUrl, setProofUrl]             = useState('')
   const [submittingProof, setSubmittingProof] = useState(false)
   const [proofError, setProofError]         = useState('')
+
+  // ── Exchange-transfer flow ────────────────────────────────────────────────
+  const [exchangeAccounts, setExchangeAccounts]               = useState<GasExchangeAccount[] | null>(null)
+  const [exchangeAccountsLoading, setExchangeAccountsLoading] = useState(false)
+  const [selectedExchangeId, setSelectedExchangeId]           = useState<string | null>(null)
+  const [creatingExchange, setCreatingExchange]               = useState(false)
+  const [exchangeError, setExchangeError]                     = useState('')
+  const [exchangeUserUid, setExchangeUserUid]                 = useState('')
+  const [exchangeOrderId, setExchangeOrderId]                 = useState('')
+  const [submittingExchange, setSubmittingExchange]           = useState(false)
 
   // ── Crypto flow ────────────────────────────────────────────────────────────
   const [selectedCryptoNetwork, setSelectedCryptoNetwork] = useState<'BEP20' | 'APTOS' | null>(null)
@@ -261,6 +273,19 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
   }, [phase, pkrMethods, cryptoMethods])
 
   useEffect(() => {
+    if ((phase !== PHASE.USDT_METHOD && phase !== PHASE.EXCHANGE) || exchangeAccounts || exchangeAccountsLoading) return
+    // Exchange transfer needs an account (staff review it against the customer's
+    // profile), same as PKR — guests just don't get the option, and we skip the
+    // request that would 401 for them.
+    if (!user) return
+    setExchangeAccountsLoading(true)
+    gasApi.getExchangeAccounts()
+      .then((r) => setExchangeAccounts(r.accounts))
+      .catch(() => setExchangeAccounts([]))
+      .finally(() => setExchangeAccountsLoading(false))
+  }, [phase, user, exchangeAccounts, exchangeAccountsLoading])
+
+  useEffect(() => {
     if (phase !== PHASE.ADDRESS || !selectedChain) return
     setNetworkFee(null)
     gasApi.getNetworkFee(selectedChain.slug)
@@ -372,6 +397,38 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
     finally { setSubmittingProof(false) }
   }
 
+  async function handleCreateExchangeOrder() {
+    if (!selectedToken || !selectedExchangeId) return
+    setCreatingExchange(true); setExchangeError('')
+    try {
+      const o = await gasApi.createExchangeOrder({
+        tokenConfigId: selectedToken.id, amount: parseFloat(amount),
+        toAddress: address, exchangeAccountId: selectedExchangeId,
+        idempotencyKey: `${idempKeyRef.current}_exchange_${selectedExchangeId}`,
+        ...(promoApplied ? { promoCode: promoApplied.code } : {}),
+      })
+      setOrder(o); setPollErrCount(0)
+      try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* storage unavailable */ }
+    } catch (e: unknown) { setExchangeError(e instanceof Error ? e.message : 'Failed to create order') }
+    finally { setCreatingExchange(false) }
+  }
+
+  async function handleSubmitExchangeProof() {
+    if (!order || !exchangeUserUid.trim() || !exchangeOrderId.trim()) return
+    setSubmittingExchange(true); setExchangeError('')
+    try {
+      await gasApi.submitExchangeProof(order.orderRef, {
+        exchangeUserUid: exchangeUserUid.trim(),
+        exchangeOrderId: exchangeOrderId.trim(),
+        ...(proofUrl ? { proofUrl } : {}),
+      })
+      try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
+      const token = order.trackingToken ? `?token=${encodeURIComponent(order.trackingToken)}` : ''
+      router.push(`/gas/orders/${order.orderRef}${token}`)
+    } catch (e: unknown) { setExchangeError(e instanceof Error ? e.message : 'Failed to submit details') }
+    finally { setSubmittingExchange(false) }
+  }
+
   async function handleCreateCryptoOrder() {
     if (!selectedToken || !selectedCryptoNetwork) return
     setCreatingCrypto(true); setCryptoError('')
@@ -458,7 +515,10 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
       try {
         const o = await gasApi.getOrder(orderRef!, trackingToken ?? undefined)
         if (cancelled) return
-        if (o.status === 'payment_pending') {
+        if (o.status === 'payment_pending' && o.paymentNetwork === 'EXCHANGE') {
+          setOrder(o); setPhase(PHASE.EXCHANGE)
+          try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* */ }
+        } else if (o.status === 'payment_pending') {
           setOrder(o); setPhase(PHASE.CRYPTO_QR)
           // Re-arm the refresh-restore pointer when resuming from a deep link.
           try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* */ }
@@ -561,6 +621,7 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
     setSelectedChain(null); setSelectedToken(null); setTokenData(null)
     setAmount(''); setAmountError(''); setAddress(''); setAddressError('')
     setSelectedPkrMethod(null); setSelectedCryptoNetwork(null)
+    setSelectedExchangeId(null); setExchangeUserUid(''); setExchangeOrderId(''); setExchangeError('')
     setOrder(null); setPollErrCount(0)
     setPaymentSent(false)
     setCancelling(false); setCancelError(''); setCancelPreview(null); setCancelResult(null)
@@ -604,6 +665,9 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
     selectedPkrMethod, setSelectedPkrMethod, creatingPkr, pkrError,
     proofUrl, setProofUrl, submittingProof, proofError, uploading, uploadProgress, uploadError,
     handleCreatePkrOrder, handleUploadFile, handleSubmitProof,
+    exchangeAccounts, exchangeAccountsLoading, selectedExchangeId, setSelectedExchangeId,
+    creatingExchange, exchangeError, exchangeUserUid, setExchangeUserUid, exchangeOrderId, setExchangeOrderId,
+    submittingExchange, handleCreateExchangeOrder, handleSubmitExchangeProof,
     selectedCryptoNetwork, setSelectedCryptoNetwork, creatingCrypto, cryptoError,
     qrFailed, setQrFailed, paymentSent, setPaymentSent,
     verifyOpen, setVerifyOpen, verifyTxHash, setVerifyTxHash,
@@ -667,6 +731,8 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
                 {phase === PHASE.PKR_METHOD     && <GasPkrMethodStep />}
                 {phase === PHASE.PKR_PROOF      && <GasPkrProofStep />}
                 {phase === PHASE.PKR_REVIEW     && <GasPkrReviewStep />}
+                {phase === PHASE.USDT_METHOD    && <GasUsdtMethodStep />}
+                {phase === PHASE.EXCHANGE       && <GasExchangeStep />}
                 {phase === PHASE.CRYPTO_NETWORK && <GasCryptoNetworkStep />}
                 {phase === PHASE.CRYPTO_QR      && <GasCryptoQRStep />}
                 {phase === PHASE.PROCESSING     && <GasProcessingView />}

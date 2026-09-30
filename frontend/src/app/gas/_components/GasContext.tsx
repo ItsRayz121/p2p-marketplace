@@ -2,7 +2,7 @@
 import { createContext, useContext } from 'react'
 import type {
   GasChain, GasToken, GasTokensResponse, GasOrder,
-  GasPkrMethods, GasCryptoMethods, GasNetworkFee,
+  GasPkrMethods, GasCryptoMethods, GasNetworkFee, GasExchangeAccount,
 } from '@/lib/api'
 import type { AuthUser } from '@/store/auth.store'
 
@@ -20,6 +20,8 @@ export const PHASE = {
   CRYPTO_QR:      10,
   PROCESSING:     11,
   COMPLETE:       12,
+  USDT_METHOD:    13,   // Pay with USDT → Blockchain vs Exchange transfer
+  EXCHANGE:       14,   // Exchange transfer: pick exchange, send, submit UID + order id
 } as const
 
 export type Phase = typeof PHASE[keyof typeof PHASE]
@@ -94,6 +96,21 @@ export interface GasFlowCtx {
   handleCreatePkrOrder: () => Promise<void>
   handleUploadFile: (file: File) => Promise<void>
   handleSubmitProof: () => Promise<void>
+
+  // Exchange-transfer flow
+  exchangeAccounts: GasExchangeAccount[] | null
+  exchangeAccountsLoading: boolean
+  selectedExchangeId: string | null
+  setSelectedExchangeId: (id: string | null) => void
+  creatingExchange: boolean
+  exchangeError: string
+  exchangeUserUid: string
+  setExchangeUserUid: (v: string) => void
+  exchangeOrderId: string
+  setExchangeOrderId: (v: string) => void
+  submittingExchange: boolean
+  handleCreateExchangeOrder: () => Promise<void>
+  handleSubmitExchangeProof: () => Promise<void>
 
   // Crypto flow
   selectedCryptoNetwork: 'BEP20' | 'APTOS' | null

@@ -1,4 +1,5 @@
 'use client'
+import Link from 'next/link'
 import { useState, useEffect, useCallback } from 'react'
 import { gasApi, type GasOrder, type GasPkrMethods } from '@/lib/api'
 import { toast } from '@/lib/toast'
@@ -43,6 +44,7 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
   onChanged: () => void
 }) {
   const isPkr = order.paymentCoin === 'PKR'
+  const isExchange = order.paymentNetwork === 'EXCHANGE'
   const { upload, uploading, progress } = useFileUpload('payment-proof')
 
   // ── PKR proof state ──
@@ -108,7 +110,18 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
     <div className="bg-surface shadow-card rounded-xl border border-border p-5 space-y-4">
       <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider">Complete your payment</h2>
 
-      {isPkr ? (
+      {isExchange ? (
+        <>
+          {/* Exchange transfer: the send + UID/order-id form lives in the gas wizard */}
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 space-y-3">
+            <p className="text-sm font-bold text-text-primary">Send {parseFloat(order.paymentAmount).toFixed(2)} USDT by internal transfer on {order.exchangeName ?? 'your exchange'}</p>
+            <p className="text-xs text-text-muted">Continue to see the account UID and enter your transfer details.</p>
+            <Link href={`/gas?order=${encodeURIComponent(order.orderRef)}${trackingToken ? `&token=${encodeURIComponent(trackingToken)}` : ''}`}>
+              <Button className="w-full">Continue payment</Button>
+            </Link>
+          </div>
+        </>
+      ) : isPkr ? (
         <>
           {/* PKR: where + how much to send, then upload proof */}
           <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-4 space-y-3">
