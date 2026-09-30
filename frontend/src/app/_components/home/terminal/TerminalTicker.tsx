@@ -19,7 +19,9 @@ export function TerminalTicker() {
     <div className="border-b border-border bg-surface-alt/60 overflow-hidden" aria-label="Live market prices">
       <div
         className="flex w-max gap-6 px-4 py-2 font-mono text-[11px] whitespace-nowrap hover:[animation-play-state:paused]"
-        style={{ animation: `marquee ${duration}s linear infinite` }}
+        // Longhands, not the `animation` shorthand: an inline shorthand would
+        // pin animation-play-state and defeat the hover-to-pause class.
+        style={{ animationName: 'marquee', animationDuration: `${duration}s`, animationTimingFunction: 'linear', animationIterationCount: 'infinite' }}
       >
         {loop.map((r, i) => {
           const ch = changeView(r.changePercent24h)
@@ -30,6 +32,7 @@ export function TerminalTicker() {
               onClick={() => { select(r.slug); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               className="inline-flex items-center gap-2 hover:text-primary transition-colors"
               tabIndex={i < base.length ? 0 : -1}
+              aria-hidden={i < base.length ? undefined : true}
             >
               <span className="text-text-muted">{r.symbol}/PKR</span>
               <span className="text-text-primary tabular-nums">{fmtPrice(r.lastPricePkr)}</span>

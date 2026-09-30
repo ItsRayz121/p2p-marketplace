@@ -14,7 +14,7 @@ const KIND_LABEL: Record<MarketRow['kind'], string> = { usdt: 'P2P', ctm: 'TOKEN
 
 // ─── Order book (top USDT ads) ────────────────────────────────────────────────
 
-function BookSide({ ads, sellers }: { ads: MarketplaceAd[]; sellers: boolean }) {
+function BookSide({ ads, sellers, mounted }: { ads: MarketplaceAd[]; sellers: boolean; mounted: boolean }) {
   const rows = ads.slice(0, 5)
   const maxOrder = Math.max(1, ...rows.map((a) => Number(a.maxOrder) || 0))
   const tone = sellers ? 'text-success' : 'text-danger'
@@ -32,7 +32,7 @@ function BookSide({ ads, sellers }: { ads: MarketplaceAd[]; sellers: boolean }) 
         const s = ad.seller
         const stats = s?.tradeStats
         const pct = stats?.completionRate ? `${(parseFloat(stats.completionRate) * 100).toFixed(0)}%` : null
-        const online = s?.lastSeenAt ? Date.now() - new Date(s.lastSeenAt).getTime() < ONLINE_MS : false
+        const online = mounted && s?.lastSeenAt ? Date.now() - new Date(s.lastSeenAt).getTime() < ONLINE_MS : false
         const methods = (ad.paymentMethods ?? []).filter((pm) => pm && !isOpaqueId(pm)).slice(0, 2)
         const depth = Math.round(((Number(ad.maxOrder) || 0) / maxOrder) * 55)
         return (
@@ -66,14 +66,14 @@ function BookSide({ ads, sellers }: { ads: MarketplaceAd[]; sellers: boolean }) 
 }
 
 export function TerminalOrderBook() {
-  const { topAds } = useTerminal()
+  const { topAds, mounted } = useTerminal()
   if (!topAds) {
     return <p className="rounded-xl border border-dashed border-border px-4 py-8 text-center text-sm text-text-muted">Offers are loading or unavailable right now.</p>
   }
   return (
     <div className="grid lg:grid-cols-2 gap-6">
-      <BookSide ads={topAds.sells ?? []} sellers />
-      <BookSide ads={topAds.buys ?? []} sellers={false} />
+      <BookSide ads={topAds.sells ?? []} sellers mounted={mounted} />
+      <BookSide ads={topAds.buys ?? []} sellers={false} mounted={mounted} />
     </div>
   )
 }
@@ -156,7 +156,7 @@ export function TerminalMarkets() {
 const TAPE_TONE = { usdt: 'text-primary', ctm: 'text-warning', gas: 'text-success' } as const
 
 export function TerminalTape({ limit = 14 }: { limit?: number }) {
-  const { tape } = useTerminal()
+  const { tape, mounted } = useTerminal()
   if (!tape.length) return <p className="py-6 text-center font-mono text-xs text-text-muted">No recent trades yet.</p>
   return (
     <ul>
@@ -168,7 +168,7 @@ export function TerminalTape({ limit = 14 }: { limit?: number }) {
             {t.kind === 'gas' ? 'topped up' : 'bought'}{' '}
             {t.amount.toLocaleString('en-US', { maximumFractionDigits: t.kind === 'gas' ? 4 : 2 })} {t.asset}{t.kind === 'gas' ? ' gas' : ''}
           </span>
-          <span className="ml-auto shrink-0 text-text-muted">{tradeTimeAgo(t.at, { collapseAfter24h: true })}</span>
+          <span className="ml-auto shrink-0 text-text-muted">{mounted ? tradeTimeAgo(t.at, { collapseAfter24h: true }) : ''}</span>
         </li>
       ))}
     </ul>

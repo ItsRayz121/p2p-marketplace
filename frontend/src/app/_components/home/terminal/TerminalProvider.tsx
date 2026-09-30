@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { api, marketsApi, marketplaceApi, ctmApi, gasApi } from '@/lib/api'
 import type { MarketActivity, MarketsOverview, MarketRatesSummary } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
@@ -18,6 +18,10 @@ interface TerminalState extends TerminalData {
   selected: string
   select: (slug: string) => void
   updatedAt: Date | null
+  /** False during SSR and hydration. Gate anything computed from the current
+   *  time ("5m ago", online dots) on it: the HTML is ISR-cached for up to 60s,
+   *  so a clock-based value rendered on the server won't match the browser's. */
+  mounted: boolean
 }
 
 const Ctx = createContext<TerminalState | null>(null)
@@ -32,6 +36,8 @@ export function TerminalProvider({ initial, children }: { initial: TerminalData;
   const [data, setData] = useState<TerminalData>(initial)
   const [selected, setSelected] = useState('usdt')
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => { setMounted(true) }, [])
 
   const refresh = async () => {
     const [overview, summary, topAds, usdtActivity, history24h, usdtTrades, ctmTrades, gasBuys] = await Promise.allSettled([
@@ -64,7 +70,7 @@ export function TerminalProvider({ initial, children }: { initial: TerminalData;
   usePolling(refresh, POLL_MS, true)
 
   return (
-    <Ctx.Provider value={{ ...data, selected, select: setSelected, updatedAt }}>
+    <Ctx.Provider value={{ ...data, selected, select: setSelected, updatedAt, mounted }}>
       {children}
     </Ctx.Provider>
   )
