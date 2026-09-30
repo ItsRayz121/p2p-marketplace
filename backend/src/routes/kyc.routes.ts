@@ -12,8 +12,13 @@ const submitKycSchema = z.object({
   // CNIC details + document photos are only collected for Basic (Level 1). For
   // Enhanced (Level 2) these are reused from the user's approved Level 1
   // submission — see submitKyc — so they are optional here.
-  cnicNumber: z.string().regex(/^\d{5}-\d{7}-\d$|^\d{13}$/, 'Invalid CNIC format (expected XXXXX-XXXXXXX-X or 13 digits)').optional(),
-  legalName: z.string().trim().min(3, 'Enter your full name as printed on your CNIC').max(100).optional(),
+  // ID document: a national ID (front + back) or a passport (data page only).
+  // idNumber replaces the old CNIC-only field; cnicNumber is still accepted so an
+  // older client keeps working.
+  idType: z.enum(['national_id', 'passport']).default('national_id'),
+  idNumber: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9 -]{4,29}$/, 'Enter the ID or passport number exactly as printed (5-30 letters, digits, spaces or dashes)').optional(),
+  cnicNumber: z.string().trim().regex(/^[A-Za-z0-9][A-Za-z0-9 -]{4,29}$/, 'Invalid ID number').optional(),
+  legalName: z.string().trim().min(3, 'Enter your full name as printed on your ID or passport').max(100).optional(),
   frontUrl: z.string().url().optional(),
   backUrl: z.string().url().optional(),
   selfieUrl: z.string().url().optional(),
@@ -28,8 +33,8 @@ const submitKycSchema = z.object({
     .optional(),
 })
   // Basic KYC still requires CNIC number + front/back/selfie photos.
-  .refine((d) => d.tier !== 'basic' || (!!d.cnicNumber && !!d.frontUrl && !!d.backUrl && !!d.selfieUrl), {
-    message: 'Basic KYC requires your CNIC number and front, back, and selfie photos',
+  .refine((d) => d.tier !== 'basic' || (!!(d.idNumber ?? d.cnicNumber) && !!d.frontUrl && !!d.selfieUrl && (d.idType === 'passport' || !!d.backUrl)), {
+    message: 'Basic KYC requires your ID number, a photo of your ID (front and back) or passport page, and a selfie',
     path: ['frontUrl'],
   })
   .refine((d) => d.tier !== 'enhanced' || (d.socialLinks?.filter((l) => l.url.trim()).length ?? 0) >= 2, {
@@ -57,10 +62,12 @@ export async function kycRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tier, cnicNumber, legalName, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
+    const { tier, idType, legalName, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
+    const cnicNumber = parsed.data.idNumber ?? parsed.data.cnicNumber
     // Build the payload with only defined fields (exactOptionalPropertyTypes).
     const submission = await submitKyc(userId, {
       tier,
+      idType,
       ...(cnicNumber ? { cnicNumber } : {}),
       ...(legalName ? { legalName } : {}),
       ...(frontUrl ? { frontUrl } : {}),

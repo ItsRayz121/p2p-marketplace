@@ -934,8 +934,12 @@ model KycSubmission {
   user            User              @relation(fields: [userId], references: [id], onDelete: Restrict)
   status          KycStatus         @default(pending)
   tier            KycSubmissionTier @default(basic)
+  // 'national_id' (front + back photos) or 'passport' (photo/data page only, so
+  // backUrl is null). cnicNumberHash is the keyed hash of whichever ID number
+  // was entered — the column name predates passport support.
+  idType          String            @default("national_id")
   frontUrl        String
-  backUrl         String
+  backUrl         String?
   selfieUrl       String
   videoUrl        String?
   cnicNumberHash  String

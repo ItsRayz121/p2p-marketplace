@@ -1486,6 +1486,8 @@ export const kycApi = {
     tier: 'basic' | 'enhanced'
     // CNIC + document photos are required for Basic only; Enhanced reuses the
     // approved Level 1 documents server-side.
+    idType?: 'national_id' | 'passport'
+    idNumber?: string
     cnicNumber?: string
     legalName?: string
     frontUrl?: string

@@ -18,15 +18,12 @@ import Link from 'next/link'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-function formatCnic(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 13)
-  if (digits.length <= 5) return digits
-  if (digits.length <= 12) return `${digits.slice(0, 5)}-${digits.slice(5)}`
-  return `${digits.slice(0, 5)}-${digits.slice(5, 12)}-${digits.slice(12)}`
-}
+type IdType = 'national_id' | 'passport'
 
-function isValidCnic(cnic: string): boolean {
-  return /^\d{5}-\d{7}-\d$/.test(cnic)
+// ID numbers differ by country, so validate loosely (the backend applies the same
+// rule): 5-30 letters, digits, spaces or dashes, as printed on the document.
+function isValidIdNumber(v: string): boolean {
+  return /^[A-Za-z0-9][A-Za-z0-9 -]{4,29}$/.test(v.trim())
 }
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
@@ -75,9 +72,9 @@ function TierCard({
       <ul className="text-sm text-text-secondary space-y-2 mb-4">
         {isBasic ? (
           <>
-            <li className="flex gap-2"><span className="text-success">✓</span> CNIC Front &amp; Back photos</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> National ID (front &amp; back) or passport photo page</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Simple selfie</li>
-            <li className="flex gap-2"><span className="text-success">✓</span> Unlocks trading, wallet, ads, CTM &amp; gas</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Unlocks posting ads (not needed to trade or buy gas)</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 50,000</li>
           </>
         ) : (
@@ -234,6 +231,7 @@ export default function KycPage() {
   const [selectedTier, setSelectedTier] = useState<KycTier | null>(null)
 
   // Form state
+  const [idType, setIdType] = useState<IdType>('national_id')
   const [cnicNumber, setCnicNumber] = useState('')
   const [legalName, setLegalName] = useState('')
   const [frontUrl, setFrontUrl] = useState('')
@@ -325,16 +323,18 @@ export default function KycPage() {
     }
     if (selectedTier === 'basic') {
       // Level 1 collects CNIC details + document photos.
-      if (!frontUrl || !backUrl || !selfieUrl || !cnicNumber) {
+      if (!frontUrl || (idType === 'national_id' && !backUrl) || !selfieUrl || !cnicNumber) {
         setSubmitError('Please fill all required fields and upload all documents.')
         return
       }
       if (nonCustodial && legalName.trim().length < 3) {
-        setSubmitError('Enter your full name exactly as printed on your CNIC.')
+        setSubmitError('Enter your full name exactly as printed on your ID or passport.')
         return
       }
-      if (!isValidCnic(cnicNumber)) {
-        setSubmitError('CNIC format must be XXXXX-XXXXXXX-X (e.g. 42201-1234567-8).')
+      if (!isValidIdNumber(cnicNumber)) {
+        setSubmitError(idType === 'passport'
+          ? 'Enter your passport number exactly as printed (5-30 letters or digits).'
+          : 'Enter your ID number exactly as printed (5-30 letters, digits, spaces or dashes).')
         return
       }
       if (nonCustodial && (socialLinks.filter((l) => l.url.trim()).length + verifiedSocials.length) < 1) {
@@ -366,7 +366,7 @@ export default function KycPage() {
         tier: selectedTier,
         // Level 1 only — Level 2 reuses the already-approved identity documents.
         ...(selectedTier === 'basic'
-          ? { cnicNumber, ...(legalName.trim() ? { legalName: legalName.trim() } : {}), frontUrl, backUrl, selfieUrl }
+          ? { idType, idNumber: cnicNumber.trim(), ...(legalName.trim() ? { legalName: legalName.trim() } : {}), frontUrl, ...(idType === 'national_id' ? { backUrl } : {}), selfieUrl }
           : {}),
         ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
         ...(validLinks.length > 0 ? { socialLinks: validLinks } : {}),
@@ -542,7 +542,7 @@ export default function KycPage() {
                   Basic KYC (Level 1)
                 </p>
                 <ul className="space-y-1.5">
-                  {['CNIC front photo (clear, unobstructed)', 'CNIC back photo', 'A simple selfie'].map((item, i) => (
+                  {['National ID: front and back photos, or passport: the photo page only', 'A simple selfie'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-blue-500/10 text-blue-600 dark:text-blue-400 text-[10px] font-bold flex items-center justify-center flex-shrink-0">{i + 1}</span>
                       <span>{item}</span>
@@ -586,7 +586,7 @@ export default function KycPage() {
                 <li className="flex gap-2"><span className="text-text-muted">+</span> 2+ social media profiles</li>
                 <li className="flex gap-2"><span className="text-text-muted">+</span> Daily limit: PKR 200,000</li>
               </ul>
-              <p className="text-xs text-text-muted">Unlocks after your Level 1 verification is approved — your CNIC and selfie are reused automatically.</p>
+              <p className="text-xs text-text-muted">Unlocks after your Level 1 verification is approved — your ID and selfie are reused automatically.</p>
             </div>
           </div>
         </div>
@@ -610,61 +610,90 @@ export default function KycPage() {
               the already-approved Level 1 documents, so these are not shown. */}
           {selectedTier === 'basic' && (
             <>
-              {/* Legal name as printed on CNIC (non-custodial mode only) */}
+              {/* Document type: a national ID needs both sides, a passport just its photo page */}
+              <div>
+                <p className="block text-sm font-medium text-text-primary mb-2">Identity document</p>
+                <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Identity document type">
+                  {([['national_id', 'National ID', 'Front and back'], ['passport', 'Passport', 'Photo page only']] as const).map(([val, title, sub]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      role="radio"
+                      aria-checked={idType === val}
+                      onClick={() => {
+                        if (idType === val) return
+                        setIdType(val); setFrontUrl(''); setBackUrl('')
+                      }}
+                      className={`text-left rounded-lg border-2 px-3 py-2.5 transition-colors ${idType === val ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/30'}`}
+                    >
+                      <span className="block text-sm font-semibold text-text-primary">{title}</span>
+                      <span className="block text-xs text-text-muted">{sub}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Legal name as printed on the ID (non-custodial mode only) */}
               {nonCustodial && (
                 <div>
-                  <label className="block text-sm font-medium text-text-primary mb-1">Full name (as on CNIC)</label>
+                  <label className="block text-sm font-medium text-text-primary mb-1">Full name (as on your {idType === 'passport' ? 'passport' : 'ID'})</label>
                   <input
                     type="text"
                     autoComplete="name"
                     value={legalName}
                     onChange={(e) => setLegalName(e.target.value)}
-                    placeholder="e.g. Ahmed Raza Khan"
+                    placeholder="Your full legal name"
                     maxLength={100}
                     className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                   />
                   <p className="text-xs text-text-muted mt-1">
-                    Must match your CNIC exactly. After approval this becomes your verified name and can&apos;t be changed.
+                    Must match your {idType === 'passport' ? 'passport' : 'ID'} exactly. After approval this becomes your verified name and can&apos;t be changed.
                   </p>
                 </div>
               )}
 
-              {/* CNIC Number */}
+              {/* ID / passport number */}
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-1">CNIC Number</label>
+                <label htmlFor="kyc-id-number" className="block text-sm font-medium text-text-primary mb-1">{idType === 'passport' ? 'Passport number' : 'National ID number'}</label>
                 <input
+                  id="kyc-id-number"
                   type="text"
-                  inputMode="numeric"
                   autoComplete="off"
                   value={cnicNumber}
-                  onChange={(e) => setCnicNumber(formatCnic(e.target.value))}
-                  placeholder="XXXXX-XXXXXXX-X"
-                  maxLength={15}
+                  onChange={(e) => setCnicNumber(e.target.value.toUpperCase().slice(0, 30))}
+                  placeholder={idType === 'passport' ? 'As printed on the photo page' : 'As printed on your ID'}
+                  maxLength={30}
                   className={`w-full px-4 py-3 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary ${
-                    cnicNumber && !isValidCnic(cnicNumber) ? 'border-danger/60 bg-danger/5' : 'border-border'
+                    cnicNumber && !isValidIdNumber(cnicNumber) ? 'border-danger/60 bg-danger/5' : 'border-border'
                   }`}
                 />
-                {cnicNumber && !isValidCnic(cnicNumber) ? (
-                  <p className="text-xs text-danger mt-1">Format: XXXXX-XXXXXXX-X (e.g. 42201-1234567-8)</p>
+                {cnicNumber && !isValidIdNumber(cnicNumber) ? (
+                  <p className="text-xs text-danger mt-1">Enter it exactly as printed: 5-30 letters, digits, spaces or dashes.</p>
                 ) : (
-                  <p className="text-xs text-text-muted mt-1">Your CNIC number will be securely hashed on our servers.</p>
+                  <p className="text-xs text-text-muted mt-1">Your number will be securely hashed on our servers.</p>
                 )}
               </div>
 
               {/* Document uploads */}
               <FileUploadField
-                label="CNIC Front"
-                hint="Clear photo of the front side of your CNIC"
+                key={`front-${idType}`}
+                label={idType === 'passport' ? 'Passport photo page' : 'ID Front'}
+                hint={idType === 'passport'
+                  ? 'The page with your photo and personal details. Only this one page is needed.'
+                  : 'Clear photo of the front side of your ID'}
                 uploadType="kyc-front"
                 onUploaded={setFrontUrl}
               />
 
-              <FileUploadField
-                label="CNIC Back"
-                hint="Clear photo of the back side of your CNIC"
-                uploadType="kyc-back"
-                onUploaded={setBackUrl}
-              />
+              {idType === 'national_id' && (
+                <FileUploadField
+                  key="back-national_id"
+                  label="ID Back"
+                  hint="Clear photo of the back side of your ID"
+                  uploadType="kyc-back"
+                  onUploaded={setBackUrl}
+                />
+              )}
 
               <FileUploadField
                 label="Selfie"
@@ -681,7 +710,7 @@ export default function KycPage() {
               <div className="bg-success/5 border border-success/20 rounded-lg px-4 py-3 flex items-start gap-2">
                 <span className="text-success mt-0.5">✓</span>
                 <p className="text-xs text-text-secondary">
-                  Your CNIC and selfie from Level 1 are already verified and reused automatically. Level 2 only needs a short video and your social profiles.
+                  Your ID and selfie from Level 1 are already verified and reused automatically. Level 2 only needs a short video and your social profiles.
                 </p>
               </div>
               <FileUploadField
@@ -761,10 +790,10 @@ export default function KycPage() {
                 { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
                 { label: 'Verification video uploaded', done: !!videoUrl },
               ] : [
-                ...(nonCustodial ? [{ label: 'Full name (as on CNIC) entered', done: legalName.trim().length >= 3 }] : []),
-                { label: 'CNIC number entered', done: !!cnicNumber },
-                { label: 'CNIC front uploaded', done: !!frontUrl },
-                { label: 'CNIC back uploaded', done: !!backUrl },
+                ...(nonCustodial ? [{ label: 'Full name (as on your ID or passport) entered', done: legalName.trim().length >= 3 }] : []),
+                { label: idType === 'passport' ? 'Passport number entered' : 'ID number entered', done: !!cnicNumber },
+                { label: idType === 'passport' ? 'Passport photo page uploaded' : 'ID front uploaded', done: !!frontUrl },
+                ...(idType === 'national_id' ? [{ label: 'ID back uploaded', done: !!backUrl }] : []),
                 { label: 'Selfie uploaded', done: !!selfieUrl },
                 ...(nonCustodial ? [{ label: 'At least 1 social profile', done: socialLinks.filter((l) => l.url.trim()).length >= 1 }] : []),
               ]).map((item, i) => (

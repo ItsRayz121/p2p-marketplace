@@ -30,6 +30,7 @@ export async function submitKyc(
   userId: string,
   data: {
     tier: 'basic' | 'enhanced'
+    idType?: 'national_id' | 'passport'
     cnicNumber?: string
     legalName?: string
     frontUrl?: string
@@ -45,6 +46,7 @@ export async function submitKyc(
   // users don't re-upload their CNIC/selfie. Pull them from the prior approved
   // submission rather than asking again.
   let { frontUrl, backUrl, selfieUrl } = data
+  let idType: 'national_id' | 'passport' = data.idType ?? 'national_id'
   let cnicHash: string
 
   if (data.tier === 'enhanced') {
@@ -57,28 +59,31 @@ export async function submitKyc(
     }
     // Reuse approved Level 1 documents and CNIC hash.
     frontUrl = approvedBasic.frontUrl
-    backUrl = approvedBasic.backUrl
+    backUrl = approvedBasic.backUrl ?? undefined
+    idType = approvedBasic.idType === 'passport' ? 'passport' : 'national_id'
     selfieUrl = approvedBasic.selfieUrl
     cnicHash = approvedBasic.cnicNumberHash
   } else {
-    if (!data.cnicNumber || !frontUrl || !backUrl || !selfieUrl) {
-      throw new AppError('VALIDATION_ERROR', 'Basic KYC requires your CNIC number and front, back, and selfie photos', 400)
+    if (!data.cnicNumber || !frontUrl || !selfieUrl || (idType === 'national_id' && !backUrl)) {
+      throw new AppError('VALIDATION_ERROR', 'Basic KYC requires your ID number, a photo of your ID (front and back) or passport page, and a selfie', 400)
     }
+    // A passport has no back side — never keep a stray upload.
+    if (idType === 'passport') backUrl = undefined
     // Non-custodial trust depends on the CNIC name being the canonical identity,
     // so require it at submission once the mode is enabled.
     if (nonCustodial && !legalName) {
-      throw new AppError('VALIDATION_ERROR', 'Enter your full name exactly as printed on your CNIC', 400)
+      throw new AppError('VALIDATION_ERROR', 'Enter your full name exactly as printed on your ID or passport', 400)
     }
     // Require at least one social profile (Facebook/Instagram preferred) even at
     // Level 1 — it is the real-time traceability anchor for non-custodial trust.
     if (nonCustodial && (data.socialLinks?.filter((l) => l.url.trim()).length ?? 0) < 1) {
       throw new AppError('VALIDATION_ERROR', 'Add at least one social profile (Facebook or Instagram preferred)', 400)
     }
-    cnicHash = hashCnic(data.cnicNumber)
+    cnicHash = hashCnic(data.cnicNumber, idType)
   }
 
   assertCloudinaryUrl(frontUrl, 'frontUrl')
-  assertCloudinaryUrl(backUrl, 'backUrl')
+  if (backUrl) assertCloudinaryUrl(backUrl, 'backUrl')
   assertCloudinaryUrl(selfieUrl, 'selfieUrl')
   if (data.videoUrl) assertCloudinaryUrl(data.videoUrl, 'videoUrl')
 
@@ -97,7 +102,7 @@ export async function submitKyc(
       where: { cnicNumberHash: cnicHash, status: 'approved', userId: { not: userId } },
     })
     if (existingApproved) {
-      throw new AppError('CNIC_DUPLICATE', 'This CNIC is already registered with another account', 400)
+      throw new AppError('CNIC_DUPLICATE', 'This ID is already registered with another account', 400)
     }
   }
 
@@ -112,8 +117,9 @@ export async function submitKyc(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       tier: data.tier as any,
       status: 'pending',
+      idType,
       frontUrl,
-      backUrl,
+      backUrl: backUrl ?? null,
       selfieUrl,
       videoUrl: data.videoUrl ?? null,
       cnicNumberHash: cnicHash,

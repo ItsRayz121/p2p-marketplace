@@ -29,7 +29,7 @@ export default function PrivacyPage() {
             title: '1. Data We Collect',
             items: [
               { label: 'Account Information', desc: 'Email address, full name, username, and password (hashed).' },
-              { label: 'Identity Documents', desc: 'CNIC front/back images and selfie photos submitted for KYC verification.' },
+              { label: 'Identity Documents', desc: 'National ID (front/back) or passport photo-page images and selfie photos submitted for KYC verification.' },
               { label: 'Transaction Data', desc: 'Trade history, wallet transactions, payment references, and order history.' },
               { label: 'Payment Information', desc: 'JazzCash/Easypaisa numbers, bank account details you add to your profile.' },
               { label: 'Device & Usage Data', desc: 'IP addresses, browser/device info, session timestamps, and activity logs.' },
@@ -48,12 +48,12 @@ export default function PrivacyPage() {
             ],
           },
           {
-            title: '3. CNIC & Identity Document Handling',
+            title: '3. Identity Document Handling',
             items: [
-              { label: 'Storage', desc: 'CNIC images are stored encrypted using AES-256 encryption on secure cloud infrastructure.' },
+              { label: 'Storage', desc: 'ID and passport images are stored encrypted using AES-256 encryption on secure cloud infrastructure.' },
               { label: 'Access', desc: 'Only authorized KYC review staff can access identity documents.' },
               { label: 'Retention', desc: 'Documents are retained for 5 years after account closure as required by Pakistani financial regulations.' },
-              { label: 'No Sharing', desc: 'We do not sell or share your CNIC data with third parties, except as required by law or court order.' },
+              { label: 'No Sharing', desc: 'We do not sell or share your identity document data with third parties, except as required by law or court order.' },
               { label: 'Security', desc: 'Documents are transmitted over TLS and stored with access controls and audit logging.' },
             ],
           },

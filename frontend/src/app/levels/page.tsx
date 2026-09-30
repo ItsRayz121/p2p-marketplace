@@ -42,7 +42,7 @@ const KYC_TIERS: KycTier[] = [
     Icon: ShieldCheck,
     accent: 'text-blue-500',
     bg: 'bg-blue-500/10',
-    requirements: ['CNIC front & back photos', 'A simple selfie'],
+    requirements: ['National ID (front & back) or passport photo page', 'A simple selfie'],
     benefits: [
       'Unlocks posting ads (KYC is only needed for this)',
       'Earn a trader badge & build reputation',

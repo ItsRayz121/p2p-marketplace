@@ -25,6 +25,7 @@ interface KycSubmission {
   status: KycStatus
   legalName?: string | null
   cnicNumberHash?: string
+  idType?: 'national_id' | 'passport'
   frontUrl?: string
   backUrl?: string
   selfieUrl?: string
@@ -343,7 +344,11 @@ export default function KycQueuePage() {
                   <p className="text-text-secondary">{fmtDateTime(selected.createdAt)}</p>
                 </div>
                 <div>
-                  <p className="text-text-muted">CNIC Hash (partial)</p>
+                  <p className="text-text-muted">Document type</p>
+                  <p className="text-text-secondary">{selected.idType === 'passport' ? 'Passport (photo page only)' : 'National ID (front + back)'}</p>
+                </div>
+                <div>
+                  <p className="text-text-muted">ID number hash (partial)</p>
                   <p className="font-mono text-xs text-text-secondary break-all">
                     {selected.cnicNumberHash
                       ? '*****' + selected.cnicNumberHash.slice(-4)
@@ -352,9 +357,9 @@ export default function KycQueuePage() {
                 </div>
                 {selected.legalName && (
                   <div>
-                    <p className="text-text-muted">Name (as on CNIC)</p>
+                    <p className="text-text-muted">Name (as on ID / passport)</p>
                     <p className="font-medium text-text-primary">{selected.legalName}</p>
-                    <p className="text-xs text-text-muted">Compare against the CNIC image before approving.</p>
+                    <p className="text-xs text-text-muted">Compare against the document image before approving.</p>
                   </div>
                 )}
               </div>
@@ -364,10 +369,10 @@ export default function KycQueuePage() {
                 <p className="text-sm font-medium text-text-primary">Documents</p>
                 <div className="grid grid-cols-3 gap-3">
                   {selected.frontUrl && (
-                    <KycDocImage submissionId={selected.id} kind="front" label="CNIC Front" />
+                    <KycDocImage submissionId={selected.id} kind="front" label={selected.idType === 'passport' ? 'Passport page' : 'ID Front'} />
                   )}
                   {selected.backUrl && (
-                    <KycDocImage submissionId={selected.id} kind="back" label="CNIC Back" />
+                    <KycDocImage submissionId={selected.id} kind="back" label="ID Back" />
                   )}
                   {selected.selfieUrl && (
                     <KycDocImage submissionId={selected.id} kind="selfie" label="Selfie" />

@@ -462,7 +462,7 @@ export async function adminRoutes(app: FastifyInstance) {
       data: {
         ...user,
         // KYC documents are authenticated Cloudinary assets — sign for display
-        kycSubmissions: (u.kycSubmissions ?? []).map((s: { frontUrl: string; backUrl: string; selfieUrl: string; videoUrl: string | null }) => ({
+        kycSubmissions: (u.kycSubmissions ?? []).map((s: { frontUrl: string; backUrl: string | null; selfieUrl: string; videoUrl: string | null }) => ({
           ...s,
           frontUrl: signCloudinaryDeliveryUrl(s.frontUrl),
           backUrl: signCloudinaryDeliveryUrl(s.backUrl),

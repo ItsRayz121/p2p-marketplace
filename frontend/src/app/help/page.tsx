@@ -15,7 +15,7 @@ const FAQS = [
       },
       {
         q: 'What is KYC and do I need it?',
-        a: 'KYC (Know Your Customer) is an identity check. It is not required to buy, sell, trade or buy gas. You only need it to post an ad. Basic KYC (ID front & back + selfie) unlocks a PKR 50,000 daily limit; Enhanced KYC raises it to PKR 200,000.',
+        a: 'KYC (Know Your Customer) is an identity check. It is not required to buy, sell, trade or buy gas. You only need it to post an ad. Basic KYC (national ID or passport + selfie) unlocks a PKR 50,000 daily limit; Enhanced KYC raises it to PKR 200,000.',
       },
       {
         q: 'Which payment methods are supported?',

@@ -31,10 +31,13 @@ export function hashToken(token: string): string {
   return createHmac('sha256', env.JWT_REFRESH_SECRET).update(token).digest('hex')
 }
 
-export function hashCnic(cnic: string): string {
-  // Normalize: remove dashes, uppercase
-  const normalized = cnic.replace(/-/g, '').toUpperCase()
-  return createHmac('sha256', env.CNIC_HASH_SECRET).update(normalized).digest('hex')
+export function hashCnic(cnic: string, idType: 'national_id' | 'passport' = 'national_id'): string {
+  // Normalize: remove dashes and spaces, uppercase. A national ID keeps the exact
+  // pre-passport hash (so existing CNIC hashes still match); a passport number is
+  // namespaced so it can never collide with a national ID number.
+  const normalized = cnic.replace(/[-\s]/g, '').toUpperCase()
+  const input = idType === 'passport' ? `PP:${normalized}` : normalized
+  return createHmac('sha256', env.CNIC_HASH_SECRET).update(input).digest('hex')
 }
 
 export function generateReferralCode(): string {

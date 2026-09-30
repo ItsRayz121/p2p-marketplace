@@ -143,7 +143,7 @@ export default function SetupUsernamePage() {
         <div className="bg-primary/5 border border-primary/15 rounded-lg px-4 py-3 text-sm">
           <p className="font-medium text-primary mb-1">Build trust from the start</p>
           <ul className="text-text-secondary text-xs space-y-0.5 list-disc ml-3">
-            <li>Use your real name or CNIC name</li>
+            <li>Use your real name or the name on your ID</li>
             <li>Or a username close to your real or exchange identity</li>
           </ul>
           <p className="text-text-muted text-xs mt-1.5">

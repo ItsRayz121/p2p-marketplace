@@ -147,7 +147,7 @@ export default function RegisterPage() {
             {...register('fullName')}
           />
           <p className="text-xs text-text-muted mt-1.5">
-            Use your real CNIC name — required for KYC, disputes, and account recovery.
+            Use your real name as on your ID — needed for KYC, disputes, and account recovery.
           </p>
         </div>
 

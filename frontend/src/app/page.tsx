@@ -326,7 +326,7 @@ export default async function HomePage() {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             {[
               { Icon: ShieldCheck,     title: 'Trade Protection',   desc: 'Verified traders, on-chain proof, and a dispute team behind every trade',     color: 'text-success',    bg: 'bg-success/10'    },
-              { Icon: Users,           title: 'KYC Verified',       desc: 'Every trader is identity-checked, so you always know who you’re dealing with', color: 'text-primary',    bg: 'bg-primary/10'    },
+              { Icon: Users,           title: 'Verified Ad Posters', desc: 'Everyone who posts an ad is identity-checked, so you know who you’re dealing with', color: 'text-primary',    bg: 'bg-primary/10'    },
               { Icon: Lock,            title: 'Your Funds Stay Yours', desc: 'No deposit needed. Your crypto stays in your own wallet until you trade',       color: 'text-warning',    bg: 'bg-warning/10'    },
               { Icon: Headphones,      title: 'Dedicated Support',  desc: 'Real people to sort out any trade or dispute, fast',                          color: 'text-violet-500', bg: 'bg-violet-500/10' },
             ].map(({ Icon, title, desc, color, bg }) => (
@@ -420,8 +420,8 @@ export default async function HomePage() {
               {
                 Icon: BadgeCheck,
                 step: '2',
-                title: 'Verify your identity',
-                text: 'Complete a quick CNIC-based KYC. Every trader on RupChain is identity-verified, so you always know who you are dealing with.',
+                title: 'Verify to post ads (optional)',
+                text: 'Verify your identity with a national ID or passport when you want to post ads. Ad posters on RupChain are identity-verified, so you know who you are dealing with.',
                 color: 'text-success', bg: 'bg-success/10',
               },
               {

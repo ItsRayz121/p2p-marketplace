@@ -67,7 +67,7 @@ export default function AboutPage() {
             { label: 'Two-Factor Authentication', desc: 'Protect your account with TOTP-based 2FA.' },
             { label: 'KYC Verification', desc: 'Identity verification prevents bad actors and protects all users.' },
             { label: 'Dispute Resolution', desc: 'Our team resolves disputes fairly with evidence-based reviews.' },
-            { label: 'CNIC Data Encryption', desc: 'Sensitive identity documents are encrypted and stored securely.' },
+            { label: 'ID Data Encryption', desc: 'Sensitive identity documents are encrypted and stored securely.' },
           ].map((item) => (
             <div key={item.label} className="flex items-start gap-3">
               <div className="w-5 h-5 rounded-full bg-success/10 text-success flex items-center justify-center flex-shrink-0 mt-0.5">
