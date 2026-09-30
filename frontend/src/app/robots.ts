@@ -27,7 +27,6 @@ export default function robots(): MetadataRoute.Robots {
           '/merchant/',
         ],
         disallow: [
-          '/preview/',
           '/dashboard',
           '/wallet',
           '/orders',

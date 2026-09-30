@@ -56,7 +56,6 @@ const STRUCTURED_KEYS = new Set([
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
   'trade_proof_reject_enabled', 'trade_proof_reject_max', 'trade_buyer_cancel_after_pay_minutes',
   'channels_enabled', 'channels_max_per_user', 'channels_max_members',
-  'home_terminal_enabled',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -275,7 +274,6 @@ export default function ConfigPage() {
   const [proofRejectMax, setProofRejectMax] = useState('2')
   const [buyerCancelAfterPayMin, setBuyerCancelAfterPayMin] = useState('0')
   const [channelsFlag, setChannelsFlag] = useState(true)
-  const [homeTerminalFlag, setHomeTerminalFlag] = useState(false)
   const [channelsMaxPerUser, setChannelsMaxPerUser] = useState('5')
   const [channelsMaxMembers, setChannelsMaxMembers] = useState('10000')
   const [betaSaving, setBetaSaving] = useState(false)
@@ -407,7 +405,6 @@ export default function ConfigPage() {
       setProofRejectMax(m['trade_proof_reject_max'] ?? '2')
       setBuyerCancelAfterPayMin(m['trade_buyer_cancel_after_pay_minutes'] ?? '0')
       setChannelsFlag(m['channels_enabled'] !== 'false') // default ON
-      setHomeTerminalFlag(m['home_terminal_enabled'] === 'true')
       setChannelsMaxPerUser(m['channels_max_per_user'] ?? '5')
       setChannelsMaxMembers(m['channels_max_members'] ?? '10000')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
@@ -593,7 +590,6 @@ export default function ConfigPage() {
         { key: 'channels_enabled', value: channelsFlag ? 'true' : 'false' },
         { key: 'channels_max_per_user', value: String(Math.max(parseInt(channelsMaxPerUser, 10) || 0, 1)) },
         { key: 'channels_max_members', value: String(Math.max(parseInt(channelsMaxMembers, 10) || 0, 1)) },
-        { key: 'home_terminal_enabled', value: homeTerminalFlag ? 'true' : 'false' },
       ])
       showToast('Feature settings saved. Takes effect within ~15s.')
     } catch { showToast('Failed to save feature settings.', false) }
@@ -974,15 +970,6 @@ export default function ConfigPage() {
               </Field>
             </div>
           )}
-
-          {/* Homepage layout — Terminal redesign vs. the classic homepage */}
-          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
-            <input type="checkbox" checked={homeTerminalFlag} onChange={(e) => setHomeTerminalFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
-            <div>
-              <p className="text-sm font-medium text-text-primary">Terminal homepage <span className="font-mono text-xs text-text-muted">home_terminal_enabled</span> <Badge variant="default" size="sm">default OFF</Badge></p>
-              <p className="text-xs text-text-muted mt-0.5">Shows the Terminal-style homepage (live price ticker, USDT chart, order ticket, order book) at rupchain.com. Turn OFF to revert to the classic homepage — nothing else changes. Takes up to ~2 minutes to reach visitors (config + page cache). Preview it any time at <a href="/preview/home-terminal" target="_blank" rel="noreferrer" className="text-primary hover:underline">/preview/home-terminal</a>.</p>
-            </div>
-          </label>
 
           <div className="flex justify-end">
             <Button size="sm" loading={betaSaving} onClick={saveBeta}>Save Feature Settings</Button>
