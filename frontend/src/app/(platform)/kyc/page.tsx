@@ -388,7 +388,7 @@ export default function KycPage() {
   return (
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">KYC Verification</h1>
-      <p className="text-sm text-text-muted mb-6">Complete identity verification to unlock trading, wallet, ads, and all platform features.</p>
+      <p className="text-sm text-text-muted mb-6">KYC is not required to buy, sell, trade or buy gas. You only need it to post an ad.</p>
 
       {/* ── Approved ── */}
       {/* ── Approved ── */}

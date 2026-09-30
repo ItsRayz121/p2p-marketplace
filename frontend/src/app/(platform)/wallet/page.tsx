@@ -14,18 +14,13 @@ import { Badge } from '@/components/ui/Badge'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { ConnectButton } from '@/components/wallet/ConnectButton'
-import { ChainSwitcher } from '@/components/wallet/ChainSwitcher'
-import { ConnectedBalances } from '@/components/wallet/ConnectedBalances'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
-import { UI_CHAINS } from '@/lib/web3/chains'
 import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
 import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { BankSelect } from '@/components/ui/BankSelect'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
-import { useAccount } from 'wagmi'
 import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
@@ -39,15 +34,8 @@ interface DepositInfo {
   memo?: string
 }
 
-function DisconnectedHint() {
-  const { isConnected } = useAccount()
-  if (isConnected) return null
-  return (
-    <p className="text-sm text-text-muted">
-      Connect MetaMask, WalletConnect, or Coinbase Wallet to see your on-chain balances. Your RupChain balance below works without a connection.
-    </p>
-  )
-}
+// EVM networks that share one deposit address (mirrors the labels in lib/web3/chains).
+const EVM_NETWORK_LABELS = new Set(['ERC20', 'BEP20', 'POLYGON', 'ARBITRUM', 'OPTIMISM'])
 
 interface WithdrawState {
   address: string
@@ -581,7 +569,7 @@ function DepositModal({
                 Waiting for {info.minConfirmations} blockchain confirmations before your RupChain balance is credited. Pending deposits appear in your transaction history.
               </div>
             )}
-            {UI_CHAINS.some((c) => c.networkLabel === info.network) && (
+            {EVM_NETWORK_LABELS.has(info.network) && (
               <p className="text-xs text-text-muted text-center">
                 The same address is valid across every EVM network we support — pick the one you're sending from above.
               </p>
@@ -1737,7 +1725,7 @@ export default function WalletPage() {
     return tx.status.charAt(0).toUpperCase() + tx.status.slice(1)
   }
 
-  if (loading) return <LoadingState message="Loading wallet..." />
+  if (loading) return <LoadingState message="Loading payment methods..." />
   if (error) return <ErrorState title={error} onRetry={fetchBalances} />
 
   // Compute withdrawal lock state from the user object
@@ -1748,11 +1736,13 @@ export default function WalletPage() {
     ? fmtPakDateTime(user.withdrawalLockedUntil)
     : null
 
+  const hasFunds = balances.some((b) => parseFloat(b.available) > 0 || parseFloat(b.locked) > 0)
+
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold text-text-primary">Wallet</h1>
-        <ConnectButton />
+      <div>
+        <h1 className="text-2xl font-bold text-text-primary">Payment Methods</h1>
+        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto.</p>
       </div>
 
       {/* ── Withdrawal security lock banner ── */}
@@ -1768,18 +1758,15 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* ── Connected wallet ── */}
-      <section className="space-y-4 bg-surface shadow-card rounded-xl border border-border p-5">
-        <h2 className="text-base font-semibold text-text-primary">Connected wallet</h2>
-        <ChainSwitcher />
-        <ConnectedBalances />
-        <DisconnectedHint />
-      </section>
-
-      {/* ── RupChain internal balances ── */}
+      {/* ── RupChain internal balances ──
+          Deposits are switched off for new users: only accounts that already hold
+          (or have collateral locked in) a balance see this, so nobody is locked out
+          of funds they already have. Nothing is deleted — drop the hasFunds gate to
+          bring it back for everyone. */}
+      {hasFunds && (
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-1">RupChain balance</h2>
-        <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Deposit on-chain to top up; small withdrawals send instantly, larger ones require admin review.</p>
+        <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Small withdrawals send instantly, larger ones require admin review.</p>
         {(() => {
           const displayBalances = balances.filter((b) => SUPPORTED_PLATFORM_NETWORKS.has(b.network ?? ''))
           // Always show at least the primary USDT wallet, even at zero balance, so
@@ -1845,6 +1832,7 @@ export default function WalletPage() {
           )
         })()}
       </section>
+      )}
 
       {/* ── PKR Payment Methods ── */}
       <div id="payment-methods">
@@ -1859,9 +1847,10 @@ export default function WalletPage() {
       {/* ── Trusted addresses ── */}
       <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
 
-      <RecentDeposits />
+      {hasFunds && <RecentDeposits />}
 
-      {/* ── Transaction history ── */}
+      {/* ── Transaction history — only for accounts with wallet activity ── */}
+      {(hasFunds || transactions.length > 0) && (
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-text-primary">Transactions</h2>
@@ -1944,6 +1933,7 @@ export default function WalletPage() {
           </div>
         )}
       </section>
+      )}
 
       {/* Deposit modal */}
       {depositCoin && (

@@ -37,7 +37,7 @@ const SOURCE_LABELS: Record<string, { label: string; url: string }> = {
 // Order requested: Wallet · Address Book · Gas · USDT Market · CTM · Referral.
 // (My Trades intentionally dropped — reachable via bottom nav + dropdown.)
 const QUICK_ACTIONS = [
-  { href: '/wallet',        label: 'Wallet',       Icon: Wallet,         iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
+  { href: '/wallet',        label: 'Payment Methods', Icon: Wallet,         iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
   { href: '/address-book',  label: 'Address Book', Icon: BookUser,       iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10'  },
   { href: '/gas',           label: 'Gas Fees',     Icon: Fuel,           iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
   { href: '/marketplace',   label: 'USDT Market',  Icon: ArrowLeftRight, iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'    },
@@ -156,7 +156,6 @@ export default function DashboardPage() {
 
   const emailVerified = user?.isEmailVerified ?? false
   const kycApproved = kycStatus === 'approved'
-  const hasBalance = (summary?.wallets ?? []).some((b) => parseFloat(b.available) > 0)
   // tradeStats.completedTrades is now the unified count (USDT + CTM + Gas)
   const totalCompletedTrades = summary?.tradeStats?.completedTrades ?? 0
   const hasCompletedTrade = totalCompletedTrades > 0
@@ -168,7 +167,7 @@ export default function DashboardPage() {
 
   const effectiveBadge = computeEffectiveBadge(totalCompletedTrades, crossPlatformCompletionRate)
 
-  const onboardingDone = emailVerified && kycApproved && hasBalance && hasCompletedTrade
+  const onboardingDone = emailVerified && hasCompletedTrade
 
   // Aggregate raw wallet rows by coin (a coin can have rows on multiple networks)
   // so we never render duplicate/phantom cards or collide on React keys.
@@ -308,14 +307,14 @@ export default function DashboardPage() {
                   )
                 })()}
                 <Link href="/wallet">
-                  <Button size="sm" variant="secondary" className="w-full mt-3">Deposit</Button>
+                  <Button size="sm" variant="secondary" className="w-full mt-3">Withdraw</Button>
                 </Link>
               </div>
             ))}
           </div>
         ) : (
           <div className="bg-surface rounded-xl border border-border shadow-card p-6 text-center text-sm text-text-muted">
-            No balances yet. <Link href="/wallet" className="text-primary hover:underline font-medium">Deposit now</Link>
+            No balances yet.
           </div>
         )}
       </section>
@@ -457,8 +456,7 @@ export default function DashboardPage() {
             <h2 className="text-base font-semibold text-text-primary mb-4">Getting Started</h2>
             <div className="space-y-3">
               <ChecklistRow done={emailVerified} label="Verify your email" href="/settings" />
-              <ChecklistRow done={kycApproved} label="Submit KYC verification" href="/kyc" />
-              <ChecklistRow done={hasBalance} label="Fund your wallet" href="/wallet" />
+              <ChecklistRow done={kycApproved} label="KYC (optional, only needed to post ads)" href="/kyc" />
               <ChecklistRow done={hasCompletedTrade} label="Complete your first trade" href="/marketplace" />
             </div>
           </div>

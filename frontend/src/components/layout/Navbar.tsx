@@ -48,7 +48,7 @@ const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; ic
   // Home
   { href: '/dashboard',   Icon: LayoutGrid,        label: 'Dashboard',        iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10',   group: 'home'    },
   // Trading — highest-frequency daily actions
-  { href: '/wallet',      Icon: Wallet,            label: 'Wallet',           iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10', group: 'trading' },
+  { href: '/wallet',      Icon: Wallet,            label: 'Payment Methods', iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10', group: 'trading' },
   { href: '/orders',      Icon: ClipboardList,     label: 'My Trades',        iconCls: 'text-emerald-500', bgCls: 'bg-emerald-500/10',group: 'trading' },
   { href: '/my-ads',      Icon: Tag,               label: 'My Ads',           iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10',   group: 'trading' },
   // Growth & Social
