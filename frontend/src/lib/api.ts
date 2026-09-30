@@ -1388,6 +1388,8 @@ export interface UserPaymentMethod {
   accountNumber?: string | null
   isActive: boolean
   hidden?: boolean
+  /** Opted in to the owner's public payment page. */
+  shared?: boolean
   createdAt: string
 }
 
@@ -1420,6 +1422,36 @@ export const userPaymentMethodsApi = {
   remove: (id: string) =>
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
 }
+
+export interface PaymentShareState { enabled: boolean; slug: string | null }
+
+/** What a visitor of /pay/:slug receives — a minimal, read-only DTO. */
+export interface PublicPaymentPage {
+  displayName: string
+  avatarUrl: string | null
+  methods: Array<{
+    type: UserPaymentMethod['type']
+    label: string
+    bankName: string | null
+    accountName: string
+    numbers: Array<{ label: string; value: string }>
+  }>
+}
+
+export const paymentShareApi = {
+  get: () => apiRequest<PaymentShareState>('/users/me/payment-share'),
+  update: (data: { enabled?: boolean; methodIds?: string[] }) =>
+    apiRequest<PaymentShareState>('/users/me/payment-share', { method: 'PUT', body: JSON.stringify(data) }),
+  regenerate: () =>
+    apiRequest<PaymentShareState>('/users/me/payment-share/regenerate', { method: 'POST' }),
+  /** Public (no auth). Always a fresh request — disabling a page must take effect at once. */
+  getPublic: (slug: string, signal?: AbortSignal) =>
+    apiRequest<PublicPaymentPage>(`/public/pay/${encodeURIComponent(slug)}`, { cache: 'no-store', ...(signal ? { signal } : {}) }),
+}
+
+/** Absolute public link for a payment page slug. */
+export const paymentShareUrl = (slug: string) =>
+  `${typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')}/pay/${slug}`
 
 export interface SocialLinkItem {
   id: string

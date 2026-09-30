@@ -24,6 +24,8 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
+import { presentTradeMessage } from '@/lib/tradeChat'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
 import { SharedGasCard } from '@/components/chat/SharedGasCard'
 import { GasSharePicker } from '@/components/channels/GasSharePicker'
@@ -423,6 +425,8 @@ export default function MessageThreadPage() {
   const isSelf = data.other.id === user?.id
   const name = isSelf ? 'My Notes' : data.other.fullName || data.other.username || 'Trader'
   const activity = isSelf ? null : activeLabel(data.other.lastSeenAt ?? null)
+  // senderId → name for the two real traders, so trade lifecycle lines can be placed on the actor's side.
+  const participants: Record<string, string> = { [data.other.id]: name, ...(user ? { [user.id]: 'You' } : {}) }
   const s = data.stats
   const blocked = data.blockedByMe || data.blockedMe
 
@@ -598,12 +602,19 @@ export default function MessageThreadPage() {
             )
           }
           const m = item.msg
-          if (m.isSystem) {
+          const view = presentTradeMessage(m, user?.id, participants)
+          // Trade lifecycle lines: a participant's step sits on THEIR side (viewer-relative),
+          // everything else (created / complete / dispute / milestone / review prompt)
+          // is its own compact centered notice.
+          if (view.kind === 'event') {
             return (
-              <p key={m.id} className="text-center text-[11px] text-text-muted py-1">{m.body}</p>
+              <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={fmtTime(m.createdAt)}>{m.body}</TradeEventBubble>
             )
           }
-          const mine = m.senderId === user?.id
+          if (view.kind === 'notice') {
+            return <TradeNotice key={m.id} time={fmtTime(m.createdAt)}>{m.body}</TradeNotice>
+          }
+          const mine = view.mine
           // A deleted message leaves no trace for either side — not even a "this was
           // deleted" placeholder — so it's simply omitted from the rendered timeline.
           if (m.deletedAt) return null

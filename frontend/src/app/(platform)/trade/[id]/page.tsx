@@ -34,6 +34,8 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
 import { supportMailto } from '@/lib/contact'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
+import { presentTradeMessage } from '@/lib/tradeChat'
 import {
   FileText,
   Upload,
@@ -834,6 +836,12 @@ export default function TradePage() {
   if (loading) return <LoadingState message="Loading trade..." />
   if (error || !trade) return <ErrorState title={error ?? 'Trade not found'} onRetry={fetchTrade} />
 
+  // senderId → name for the two traders, so lifecycle lines land on the actor's side.
+  const tradeParticipants: Record<string, string> = {
+    [trade.buyerId]: trade.buyer?.fullName || trade.buyer?.username || 'Buyer',
+    [trade.sellerId]: trade.seller?.fullName || trade.seller?.username || 'Seller',
+  }
+
   // Dispute-resume: the ladder runs off the REAL rung, not the parked `disputed`
   // status — so an open dispute no longer kills every step card. Identical to
   // `trade.status` for every trade that isn't disputed; the status badge, the
@@ -1579,19 +1587,12 @@ export default function TradePage() {
                 hour: '2-digit',
                 minute: '2-digit',
               })
-              if (msg.isSystem) {
-                return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isMine ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
-                      <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
-                        <ShieldCheck size={12} className="flex-shrink-0" aria-hidden />
-                        {senderName}
-                      </p>
-                      <p className="text-sm text-text-primary leading-relaxed break-words whitespace-pre-wrap">{msg.message}</p>
-                      <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
-                    </div>
-                  </div>
-                )
+              const view = presentTradeMessage({ senderId: msg.senderId, isSystem: msg.isSystem, body: msg.message }, user?.id, tradeParticipants)
+              if (view.kind === 'event') {
+                return <TradeEventBubble key={msg.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{msg.message}</TradeEventBubble>
+              }
+              if (view.kind === 'notice') {
+                return <TradeNotice key={msg.id} time={msgTime}>{msg.message}</TradeNotice>
               }
               const imageUrl = msg.imageUrl ?? (msg.message.startsWith('[image]') ? msg.message.slice(7) : null)
               return (

@@ -713,7 +713,7 @@ export default function PlatformRevenuePage() {
                           {url ? <a href={url} target="_blank" rel="noopener noreferrer" className="font-mono text-primary hover:underline">{e.txHash?.slice(0, 10)}…</a> : <span className="font-mono text-text-muted">{e.txHash?.slice(0, 10) ?? '—'}</span>}
                         </td>
                         <td className="py-2 pl-3">
-                          {wdId ? <a href={`/admin/withdrawals?search=${wdId}`} className="font-mono text-text-muted hover:text-text-primary">{wdId.slice(-8)}</a> : <span className="text-text-muted">—</span>}
+                          {wdId ? <a href={`/admin/withdrawals/${wdId}`} className="font-mono text-text-muted hover:text-text-primary">{wdId.slice(-8)}</a> : <span className="text-text-muted">—</span>}
                         </td>
                       </tr>
                     )

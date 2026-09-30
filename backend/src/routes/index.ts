@@ -8,6 +8,7 @@ import { tradeRoutes } from './trade.routes'
 import { walletRoutes } from './wallet.routes'
 import { kycRoutes } from './kyc.routes'
 import { userRoutes } from './user.routes'
+import { paymentShareRoutes } from './paymentShare.routes'
 import { dashboardRoutes } from './dashboard.routes'
 import { merchantRoutes } from './merchant.routes'
 import { instantBuyRoutes } from './instantBuy.routes'
@@ -56,6 +57,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(walletRoutes, { prefix: '/api/v1' })
   await app.register(kycRoutes, { prefix: '/api/v1' })
   await app.register(userRoutes, { prefix: '/api/v1' })
+  await app.register(paymentShareRoutes, { prefix: '/api/v1' })
   await app.register(dashboardRoutes, { prefix: '/api/v1' })
   await app.register(merchantRoutes, { prefix: '/api/v1' })
   await app.register(instantBuyRoutes, { prefix: '/api/v1' })

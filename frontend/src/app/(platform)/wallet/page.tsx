@@ -6,6 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { QRCodeSVG } from 'qrcode.react'
 import { CopyButton } from '@/components/ui/CopyButton'
+import { SharePaymentModal } from '@/components/wallet/SharePaymentModal'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { ConfirmRemoveModal } from '@/components/ui/ConfirmRemoveModal'
@@ -21,7 +22,7 @@ import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { BankSelect } from '@/components/ui/BankSelect'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
-import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2 } from 'lucide-react'
+import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2, Share2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -815,6 +816,7 @@ function PaymentMethodsSection() {
   const [editNumber, setEditNumber] = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [shareOpen, setShareOpen] = useState(false)
 
   // Step 1: category, Step 2: selected method within category, Step 3: fields
   const [category, setCategory] = useState<PmCategory | null>(null)
@@ -942,9 +944,16 @@ function PaymentMethodsSection() {
         <div className="flex items-start justify-between gap-3">
           <h2 className="text-base font-semibold text-text-primary">PKR Payment Methods</h2>
           {!showForm && (
-            <Button size="sm" variant="secondary" className="flex-shrink-0 whitespace-nowrap" onClick={() => setShowForm(true)}>
-              + Add Method
-            </Button>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              {methods.length > 0 && (
+                <Button size="sm" variant="secondary" className="whitespace-nowrap" onClick={() => setShareOpen(true)}>
+                  <Share2 size={14} className="mr-1.5" aria-hidden /> Share
+                </Button>
+              )}
+              <Button size="sm" variant="secondary" className="whitespace-nowrap" onClick={() => setShowForm(true)}>
+                + Add Method
+              </Button>
+            </div>
           )}
         </div>
         <p className="text-xs text-text-muted mt-1">Saved accounts used when receiving PKR in trades</p>
@@ -1129,9 +1138,15 @@ function PaymentMethodsSection() {
                       </span>
                       {m.hidden && <span className="px-1.5 py-0.5 text-xs rounded-full bg-surface-alt text-text-muted border border-border">Hidden</span>}
                     </div>
-                    <p className="text-xs text-text-muted mt-0.5">
-                      {m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? ''}
-                    </p>
+                    {(() => {
+                      const fullNumber = m.mobileNumber ?? m.ibanNumber ?? m.accountNumber ?? ''
+                      return (
+                        <div className="flex items-center gap-0.5 mt-0.5">
+                          <p className="text-xs text-text-muted break-all">{fullNumber}</p>
+                          {fullNumber && <CopyButton text={fullNumber} size="sm" label="Copy account number" showCopiedText />}
+                        </div>
+                      )
+                    })()}
                   </div>
                   <div className="flex items-center gap-0.5 flex-shrink-0">
                     <button onClick={() => startEdit(m)} title="Edit" aria-label="Edit" className="p-2 rounded-lg text-text-muted hover:text-primary hover:bg-surface-alt transition-colors">
@@ -1150,6 +1165,14 @@ function PaymentMethodsSection() {
           ))}
         </div>
       )}
+
+      <SharePaymentModal
+        isOpen={shareOpen}
+        onClose={() => setShareOpen(false)}
+        methods={methods}
+        label={(m) => pmTypeLabel(m.type, m.bankName)}
+        onSaved={(ids) => setMethods((prev) => prev.map((x) => ({ ...x, shared: ids.includes(x.id) })))}
+      />
 
       {removeTarget && (
         <ConfirmRemoveModal

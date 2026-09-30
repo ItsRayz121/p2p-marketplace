@@ -43,6 +43,7 @@ export default function robots(): MetadataRoute.Robots {
           '/ctm/merchant-setup',
           '/merchant-apply',
           '/instant-buy',
+          '/pay/',
           '/admin/',
           '/gas/orders',
           '/confirm-withdrawal',

@@ -1531,7 +1531,7 @@ export async function getMessages(tradeRef: string, userId: string, role: string
 
   const messages = await db.ctmTradeMessage.findMany({
     where: { tradeId: trade.id },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   })
 
   return messages.map((m) => ({

@@ -1688,7 +1688,7 @@ export async function getMessages(tradeId: string, userId: string, role: string,
 
   const messages = await db.tradeMessage.findMany({
     where: { tradeId },
-    orderBy: { createdAt: 'asc' },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
   })
 
   // Ticks are only ever shown to the SENDER on their own later fetch — a

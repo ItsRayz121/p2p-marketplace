@@ -503,6 +503,7 @@ model User {
   instantBuyOrders       InstantBuyOrder[]
   kycSubmissions         KycSubmission[]
   paymentMethods         PaymentMethod[]
+  paymentShareProfile    PaymentShareProfile?
   savedAddresses         SavedAddress[]
   withdrawals            Withdrawal[]
   collateralLocks        CollateralLock[]
@@ -971,9 +972,25 @@ model PaymentMethod {
   // resolved payment methods shown on existing ads, but still visible in Wallet
   // management so it can be un-hidden. Distinct from isActive=false (removed).
   hidden        Boolean           @default(false)
+  // Explicit opt-in to the owner's public payment page (/pay/:slug). Private by
+  // default; only active, non-hidden methods with shared=true are ever exposed.
+  shared        Boolean           @default(false)
   createdAt     DateTime          @default(now())
 
   @@index([userId])
+}
+
+// Public "Pay me" page. One row per user; the page is live only while enabled=true.
+// slug is an unguessable random token (never the user id) and can be regenerated,
+// which invalidates the old link.
+model PaymentShareProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slug      String   @unique
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model SavedAddress {
@@ -1848,7 +1865,7 @@ model GasFeeOrder {
   deliveredByAdminId  String?
   deliveryNote        String?           @db.VarChar(500)
 
-  refundTxHash       String?
+  refundTxHash        String?
   refundAmount        Decimal?          @db.Decimal(10, 4)
   // When set (on a delivery-failed order), the moment after which the user may
   // request an immediate refund. Before this, the system keeps retrying delivery

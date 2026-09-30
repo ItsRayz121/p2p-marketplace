@@ -16,6 +16,8 @@ import { isOpaqueId } from '@/lib/pkPaymentMethods'
 import { supportMailto } from '@/lib/contact'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
+import { presentTradeMessage } from '@/lib/tradeChat'
 
 /** Never surface an opaque payment-method ID to users — fall back to a label. */
 function prettyMethod(value?: string | null): string {
@@ -470,6 +472,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   if (loading) return <div className="max-w-5xl mx-auto px-4 py-12 animate-pulse"><div className="bg-surface rounded-xl h-96 border border-border" /></div>
   if (!trade) return <div className="max-w-5xl mx-auto px-4 py-12 text-center text-text-muted">Trade not found.</div>
 
+  // senderId → name for the two traders, so lifecycle lines land on the actor's side.
+  const tradeParticipants: Record<string, string> = {
+    [trade.buyer.id]: trade.buyer.fullName || trade.buyer.username || 'Buyer',
+    [trade.seller.id]: trade.seller.fullName || trade.seller.username || 'Seller',
+  }
   const isBuyer = user?.id === trade.buyer.id
   const isSeller = user?.id === trade.seller.id
   // USDT-as-payment: the "payment" leg is USDT (on-chain / exchange) instead of PKR.
@@ -1637,19 +1644,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     ? (trade.seller.fullName || trade.seller.username || 'Seller')
                     : 'RupChain'
               const msgTime = new Date(m.createdAt).toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' })
-              if (m.isSystem) {
-                return (
-                  <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[80%] px-3 py-2 rounded-2xl bg-surface border border-border shadow-sm ${isMe ? 'rounded-br-sm' : 'rounded-bl-sm'}`}>
-                      <p className="flex items-center gap-1 text-[11px] font-semibold text-text-secondary mb-1">
-                        <svg className="w-3 h-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} aria-hidden><path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
-                        {senderName}
-                      </p>
-                      <p className="text-sm text-text-primary leading-relaxed break-words whitespace-pre-wrap">{m.message}</p>
-                      <p className="text-[10px] text-text-muted/60 mt-0.5">{msgTime}</p>
-                    </div>
-                  </div>
-                )
+              const view = presentTradeMessage({ senderId: m.senderId, isSystem: m.isSystem, body: m.message }, user?.id, tradeParticipants)
+              if (view.kind === 'event') {
+                return <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{m.message}</TradeEventBubble>
+              }
+              if (view.kind === 'notice') {
+                return <TradeNotice key={m.id} time={msgTime}>{m.message}</TradeNotice>
               }
               return (
                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>

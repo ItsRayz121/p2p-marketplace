@@ -466,7 +466,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug })),
     ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
     ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
-  ].sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+  ].sort((a, b) => (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) // id tie-break keeps same-millisecond lifecycle lines in a stable order across polls
     // Redact retracted messages to a tombstone in the inbox view (the row itself
     // is retained in the DB for dispute review). Also clear the shared-ad/
     // shared-gas reference so a retracted "share" message can't still resolve

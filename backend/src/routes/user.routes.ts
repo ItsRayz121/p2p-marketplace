@@ -278,7 +278,7 @@ export async function userRoutes(app: FastifyInstance) {
     const { id } = req.params as { id: string }
     const method = await db.paymentMethod.findUnique({ where: { id } })
     if (!method || method.userId !== userId) throw new AppError('NOT_FOUND', 'Payment method not found', 404)
-    await db.paymentMethod.update({ where: { id }, data: { isActive: false } })
+    await db.paymentMethod.update({ where: { id }, data: { isActive: false, shared: false } })
     // Audit trail: record the removal (soft-delete) for the admin user history.
     void recordAuditLog(userId, 'PAYMENT_METHOD_REMOVED', 'PaymentMethod', method.id, {
       type: method.type,
@@ -341,7 +341,7 @@ export async function userRoutes(app: FastifyInstance) {
     if (!method || method.userId !== userId || !method.isActive) {
       throw new AppError('NOT_FOUND', 'Payment method not found', 404)
     }
-    const updated = await db.paymentMethod.update({ where: { id }, data: { hidden: parsed.data.hidden } })
+    const updated = await db.paymentMethod.update({ where: { id }, data: { hidden: parsed.data.hidden, ...(parsed.data.hidden ? { shared: false } : {}) } })
     void recordAuditLog(userId, parsed.data.hidden ? 'PAYMENT_METHOD_HIDDEN' : 'PAYMENT_METHOD_UNHIDDEN', 'PaymentMethod', id, {
       type: method.type, displayName: method.displayName, accountName: method.accountName,
     })
