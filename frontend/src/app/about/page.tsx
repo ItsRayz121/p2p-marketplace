@@ -4,14 +4,14 @@ import { StaticPageNav } from '@/components/ui/StaticPageNav'
 import { buildMeta } from '@/lib/metadata'
 
 export const metadata = buildMeta(
-  'About RupChain — Pakistan’s P2P Crypto Marketplace',
-  'RupChain is Pakistan’s peer-to-peer crypto marketplace: protected USDT trades, local payments (JazzCash, Easypaisa, bank), community tokens, and a multi-chain gas station.',
+  'About RupChain — P2P Crypto Marketplace',
+  'RupChain is a peer-to-peer crypto marketplace: protected USDT trades, local payment methods, community tokens, and a multi-chain gas station.',
   '/about',
 )
 
 const FEATURES = [
   { Icon: ShieldCheck,     title: 'Trade Protection',      desc: 'All trades are monitored by RupChain. Crypto is only released after the seller confirms payment receipt.' },
-  { Icon: CreditCard,      title: 'Local Payments',        desc: 'Pay and receive with JazzCash, Easypaisa, and all major Pakistani banks.' },
+  { Icon: CreditCard,      title: 'Local Payments',        desc: 'Pay and receive with local methods such as JazzCash, Easypaisa, and bank transfer.' },
   { Icon: Coins,           title: 'Community Tokens',      desc: 'Trade BKR, SIDRA, and other community tokens directly with verified counterparties.' },
   { Icon: ShieldCheck,     title: 'KYC Verified',          desc: 'Our KYC system ensures all traders are verified, creating a trusted community.' },
   { Icon: BadgeDollarSign, title: 'Zero P2P Trading Fees', desc: '0% maker and taker fees on all P2P trades.' },
@@ -28,7 +28,7 @@ export default function AboutPage() {
         <div className="w-16 h-16 rounded-2xl bg-primary text-white font-black text-2xl flex items-center justify-center mx-auto">P</div>
         <h1 className="text-3xl font-black text-text-primary">About RupChain</h1>
         <p className="text-text-muted text-base max-w-xl mx-auto">
-          Pakistan's first secure peer-to-peer cryptocurrency exchange — built for Pakistanis, by Pakistanis.
+          A secure peer-to-peer crypto marketplace for traders, community tokens and gas fees, open to people around the world.
         </p>
       </div>
 
@@ -36,7 +36,7 @@ export default function AboutPage() {
       <section className="bg-surface shadow-card border border-border rounded-2xl p-6 space-y-3">
         <h2 className="text-xl font-bold text-text-primary">Our Mission</h2>
         <p className="text-text-muted leading-relaxed">
-          RupChain exists to give every Pakistani access to the global crypto economy. We believe financial freedom shouldn't
+          RupChain exists to give everyone access to the global crypto economy. We believe financial freedom shouldn't
           be limited by geography. By connecting buyers and sellers directly, we remove intermediaries, reduce costs, and
           put control back in your hands.
         </p>

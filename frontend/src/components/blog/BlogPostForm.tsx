@@ -215,7 +215,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
       <div className="lg:col-span-2 space-y-4">
         <div>
           <label className={labelCls}>Title</label>
-          <input className={cn(inputCls, 'text-lg font-semibold')} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="How to buy USDT safely in Pakistan" />
+          <input className={cn(inputCls, 'text-lg font-semibold')} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="How to buy USDT safely" />
         </div>
 
         <div>
@@ -376,7 +376,7 @@ export function BlogPostForm({ initial }: { initial?: BlogPost }) {
           <span className="text-sm font-bold text-text-primary">SEO</span>
           <div>
             <label className={labelCls}>Focus keyword <span className="text-text-muted">({focusKeyword.length}/80)</span></label>
-            <input className={inputCls} maxLength={80} value={focusKeyword} onChange={(e) => setFocusKeyword(e.target.value.slice(0, 80))} placeholder="buy USDT Pakistan" />
+            <input className={inputCls} maxLength={80} value={focusKeyword} onChange={(e) => setFocusKeyword(e.target.value.slice(0, 80))} placeholder="buy USDT safely" />
           </div>
           <div>
             <label className={labelCls}>Meta title <span className="text-text-muted">({metaTitle.length}/60)</span></label>

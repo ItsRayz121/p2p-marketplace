@@ -33,8 +33,8 @@ const KYC_TIERS: KycTier[] = [
     accent: 'text-text-muted',
     bg: 'bg-surface-alt',
     requirements: ['Just create an account'],
-    benefits: ['Browse the marketplace, tokens & gas service', 'Cannot trade, deposit, or withdraw yet'],
-    dailyLimit: 'PKR 0',
+    benefits: ['Buy and sell USDT and community tokens', 'Buy gas fees', 'No KYC needed. You cannot post ads yet'],
+    dailyLimit: 'PKR 50,000 / day',
   },
   {
     level: 'Level 1',
@@ -44,8 +44,7 @@ const KYC_TIERS: KycTier[] = [
     bg: 'bg-blue-500/10',
     requirements: ['CNIC front & back photos', 'A simple selfie'],
     benefits: [
-      'Unlocks trading, wallet, ads, Community Tokens & Gas',
-      'Buy, sell and withdraw crypto',
+      'Unlocks posting ads (KYC is only needed for this)',
       'Earn a trader badge & build reputation',
     ],
     dailyLimit: 'PKR 50,000 / day',

@@ -64,11 +64,11 @@ async function main(): Promise<void> {
   // 3. Descriptions
   await call('setMyDescription', {
     description:
-      "RupChain — Pakistan's trusted P2P crypto marketplace. Buy & sell USDT with " +
+      "RupChain — a trusted P2P crypto marketplace. Buy & sell USDT with " +
       'JazzCash, Easypaisa & bank transfer, escrow-protected. Tap the menu button to open the app.',
   })
   await call('setMyShortDescription', {
-    short_description: "Pakistan's P2P crypto marketplace — buy & sell USDT, escrow-protected.",
+    short_description: "P2P crypto marketplace — buy & sell USDT, trade protected.",
   })
   console.log('✓ Description + short description set')
 

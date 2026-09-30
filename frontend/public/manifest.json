@@ -2,7 +2,7 @@
   "id": "/",
   "name": "RupChain",
   "short_name": "RupChain",
-  "description": "Pakistan's P2P Crypto Marketplace",
+  "description": "P2P Crypto Marketplace",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",

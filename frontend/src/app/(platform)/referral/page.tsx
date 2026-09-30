@@ -81,7 +81,7 @@ function ReferralPageInner() {
 
   const shareUrl = `${typeof window !== 'undefined' ? window.location.origin : 'https://RupChain.pk'}/r/${stats.referralCode}`
   const whatsappMessage = encodeURIComponent(
-    `Join RupChain — Pakistan's P2P crypto marketplace! Use my referral code ${stats.referralCode} to sign up and earn bonuses. ${shareUrl}`
+    `Join RupChain — the P2P crypto marketplace! Use my referral code ${stats.referralCode} to sign up and earn bonuses. ${shareUrl}`
   )
 
   return (

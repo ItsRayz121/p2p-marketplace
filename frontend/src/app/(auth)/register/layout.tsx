@@ -3,7 +3,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata: Metadata = buildMeta(
   'Create Account — Join RupChain',
-  'Sign up for free and start trading crypto in Pakistan. Buy and sell USDT with JazzCash and Easypaisa.',
+  'Sign up for free and start trading crypto peer to peer. Buy and sell USDT, trade community tokens and buy gas fees.',
   '/register',
 )
 

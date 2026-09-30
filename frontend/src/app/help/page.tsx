@@ -14,12 +14,12 @@ const FAQS = [
         a: 'Click "Create Account" on the homepage, fill in your name, email and password, then verify your email with the OTP we send you.',
       },
       {
-        q: 'What is KYC and why do I need it?',
-        a: 'KYC (Know Your Customer) is an identity verification process required by Pakistani financial regulations. You must complete at least Basic KYC (CNIC front & back + selfie) before you can trade. Basic KYC unlocks a PKR 50,000 daily limit; Enhanced KYC raises it to PKR 200,000.',
+        q: 'What is KYC and do I need it?',
+        a: 'KYC (Know Your Customer) is an identity check. It is not required to buy, sell, trade or buy gas. You only need it to post an ad. Basic KYC (ID front & back + selfie) unlocks a PKR 50,000 daily limit; Enhanced KYC raises it to PKR 200,000.',
       },
       {
         q: 'Which payment methods are supported?',
-        a: 'We support JazzCash, Easypaisa, bank transfer (all major Pakistani banks), SadaPay, and NayaPay.',
+        a: 'We support JazzCash, Easypaisa, bank transfer, SadaPay, and NayaPay for PKR payments, plus USDT on the blockchain or by exchange transfer.',
       },
     ],
   },

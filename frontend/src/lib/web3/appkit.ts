@@ -28,7 +28,7 @@ export function ensureAppKit() {
     projectId: WALLETCONNECT_PROJECT_ID,
     metadata: {
       name: 'RupChain',
-      description: 'Pakistan P2P Crypto Marketplace',
+      description: 'P2P Crypto Marketplace',
       // Derive the wallet-facing identity from the actual origin at runtime so
       // the URL + icon always match the live domain (rupchain.com) and load
       // correctly — guards against spoofed metadata, no hard-coded domain.

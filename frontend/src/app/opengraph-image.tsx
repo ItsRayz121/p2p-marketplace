@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 
 export const runtime = 'edge'
-export const alt = 'RupChain — Buy & Sell Crypto in Pakistan'
+export const alt = 'RupChain — P2P Crypto Marketplace'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -76,18 +76,18 @@ export default function OgImage() {
                 color: 'transparent',
               }}
             >
-              in Pakistan
+              Peer to Peer
             </div>
           </div>
 
           {/* Subtext */}
           <div style={{ fontSize: 24, color: 'rgba(203,213,225,0.9)', textAlign: 'center', maxWidth: 700 }}>
-            Protected P2P trading · JazzCash · Easypaisa · Bank Transfer
+            Protected P2P trading · Community Tokens · Gas Fees
           </div>
 
           {/* Feature pills */}
           <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
-            {['Trade Protection', 'KYC Verified', 'Gas Fee Service', 'PKR Payments'].map((f) => (
+            {['Trade Protection', 'KYC Verified', 'Gas Fee Service', 'Local Payments'].map((f) => (
               <div
                 key={f}
                 style={{

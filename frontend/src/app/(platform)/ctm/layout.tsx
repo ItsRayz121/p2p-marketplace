@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { buildMeta } from '@/lib/metadata'
 
 export const metadata: Metadata = buildMeta(
-  'Community Token Market — Trade Local Tokens in Pakistan',
+  'Community Token Market — Trade Community Tokens P2P',
   'Buy and sell community tokens P2P with verified merchants. Protected trading on RupChain.',
   '/ctm',
 )

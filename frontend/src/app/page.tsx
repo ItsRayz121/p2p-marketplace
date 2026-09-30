@@ -182,7 +182,7 @@ export default async function HomePage() {
       url: baseUrl,
       logo: `${baseUrl}/apple-touch-icon.png`,
       description:
-        "Pakistan's P2P crypto marketplace — buy and sell USDT with JazzCash, Easypaisa, and bank transfer.",
+        "P2P crypto marketplace — buy and sell USDT, trade community tokens and buy gas fees.",
     },
     {
       '@context': 'https://schema.org',
@@ -219,7 +219,7 @@ export default async function HomePage() {
             <div>
               <div className="inline-flex items-center gap-2 bg-primary/20 border border-primary/30 text-primary text-xs font-semibold px-3 py-1.5 rounded-full mb-5">
                 <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-                Live P2P Market · Pakistan
+                Live P2P Market
               </div>
               <h1 className="text-4xl sm:text-5xl font-bold leading-tight">
                 <span className="text-white">Crypto Trading</span>
@@ -230,7 +230,7 @@ export default async function HomePage() {
               </h1>
               <p className="mt-4 text-lg text-slate-300 max-w-md">
                 Protected P2P trading, instant cross-chain gas top-ups, and community tokens —
-                all in one place. In Pakistan, pay with JazzCash, Easypaisa, or bank transfer.
+                all in one place. Pay with local methods like JazzCash, Easypaisa, or bank transfer, or with USDT.
               </p>
               <div className="flex flex-col sm:flex-row gap-3 mt-6">
                 <Link
@@ -277,10 +277,10 @@ export default async function HomePage() {
         <div className="max-w-5xl mx-auto px-3 sm:px-6 lg:px-8 text-center">
           <h2 className="text-2xl sm:text-3xl font-bold text-text-primary">What is RupChain?</h2>
           <p className="mt-4 max-w-2xl mx-auto text-base sm:text-lg text-text-secondary leading-relaxed text-left sm:text-center [text-wrap:pretty]">
-            RupChain is Pakistan&rsquo;s peer-to-peer crypto marketplace &mdash; buy and sell USDT and
-            community tokens with JazzCash, Easypaisa, or bank transfer, and top up blockchain gas fees
-            on any chain. Sign up free with email, Google, or Telegram, verify your identity, and trade
-            directly with other verified users, backed by on-chain verification and a real dispute team.
+            RupChain is a peer-to-peer crypto marketplace &mdash; buy and sell USDT and
+            community tokens with local payment methods or crypto, and top up blockchain gas fees
+            on any chain. Sign up free with email, Google, or Telegram and trade
+            directly with other users, backed by on-chain verification and a real dispute team.
           </p>
         </div>
       </section>

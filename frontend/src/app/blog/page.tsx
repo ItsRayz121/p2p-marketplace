@@ -9,7 +9,7 @@ import { fetchBlogList } from '@/lib/blogFetch'
 
 export const metadata: Metadata = buildMeta(
   'Blog — RupChain',
-  'Guides and updates on buying and selling crypto in Pakistan — USDT, JazzCash & Easypaisa, gas fees, security, and staying safe in P2P trading.',
+  'Guides and updates on buying and selling crypto — USDT, community tokens, gas fees, security, and staying safe in P2P trading.',
   '/blog',
 )
 
@@ -44,7 +44,7 @@ export default async function BlogIndexPage({
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
           <h1 className="text-3xl font-bold text-white sm:text-4xl">RupChain Blog</h1>
           <p className="mt-3 max-w-2xl text-slate-300">
-            Guides, tips, and updates on trading crypto safely in Pakistan — USDT, local payments, gas fees, and more.
+            Guides, tips, and updates on trading crypto safely — USDT, community tokens, gas fees, and more.
           </p>
           <div className="mt-6 max-w-md">
             <BlogSearchBox initial={q ?? ''} />

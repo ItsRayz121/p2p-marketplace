@@ -24,15 +24,15 @@ const API_ORIGIN = (() => {
 export const metadata: Metadata = {
   metadataBase: new URL(BASE_URL),
   title: {
-    default: 'RupChain — Buy & Sell Crypto in Pakistan',
+    default: 'RupChain — P2P Crypto Marketplace',
     template: '%s | RupChain',
   },
   description:
-    'RupChain is Pakistan\'s trusted P2P crypto marketplace. Buy and sell USDT with JazzCash, Easypaisa, and bank transfer. Protected trades, KYC-verified traders, on-chain verification.',
+    'RupChain is a trusted P2P crypto marketplace. Buy and sell USDT, trade community tokens and buy gas fees. Local payment options include JazzCash, Easypaisa, and bank transfer. Protected trades, on-chain verification.',
   keywords: [
-    'buy USDT Pakistan', 'sell USDT Pakistan', 'P2P crypto Pakistan',
-    'JazzCash crypto', 'Easypaisa USDT', 'crypto exchange Pakistan',
-    'rupchain', 'Pakistan crypto marketplace', 'P2P USDT PKR',
+    'buy USDT', 'sell USDT', 'P2P crypto marketplace',
+    'JazzCash crypto', 'Easypaisa USDT', 'community tokens', 'crypto gas fees',
+    'rupchain', 'P2P USDT PKR',
   ],
   authors: [{ name: 'RupChain' }],
   creator: 'RupChain',
@@ -57,22 +57,22 @@ export const metadata: Metadata = {
     locale: 'en_PK',
     url: BASE_URL,
     siteName: 'RupChain',
-    title: 'RupChain — Buy & Sell Crypto in Pakistan',
+    title: 'RupChain — P2P Crypto Marketplace',
     description:
-      'Pakistan\'s trusted P2P crypto marketplace. Trade USDT safely with JazzCash, Easypaisa, and bank transfer. Protected trades, KYC-verified, on-chain verification.',
+      'A trusted P2P crypto marketplace. Trade USDT, community tokens and gas fees with protected trades and on-chain verification.',
     images: [
       {
         url: '/opengraph-image',
         width: 1200,
         height: 630,
-        alt: 'RupChain — Pakistan P2P Crypto Marketplace',
+        alt: 'RupChain — P2P Crypto Marketplace',
       },
     ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'RupChain — Buy & Sell Crypto in Pakistan',
-    description: 'Pakistan\'s trusted P2P crypto marketplace. Trade USDT with JazzCash & Easypaisa.',
+    title: 'RupChain — P2P Crypto Marketplace',
+    description: 'A trusted P2P crypto marketplace. Trade USDT, community tokens and gas fees.',
     images: ['/opengraph-image'],
   },
   robots: {

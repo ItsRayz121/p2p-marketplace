@@ -41,7 +41,7 @@ function withStars(url: string, n: number): string {
 
 const CAPTION: Record<'gas' | 'trade', string> = {
   trade:
-    'Takes 30 seconds · sign in with Google · your review helps other traders in Pakistan pick a platform they can trust.',
+    'Takes 30 seconds · sign in with Google · your review helps other traders pick a platform they can trust.',
   gas:
     'Gas landed in your wallet. A 30-second public review · Google sign-in · helps other people top up with confidence.',
 }

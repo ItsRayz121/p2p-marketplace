@@ -3,7 +3,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata = buildMeta(
   'Trader Leaderboard — RupChain',
-  'Top-rated traders on RupChain ranked by completed trades, volume, and trust score — Pakistan’s peer-to-peer crypto marketplace.',
+  'Top-rated traders on RupChain ranked by completed trades, volume, and trust score — the peer-to-peer crypto marketplace.',
   '/leaderboard',
 )
 

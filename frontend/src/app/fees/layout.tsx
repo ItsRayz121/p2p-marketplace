@@ -3,7 +3,7 @@ import { buildMeta } from '@/lib/metadata'
 
 export const metadata = buildMeta(
   'Fees — RupChain',
-  'Transparent trading, withdrawal, and gas-station fees on RupChain — Pakistan’s peer-to-peer crypto marketplace.',
+  'Transparent trading, withdrawal, and gas-station fees on RupChain — the peer-to-peer crypto marketplace.',
   '/fees',
 )
 

@@ -12,11 +12,11 @@ function htmlShell(content: string): string {
 <body style="font-family: -apple-system, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; color: #0f172a;">
   <div style="text-align: center; margin-bottom: 32px;">
     <h1 style="color: #2563eb; font-size: 28px; margin: 0;">RupChain</h1>
-    <p style="color: #64748b; margin: 4px 0 0;">Pakistan P2P Crypto Exchange</p>
+    <p style="color: #64748b; margin: 4px 0 0;">P2P Crypto Marketplace</p>
   </div>
   ${content}
   <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
-  <p style="color: #94a3b8; font-size: 12px; text-align: center;">© 2026 RupChain. Pakistan P2P Crypto Exchange</p>
+  <p style="color: #94a3b8; font-size: 12px; text-align: center;">© 2026 RupChain. P2P Crypto Marketplace</p>
 </body>
 </html>`
 }

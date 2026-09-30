@@ -10,7 +10,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
             <BrandLogo size={40} className="w-10 h-10" />
             <span className="font-black text-2xl text-text-primary tracking-tight">RupChain</span>
           </Link>
-          <p className="text-text-muted text-sm mt-2">Pakistan&apos;s P2P Crypto Marketplace</p>
+          <p className="text-text-muted text-sm mt-2">P2P Crypto Marketplace</p>
         </div>
         {children}
       </div>

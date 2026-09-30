@@ -4,7 +4,7 @@ import { notify } from '../lib/notify'
 import { TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
 
 export const REVIEW_NUDGE_BODY =
-  '⭐ Enjoyed trading with us? Leave RupChain a quick review on Trustpilot — it takes 30 seconds and helps other traders in Pakistan find a platform they can trust.'
+  '⭐ Enjoyed trading with us? Leave RupChain a quick review on Trustpilot — it takes 30 seconds and helps other traders find a platform they can trust.'
 
 /**
  * Fires after a genuine completed trade/order (USDT trade, CTM trade, or delivered
