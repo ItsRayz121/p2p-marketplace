@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
 import { authApi, adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { ADMIN_ROUTES } from '@/lib/adminRoutes'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 import CommandPalette, { type PaletteCommand } from './CommandPalette'
 
@@ -22,6 +23,8 @@ interface NavItem {
   hidden?: boolean
   /** Key into the live nav-counts payload — renders a pending-count badge. */
   badgeKey?: NavCountKey
+  /** Extra path prefixes that keep this item highlighted (e.g. detail pages it owns). */
+  match?: string[]
 }
 
 interface NavGroup {
@@ -29,6 +32,12 @@ interface NavGroup {
   label: string
   icon: React.ReactNode
   items: NavItem[]
+}
+
+/** True when `pathname` belongs to this nav item (its href or any declared extra prefix). */
+function navItemOwnsPath(item: NavItem, pathname: string): boolean {
+  const prefixes = [item.href, ...(item.match ?? [])]
+  return prefixes.some((p) => (p === '/admin' ? pathname === '/admin' : pathname === p || pathname.startsWith(p + '/')))
 }
 
 const ALLOWED_ROLES: AdminRole[] = ['admin', 'super_admin', 'kyc_reviewer', 'support_agent']
@@ -355,12 +364,14 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'Deposits',
-        href: '/admin/deposits',
+        label: 'Deposits & Withdrawals',
+        href: ADMIN_ROUTES.transactions,
         roles: ['admin', 'super_admin'],
+        badgeKey: 'withdrawals',
+        match: [ADMIN_ROUTES.deposits, ADMIN_ROUTES.withdrawals],
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M4 20h16" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
         ),
       },
@@ -372,17 +383,6 @@ const navGroups: NavGroup[] = [
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Withdrawals',
-        href: '/admin/withdrawals',
-        roles: ['admin', 'super_admin'],
-        badgeKey: 'withdrawals',
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 9V7a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2m2 4h10a2 2 0 002-2v-6a2 2 0 00-2-2H9a2 2 0 00-2 2v6a2 2 0 002 2zm7-5a2 2 0 11-4 0 2 2 0 014 0z" />
           </svg>
         ),
       },
@@ -501,16 +501,6 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'Exchange Accounts',
-        href: '/admin/gas/exchange-accounts',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-          </svg>
-        ),
-      },
-      {
         label: 'Promo Codes',
         href: '/admin/gas/promo-codes',
         roles: ['admin', 'super_admin'],
@@ -610,6 +600,16 @@ const navGroups: NavGroup[] = [
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Exchange Accounts',
+        href: ADMIN_ROUTES.exchangeAccounts,
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
         ),
       },
@@ -740,6 +740,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     WITHDRAWAL: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
   }
 
+  // Every group is independently collapsible. The state is plain user intent (persisted);
+  // the active route only *reveals* its group when the route itself changes — it never
+  // pins a group open, so a manual collapse always sticks until the admin navigates.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     const defaults = Object.fromEntries(navGroups.map((g) => [g.id, true]))
     if (typeof window === 'undefined') return defaults
@@ -749,6 +752,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     } catch {}
     return defaults
   })
+
+  useEffect(() => {
+    const owner = navGroups.find((g) => g.items.some((it) => navItemOwnsPath(it, pathname)))
+    if (!owner) return
+    setOpenGroups((prev) => {
+      if (prev[owner.id] !== false) return prev
+      const next = { ...prev, [owner.id]: true }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(next)) } catch {}
+      return next
+    })
+  }, [pathname])
 
   useEffect(() => {
     if (isLoading) return
@@ -795,9 +809,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // H-10: per-route role guard — block direct URL navigation to pages the
   // user's role doesn't permit.
   const allNavItems = navGroups.flatMap((g) => g.items)
-  const currentNavItem = allNavItems.find((item) =>
-    item.href === '/admin' ? pathname === '/admin' : pathname.startsWith(item.href),
-  )
+  const currentNavItem = allNavItems.find((item) => navItemOwnsPath(item, pathname))
   if (currentNavItem && !currentNavItem.roles.includes(user.role as AdminRole)) {
     router.replace('/admin')
     return (
@@ -824,22 +836,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }
 
-  const isActive = (href: string) => {
-    if (href === '/admin') return pathname === '/admin'
-    // Exact prefix match with path-segment boundary — prevents /admin/gas
-    // from matching when the current route is /admin/gas/merchants.
+  const isActive = (item: NavItem) => {
+    if (!navItemOwnsPath(item, pathname)) return false
+    if (item.href === '/admin') return true
+    // A more specific sibling (e.g. /admin/gas/merchants vs /admin/gas) wins.
     const longer = allVisibleItems.find(
-      (item) => item.href !== href && item.href.startsWith(href + '/') && pathname.startsWith(item.href),
+      (other) => other.href !== item.href && other.href.startsWith(item.href + '/') && navItemOwnsPath(other, pathname),
     )
-    if (longer) return false
-    return pathname.startsWith(href)
+    return !longer
   }
 
-  // Active group is always open regardless of saved preference — prevents
-  // users from hiding their current location, and fixes SSR/timing issues
-  // where localStorage loads after the auto-expand effect already ran.
-  const isGroupOpen = (groupId: string, items: NavItem[]) =>
-    items.some((item) => isActive(item.href)) || (openGroups[groupId] ?? true)
+  const isGroupOpen = (groupId: string) => openGroups[groupId] ?? true
 
   function toggleGroup(id: string) {
     setOpenGroups((prev) => {
@@ -860,7 +867,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
         {visibleGroups.map((group) => {
-          const groupOpen = isGroupOpen(group.id, group.items)
+          const groupOpen = isGroupOpen(group.id)
+          const groupHasActive = group.items.some((it) => isActive(it))
           const groupBadge = group.items.reduce(
             (sum, it) => sum + (it.badgeKey ? (navCounts?.[it.badgeKey] ?? 0) : 0),
             0,
@@ -868,8 +876,14 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           return (
           <div key={group.id}>
             <button
+              type="button"
               onClick={() => toggleGroup(group.id)}
-              className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider text-gray-400 hover:bg-gray-800 hover:text-gray-200 transition-colors"
+              aria-expanded={groupOpen}
+              aria-controls={`admin-nav-group-${group.id}`}
+              className={cn(
+                'w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs font-semibold uppercase tracking-wider transition-colors hover:bg-gray-800 hover:text-gray-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary',
+                groupHasActive ? 'text-gray-200' : 'text-gray-400',
+              )}
             >
               <span className="text-gray-500 flex-shrink-0">{group.icon}</span>
               <span className="flex-1 text-left">{group.label}</span>
@@ -892,16 +906,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
             </button>
 
             <div
+              id={`admin-nav-group-${group.id}`}
               className={cn(
                 'grid transition-all duration-200 ease-in-out',
                 groupOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
               )}
             >
-              <div className="overflow-hidden">
+              <div className={cn('overflow-hidden', !groupOpen && 'invisible')}>
                 <div className="mt-0.5 pb-1 space-y-0.5 pl-1.5">
                   {group.items.map((item) => {
                     const badge = item.badgeKey ? navCounts?.[item.badgeKey] ?? 0 : 0
-                    const active = isActive(item.href)
+                    const active = isActive(item)
                     return (
                       <Link
                         key={item.href}

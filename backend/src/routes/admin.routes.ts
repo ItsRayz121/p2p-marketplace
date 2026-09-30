@@ -42,6 +42,8 @@ import { getChainBurnRates, getChainRunways, getProfitabilityByChain, getVolumeT
 import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
 import { listMerchantAccounts, createMerchantAccount, updateMerchantAccount, getMerchantAccount, listMerchantSettlements, approveSettlement } from '../lib/gas/gas.merchant-settlement'
 import { adminListAffiliates, adminReviewAffiliate } from '../lib/gas/gas.affiliate'
+import { listWalletTransactions, walletTransactionSummary, type TxFilters } from '../lib/walletTransactions'
+import { GAS_ACTIVE_STATUSES, MANUAL_PROOF_WHERE, MANUAL_DELIVERY_WHERE, PAID_FAILED_WHERE, isPaidFailed, REJECTABLE_STATUS, manualDeliveryIneligibleReason, normalizeTxHash } from '../lib/gas/gas.orderStates'
 type JsonValue = Prisma.InputJsonValue
 
 // Maps withdrawal network label → GasChainId for platform_fee ledger entries
@@ -238,8 +240,8 @@ export async function adminRoutes(app: FastifyInstance) {
           select: { id: true, category: true, title: true, body: true, href: true, isRead: true, createdAt: true },
         }),
         // Gas fee stats
-        db.gasFeeOrder.count({ where: { status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] } } }),
-        db.gasFeeOrder.count({ where: { status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] } }),
+        db.gasFeeOrder.count({ where: { status: { in: [...GAS_ACTIVE_STATUSES] } } }),
+        db.gasFeeOrder.count({ where: { status: REJECTABLE_STATUS, ...MANUAL_PROOF_WHERE } }),
         db.gasFeeOrder.count({ where: { ...createdSince } }),
         db.gasFeeOrder.aggregate({
           where: { status: 'delivered', ...deliveredSince },
@@ -3065,6 +3067,27 @@ export async function adminRoutes(app: FastifyInstance) {
     })
   })
 
+  // GET /admin/wallet-transactions — unified Deposits & Withdrawals feed (+ summary).
+  // Reads the existing Deposit / Withdrawal tables; writes nothing.
+  const walletTxQuery = z.object({
+    direction: z.enum(['all', 'in', 'out']).default('all'),
+    chain: z.string().trim().min(1).max(40).optional(),
+    source: z.enum(['onchain', 'auto', 'manual']).optional(),
+    status: z.enum(['completed', 'pending', 'on_hold', 'failed']).optional(),
+    asset: z.string().trim().min(1).max(20).optional(),
+    from: z.coerce.date().optional(),
+    to: z.coerce.date().optional(),
+    q: z.string().trim().min(1).max(100).optional(),
+    page: z.coerce.number().int().min(1).default(1),
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+  })
+  app.get('/admin/wallet-transactions', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { page, limit, ...filters } = walletTxQuery.parse(req.query)
+    const f = filters as TxFilters
+    const [list, summary] = await Promise.all([listWalletTransactions(f, page, limit), walletTransactionSummary(f)])
+    return reply.send({ success: true, data: { transactions: list.rows, summary, pagination: { page, limit, total: list.total, pages: list.pages } } })
+  })
+
   // GET /admin/deposit-addresses — audit who owns which HD-derived address.
   app.get('/admin/deposit-addresses', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const query = req.query as Record<string, string>
@@ -4279,7 +4302,9 @@ export async function adminRoutes(app: FastifyInstance) {
     // 'active' is a dashboard convenience group matching the Active Orders KPI
     // (everything still in flight, pre-delivery). All other values are exact.
     if (query.status === 'active') {
-      where.status = { in: ['payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] }
+      where.status = { in: [...GAS_ACTIVE_STATUSES] }
+    } else if (query.status && query.status.includes(',')) {
+      where.status = { in: query.status.split(',').map((s) => s.trim()).filter(Boolean) }
     } else if (query.status) {
       where.status = query.status
     }
@@ -4290,6 +4315,9 @@ export async function adminRoutes(app: FastifyInstance) {
       where.paymentCoin = 'PKR'
     } else if (query.paymentType === 'EXCHANGE') {
       where.paymentNetwork = 'EXCHANGE'
+    } else if (query.paymentType === 'MANUAL') {
+      // Every manual-review rail (PKR bank transfer + exchange internal transfer).
+      Object.assign(where, MANUAL_PROOF_WHERE)
     } else if (query.paymentType === 'CRYPTO') {
       // Auto-verified on-chain payments only — PKR and exchange transfers are manual.
       where.paymentCoin = { not: 'PKR' }
@@ -4306,7 +4334,10 @@ export async function adminRoutes(app: FastifyInstance) {
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
-        include: { user: { select: { username: true, email: true } } },
+        include: {
+          user: { select: { username: true, email: true } },
+          gasTokenConfig: { select: { symbol: true, logoUrl: true } },
+        },
       }),
       db.gasFeeOrder.count({ where }),
     ])
@@ -4767,8 +4798,10 @@ export async function adminRoutes(app: FastifyInstance) {
     // CAS: transition failed/awaiting_refund → payment_detected so the delivery
     // worker can re-claim it. For awaiting_refund we also clear the refund window.
     // Concurrent retries find count=0 on the second call and fall through below.
+    // A 'failed' order is only retryable when payment was actually accepted
+    // (PAID_FAILED_WHERE) — never a rejected/cancelled proof.
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: { in: ['failed', 'awaiting_refund'] } },
+      where: { id, deliveryTxHash: null, OR: [{ status: 'awaiting_refund' }, PAID_FAILED_WHERE] },
       data: { status: 'payment_detected', failureReason: null, refundEligibleAt: null, retryCount: { increment: 1 } },
     })
 
@@ -4783,7 +4816,9 @@ export async function adminRoutes(app: FastifyInstance) {
         previousStatus = 'payment_detected'
         await db.gasFeeOrder.update({ where: { id }, data: { failureReason: null } })
       } else {
-        throw new AppError('CONFLICT', `Order is in '${order.status}' — only failed, stuck (payment_detected), or awaiting_refund orders can be retried`, 409)
+        throw new AppError('CONFLICT', order.status === 'failed'
+          ? 'This order never had a payment accepted (rejected or cancelled) — it cannot be retried.'
+          : `Order is in '${order.status}' — only failed, stuck (payment_detected), or awaiting_refund orders can be retried`, 409)
       }
     } else {
       // Came from awaiting_refund (or failed): drop the pending safety-net auto-refund
@@ -4792,7 +4827,7 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus, oldStatus: previousStatus, newStatus: 'payment_detected' }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     return reply.send({ success: true })
   })
@@ -4809,6 +4844,9 @@ export async function adminRoutes(app: FastifyInstance) {
     // 'awaiting_refund' is the post-delivery-failure window: the system is still
     // retrying and the user can self-refund once it elapses, but an admin may also
     // force the refund immediately from here.
+    if (order.status === 'failed' && !isPaidFailed(order)) {
+      throw new AppError('INVALID_STATUS', 'This order never had a payment accepted (rejected or cancelled) — there is nothing to refund.', 400)
+    }
     if (!['failed', 'refund_pending', 'expired', 'payment_detected', 'awaiting_refund'].includes(order.status)) {
       throw new AppError(
         'INVALID_STATUS',
@@ -4873,7 +4911,7 @@ export async function adminRoutes(app: FastifyInstance) {
     // status is still one of the refundable ones — never overwrite an in-flight
     // 'sending'/'delivered' state, which would double-spend (deliver AND refund).
     const moved = await db.gasFeeOrder.updateMany({
-      where: { id, status: { in: ['failed', 'refund_pending', 'expired', 'payment_detected', 'awaiting_refund'] } },
+      where: { id, OR: [{ status: { in: ['refund_pending', 'expired', 'payment_detected', 'awaiting_refund'] } }, PAID_FAILED_WHERE] },
       data: { status: 'refund_pending', failureReason: null },
     })
     if (moved.count === 0) {
@@ -4892,6 +4930,8 @@ export async function adminRoutes(app: FastifyInstance) {
     const settleNet = networkOverride ?? order.paymentNetwork
     await createAuditLog(req.user!.id, 'GAS_ORDER_REFUND_TRIGGERED', 'GasFeeOrder', id, {
       previousStatus: order.status,
+      oldStatus: order.status,
+      newStatus: 'refund_pending',
       orderRef: order.orderRef,
       paymentNetwork: order.paymentNetwork,
       amount: order.paymentAmount.toString(),
@@ -4913,7 +4953,10 @@ export async function adminRoutes(app: FastifyInstance) {
     const { ref } = req.params as { ref: string }
     const order = await db.gasFeeOrder.findUnique({
       where: { orderRef: ref },
-      include: { user: { select: { username: true, email: true } } },
+      include: {
+        user: { select: { username: true, email: true } },
+        gasTokenConfig: { select: { symbol: true, logoUrl: true } },
+      },
     })
     if (!order) throw Errors.NOT_FOUND('Gas fee order')
     // Full payment-attribution + delivery audit trail (Redis-backed journal).
@@ -6685,23 +6728,107 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 
-  // ── POST /admin/gas/orders/:id/reject-pkr — reject a payment_uploaded PKR order ────
-
-  app.post('/admin/gas/orders/:id/reject-pkr', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+  // ── POST /admin/gas/orders/:id/reject — reject a submitted payment proof ────────────
+  // Applies to manual-review rails (PKR bank transfer, exchange transfer) whose proof
+  // is awaiting review. The order moves to the terminal 'cancelled' state — NOT
+  // 'failed' — so it can never be picked up by Retry Delivery or offered a refund
+  // for a payment that was never accepted. Nothing is delivered or sent.
+  async function rejectGasProof(req: FastifyRequest, reply: FastifyReply) {
     const { id } = req.params as { id: string }
-    const body = req.body as { reason?: string }
-    const reason = body?.reason ?? 'PKR payment rejected by admin'
+    const body = (req.body ?? {}) as { reason?: string }
+    const reason = (typeof body.reason === 'string' ? body.reason.trim() : '').slice(0, 300) || 'Payment proof rejected by admin'
+
+    const order = await db.gasFeeOrder.findUnique({ where: { id }, select: { id: true, orderRef: true, status: true, paymentCoin: true, paymentNetwork: true, userId: true } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] },
-      data:  { status: 'failed', failureReason: reason },
+      where: { id, status: REJECTABLE_STATUS, ...MANUAL_PROOF_WHERE },
+      data:  { status: 'cancelled', cancelledAt: new Date(), cancelReason: `admin_rejected: ${reason}`, failureReason: reason },
     })
     if (claimed.count === 0) {
-      const order = await db.gasFeeOrder.findUnique({ where: { id } })
-      if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only reject payment_uploaded PKR or exchange-transfer orders`, 409)
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id }, select: { status: true } })
+      throw new AppError('CONFLICT', `Order is in '${fresh?.status ?? order.status}' — only a PKR or exchange-transfer order with a submitted proof can be rejected.`, 409)
     }
-    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    return reply.send({ success: true, data: { status: 'failed' } })
+    // The 24h expiry job is moot now.
+    try { await queues.gasFee.remove(`gas-expire-${id}`) } catch { /* non-fatal */ }
+    const { recordGasAudit } = await import('../lib/gas/gas.matching')
+    await recordGasAudit({ orderId: id }, { source: 'admin', event: 'proof_rejected', reason, detail: `Rejected by admin ${req.user!.id}` })
+    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, {
+      orderRef: order.orderRef, oldStatus: order.status, newStatus: 'cancelled', paymentNetwork: order.paymentNetwork, reason,
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    if (order.userId) {
+      notify(order.userId, 'gas', 'Gas payment not verified', `We could not verify the payment for order ${order.orderRef}: ${reason}. No gas was sent and the order was closed.`, { orderRef: order.orderRef })
+    }
+    return reply.send({ success: true, data: { status: 'cancelled' } })
+  }
+  app.post('/admin/gas/orders/:id/reject', { preHandler: [authenticate, adminOrSuper] }, rejectGasProof)
+  // Legacy alias — kept so older admin clients keep working.
+  app.post('/admin/gas/orders/:id/reject-pkr', { preHandler: [authenticate, adminOrSuper] }, rejectGasProof)
+
+  // ── POST /admin/gas/orders/:id/manual-deliver — record gas sent from an external wallet ──
+  // The platform does NOT send anything here. The admin already transferred the gas
+  // from their own wallet and supplies the tx hash. No hot-wallet ledger entry is
+  // written (the hot wallet did not move); the order is stamped deliveryMode='manual'.
+  app.post('/admin/gas/orders/:id/manual-deliver', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = (req.body ?? {}) as { txHash?: unknown; note?: unknown; confirmed?: unknown }
+    const txHash = normalizeTxHash(body.txHash)
+    if (!txHash) throw new AppError('VALIDATION_ERROR', 'A valid transaction hash is required.', 400)
+    if (body.confirmed !== true) throw new AppError('VALIDATION_ERROR', 'Confirm that the gas has already been sent externally.', 400)
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 500) || null : null
+
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    const blocked = manualDeliveryIneligibleReason(order)
+    if (blocked) throw new AppError('CONFLICT', blocked, 409)
+
+    // The same external tx can only ever settle ONE order.
+    const dup = await db.gasFeeOrder.findFirst({ where: { deliveryTxHash: txHash, NOT: { id } }, select: { orderRef: true } })
+    if (dup) throw new AppError('CONFLICT', `That transaction hash is already recorded as the delivery of order ${dup.orderRef}.`, 409)
+
+    // CAS: eligibility is re-checked atomically so a concurrent worker claim, refund,
+    // or second admin submission (double-click) can never produce a double delivery.
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, ...MANUAL_DELIVERY_WHERE },
+      data: {
+        status: 'delivered',
+        deliveryTxHash: txHash,
+        deliveryConfirmed: false,
+        deliveredAt: new Date(),
+        refundEligibleAt: null,
+        failureReason: null,
+        deliveryMode: 'manual',
+        deliveredByAdminId: req.user!.id,
+        deliveryNote: note,
+      },
+    })
+    if (claimed.count === 0) {
+      const fresh = await db.gasFeeOrder.findUnique({ where: { id }, select: { status: true } })
+      throw new AppError('CONFLICT', `Order moved to '${fresh?.status ?? 'unknown'}' before manual delivery could be recorded.`, 409)
+    }
+    // Drop the safety-net auto-refund so it can't refund an order that was delivered.
+    try { await queues.gasFee.remove(`gas-auto-refund-${id}`) } catch { /* non-fatal */ }
+
+    const { recordGasAudit } = await import('../lib/gas/gas.matching')
+    await recordGasAudit({ orderId: id, txHash }, {
+      source: 'admin', event: 'manual_delivery', txHash, expectedChain: order.chain,
+      detail: `Delivered manually from an external wallet by admin ${req.user!.id}${note ? ` — ${note}` : ''}`,
+    })
+    await createAuditLog(req.user!.id, 'GAS_ORDER_MANUAL_DELIVERY', 'GasFeeOrder', id, {
+      orderRef: order.orderRef, oldStatus: order.status, newStatus: 'delivered', txHash,
+      chain: order.chain, toAddress: order.toAddress, amount: order.gasAmountNative.toString(), note,
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
+
+    // Same downstream side-effects as an automated delivery (all idempotent / best-effort).
+    const { notifyMerchantWebhook } = await import('../lib/gas/gas.merchant')
+    await notifyMerchantWebhook(id, 'delivered').catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: merchant webhook failed'))
+    const { accrueReferralForDelivery } = await import('../lib/gas/gas.referral')
+    await accrueReferralForDelivery(order).catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: referral accrual failed'))
+    const { awardGasPointsForDelivery } = await import('../services/airdrop.service')
+    await awardGasPointsForDelivery(order).catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: airdrop award failed'))
+    if (order.userId) queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})
+
+    return reply.send({ success: true, data: { status: 'delivered', deliveryTxHash: txHash, deliveryMode: 'manual' } })
   })
 
   // ── POST /admin/gas/orders/:id/mark-payment — manually confirm payment received ────
@@ -6732,7 +6859,7 @@ export async function adminRoutes(app: FastifyInstance) {
       throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
     }
     await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { txHash, wasAutoVerified }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_PAYMENT_MANUALLY_CONFIRMED', 'GasFeeOrder', id, { orderRef: order.orderRef, txHash, wasAutoVerified, oldStatus: order.status, newStatus: 'payment_detected' }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: { status: 'payment_detected' } })
   })
 
@@ -6743,9 +6870,11 @@ export async function adminRoutes(app: FastifyInstance) {
     const body = req.body as { reason?: string }
     const reason = body?.reason?.trim() || 'Cancelled by admin'
 
+    // Terminal 'cancelled' (not 'failed'): a failed order can be retried or refunded,
+    // which must never be possible for an order whose payment was not accepted.
     const claimed = await db.gasFeeOrder.updateMany({
       where: { id, status: { in: ['payment_pending', 'payment_uploaded', 'payment_verified'] } },
-      data:  { status: 'failed', failureReason: reason },
+      data:  { status: 'cancelled', cancelledAt: new Date(), cancelReason: `admin_cancelled: ${reason}`, failureReason: reason },
     })
     if (claimed.count === 0) {
       const order = await db.gasFeeOrder.findUnique({ where: { id } })
@@ -6758,8 +6887,9 @@ export async function adminRoutes(app: FastifyInstance) {
         : ''
       throw new AppError('CONFLICT', `Order is in '${order.status}' — can only cancel pending, uploaded, or verified orders.${hint}`, 409)
     }
-    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    return reply.send({ success: true, data: { status: 'failed' } })
+    try { await queues.gasFee.remove(`gas-expire-${id}`) } catch { /* non-fatal */ }
+    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCELLED', 'GasFeeOrder', id, { reason, newStatus: 'cancelled' }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: { status: 'cancelled' } })
   })
 
   // ── GET /admin/gas/custom-requests — list custom gas fee requests ─────────────────

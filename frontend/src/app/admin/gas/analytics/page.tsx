@@ -19,6 +19,7 @@ type Runway = {
   burnRateNativePerDay: number
   daysRemaining: number | null
   status: 'healthy' | 'low' | 'critical' | 'no_data'
+  reason?: 'no_burn' | 'balance_unavailable' | null
 }
 
 type Profitability = {
@@ -43,17 +44,26 @@ function runwayColor(s: Runway['status']) {
   return 'bg-success/10 border-success/30 text-success'
 }
 
-function runwayLabel(d: number | null) {
-  if (d === null) return 'N/A'
-  if (d > 365) return '365+ days'
-  return `${d.toFixed(0)} day${d !== 1 ? 's' : ''}`
+function runwayLabel(r: Runway, burnWindow: number) {
+  if (r.daysRemaining === null) {
+    return r.reason === 'balance_unavailable'
+      ? { main: 'Balance unavailable', sub: 'Live balance could not be read — check RPC health' }
+      : { main: 'No recent usage', sub: `No deliveries in the last ${burnWindow} days, so no runway estimate` }
+  }
+  const days = r.daysRemaining
+  return { main: days > 365 ? '365+ days' : `${Math.max(0, Math.floor(days))} day${Math.floor(days) !== 1 ? 's' : ''}`, sub: null }
+}
+
+/** Margin as a signed percentage; "—" when there is no revenue to divide by (never NaN/∞). */
+function marginLabel(m: number | null) {
+  return m != null && Number.isFinite(m) ? `${(m * 100).toFixed(1)}%` : '—'
 }
 
 function usd(v: number) {
   return `$${v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-const CHAINS = ['TRON','BSC','ETH','BASE','ARB','OP','MATIC','AVAX']
+const CHAINS = ['TRON','BSC','OPBNB','ETH','BASE','ARB','OP','MATIC','AVAX','SOL','TON','SUI','APT']
 
 function VolumeChart({ data }: { data: DailyVolume[] }) {
   const W = 600, H = 200, PAD = { top: 10, right: 10, bottom: 30, left: 45 }
@@ -172,7 +182,7 @@ export default function GasAnalyticsPage() {
       <GasSectionTabs active="analytics" />
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Gas Analytics</h1>
-        <p className="text-text-muted text-sm mt-0.5">Burn rates, runway estimates, and profitability by chain.</p>
+        <p className="text-text-muted text-sm mt-0.5">Gas treasury runway, order volume, delivery costs and profitability by chain. Revenue and cost are counted on delivered orders (all payment methods).</p>
       </div>
 
       {/* ── Runway Cards ─────────────────────────────────────────────────────── */}
@@ -182,16 +192,20 @@ export default function GasAnalyticsPage() {
           <p className="text-text-muted text-sm">No runway data — wallets may not have been fetched yet.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-            {runways.map((r) => (
-              <div key={r.chain} className={`border rounded-xl p-4 ${runwayColor(r.status)}`}>
-                <p className="font-bold text-lg">{r.chain}</p>
-                <p className="text-2xl font-semibold mt-1">{runwayLabel(r.daysRemaining)}</p>
-                <p className="text-xs mt-1 opacity-75">
-                  {r.currentBalanceNative != null ? r.currentBalanceNative.toFixed(4) : '?'} {r.nativeSymbol}
-                </p>
-                <p className="text-xs opacity-75">{r.burnRateNativePerDay.toFixed(4)}/day burn</p>
-              </div>
-            ))}
+            {runways.map((r) => {
+              const label = runwayLabel(r, 7)
+              return (
+                <div key={r.chain} className={`border rounded-xl p-4 ${runwayColor(r.status)}`}>
+                  <p className="font-bold text-lg">{r.chain}</p>
+                  <p className={`font-semibold mt-1 ${label.sub ? 'text-base' : 'text-2xl'}`}>{label.main}</p>
+                  {label.sub && <p className="text-xs mt-0.5 opacity-75">{label.sub}</p>}
+                  <p className="text-xs mt-1 opacity-75">
+                    {r.currentBalanceNative != null ? r.currentBalanceNative.toFixed(4) : 'Balance unavailable'} {r.currentBalanceNative != null ? r.nativeSymbol : ''}
+                  </p>
+                  <p className="text-xs opacity-75">{r.burnRateNativePerDay.toFixed(4)}/day burn (7-day avg)</p>
+                </div>
+              )
+            })}
           </div>
         )}
       </section>
@@ -260,7 +274,7 @@ export default function GasAnalyticsPage() {
         </div>
 
         {profitability.length === 0 ? (
-          <p className="text-text-muted text-sm">No profitability data available.</p>
+          <p className="text-text-muted text-sm">No delivered orders in this period.</p>
         ) : (
           <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
             <div className="overflow-x-auto">
@@ -268,9 +282,9 @@ export default function GasAnalyticsPage() {
                 <thead className="bg-surface border-b border-border">
                   <tr>
                     <th className="text-left px-4 py-3 font-medium text-text-muted">Chain</th>
-                    <th className="text-right px-4 py-3 font-medium text-text-muted">Revenue</th>
-                    <th className="text-right px-4 py-3 font-medium text-text-muted">Delivery Cost</th>
-                    <th className="text-right px-4 py-3 font-medium text-text-muted">Refund Cost</th>
+                    <th className="text-right px-4 py-3 font-medium text-text-muted" title="What customers paid for delivered orders">Revenue</th>
+                    <th className="text-right px-4 py-3 font-medium text-text-muted" title="USD value of the gas delivered">Delivery Cost</th>
+                    <th className="text-right px-4 py-3 font-medium text-text-muted" title="Gas refunded to users (ledger)">Refund Cost</th>
                     <th className="text-right px-4 py-3 font-medium text-text-muted">Net Profit</th>
                     <th className="text-right px-4 py-3 font-medium text-text-muted">Margin</th>
                   </tr>
@@ -285,8 +299,8 @@ export default function GasAnalyticsPage() {
                       <td className={`px-4 py-3 text-right font-semibold ${p.netProfitUsd >= 0 ? 'text-success' : 'text-danger'}`}>
                         {usd(p.netProfitUsd)}
                       </td>
-                      <td className="px-4 py-3 text-right text-text-muted">
-                        {p.margin != null ? `${(p.margin * 100).toFixed(1)}%` : 'N/A'}
+                      <td className={`px-4 py-3 text-right font-medium ${p.margin == null ? 'text-text-muted' : p.margin < 0 ? 'text-danger' : 'text-text-primary'}`}>
+                        {marginLabel(p.margin)}
                       </td>
                     </tr>
                   ))}

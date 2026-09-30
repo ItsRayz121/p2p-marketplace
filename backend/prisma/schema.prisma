@@ -1842,8 +1842,13 @@ model GasFeeOrder {
   fromHotWallet       String?
   deliveryTxHash      String?
   deliveryConfirmed   Boolean           @default(false)
+  // null = automated hot-wallet delivery; 'manual' = an admin sent the gas from an
+  // external wallet and recorded its tx hash (nothing was sent by the platform).
+  deliveryMode        String?
+  deliveredByAdminId  String?
+  deliveryNote        String?           @db.VarChar(500)
 
-  refundTxHash        String?
+  refundTxHash       String?
   refundAmount        Decimal?          @db.Decimal(10, 4)
   // When set (on a delivery-failed order), the moment after which the user may
   // request an immediate refund. Before this, the system keeps retrying delivery

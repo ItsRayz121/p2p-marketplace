@@ -205,6 +205,9 @@ export default function AdminLogosPage() {
   // editing a row auto-expands the Add/Replace form (see startEdit).
   const [searchOpen, setSearchOpen] = useState(false)
   const [formOpen,   setFormOpen]   = useState(false)
+  // Registry card collapses too. Filters/search live in this component's state, so they
+  // survive a collapse → expand cycle untouched.
+  const [registryOpen, setRegistryOpen] = useState(true)
 
   const { upload, uploading, error: uploadError } = useAdminLogoUpload()
 
@@ -549,11 +552,20 @@ export default function AdminLogosPage() {
 
       {/* ── Registry table ─────────────────────────────────────────────────── */}
       <div className="bg-surface border border-border rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-border flex flex-wrap gap-3 items-center justify-between">
-          <h2 className="font-semibold text-text-primary">
-            Registry <span className="text-text-muted font-normal">({filtered.length} entries)</span>
-          </h2>
-          <div className="flex gap-2">
+        <div className={`p-4 flex flex-wrap gap-3 items-center justify-between ${registryOpen ? 'border-b border-border' : ''}`}>
+          <button
+            type="button"
+            onClick={() => setRegistryOpen((v) => !v)}
+            aria-expanded={registryOpen}
+            aria-controls="logo-registry-body"
+            className="flex-1 min-w-[8rem] text-left"
+          >
+            <h2 className="font-semibold text-text-primary">
+              Registry <span className="text-text-muted font-normal">({filtered.length} entries)</span>
+            </h2>
+          </button>
+          <div className="flex items-center gap-2 ml-auto">
+            {registryOpen && (<>
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
@@ -569,9 +581,21 @@ export default function AdminLogosPage() {
               placeholder="Search slug…"
               className="border border-border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 w-36"
             />
+            </>)}
+            <button
+              type="button"
+              onClick={() => setRegistryOpen((v) => !v)}
+              aria-label={registryOpen ? 'Collapse registry' : 'Expand registry'}
+              aria-expanded={registryOpen}
+              aria-controls="logo-registry-body"
+              className="w-8 h-8 flex items-center justify-center rounded-lg border border-border text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+            >
+              <span className={`text-base leading-none transition-transform ${registryOpen ? 'rotate-180' : ''}`}>▾</span>
+            </button>
           </div>
         </div>
 
+        <div id="logo-registry-body" hidden={!registryOpen}>
         {loading ? (
           <div className="p-10 text-center text-text-muted text-sm">Loading…</div>
         ) : error ? (
@@ -673,6 +697,7 @@ export default function AdminLogosPage() {
             </table>
           </div>
         )}
+        </div>
       </div>
 
       <p className="text-xs text-text-muted">

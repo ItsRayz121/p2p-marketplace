@@ -1633,16 +1633,19 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     })
   })
 
+  // exchangeOrderId is a legacy field: new submissions send only the customer's own
+  // exchange UID (+ optional screenshot). It is still accepted (and de-duplicated)
+  // so older clients and historical orders keep working.
   const exchangeProofSchema = z.object({
     exchangeUserUid: z.string().trim().min(3).max(64),
-    exchangeOrderId: z.string().trim().min(4).max(80),
+    exchangeOrderId: z.string().trim().min(4).max(80).optional(),
     proofUrl:        z.string().url().optional(),
   })
 
   app.post('/gas-fee/orders/:orderRef/exchange-proof', { preHandler: [authenticate], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { orderRef } = req.params as { orderRef: string }
     const parsed = exchangeProofSchema.safeParse(req.body)
-    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Enter your exchange UID and the transfer order ID', 400)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Enter your exchange UID', 400)
     const { exchangeUserUid, exchangeOrderId, proofUrl } = parsed.data
     if (proofUrl && !isAllowedProofUrl(proofUrl)) {
       throw new AppError('VALIDATION_ERROR', 'Screenshot must be uploaded via the platform uploader (invalid URL domain)', 400)
@@ -1661,7 +1664,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     // The same transfer order id can only ever pay for ONE order — otherwise a
     // single real transfer could be replayed against several gas orders.
-    const dup = await db.gasFeeOrder.findFirst({ where: { exchangeOrderId, NOT: { id: order.id } }, select: { id: true } })
+    const dup = exchangeOrderId
+      ? await db.gasFeeOrder.findFirst({ where: { exchangeOrderId, NOT: { id: order.id } }, select: { id: true } })
+      : null
     if (dup) throw new AppError('CONFLICT', 'That transfer order ID has already been used on another order.', 409)
 
     let updated
@@ -1671,7 +1676,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         data: {
           status: 'payment_uploaded',
           exchangeUserUid,
-          exchangeOrderId,
+          ...(exchangeOrderId ? { exchangeOrderId } : {}),
           ...(proofUrl ? { paymentProofUrl: proofUrl } : {}),
         },
       })
@@ -1686,7 +1691,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     void createAdminNotif({
       category: 'GAS',
       title:   `Exchange Transfer Submitted — $${Number(order.paymentAmount).toFixed(2)} USDT`,
-      body:    `Order ${orderRef} via ${order.exchangeName ?? 'exchange'}: user UID ${exchangeUserUid}, transfer ID ${exchangeOrderId}. Verify it in the exchange history, then release gas.`,
+      body:    `Order ${orderRef} via ${order.exchangeName ?? 'exchange'}: sender UID ${exchangeUserUid}, expected $${Number(order.paymentAmount).toFixed(2)} USDT. Verify it in the exchange history, then release gas.`,
       href:    `/admin/gas/orders/${orderRef}`,
       metadata: { orderRef, orderId: order.id, exchange: order.exchangeName ?? null, exchangeUserUid, exchangeOrderId },
     })

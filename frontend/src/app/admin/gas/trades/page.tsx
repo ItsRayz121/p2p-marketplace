@@ -11,6 +11,8 @@ import { Badge } from '@/components/ui/Badge'
 import { Flame, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { GAS_STATUS_LABELS, gasStatusLabel } from '@/lib/gasOrderStatus'
+import { gasOrderHref } from '@/lib/adminRoutes'
 
 // The admin gas-orders endpoint returns raw GasFeeOrder rows; we only type the
 // fields this table renders.
@@ -43,22 +45,6 @@ const statusVariant = (s: string): 'default' | 'success' | 'warning' | 'danger' 
   if (s === 'payment_uploaded' || s === 'payment_detected' || s === 'payment_verified' || s === 'sending') return 'gold'
   return 'default'
 }
-
-const GAS_STATUS_LABELS: Record<string, string> = {
-  payment_pending:  'Awaiting Payment',
-  payment_uploaded: 'Proof Uploaded',
-  payment_verified: 'Payment Verified',
-  payment_detected: 'Payment Detected',
-  sending:          'Sending',
-  delivered:        'Delivered',
-  expired:          'Expired',
-  failed:           'Failed',
-  awaiting_refund:  'Awaiting Refund',
-  refund_pending:   'Refund Pending',
-  refunded:         'Refunded',
-  cancelled:        'Cancelled',
-}
-const gasStatusLabel = (s: string) => GAS_STATUS_LABELS[s] ?? s.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
 
 // Client-side "source" classification for each order.
 function orderSource(o: AdminGasOrder): 'merchant' | 'free' | 'direct' {
@@ -185,7 +171,7 @@ export default function GasTradesPage() {
                     <tr key={o.id} className="align-middle hover:bg-surface/50 transition-colors">
                       <td className="px-3 py-2 font-mono text-xs" data-label="Order Ref">
                         <Link
-                          href={`/admin/gas/orders/${o.orderRef}`}
+                          href={gasOrderHref(o.orderRef)}
                           className="text-primary hover:underline inline-flex items-center gap-1"
                           title={o.orderRef}
                         >

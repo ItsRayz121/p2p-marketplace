@@ -392,7 +392,7 @@ function GasOrderTrackingPageInner() {
             {order.exchangeUserUid && <DetailRow label="Your UID" value={<span className="font-mono text-xs">{order.exchangeUserUid}</span>} />}
             {order.exchangeOrderId && <DetailRow label="Transfer ID" value={<span className="font-mono text-xs break-all">{order.exchangeOrderId}</span>} />}
             {order.status === 'payment_uploaded' && (
-              <p className="text-xs text-text-muted pt-3">Our team is checking your transfer. This usually takes 5 to 10 minutes and can take longer.</p>
+              <p className="text-xs text-text-muted pt-3">Our team is checking your transfer.</p>
             )}
           </div>
         )}

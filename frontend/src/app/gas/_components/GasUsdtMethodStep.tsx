@@ -86,12 +86,6 @@ export function GasUsdtMethodStep() {
           </button>
         )}
       </div>
-
-      {exchangeAvailable && (
-        <p className="text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2">
-          Blockchain payments are confirmed automatically in about a minute. Exchange transfers are checked by a person and can take 5 to 10 minutes, sometimes longer.
-        </p>
-      )}
     </div>
   )
 }

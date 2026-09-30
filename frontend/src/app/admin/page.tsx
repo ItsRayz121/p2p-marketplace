@@ -6,6 +6,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { cn } from '@/lib/utils'
+import { ADMIN_ROUTES, gasActiveOrdersHref, gasProofQueueHref, transactionsHref } from '@/lib/adminRoutes'
 import {
   ShieldCheck, AlertTriangle, Wallet, Fuel, FileText,
   TrendingUp, BarChart2, Users, PackageCheck, DollarSign, ArrowDownToLine,
@@ -83,9 +84,9 @@ export default function AdminDashboardPage() {
   const actionCards = [
     { label: 'Pending KYC',        value: stats?.pendingKyc ?? 0,          href: '/admin/kyc',        urgent: (stats?.pendingKyc ?? 0) > 0,          icon: <ShieldCheck className="w-4 h-4" /> },
     { label: 'Open Disputes',      value: stats?.openDisputes ?? 0,        href: '/admin/disputes',   urgent: (stats?.openDisputes ?? 0) > 0,        icon: <AlertTriangle className="w-4 h-4" /> },
-    { label: 'Pending Withdrawals',value: stats?.pendingWithdrawals ?? 0,  href: '/admin/withdrawals',urgent: (stats?.pendingWithdrawals ?? 0) > 0,  icon: <Wallet className="w-4 h-4" /> },
-    { label: 'Gas Orders Active',  value: stats?.pendingGasOrders ?? 0,    href: '/admin/gas',        urgent: (stats?.pendingGasOrders ?? 0) > 0,    icon: <Fuel className="w-4 h-4" /> },
-    { label: 'PKR Proofs Pending', value: stats?.pkrGasProofsPending ?? 0, href: '/admin/gas',        urgent: (stats?.pkrGasProofsPending ?? 0) > 0, icon: <FileText className="w-4 h-4" /> },
+    { label: 'Pending Withdrawals',value: stats?.pendingWithdrawals ?? 0,  href: transactionsHref('out') + '&view=queue', urgent: (stats?.pendingWithdrawals ?? 0) > 0,  icon: <Wallet className="w-4 h-4" /> },
+    { label: 'Gas Orders Active',  value: stats?.pendingGasOrders ?? 0,    href: gasActiveOrdersHref(), urgent: (stats?.pendingGasOrders ?? 0) > 0,    icon: <Fuel className="w-4 h-4" /> },
+    { label: 'Proofs Pending',     value: stats?.pkrGasProofsPending ?? 0, href: gasProofQueueHref(),  urgent: (stats?.pkrGasProofsPending ?? 0) > 0, icon: <FileText className="w-4 h-4" /> },
   ]
 
   const todayCards = [
@@ -115,7 +116,7 @@ export default function AdminDashboardPage() {
     { label: 'Trades',        href: '/admin/trades' },
     { label: 'Disputes',      href: '/admin/disputes' },
     { label: 'KYC Queue',     href: '/admin/kyc' },
-    { label: 'Withdrawals',   href: '/admin/withdrawals' },
+    { label: 'Deposits & Withdrawals', href: ADMIN_ROUTES.transactions },
     { label: 'Ratings',      href: '/admin/ratings' },
     { label: 'Wallet',        href: '/admin/wallet' },
     { label: 'Gas Fee',       href: '/admin/gas' },
@@ -155,6 +156,7 @@ export default function AdminDashboardPage() {
             <Link
               key={card.label}
               href={card.href}
+              title={card.label === 'Proofs Pending' ? 'PKR and exchange-transfer payment proofs awaiting review' : undefined}
               className={cn(
                 'flex items-center gap-2 p-3 rounded-lg border bg-surface shadow-card hover:shadow-card-md transition-all',
                 card.urgent ? 'border-danger/30 shadow-sm' : 'border-border',

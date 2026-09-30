@@ -1,6 +1,8 @@
 'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { Suspense } from 'react'
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { adminApi, apiRequest, type GasFinancialKpi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
@@ -16,6 +18,9 @@ import { useAuthStore } from '@/store/auth.store'
 import { chainDisplayName } from '@/lib/chainDisplayName'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
+import { RejectProofModal } from '@/components/admin/GasOrderActionModals'
+import { GAS_STATUS_LABELS, gasStatusVariant, isPaidFailed } from '@/lib/gasOrderStatus'
+import { ADMIN_ROUTES, GAS_STATUS_PROOF_SUBMITTED, gasOrdersHref, gasOrderHref, parseGasOrderFilters, type GasPaymentType } from '@/lib/adminRoutes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -30,9 +35,11 @@ interface GasOrder {
   paymentNetwork?: string | null
   pkrAmount?: string | null
   toAddress: string
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'refunded' | 'cancelled'
+  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'awaiting_refund' | 'refund_pending' | 'refunded' | 'cancelled'
   deliveryTxHash?: string
   failureReason?: string
+  paymentTxHash?: string | null
+  retryCount?: number
   createdAt: string
 }
 
@@ -107,29 +114,6 @@ function fmtRelativeTime(iso: string | null): string {
   if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
   if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
   return fmtDate(iso)
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  payment_pending:  'Awaiting Payment',
-  payment_uploaded: 'Proof Submitted',
-  payment_verified: 'Payment Verified',
-  payment_detected: 'Payment Confirmed',
-  sending:          'Delivering...',
-  delivered:        'Delivered',
-  expired:          'Expired',
-  failed:           'Failed',
-  refund_pending:   'Refund Pending',
-  refunded:         'Refunded',
-  cancelled:        'Cancelled',
-}
-
-function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' | 'outline' {
-  if (s === 'delivered' || s === 'payment_verified') return 'success'
-  if (s === 'failed' || s === 'expired' || s === 'cancelled') return 'danger'
-  if (s === 'refunded') return 'warning'
-  if (s === 'payment_uploaded') return 'warning'
-  if (s === 'payment_detected' || s === 'sending') return 'default'
-  return 'outline'
 }
 
 function walletStatusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
@@ -739,6 +723,17 @@ function ChainHealthCard() {
 }
 
 export default function GasAdminPage() {
+  return (
+    <Suspense fallback={<LoadingState message="Loading gas orders..." />}>
+      <GasAdminPageInner />
+    </Suspense>
+  )
+}
+
+function GasAdminPageInner() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const initialFilters = parseGasOrderFilters(searchParams)
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
 
@@ -752,10 +747,10 @@ export default function GasAdminPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState(initialFilters.status)
   // Strict PKR vs crypto separation — crypto payments must never appear in the
   // PKR proof-review flow and vice-versa.
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<'all' | 'PKR' | 'EXCHANGE' | 'CRYPTO'>('all')
+  const [paymentTypeFilter, setPaymentTypeFilter] = useState<GasPaymentType>(initialFilters.paymentType)
 
   // Analytics state
   const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
@@ -798,11 +793,28 @@ export default function GasAdminPage() {
 
   // Orders table anchor — KPI/stat cards filter the table and scroll to it.
   const ordersSectionRef = useRef<HTMLDivElement>(null)
-  const goToOrders = useCallback((filter: string) => {
-    setStatusFilter(filter)
-    setPaymentTypeFilter('all')
-    setPage(1)
+  const scrollToOrders = useCallback(() => {
     requestAnimationFrame(() => ordersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
+  }, [])
+  const goToOrders = useCallback((filter: string, paymentType: GasPaymentType = 'all') => {
+    setStatusFilter(filter)
+    setPaymentTypeFilter(paymentType)
+    setPage(1)
+    scrollToOrders()
+  }, [scrollToOrders])
+
+  // Filters are mirrored into the URL so the view is shareable / survives refresh, and
+  // dashboard deep links (?status=…&paymentType=…) arrive pre-filtered. On a deep link
+  // the queue is scrolled into view so the pending orders are the first thing visible.
+  useEffect(() => {
+    const target = gasOrdersHref({ status: statusFilter, paymentType: paymentTypeFilter })
+    const current = searchParams.toString() ? `${ADMIN_ROUTES.gas}?${searchParams.toString()}` : ADMIN_ROUTES.gas
+    if (target !== current) router.replace(target, { scroll: false })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statusFilter, paymentTypeFilter])
+  useEffect(() => {
+    if (initialFilters.status !== 'all' || initialFilters.paymentType !== 'all') scrollToOrders()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchStats = useCallback(async () => {
@@ -934,17 +946,18 @@ export default function GasAdminPage() {
     }
   }
 
-  async function handleRejectPkr() {
+  async function handleRejectPkr(reason: string) {
     if (!selectedId) return
     setActionError(null)
     try {
-      await adminApi.rejectPkrOrder(selectedId)
+      await adminApi.rejectGasOrder(selectedId, reason)
       setConfirmRejectPkr(false)
-      setActionSuccess('PKR payment rejected.')
-      void refresh()
+      setActionSuccess('Payment rejected — the order was closed and the customer notified.')
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to reject PKR order')
+      setActionError(err instanceof Error ? err.message : 'Failed to reject the payment')
+      setConfirmRejectPkr(false)
     }
+    void refresh()
   }
 
   async function handleToggleChain(chain: string) {
@@ -1212,8 +1225,8 @@ export default function GasAdminPage() {
       {orders.some(o => o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE')) && statusFilter === 'all' && (
         <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-800 dark:text-amber-300">
           <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          <span><strong>PKR payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
-          <button onClick={() => { setStatusFilter('payment_uploaded'); setPaymentTypeFilter('PKR'); setPage(1) }} className="ml-auto text-xs font-bold border border-amber-500/50 rounded-lg px-2.5 py-1 hover:bg-amber-500/15">
+          <span><strong>PKR and exchange payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
+          <button onClick={() => goToOrders(GAS_STATUS_PROOF_SUBMITTED, 'MANUAL')} className="ml-auto text-xs font-bold border border-amber-500/50 rounded-lg px-2.5 py-1 hover:bg-amber-500/15">
             View All →
           </button>
         </div>
@@ -1341,6 +1354,7 @@ export default function GasAdminPage() {
           <div className="admin-toolbar gap-2">
             {([
               { v: 'all',    label: 'All' },
+              { v: 'MANUAL', label: 'All manual review' },
               { v: 'PKR',    label: 'PKR (manual review)' },
               { v: 'EXCHANGE', label: 'Exchange transfer (manual review)' },
               { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
@@ -1362,7 +1376,7 @@ export default function GasAdminPage() {
         {/* Status chips WRAP onto multiple lines instead of scrolling off-screen,
             so Expired / Failed / Refund stay visible under the earlier chips. */}
         <div className="flex flex-wrap gap-2">
-          {['all', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
+          {['all', 'active', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'awaiting_refund', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
             <button
               key={s}
               onClick={() => { setStatusFilter(s); setPage(1) }}
@@ -1372,7 +1386,7 @@ export default function GasAdminPage() {
                   : 'bg-surface text-text-secondary border-border hover:bg-surface'
               }`}
             >
-              {s === 'all' ? 'All' : (STATUS_LABELS[s] ?? s)}
+              {s === 'all' ? 'All' : s === 'active' ? 'Active (in flight)' : (GAS_STATUS_LABELS[s] ?? s)}
             </button>
           ))}
         </div>
@@ -1423,7 +1437,7 @@ export default function GasAdminPage() {
                     </td>
                     <td className="px-4 py-3">
                       <div>
-                        <Badge variant={statusVariant(o.status)} size="sm">{STATUS_LABELS[o.status] ?? o.status}</Badge>
+                        <Badge variant={gasStatusVariant(o.status)} size="sm">{GAS_STATUS_LABELS[o.status] ?? o.status}</Badge>
                         {o.failureReason && (
                           <p className="text-xs text-danger mt-0.5 max-w-[160px] truncate" title={o.failureReason}>{o.failureReason}</p>
                         )}
@@ -1432,7 +1446,7 @@ export default function GasAdminPage() {
                     <td className="px-4 py-3 text-text-secondary">{fmtDate(o.createdAt)}</td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <Link href={`/admin/gas/orders/${o.orderRef}`}>
+                        <Link href={gasOrderHref(o.orderRef)}>
                           <Button size="sm" variant="ghost">View</Button>
                         </Link>
                         {o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE') && (
@@ -1462,16 +1476,9 @@ export default function GasAdminPage() {
                             >
                               Confirm Payment
                             </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRejectPkr(true) }}
-                            >
-                              Reject
-                            </Button>
                           </>
                         )}
-                        {o.status === 'failed' && (
+                        {isPaidFailed(o) && (
                           <>
                             <Button
                               size="sm"
@@ -1525,14 +1532,12 @@ export default function GasAdminPage() {
         type="pkr"
       />
 
-      <ConfirmModal
+      <RejectProofModal
         isOpen={confirmRejectPkr}
         onClose={() => setConfirmRejectPkr(false)}
+        orderRef={selectedOrder?.orderRef ?? ''}
+        subject={selectedOrder?.paymentNetwork === 'EXCHANGE' ? 'exchange transfer' : 'payment proof'}
         onConfirm={handleRejectPkr}
-        title="Reject PKR Payment"
-        description="Reject this PKR payment proof. The order will be marked as failed. Inform the user if a refund is required."
-        confirmLabel="Reject Payment"
-        confirmVariant="danger"
       />
 
       <ConfirmModal

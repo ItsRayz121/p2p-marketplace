@@ -13,6 +13,9 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
+import { RejectProofModal, ManualDeliveryModal } from '@/components/admin/GasOrderActionModals'
+import { GAS_STATUS_LABELS, gasStatusVariant, canManualDeliver, isPaidFailed } from '@/lib/gasOrderStatus'
+import { ADMIN_ROUTES } from '@/lib/adminRoutes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +46,11 @@ interface GasOrderDetail {
   fromHotWallet: string | null
   deliveryTxHash: string | null
   deliveryConfirmed: boolean
+  deliveryMode?: string | null
+  deliveryNote?: string | null
+  deliveredByAdminId?: string | null
+  retryCount?: number
+  gasTokenConfig?: { symbol: string; logoUrl: string | null } | null
   deliveredAt: string | null
   refundTxHash: string | null
   refundAmount: string | null
@@ -125,30 +133,6 @@ function paymentNetworkChain(network: string | null, fallback: string): string {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const STATUS_LABELS: Record<string, string> = {
-  payment_pending:  'Awaiting Payment',
-  payment_uploaded: 'Proof Submitted',
-  payment_verified: 'Payment Verified',
-  payment_detected: 'Payment Confirmed',
-  sending:          'Delivering...',
-  delivered:        'Delivered',
-  expired:          'Expired',
-  failed:           'Failed',
-  awaiting_refund:  'Delivery Delayed (Refund Window)',
-  refund_pending:   'Refund Processing',
-  refunded:         'Refunded',
-}
-
-function statusVariant(s: string): 'success' | 'danger' | 'warning' | 'default' | 'outline' {
-  if (s === 'delivered' || s === 'payment_verified') return 'success'
-  if (s === 'failed' || s === 'expired') return 'danger'
-  if (s === 'refunded') return 'warning'
-  if (s === 'awaiting_refund' || s === 'refund_pending') return 'warning'
-  if (s === 'payment_uploaded') return 'warning'
-  if (s === 'payment_detected' || s === 'sending') return 'default'
-  return 'outline'
-}
-
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
@@ -205,6 +189,7 @@ export default function GasOrderDetailPage() {
   const [requestingAddr, setRequestingAddr] = useState(false)
   const [approvePkrOpen, setApprovePkrOpen] = useState(false)
   const [rejectPkrOpen, setRejectPkrOpen] = useState(false)
+  const [manualDeliveryOpen, setManualDeliveryOpen] = useState(false)
   const [markPaymentOpen, setMarkPaymentOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [markPaymentTxHash, setMarkPaymentTxHash] = useState('')
@@ -240,17 +225,34 @@ export default function GasOrderDetailPage() {
     }
   }
 
-  async function handleRejectPkr() {
+  async function handleRejectPkr(reason: string) {
     if (!order) return
     setActionError(null)
     try {
-      await adminApi.rejectPkrOrder(order.id)
+      await adminApi.rejectGasOrder(order.id, reason)
       setRejectPkrOpen(false)
-      setActionSuccess('PKR payment rejected.')
+      setActionSuccess('Payment rejected — the order was closed and the customer notified. No gas was sent.')
       await fetchOrder()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Rejection failed')
       setRejectPkrOpen(false)
+      await fetchOrder()
+    }
+  }
+
+  async function handleManualDelivery(data: { txHash: string; note?: string }) {
+    if (!order) return
+    setActionError(null)
+    try {
+      await adminApi.manualDeliverGasOrder(order.id, data)
+      setManualDeliveryOpen(false)
+      setActionSuccess('Manual delivery recorded — the order is marked delivered.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Manual delivery failed')
+      setManualDeliveryOpen(false)
+      // The backend may have moved the order (double-click, worker claim) — show its real state.
+      await fetchOrder()
     }
   }
 
@@ -358,7 +360,11 @@ export default function GasOrderDetailPage() {
   const nativeSymbol = meta.symbol
   const chainName = meta.name
 
-  const isFailed = order.status === 'failed'
+  // A 'failed' order only offers Retry / Refund / Manual Delivery when payment was accepted
+  // (a rejected or cancelled proof is never retryable or refundable).
+  const isFailed = isPaidFailed(order)
+  const showManualDelivery = canManualDeliver(order)
+  const gasAssetSymbol = order.gasTokenConfig?.symbol ?? nativeSymbol
   const isRefundPending = order.status === 'refund_pending'
   // Delivery failed; system still retrying within the user-facing refund window.
   const isAwaitingRefund = order.status === 'awaiting_refund'
@@ -379,7 +385,7 @@ export default function GasOrderDetailPage() {
     <div className="max-w-2xl mx-auto px-4 py-8">
       {/* Back link */}
       <Link
-        href="/admin/gas"
+        href={ADMIN_ROUTES.gas}
         className="inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary mb-6"
       >
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -394,8 +400,8 @@ export default function GasOrderDetailPage() {
           <h1 className="text-xl font-bold text-text-primary font-mono">{order.orderRef}</h1>
           <p className="text-sm text-text-muted mt-0.5">Gas Fee Order</p>
         </div>
-        <Badge variant={statusVariant(order.status)} size="md">
-          {STATUS_LABELS[order.status] ?? order.status}
+        <Badge variant={gasStatusVariant(order.status)} size="md">
+          {GAS_STATUS_LABELS[order.status] ?? order.status}
         </Badge>
       </div>
 
@@ -423,7 +429,7 @@ export default function GasOrderDetailPage() {
             <div className="flex-1">
               <p className={`text-sm font-semibold mb-0.5 ${isOrderExpired ? 'text-red-900 dark:text-red-200' : 'text-amber-900 dark:text-amber-200'}`}>{isExchangeOrder ? 'Exchange Transfer Submitted' : 'PKR Payment Proof Submitted'}</p>
               <p className={`text-xs ${isOrderExpired ? 'text-red-700 dark:text-red-300' : 'text-amber-700 dark:text-amber-300'}`}>
-                {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : (isExchangeOrder ? `Find transfer ${order.exchangeOrderId ?? ''} from UID ${order.exchangeUserUid ?? ''} in your ${order.exchangeName ?? 'exchange'} history, check the amount, then approve or reject.` : 'Verify the screenshot below, then approve or reject.')}
+                {isOrderExpired ? 'Order expired — cannot approve. Reject to close this order.' : (isExchangeOrder ? `Find the transfer from UID ${order.exchangeUserUid ?? ''} in your ${order.exchangeName ?? 'exchange'} history, check the amount against the screenshot, then approve or reject.` : 'Verify the screenshot below, then approve or reject.')}
               </p>
             </div>
             <Button variant="primary" size="sm" onClick={() => setApprovePkrOpen(true)} disabled={isOrderExpired}>Approve</Button>
@@ -540,6 +546,7 @@ export default function GasOrderDetailPage() {
               </p>
             </div>
             <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>Retry Delivery</Button>
+            <Button variant="secondary" size="sm" onClick={() => setManualDeliveryOpen(true)}>Manual Delivery</Button>
             <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>Refund</Button>
           </div>
         </div>
@@ -558,6 +565,11 @@ export default function GasOrderDetailPage() {
             {(isFailed || isAwaitingRefund) && (
               <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
                 Retry Delivery
+              </Button>
+            )}
+            {showManualDelivery && !isStuckDetected && (
+              <Button variant="secondary" size="sm" onClick={() => setManualDeliveryOpen(true)}>
+                Manual Delivery
               </Button>
             )}
             <Button variant="danger" size="sm" onClick={() => setRefundOpen(true)}>
@@ -620,7 +632,7 @@ export default function GasOrderDetailPage() {
               <InfoRow label="Exchange">{order.exchangeName ?? '—'}</InfoRow>
               <InfoRow label="Our UID (paid to)">{order.exchangeAccountUid ?? '—'}</InfoRow>
               <InfoRow label="Customer UID">{order.exchangeUserUid ?? '—'}</InfoRow>
-              <InfoRow label="Transfer order ID">{order.exchangeOrderId ?? '—'}</InfoRow>
+              {order.exchangeOrderId && <InfoRow label="Transfer order ID">{order.exchangeOrderId}</InfoRow>}
             </>
           )}
           <InfoRow label="Network">{order.paymentNetwork ?? '—'}</InfoRow>
@@ -673,8 +685,16 @@ export default function GasOrderDetailPage() {
               <CopyButton text={order.toAddress} size="sm" />
             </span>
           </InfoRow>
+          <InfoRow label="Delivery method">
+            {order.deliveryMode === 'manual'
+              ? <span className="text-warning font-medium">Manual — sent from an external wallet by an admin</span>
+              : order.deliveryTxHash ? 'Automated (hot wallet)' : '—'}
+          </InfoRow>
+          {order.deliveryNote && <InfoRow label="Delivery note">{order.deliveryNote}</InfoRow>}
           <InfoRow label="From Wallet">
-            {order.fromHotWallet ? (
+            {order.deliveryMode === 'manual' ? (
+              <span className="text-text-muted italic">External wallet (not a platform hot wallet)</span>
+            ) : order.fromHotWallet ? (
               <span className="inline-flex items-center gap-1.5">
                 <span className="font-mono text-xs">{order.fromHotWallet}</span>
                 <CopyButton text={order.fromHotWallet} size="sm" />
@@ -760,18 +780,26 @@ export default function GasOrderDetailPage() {
         onClose={() => setApprovePkrOpen(false)}
         onConfirm={handleApprovePkr}
         title={isExchangeOrder ? 'Approve Exchange Transfer' : 'Approve PKR Payment'}
-        description={isExchangeOrder ? `Confirm ${parseFloat(order.paymentAmount).toFixed(2)} USDT arrived on ${order.exchangeName ?? 'the exchange'} from UID ${order.exchangeUserUid ?? ''} (transfer ${order.exchangeOrderId ?? ''}) for order ${order.orderRef}. Gas delivery will be queued immediately.` : `Confirm you have received PKR ${order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : ''} for order ${order.orderRef}. Gas delivery will be queued immediately.`}
+        description={isExchangeOrder ? `Confirm ${parseFloat(order.paymentAmount).toFixed(2)} USDT arrived on ${order.exchangeName ?? 'the exchange'} from UID ${order.exchangeUserUid ?? ''} for order ${order.orderRef}. Gas delivery will be queued immediately.` : `Confirm you have received PKR ${order.pkrAmount ? parseFloat(order.pkrAmount).toFixed(0) : ''} for order ${order.orderRef}. Gas delivery will be queued immediately.`}
         confirmLabel="Approve & Release Gas"
         confirmVariant="primary"
       />
-      <ConfirmModal
+      <RejectProofModal
         isOpen={rejectPkrOpen}
         onClose={() => setRejectPkrOpen(false)}
+        orderRef={order.orderRef}
+        subject={isExchangeOrder ? 'exchange transfer' : 'PKR payment proof'}
         onConfirm={handleRejectPkr}
-        title={isExchangeOrder ? 'Reject Exchange Transfer' : 'Reject PKR Payment'}
-        description={`Reject the ${isExchangeOrder ? 'exchange transfer' : 'PKR payment proof'} for order ${order.orderRef}. The order will be marked as failed.`}
-        confirmLabel="Reject Payment"
-        confirmVariant="danger"
+      />
+      <ManualDeliveryModal
+        isOpen={manualDeliveryOpen}
+        onClose={() => setManualDeliveryOpen(false)}
+        orderRef={order.orderRef}
+        chainName={chainName}
+        assetSymbol={gasAssetSymbol}
+        amount={parseFloat(order.gasAmountNative).toFixed(6)}
+        toAddress={order.toAddress}
+        onConfirm={handleManualDelivery}
       />
       <ConfirmModal
         isOpen={retryOpen}
@@ -920,7 +948,7 @@ export default function GasOrderDetailPage() {
       >
         <div className="space-y-4">
           <p className="text-sm text-text-muted">
-            Cancel order <span className="font-mono font-medium">{order.orderRef}</span>. The order will be marked as failed.
+            Cancel order <span className="font-mono font-medium">{order.orderRef}</span>. The order will be closed as cancelled and no gas will be sent.
           </p>
           <div>
             <label className="block text-xs font-medium text-text-muted mb-1">

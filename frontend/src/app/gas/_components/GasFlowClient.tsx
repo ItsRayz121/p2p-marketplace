@@ -92,7 +92,6 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
   const [creatingExchange, setCreatingExchange]               = useState(false)
   const [exchangeError, setExchangeError]                     = useState('')
   const [exchangeUserUid, setExchangeUserUid]                 = useState('')
-  const [exchangeOrderId, setExchangeOrderId]                 = useState('')
   const [submittingExchange, setSubmittingExchange]           = useState(false)
 
   // ── Crypto flow ────────────────────────────────────────────────────────────
@@ -414,12 +413,11 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
   }
 
   async function handleSubmitExchangeProof() {
-    if (!order || !exchangeUserUid.trim() || !exchangeOrderId.trim()) return
+    if (!order || !exchangeUserUid.trim()) return
     setSubmittingExchange(true); setExchangeError('')
     try {
       await gasApi.submitExchangeProof(order.orderRef, {
         exchangeUserUid: exchangeUserUid.trim(),
-        exchangeOrderId: exchangeOrderId.trim(),
         ...(proofUrl ? { proofUrl } : {}),
       })
       try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
@@ -621,7 +619,7 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
     setSelectedChain(null); setSelectedToken(null); setTokenData(null)
     setAmount(''); setAmountError(''); setAddress(''); setAddressError('')
     setSelectedPkrMethod(null); setSelectedCryptoNetwork(null)
-    setSelectedExchangeId(null); setExchangeUserUid(''); setExchangeOrderId(''); setExchangeError('')
+    setSelectedExchangeId(null); setExchangeUserUid(''); setExchangeError('')
     setOrder(null); setPollErrCount(0)
     setPaymentSent(false)
     setCancelling(false); setCancelError(''); setCancelPreview(null); setCancelResult(null)
@@ -666,7 +664,7 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
     proofUrl, setProofUrl, submittingProof, proofError, uploading, uploadProgress, uploadError,
     handleCreatePkrOrder, handleUploadFile, handleSubmitProof,
     exchangeAccounts, exchangeAccountsLoading, selectedExchangeId, setSelectedExchangeId,
-    creatingExchange, exchangeError, exchangeUserUid, setExchangeUserUid, exchangeOrderId, setExchangeOrderId,
+    creatingExchange, exchangeError, exchangeUserUid, setExchangeUserUid,
     submittingExchange, handleCreateExchangeOrder, handleSubmitExchangeProof,
     selectedCryptoNetwork, setSelectedCryptoNetwork, creatingCrypto, cryptoError,
     qrFailed, setQrFailed, paymentSent, setPaymentSent,

@@ -6,6 +6,7 @@ import { Errors } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { sseEmit } from '../lib/sse'
 import { notify } from '../lib/notify'
+import { recordAuditLog } from '../lib/audit'
 import { mergeDuplicateSupportConversations } from '../services/supportMaintenance.service'
 
 // Push a support-chat SSE event to every connected admin / super-admin so the
@@ -566,6 +567,10 @@ export async function supportRoutes(app: FastifyInstance) {
       notify(userId, 'support', 'Refund — action needed', text.slice(0, 140), {
         conversationId: conversation.id,
         orderRef,
+      })
+
+      await recordAuditLog(req.user!.id, 'GAS_REFUND_ADDRESS_REQUESTED', 'GasFeeOrder', orderRef, {
+        orderRef, userId, paymentNetwork: order.paymentNetwork, conversationId: conversation.id,
       })
 
       return reply.send({ success: true, data: { conversationId: conversation.id, messageId: message.id } })

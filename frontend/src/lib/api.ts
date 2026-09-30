@@ -1866,6 +1866,47 @@ export interface GasOrder {
   gasTokenConfig?: { name: string; symbol: string; logoUrl?: string | null } | null
 }
 
+export type WalletTxStatusGroup = 'completed' | 'pending' | 'on_hold' | 'failed'
+
+export interface WalletTransaction {
+  key: string
+  kind: 'deposit' | 'withdrawal'
+  direction: 'in' | 'out'
+  id: string
+  ref: string | null
+  chain: string
+  network: string | null
+  asset: string
+  amount: string
+  amountUsd: string | null
+  txHash: string | null
+  address: string | null
+  user: { id: string; username: string | null; email: string | null } | null
+  relatedOrder: string | null
+  status: string
+  statusGroup: WalletTxStatusGroup
+  source: 'onchain' | 'auto' | 'manual'
+  createdAt: string
+}
+
+export interface WalletTransactionsResponse {
+  transactions: WalletTransaction[]
+  summary: {
+    asset: string | null
+    assets: string[]
+    chains: string[]
+    totalIn: number
+    totalOut: number
+    net: number
+    countIn: number
+    countOut: number
+    pendingCount: number
+    bucket: 'day' | 'month'
+    series: Array<{ t: string; in: number; out: number }>
+  }
+  pagination: { page: number; limit: number; total: number; pages: number }
+}
+
 export interface GasExchangeAccount {
   id: string
   exchange: string
@@ -1965,7 +2006,7 @@ export const gasApi = {
   createExchangeOrder: (data: { tokenConfigId: string; amount: number; toAddress: string; exchangeAccountId: string; idempotencyKey?: string; promoCode?: string }) =>
     apiRequest<GasOrder>('/gas-fee/orders/exchange', { method: 'POST', body: JSON.stringify(data) }),
 
-  submitExchangeProof: (orderRef: string, data: { exchangeUserUid: string; exchangeOrderId: string; proofUrl?: string }) =>
+  submitExchangeProof: (orderRef: string, data: { exchangeUserUid: string; proofUrl?: string }) =>
     apiRequest<{ orderRef: string; status: string }>(`/gas-fee/orders/${orderRef}/exchange-proof`, { method: 'POST', body: JSON.stringify(data) }),
 
   previewPromo: (data: { promoCode: string; tokenConfigId: string; amount: number }) =>
@@ -2814,8 +2855,12 @@ export const adminApi = {
     apiRequest<unknown>(`/admin/gas/exchange-accounts/${id}`, { method: 'DELETE' }),
   approvePkrOrder: (id: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/approve-pkr`, { method: 'POST' }),
-  rejectPkrOrder: (id: string, reason?: string) =>
-    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/reject-pkr`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  rejectGasOrder: (id: string, reason?: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/orders/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  manualDeliverGasOrder: (id: string, data: { txHash: string; note?: string }) =>
+    apiRequest<{ status: string; deliveryTxHash: string; deliveryMode: 'manual' }>(`/admin/gas/orders/${id}/manual-deliver`, { method: 'POST', body: JSON.stringify({ ...data, confirmed: true }) }),
+  getWalletTransactions: (params?: Record<string, string | number | undefined>) =>
+    apiRequest<WalletTransactionsResponse>('/admin/wallet-transactions' + buildQs(params)),
   markGasPaymentReceived: (id: string, txHash?: string) =>
     apiRequest<{ status: string }>(`/admin/gas/orders/${id}/mark-payment`, { method: 'POST', body: JSON.stringify({ txHash }) }),
   cancelGasOrder: (id: string, reason?: string) =>

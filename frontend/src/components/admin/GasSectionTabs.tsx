@@ -9,7 +9,7 @@ import { cn } from '@/lib/utils'
  */
 const TABS = [
   { key: 'activity',  label: 'Wallet Activity', href: '/admin/gas/wallet-activity' },
-  { key: 'analytics', label: 'Analytics',       href: '/admin/gas/analytics' },
+  { key: 'analytics', label: 'Gas Analytics',   href: '/admin/gas/analytics' },
 ] as const
 
 export function GasSectionTabs({ active }: { active: 'activity' | 'analytics' }) {

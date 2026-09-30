@@ -106,8 +106,6 @@ export interface GasFlowCtx {
   exchangeError: string
   exchangeUserUid: string
   setExchangeUserUid: (v: string) => void
-  exchangeOrderId: string
-  setExchangeOrderId: (v: string) => void
   submittingExchange: boolean
   handleCreateExchangeOrder: () => Promise<void>
   handleSubmitExchangeProof: () => Promise<void>
