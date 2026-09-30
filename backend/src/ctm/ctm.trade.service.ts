@@ -23,7 +23,7 @@ import {
   ladderStatus, advanceTo, claimRung, restoreAfterNoFaultClose,
   assertPartySettleable, settleDisputeOnCompletion,
 } from '../services/disputeResume'
-import { openEpisode, closeEpisode, reopenEpisode, bumpThreadForTradeMessage } from '../services/chatThread.service'
+import { openEpisode, closeEpisode, reopenEpisode, bumpThreadForTradeMessage, bumpThreadForTradeStep } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
 
@@ -1460,6 +1460,7 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
 export async function postCtmSystemMessage(tradeId: string, senderId: string, message: string) {
   try {
     await db.ctmTradeMessage.create({ data: { tradeId, senderId, message, isSystem: true } })
+    void bumpThreadForTradeStep('ctm', tradeId, senderId)
   } catch (err) {
     logger.error({ err, tradeId }, 'Failed to post CTM system message')
   }

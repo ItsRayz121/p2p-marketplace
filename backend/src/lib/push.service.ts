@@ -51,14 +51,17 @@ export async function sendPushToUser(userId: string, payload: PushPayload): Prom
         await webpush.sendNotification(
           { endpoint: sub.endpoint, keys },
           message,
-          { TTL: 86400 },
+          // urgency 'high' asks the push service to deliver immediately. Without it
+          // Android (Doze) and iOS defer 'normal' pushes, which is why some trade
+          // steps showed up minutes late or not at all on a phone in the pocket.
+          { TTL: 86400, urgency: 'high' },
         )
       } catch (err: unknown) {
         const statusCode = (err as { statusCode?: number }).statusCode
         if (statusCode === 410 || statusCode === 404) {
           stale.push(sub.id)
         } else {
-          logger.warn({ err, userId }, 'Push send failed')
+          logger.warn({ err, userId, statusCode }, 'Push send failed')
         }
       }
     }),

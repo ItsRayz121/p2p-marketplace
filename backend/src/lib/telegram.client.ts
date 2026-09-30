@@ -8,8 +8,8 @@
 //     no per-path limiter can guarantee on its own;
 //   • 429 retry_after is surfaced so callers back off (none retry-storm);
 //   • 403 / "can't initiate" / deactivated is reported so callers stop forever;
-//   • when we cannot PROVE we're under budget (e.g. Redis is down) we FAIL CLOSED
-//     and send nothing. A missed message is always preferable to a bot ban.
+//   • when Redis is down we fall back to a smaller per-instance limit (see
+//     withinLocalRate) so we still stay well under budget without going dark.
 //
 // Ban-safety is a hard project rule — see project_notifications_announcements.
 import { env } from './env'
@@ -32,16 +32,33 @@ export interface TgResult {
   result?: unknown
 }
 
+// In-process fallback bucket used only while Redis is unreachable. Each instance
+// gets a share of the ceiling, so even several instances stay under Telegram's
+// 30/sec. This replaces the old "Redis error ⇒ send nothing", which turned a
+// Redis blip (or a misconfigured REDIS_URL after a move) into a silent, total
+// Telegram outage that looked like "the bot stopped sending".
+const LOCAL_CAP_PER_SEC = 8
+let localWindow = 0
+let localCount = 0
+function withinLocalRate(): boolean {
+  const now = Math.floor(Date.now() / 1000)
+  if (now !== localWindow) { localWindow = now; localCount = 0 }
+  localCount += 1
+  return localCount <= LOCAL_CAP_PER_SEC
+}
+
 // Fixed-window counter per wall-clock second. Atomic INCR; first writer sets a
-// short TTL so keys self-expire. Fails CLOSED (deny) on any Redis error.
+// short TTL so keys self-expire. On a Redis error we fall back to the local
+// per-instance bucket above rather than denying every send.
 async function withinGlobalRate(): Promise<boolean> {
   const key = `tg:rate:${Math.floor(Date.now() / 1000)}`
   try {
     const n = await redis.incr(key)
     if (n === 1) await redis.expire(key, 2)
     return n <= GLOBAL_CAP_PER_SEC
-  } catch {
-    return false // fail closed — no proof of headroom ⇒ send nothing
+  } catch (err) {
+    logger.warn({ err }, 'Telegram global limiter: Redis unavailable — using local per-instance limit')
+    return withinLocalRate()
   }
 }
 

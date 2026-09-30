@@ -13,7 +13,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
-import { openEpisode, closeEpisode, bumpThreadForTradeMessage } from './chatThread.service'
+import { openEpisode, closeEpisode, bumpThreadForTradeMessage, bumpThreadForTradeStep } from './chatThread.service'
 import { TRUSTPILOT_CHAT_NUDGE, TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
 import { maybeSendTrustpilotReviewNudge } from './trustpilotReview.service'
 import { stepForAction, flowSteps, stepFromStatus } from './settlementFlow'
@@ -1576,6 +1576,7 @@ export async function openDispute(
 export async function postTradeSystemMessage(tradeId: string, senderId: string, message: string) {
   try {
     await db.tradeMessage.create({ data: { tradeId, senderId, message, isSystem: true } })
+    void bumpThreadForTradeStep('usdt', tradeId, senderId)
   } catch (err) {
     logger.error({ err, tradeId }, 'Failed to post trade system message')
   }

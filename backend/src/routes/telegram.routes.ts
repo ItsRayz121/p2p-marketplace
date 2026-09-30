@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { AppError } from '../lib/errors'
 import { env } from '../lib/env'
+import { db } from '../lib/prisma'
 import { validateInitData, extractReferralFromStartParam } from '../lib/telegram'
 import { loginOrRegisterWithTelegram, COOKIE_OPTIONS } from '../services/auth.service'
 import { handleTelegramUpdate } from '../services/telegram-bot.service'
@@ -56,6 +57,18 @@ export async function telegramRoutes(app: FastifyInstance) {
       if (result.restricted) {
         return reply.status(403).send({ success: false, error: 'ACCOUNT_RESTRICTED', data: { restricted: result.restricted } })
       }
+
+      // Opening the Mini App proves the user is active on Telegram. If a past
+      // send flagged them as unreachable (403 before they had ever /start-ed the
+      // bot), lift the flag so notifications get another chance. Only when the
+      // flag is over an hour old, so a genuinely blocked user costs us at most
+      // one failed send per hour — never a retry loop. Fire-and-forget.
+      db.user
+        .updateMany({
+          where: { telegramId: BigInt(validated.user.id), telegramBlockedAt: { lt: new Date(Date.now() - 3_600_000) } },
+          data: { telegramBlockedAt: null },
+        })
+        .catch(() => {})
 
       if (result.refreshToken) {
         reply.setCookie('refresh_token', result.refreshToken, COOKIE_OPTIONS)

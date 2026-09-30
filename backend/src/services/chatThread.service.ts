@@ -432,21 +432,23 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   //    TradeMessage / CtmTradeMessage (source of truth for a trade, untouched).
   //    The inbox is a UNION VIEW that folds each episode's real messages into
   //    the thread's own free-chat messages, so a line typed in the trade room
-  //    shows up here too. Trade *system* step-lines are excluded — the episode
-  //    dividers already convey lifecycle, and including them would bury the
-  //    actual conversation under 6+ status lines per trade.
+  //    shows up here too. Trade *system* step-lines ("proof uploaded",
+  //    "payment confirmed"…) are included too and render as centered status
+  //    lines: they used to be hidden, which left the inbox silent on exactly the
+  //    moments a trader needs to act. postCtm/TradeSystemMessage bump the
+  //    counterparty's unread flag (bumpThreadForTradeStep) so they surface.
   const usdtTradeIds = thread.episodes.filter((e) => e.market === 'usdt').map((e) => e.tradeId)
   const ctmTradeIds = thread.episodes.filter((e) => e.market === 'ctm').map((e) => e.tradeId)
   const [usdtMsgs, ctmMsgs] = await Promise.all([
     usdtTradeIds.length
       ? db.tradeMessage.findMany({
-          where: { tradeId: { in: usdtTradeIds }, isSystem: false },
+          where: { tradeId: { in: usdtTradeIds } },
           select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true, deliveredAt: true, readAt: true },
         })
       : Promise.resolve([]),
     ctmTradeIds.length
       ? db.ctmTradeMessage.findMany({
-          where: { tradeId: { in: ctmTradeIds }, isSystem: false },
+          where: { tradeId: { in: ctmTradeIds } },
           select: { id: true, senderId: true, message: true, attachmentUrl: true, isSystem: true, createdAt: true, deliveredAt: true, readAt: true },
         })
       : Promise.resolve([]),
@@ -759,6 +761,26 @@ export async function unblockThreadUser(userId: string, threadId: string): Promi
   assertParticipant(thread, userId)
   const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
   await db.blockedUser.deleteMany({ where: { blockerId: userId, blockedId: otherId } })
+}
+
+/**
+ * A trade STEP (system line: "proof uploaded", "payment confirmed"…) was just
+ * posted into a trade room. Those lines are shown in the pair's inbox thread, so
+ * bump the counterparty's unread flag and the thread ordering exactly like a
+ * typed message — otherwise the step sits invisible in the inbox until someone
+ * opens the thread. The actor is the sender; the other trade party is the
+ * recipient. Best-effort, never throws.
+ */
+export async function bumpThreadForTradeStep(market: Market, tradeId: string, actorId: string): Promise<void> {
+  try {
+    const trade = market === 'usdt'
+      ? await db.trade.findUnique({ where: { id: tradeId }, select: { buyerId: true, sellerId: true } })
+      : await db.ctmTrade.findUnique({ where: { id: tradeId }, select: { buyerId: true, sellerId: true } })
+    if (!trade) return
+    await bumpThreadForTradeMessage({ buyerId: trade.buyerId, sellerId: trade.sellerId, senderId: actorId })
+  } catch (err) {
+    logger.warn({ err, tradeId }, 'bumpThreadForTradeStep failed (non-fatal)')
+  }
 }
 
 /**
