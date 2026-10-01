@@ -1948,11 +1948,12 @@ export interface GasExchangeAccount {
 }
 
 export interface GasPkrMethods {
-  bank:      { bankName: string | null; accountName: string | null; iban: string | null; accountNumber: string | null; logoUrl: string | null }
-  easypaisa: { number: string | null; name: string | null; logoUrl: string | null }
-  jazzcash:  { number: string | null; name: string | null; logoUrl: string | null }
-  nayapay:   { number: string | null; name: string | null; logoUrl: string | null }
-  sadapay:   { number: string | null; name: string | null; logoUrl: string | null }
+  // `enabled` is the admin show/hide switch (absent on older backends → treated as visible).
+  bank:      { bankName: string | null; accountName: string | null; iban: string | null; accountNumber: string | null; logoUrl: string | null; enabled?: boolean }
+  easypaisa: { number: string | null; name: string | null; logoUrl: string | null; enabled?: boolean }
+  jazzcash:  { number: string | null; name: string | null; logoUrl: string | null; enabled?: boolean }
+  nayapay:   { number: string | null; name: string | null; logoUrl: string | null; enabled?: boolean }
+  sadapay:   { number: string | null; name: string | null; logoUrl: string | null; enabled?: boolean }
 }
 
 export interface GasCryptoNetworkMethod {
@@ -1963,6 +1964,8 @@ export interface GasCryptoNetworkMethod {
   feeUsd: number
   feeIsLive?: boolean
   logoUrl?: string | null
+  /** Admin show/hide switch; absent on older backends → visible. */
+  enabled?: boolean
 }
 
 export interface GasFinancialKpi {

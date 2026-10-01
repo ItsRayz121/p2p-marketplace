@@ -2,7 +2,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { useGasCtx, PHASE, PKR_METHOD_META, type PkrMethodKey } from './GasContext'
-import { CardHeader, PkrMethodIcon, pkrIsConfigured } from './GasPrimitives'
+import { CardHeader, PkrMethodIcon, pkrIsConfigured, pkrIsVisible } from './GasPrimitives'
 import { GasPromoField } from './GasPromo'
 import { GasFreeCodeField } from './GasFreeCode'
 
@@ -24,25 +24,22 @@ export function GasPkrMethodStep() {
       <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Pay with PKR" sub="Select your payment method" />
 
       <div className="space-y-2">
-        {(Object.keys(PKR_METHOD_META) as PkrMethodKey[]).map(key => {
+        {(Object.keys(PKR_METHOD_META) as PkrMethodKey[]).filter(key => pkrIsVisible(key, pkrMethods) && pkrIsConfigured(key, pkrMethods)).map(key => {
           const meta       = PKR_METHOD_META[key]
           const sel        = selectedPkrMethod === key
-          const configured = pkrIsConfigured(key, pkrMethods)
           return (
             <button
               key={key}
-              onClick={() => configured && setSelectedPkrMethod(key)}
-              disabled={!configured}
+              onClick={() => setSelectedPkrMethod(key)}
               className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                !configured ? 'opacity-40 cursor-not-allowed border-border bg-surface-alt'
-                : sel ? 'border-primary bg-primary/5'
+                sel ? 'border-primary bg-primary/5'
                 : 'border-border bg-surface hover:border-primary/20'
               }`}
             >
               <PkrMethodIcon methodKey={key} pkrMethods={pkrMethods} sizeCls="w-12 h-12" />
               <div className="flex-1">
                 <p className="text-sm font-bold text-text-primary">{meta.label}</p>
-                <p className="text-xs text-text-muted">{configured ? meta.desc : 'Currently unavailable'}</p>
+                <p className="text-xs text-text-muted">{meta.desc}</p>
               </div>
               {sel && (
                 <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">

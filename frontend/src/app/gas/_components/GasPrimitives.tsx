@@ -312,6 +312,13 @@ export function PaymentNetworkLogo({ networkKey, logoUrl, sizeCls = 'w-12 h-12' 
   )
 }
 
+/** False when an admin has hidden this method from the gas checkout. */
+export function pkrIsVisible(key: PkrMethodKey, pkrMethods: GasPkrMethods | null): boolean {
+  if (!pkrMethods) return true
+  const m = key === 'bank_transfer' ? pkrMethods.bank : pkrMethods[key as 'jazzcash' | 'easypaisa' | 'nayapay' | 'sadapay']
+  return m?.enabled !== false
+}
+
 export function pkrIsConfigured(key: PkrMethodKey, pkrMethods: GasPkrMethods | null): boolean {
   if (!pkrMethods) return true
   if (key === 'bank_transfer') return !!(pkrMethods.bank.bankName || pkrMethods.bank.iban)

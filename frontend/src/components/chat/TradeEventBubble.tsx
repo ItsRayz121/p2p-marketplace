@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
-import { ShieldCheck } from 'lucide-react'
+import { ShieldCheck, CheckCircle2, Trophy, Star, Clock, AlertTriangle, Info, type LucideIcon } from 'lucide-react'
+import type { TradeNoticeTone } from '@/lib/tradeChat'
 
 /**
  * A trade lifecycle event performed by a participant ("Payment proof uploaded…"),
@@ -26,14 +27,27 @@ export function TradeEventBubble({ mine, senderName, time, children }: {
   )
 }
 
-/** A neutral trade/system notice (created, complete, dispute, milestone, review prompt): centered, one item per event. */
-export function TradeNotice({ time, children }: { time?: string; children: ReactNode }) {
+const NOTICE_STYLE: Record<TradeNoticeTone, { icon: LucideIcon; box: string }> = {
+  success:   { icon: CheckCircle2,  box: 'bg-success/10 border-success/25 text-success' },
+  milestone: { icon: Trophy,        box: 'bg-warning/10 border-warning/25 text-warning' },
+  review:    { icon: Star,          box: 'bg-surface-alt border-border text-text-secondary' },
+  warning:   { icon: Clock,         box: 'bg-warning/10 border-warning/25 text-warning' },
+  danger:    { icon: AlertTriangle, box: 'bg-danger/10 border-danger/25 text-danger' },
+  info:      { icon: Info,          box: 'bg-surface-alt border-border text-text-secondary' },
+}
+
+/** A neutral trade/system notice (created, complete, dispute, milestone, review prompt): a compact centered card with a tone icon. */
+export function TradeNotice({ time, tone = 'info', children }: { time?: string; tone?: TradeNoticeTone; children: ReactNode }) {
+  const { icon: Icon, box } = NOTICE_STYLE[tone]
   return (
-    <div className="flex justify-center py-1">
-      <p className="max-w-[90%] text-center text-[11px] leading-snug text-text-muted whitespace-pre-wrap break-words">
-        {children}
-        {time && <span className="ml-1.5 text-text-muted/60">· {time}</span>}
-      </p>
+    <div className="flex justify-center py-1.5">
+      <div className={`max-w-[92%] flex items-start gap-2 rounded-xl border px-3 py-2 text-xs leading-snug ${box}`}>
+        <Icon size={14} className="mt-px flex-shrink-0" aria-hidden />
+        <p className="font-medium whitespace-pre-wrap break-words">
+          {children}
+          {time && <span className="ml-2 font-normal opacity-60">{time}</span>}
+        </p>
+      </div>
     </div>
   )
 }

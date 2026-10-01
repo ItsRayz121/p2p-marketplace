@@ -38,7 +38,7 @@ export function GasCryptoNetworkStep() {
 
       <div className="space-y-3">
         {/* BEP20 */}
-        {(() => {
+        {cryptoMethods?.bep20?.enabled !== false && (() => {
           const bepConfigured = !!cryptoMethods?.bep20?.address
           const bepAddr       = cryptoMethods?.bep20?.address
           return (
@@ -70,7 +70,7 @@ export function GasCryptoNetworkStep() {
         })()}
 
         {/* Aptos */}
-        {(() => {
+        {cryptoMethods?.aptos?.enabled !== false && (() => {
           const aptosAddr = cryptoMethods?.aptos?.address
           return (
             <button

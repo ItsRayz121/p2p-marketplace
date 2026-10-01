@@ -608,11 +608,11 @@ export default function MessageThreadPage() {
           // is its own compact centered notice.
           if (view.kind === 'event') {
             return (
-              <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={fmtTime(m.createdAt)}>{m.body}</TradeEventBubble>
+              <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={fmtTime(m.createdAt)}>{view.text}</TradeEventBubble>
             )
           }
           if (view.kind === 'notice') {
-            return <TradeNotice key={m.id} time={fmtTime(m.createdAt)}>{m.body}</TradeNotice>
+            return <TradeNotice key={m.id} tone={view.tone} time={fmtTime(m.createdAt)}>{view.text}</TradeNotice>
           }
           const mine = view.mine
           // A deleted message leaves no trace for either side — not even a "this was

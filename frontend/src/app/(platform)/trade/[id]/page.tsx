@@ -373,7 +373,6 @@ function StepCard({ stepNum, title, state, summary, expanded, onToggle, children
         </div>
         <div className="flex-1 min-w-0">
           <p className={`font-semibold text-sm ${state === 'active' ? 'text-primary' : state === 'completed' ? 'text-text-primary' : 'text-text-muted'}`}>
-            {state === 'active' && <span className="mr-1">→</span>}
             {title}
           </p>
           {state === 'completed' && !isExpanded && summary && (
@@ -647,7 +646,7 @@ export default function TradePage() {
     announcedSendingRef.current = true
     try {
       const coin = trade?.coin ?? 'USDT'
-      await tradesApi.sendMessage(id, `🔔 I'm sending your ${coin} now — please wait for it to arrive in your wallet/account, then confirm receipt to complete the trade.`)
+      await tradesApi.sendMessage(id, `🔔 I'm sending the ${coin} now. Please wait for it to arrive in your wallet/account, then confirm receipt to complete the trade.`)
       await fetchTrade()
     } catch { /* non-blocking: the proof form is already open */ }
   }
@@ -1472,16 +1471,12 @@ export default function TradePage() {
               <StepCard
                 stepNum={legPos.complete}
                 title="Trade Completed"
-                state={trade.status === 'crypto_released' ? 'active' : 'future'}
-                summary="You can rate your counterparty below"
+                state={trade.status === 'crypto_released' ? 'completed' : 'future'}
+                summary={ratedAlready ? 'Trade complete — thanks for your rating' : 'Trade complete — you can rate your counterparty below'}
                 expanded={expandedSteps.has(legPos.complete)}
                 onToggle={() => toggleStep(legPos.complete)}
               >
-                {trade.status === 'crypto_released' ? (
-                  <div className="bg-success/10 border border-success/20 rounded-lg p-3 text-sm text-success">✓ Trade complete.{ratedAlready ? ' Thanks for your rating!' : ' You can rate your counterparty below.'}</div>
-                ) : (
-                  <p className="text-xs text-text-muted">Once the buyer confirms receipt and releases, the trade is complete and you can rate each other.</p>
-                )}
+                <p className="text-xs text-text-muted">Once the buyer confirms receipt and releases, the trade is complete and you can rate each other.</p>
               </StepCard>
               </div>
               </div>
@@ -1589,10 +1584,10 @@ export default function TradePage() {
               })
               const view = presentTradeMessage({ senderId: msg.senderId, isSystem: msg.isSystem, body: msg.message }, user?.id, tradeParticipants)
               if (view.kind === 'event') {
-                return <TradeEventBubble key={msg.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{msg.message}</TradeEventBubble>
+                return <TradeEventBubble key={msg.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{view.text}</TradeEventBubble>
               }
               if (view.kind === 'notice') {
-                return <TradeNotice key={msg.id} time={msgTime}>{msg.message}</TradeNotice>
+                return <TradeNotice key={msg.id} tone={view.tone} time={msgTime}>{view.text}</TradeNotice>
               }
               const imageUrl = msg.imageUrl ?? (msg.message.startsWith('[image]') ? msg.message.slice(7) : null)
               return (

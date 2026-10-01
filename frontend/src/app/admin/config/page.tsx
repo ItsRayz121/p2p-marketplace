@@ -42,6 +42,8 @@ const STRUCTURED_KEYS = new Set([
   'gas_pkr_bank_account_number', 'gas_pkr_bank_logo',
   'gas_usdt_bep20_address', 'gas_usdt_aptos_address',
   'gas_bep20_logo_url', 'gas_aptos_logo_url',
+  'gas_pkr_jazzcash_enabled', 'gas_pkr_easypaisa_enabled', 'gas_pkr_nayapay_enabled', 'gas_pkr_sadapay_enabled', 'gas_pkr_bank_enabled',
+  'gas_usdt_bep20_enabled', 'gas_usdt_aptos_enabled',
   'home_offers_mode', 'home_pinned_ad_ids',
   'noncustodial_p2p_enabled', 'noncustodial_max_order_usdt_l1', 'noncustodial_max_order_usdt_l2',
   'noncustodial_l1_max_ads', 'noncustodial_l1_max_ads_ctm',
@@ -189,17 +191,39 @@ function MethodBadge({ configured }: { configured: boolean }) {
 }
 
 // ── Provider card wrapper ─────────────────────────────────────────────────────
-function ProviderCard({ icon, label, configured, children }: {
-  icon: React.ReactNode; label: string; configured: boolean; children: React.ReactNode
+function ProviderCard({ icon, label, configured, visibility, children }: {
+  icon: React.ReactNode; label: string; configured: boolean
+  /** Show/hide switch: hidden methods disappear from the gas checkout but keep their saved details. */
+  visibility?: { visible: boolean; busy: boolean; onToggle: () => void }
+  children: React.ReactNode
 }) {
   return (
-    <div className="rounded-xl border border-border p-4 space-y-4">
-      <div className="flex items-center justify-between">
+    <div className={`rounded-xl border border-border p-4 space-y-4 ${visibility && !visibility.visible ? 'bg-surface-alt/50' : ''}`}>
+      <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           {icon}
           <span className="font-semibold text-text-primary">{label}</span>
         </div>
-        <MethodBadge configured={configured} />
+        <div className="flex items-center gap-3">
+          {visibility && (
+            <button
+              type="button"
+              role="switch"
+              aria-checked={visibility.visible}
+              aria-label={`${visibility.visible ? 'Hide' : 'Show'} ${label} on the website`}
+              title={visibility.visible ? 'Visible on website — click to hide' : 'Hidden from website — click to show'}
+              disabled={visibility.busy}
+              onClick={visibility.onToggle}
+              className="flex items-center gap-2 text-xs font-medium text-text-secondary disabled:opacity-50"
+            >
+              <span className={`relative inline-flex h-5 w-9 flex-shrink-0 rounded-full transition-colors ${visibility.visible ? 'bg-primary' : 'bg-border'}`}>
+                <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all ${visibility.visible ? 'left-[18px]' : 'left-0.5'}`} />
+              </span>
+              {visibility.visible ? 'Visible' : 'Hidden'}
+            </button>
+          )}
+          <MethodBadge configured={configured} />
+        </div>
       </div>
       {children}
     </div>
@@ -338,6 +362,7 @@ export default function ConfigPage() {
   const [editValue, setEditValue]   = useState('')
   const [editSaving, setEditSaving] = useState(false)
   const [showSensitive, setShowSensitive] = useState<Record<string, boolean>>({})
+  const [visBusy, setVisBusy] = useState<string | null>(null)
 
   useEffect(() => {
     if (user && user.role !== 'super_admin') router.replace('/admin')
@@ -440,6 +465,16 @@ export default function ConfigPage() {
   async function saveKeys(pairs: Array<{ key: string; value: string }>) {
     const results = await Promise.all(pairs.map((p) => adminApi.updateConfig(p)))
     applyRows(results.map((r, i) => ({ key: pairs[i]!.key, value: pairs[i]!.value, updatedAt: r.updatedAt })))
+  }
+
+  // Hide/show a payment method on the gas checkout. Saves instantly; saved details are kept.
+  async function toggleVisibility(flagKey: string, label: string, nextVisible: boolean) {
+    setVisBusy(flagKey)
+    try {
+      await saveKeys([{ key: flagKey, value: nextVisible ? 'true' : 'false' }])
+      showToast(`${label} is now ${nextVisible ? 'visible' : 'hidden'} on the website.`)
+    } catch { showToast(`Failed to update ${label} visibility.`, false) }
+    finally { setVisBusy(null) }
   }
 
   async function saveJazzCash() {
@@ -677,6 +712,11 @@ export default function ConfigPage() {
   const bkConfigured  = !!(cfgMap['gas_pkr_bank_name'] && cfgMap['gas_pkr_bank_account_name'])
   const bep20Set      = !!cfgMap['gas_usdt_bep20_address']
   const aptosSet      = !!cfgMap['gas_usdt_aptos_address']
+
+  const vis = (flagKey: string, label: string) => {
+    const visible = cfgMap[flagKey] !== 'false'
+    return { visible, busy: visBusy === flagKey, onToggle: () => toggleVisibility(flagKey, label, !visible) }
+  }
 
   const otherRows = rows.filter((r) => !STRUCTURED_KEYS.has(r.key))
 
@@ -1105,6 +1145,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="JazzCash"
             configured={jcConfigured}
+            visibility={vis('gas_pkr_jazzcash_enabled', 'JazzCash')}
             icon={<div className="w-8 h-8 rounded-lg bg-[#CC0000]/10 flex items-center justify-center text-sm font-bold text-[#CC0000]">JC</div>}
           >
             <LogoUploadField logoUrl={jcLogo} onLogoUrlChange={setJcLogo} />
@@ -1123,6 +1164,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Easypaisa"
             configured={epConfigured}
+            visibility={vis('gas_pkr_easypaisa_enabled', 'Easypaisa')}
             icon={<div className="w-8 h-8 rounded-lg bg-[#00A651]/10 flex items-center justify-center text-sm font-bold text-[#00A651]">EP</div>}
           >
             <LogoUploadField logoUrl={epLogo} onLogoUrlChange={setEpLogo} />
@@ -1154,6 +1196,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Nayapay"
             configured={npConfigured}
+            visibility={vis('gas_pkr_nayapay_enabled', 'Nayapay')}
             icon={<div className="w-8 h-8 rounded-lg bg-purple-500/15 flex items-center justify-center text-sm font-bold text-purple-600 dark:text-purple-400">NP</div>}
           >
             <LogoUploadField logoUrl={npLogo} onLogoUrlChange={setNpLogo} />
@@ -1172,6 +1215,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Sadapay"
             configured={spConfigured}
+            visibility={vis('gas_pkr_sadapay_enabled', 'Sadapay')}
             icon={<div className="w-8 h-8 rounded-lg bg-orange-500/15 flex items-center justify-center text-sm font-bold text-orange-600 dark:text-orange-400">SP</div>}
           >
             <LogoUploadField logoUrl={spLogo} onLogoUrlChange={setSpLogo} />
@@ -1201,6 +1245,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="Bank Transfer"
             configured={bkConfigured}
+            visibility={vis('gas_pkr_bank_enabled', 'Bank Transfer')}
             icon={<div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-sm font-bold text-primary">BK</div>}
           >
             <LogoUploadField logoUrl={bkLogo} onLogoUrlChange={setBkLogo} />
@@ -1246,6 +1291,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="USDT BEP20 (BSC)"
             configured={bep20Set}
+            visibility={vis('gas_usdt_bep20_enabled', 'USDT BEP20')}
             icon={<div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center text-sm font-bold text-yellow-700 dark:text-yellow-300">BNB</div>}
           >
             <LogoUploadField logoUrl={bep20Logo} onLogoUrlChange={setBep20Logo} />
@@ -1263,6 +1309,7 @@ export default function ConfigPage() {
           <ProviderCard
             label="USDT Aptos"
             configured={aptosSet}
+            visibility={vis('gas_usdt_aptos_enabled', 'USDT Aptos')}
             icon={<div className="w-8 h-8 rounded-lg bg-teal-500/15 flex items-center justify-center text-sm font-bold text-teal-700 dark:text-teal-300">APT</div>}
           >
             <LogoUploadField logoUrl={aptosLogo} onLogoUrlChange={setAptosLogo} />

@@ -275,7 +275,6 @@ function StepCard({
         </div>
         <div className="flex-1 min-w-0">
           <p className={`font-semibold text-sm ${state === 'active' ? 'text-primary' : state === 'completed' ? 'text-text-primary' : 'text-text-muted'}`}>
-            {state === 'active' && <span className="mr-1">→</span>}
             {title}
           </p>
           {state === 'completed' && !isExpanded && summary && (
@@ -1646,10 +1645,10 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
               const msgTime = new Date(m.createdAt).toLocaleTimeString('en-PK', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit' })
               const view = presentTradeMessage({ senderId: m.senderId, isSystem: m.isSystem, body: m.message }, user?.id, tradeParticipants)
               if (view.kind === 'event') {
-                return <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{m.message}</TradeEventBubble>
+                return <TradeEventBubble key={m.id} mine={view.mine} senderName={view.senderName} time={msgTime}>{view.text}</TradeEventBubble>
               }
               if (view.kind === 'notice') {
-                return <TradeNotice key={m.id} time={msgTime}>{m.message}</TradeNotice>
+                return <TradeNotice key={m.id} tone={view.tone} time={msgTime}>{view.text}</TradeNotice>
               }
               return (
                 <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>

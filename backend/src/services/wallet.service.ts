@@ -929,7 +929,8 @@ export async function deletePaymentMethod(userId: string, id: string) {
     type: pm.type, accountName: pm.accountName, bankName: pm.bankName,
     accountNumber: pm.accountNumber, mobileNumber: pm.mobileNumber, ibanNumber: pm.ibanNumber,
   })
-  return db.paymentMethod.update({ where: { id }, data: { isActive: false } })
+  // shared=false so a removed method can never reappear on the owner's public payment page.
+  return db.paymentMethod.update({ where: { id }, data: { isActive: false, shared: false } })
 }
 
 // ─── Saved Addresses ──────────────────────────────────────────────────────────

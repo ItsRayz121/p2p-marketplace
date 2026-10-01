@@ -12,8 +12,78 @@
 
 export type TradeMessagePresentation =
   | { kind: 'message'; mine: boolean }
-  | { kind: 'event'; mine: boolean; senderName: string }
-  | { kind: 'notice' }
+  | { kind: 'event'; mine: boolean; senderName: string; text: string }
+  | { kind: 'notice'; tone: TradeNoticeTone; text: string }
+
+export type TradeNoticeTone = 'success' | 'milestone' | 'review' | 'warning' | 'danger' | 'info'
+
+/**
+ * Lifecycle lines are stored once, worded from the actor's side ("Seller marked…").
+ * Re-voice them per viewer so the two traders read a natural exchange: the actor
+ * sees first person ("I've sent…"), the counterparty sees who did what.
+ */
+const EVENT_REWRITES: ReadonlyArray<{
+  re: RegExp
+  mine: (m: RegExpMatchArray) => string
+  theirs: (m: RegExpMatchArray) => string
+  /** Only the leading phrase is replaced; the rest of the stored text (e.g. the reason) is kept. */
+  keepTail?: boolean
+}> = [
+  {
+    re: /^Seller marked (.+?) as sent\./i,
+    mine: (m) => `I've sent ${m[1]}. Please confirm once it arrives in your wallet/account.`,
+    theirs: (m) => `Seller has sent ${m[1]}. Please confirm once it arrives in your wallet/account.`,
+  },
+  {
+    re: /^Payment proof uploaded\./i,
+    mine: () => "I've uploaded the payment proof. Please confirm once you've received the payment.",
+    theirs: () => 'Buyer has uploaded the payment proof. Please verify it and confirm once the payment is received.',
+  },
+  {
+    re: /^Seller confirmed the PKR payment was received\./i,
+    mine: () => "I've confirmed the PKR payment. I'll send the crypto now.",
+    theirs: () => 'Seller has confirmed your PKR payment and will now send the crypto.',
+  },
+  {
+    re: /^Buyer confirmed the crypto was received\./i,
+    mine: () => "I've received the crypto. I'll send the PKR payment and upload the proof shortly.",
+    theirs: () => 'Buyer has confirmed receiving the crypto and will now send the PKR payment and upload the proof.',
+  },
+  {
+    re: /^Seller rejected the payment proof/i,
+    mine: () => 'I rejected the payment proof',
+    theirs: () => 'Seller rejected the payment proof',
+    keepTail: true,
+  },
+]
+
+function rewriteTradeEvent(body: string, mine: boolean): string {
+  const text = body.trim()
+  for (const r of EVENT_REWRITES) {
+    const m = text.match(r.re)
+    if (!m) continue
+    const rest = text.slice(m[0].length)
+    return (mine ? r.mine(m) : r.theirs(m)) + (r.keepTail ? rest : '')
+  }
+  return text
+}
+
+const EMOJI_EDGES = /^[\p{Extended_Pictographic}\p{Variation_Selector}\p{Join_Control}\s]+|[\p{Extended_Pictographic}\p{Variation_Selector}\p{Join_Control}\s]+$/gu
+
+function noticeTone(body: string): TradeNoticeTone {
+  if (/^Trade complete|^Dispute closed/i.test(body)) return 'success'
+  if (/completed trade (between you two|together)|Milestone/i.test(body)) return 'milestone'
+  if (/Enjoyed trading here/i.test(body)) return 'review'
+  if (/^A dispute was opened|^Dispute\b/i.test(body)) return 'danger'
+  if (/cancel/i.test(body)) return 'danger'
+  if (/^(Reminder:|⏰)|Final warning/i.test(body)) return 'warning'
+  return 'info'
+}
+
+/** Drops decorative leading/trailing emoji — the notice renders its own icon. */
+function cleanNoticeText(body: string): string {
+  return body.replace(EMOJI_EDGES, '')
+}
 
 interface ClassifiableMessage {
   senderId: string
@@ -49,7 +119,8 @@ export function presentTradeMessage(
 ): TradeMessagePresentation {
   const mine = !!viewerId && msg.senderId === viewerId
   if (!msg.isSystem) return { kind: 'message', mine }
-  if (!msg.senderId || !(msg.senderId in participants)) return { kind: 'notice' }
-  if (isNeutralTradeNotice(msg.body)) return { kind: 'notice' }
-  return { kind: 'event', mine, senderName: mine ? 'You' : participants[msg.senderId]! }
+  const notice = (): TradeMessagePresentation => ({ kind: 'notice', tone: noticeTone(msg.body.trim()), text: cleanNoticeText(msg.body) })
+  if (!msg.senderId || !(msg.senderId in participants)) return notice()
+  if (isNeutralTradeNotice(msg.body)) return notice()
+  return { kind: 'event', mine, senderName: mine ? 'You' : participants[msg.senderId]!, text: rewriteTradeEvent(msg.body, mine) }
 }

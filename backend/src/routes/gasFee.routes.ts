@@ -266,6 +266,27 @@ async function assertNoUnpaidGasOrder(userId: string | null | undefined): Promis
   }
 }
 
+// Admin show/hide switches: a method is visible unless its flag is explicitly 'false'.
+// Hiding keeps the saved details (instant re-enable) and never touches existing orders.
+const PKR_METHOD_FLAG: Record<string, string> = {
+  bank_transfer: 'gas_pkr_bank_enabled',
+  easypaisa: 'gas_pkr_easypaisa_enabled',
+  jazzcash: 'gas_pkr_jazzcash_enabled',
+  nayapay: 'gas_pkr_nayapay_enabled',
+  sadapay: 'gas_pkr_sadapay_enabled',
+}
+const CRYPTO_NETWORK_FLAG: Record<string, string> = {
+  TRC20: 'gas_usdt_trc20_enabled',
+  BEP20: 'gas_usdt_bep20_enabled',
+  ERC20: 'gas_usdt_erc20_enabled',
+  APTOS: 'gas_usdt_aptos_enabled',
+}
+async function isGasMethodHidden(flagKey: string | undefined): Promise<boolean> {
+  if (!flagKey) return false
+  const row = await db.platformConfig.findUnique({ where: { key: flagKey } })
+  return row?.value === 'false'
+}
+
 export async function gasFeeRoutes(app: FastifyInstance) {
 
   // ── GET /api/gas-fee/chains — DB-driven list ───────────────────────────────
@@ -1089,6 +1110,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       'gas_pkr_jazzcash_number', 'gas_pkr_jazzcash_name', 'gas_pkr_jazzcash_logo',
       'gas_pkr_nayapay_number', 'gas_pkr_nayapay_name', 'gas_pkr_nayapay_logo',
       'gas_pkr_sadapay_number', 'gas_pkr_sadapay_name', 'gas_pkr_sadapay_logo',
+      ...Object.values(PKR_METHOD_FLAG),
     ]
     const configs = await db.platformConfig.findMany({ where: { key: { in: keys } } })
     const map: Record<string, string> = {}
@@ -1102,26 +1124,31 @@ export async function gasFeeRoutes(app: FastifyInstance) {
           iban:          map['gas_pkr_bank_iban'] ?? null,
           accountNumber: map['gas_pkr_bank_account_number'] ?? null,
           logoUrl:       map['gas_pkr_bank_logo'] || null,
+          enabled:       map['gas_pkr_bank_enabled'] !== 'false',
         },
         easypaisa: {
           number:  map['gas_pkr_easypaisa_number'] ?? null,
           name:    map['gas_pkr_easypaisa_name'] ?? null,
           logoUrl: map['gas_pkr_easypaisa_logo'] || null,
+          enabled: map['gas_pkr_easypaisa_enabled'] !== 'false',
         },
         jazzcash: {
           number:  map['gas_pkr_jazzcash_number'] ?? null,
           name:    map['gas_pkr_jazzcash_name'] ?? null,
           logoUrl: map['gas_pkr_jazzcash_logo'] || null,
+          enabled: map['gas_pkr_jazzcash_enabled'] !== 'false',
         },
         nayapay: {
           number:  map['gas_pkr_nayapay_number'] ?? null,
           name:    map['gas_pkr_nayapay_name'] ?? null,
           logoUrl: map['gas_pkr_nayapay_logo'] || null,
+          enabled: map['gas_pkr_nayapay_enabled'] !== 'false',
         },
         sadapay: {
           number:  map['gas_pkr_sadapay_number'] ?? null,
           name:    map['gas_pkr_sadapay_name'] ?? null,
           logoUrl: map['gas_pkr_sadapay_logo'] || null,
+          enabled: map['gas_pkr_sadapay_enabled'] !== 'false',
         },
       },
     })
@@ -1146,6 +1173,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             'gas_aptos_network_fee_usdt',
             'gas_bep20_logo_url',
             'gas_aptos_logo_url',
+            ...Object.values(CRYPTO_NETWORK_FLAG),
           ],
         },
       },
@@ -1196,6 +1224,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         trc20: {
           address:          trc20Address,
           network:          'TRC20',
+          enabled:          map['gas_usdt_trc20_enabled'] !== 'false',
           fee:              trc20Fee.feeDisplay,
           feeNativeDisplay: trc20Fee.feeNativeDisplay,
           feeUsd:           trc20Fee.feeUsd,
@@ -1204,6 +1233,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         bep20: {
           address:          bep20Address,
           network:          'BEP20',
+          enabled:          map['gas_usdt_bep20_enabled'] !== 'false',
           fee:              bep20Fee.feeDisplay,
           feeNativeDisplay: bep20Fee.feeNativeDisplay,
           feeUsd:           bep20Fee.feeUsd,
@@ -1213,6 +1243,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         erc20: {
           address:          erc20Address,
           network:          'ERC20',
+          enabled:          map['gas_usdt_erc20_enabled'] !== 'false',
           fee:              erc20Fee.feeDisplay,
           feeNativeDisplay: erc20Fee.feeNativeDisplay,
           feeUsd:           erc20Fee.feeUsd,
@@ -1221,6 +1252,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         aptos: {
           address:          aptosAddress,
           network:          'APTOS',
+          enabled:          map['gas_usdt_aptos_enabled'] !== 'false',
           fee:              aptosFee.feeDisplay,
           feeNativeDisplay: aptosFee.feeNativeDisplay,
           feeUsd:           aptosFee.feeUsd,
@@ -1250,6 +1282,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
     const { tokenConfigId, amount, toAddress, pkrPaymentMethod, idempotencyKey, promoCode, freeCode } = parsed.data
     const userId = req.user!.id
+    if (await isGasMethodHidden(PKR_METHOD_FLAG[pkrPaymentMethod])) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', 'This payment method is currently unavailable. Please choose another.', 400)
+    }
     await assertNotInGasCooldown(gasCancelIdentity(userId, req.ip))
     await assertNoUnpaidGasOrder(userId)
 
@@ -1742,6 +1777,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
     const { tokenConfigId, amount, toAddress, paymentNetwork, idempotencyKey, promoCode, freeCode } = parsed.data
+    if (await isGasMethodHidden(CRYPTO_NETWORK_FLAG[paymentNetwork])) {
+      throw new AppError('CHAIN_NOT_SUPPORTED', `USDT ${paymentNetwork} payment is currently unavailable. Please choose another network.`, 400)
+    }
     await assertNotInGasCooldown(gasCancelIdentity(req.user?.id ?? null, req.ip))
     await assertNoUnpaidGasOrder(req.user?.id ?? null)
 

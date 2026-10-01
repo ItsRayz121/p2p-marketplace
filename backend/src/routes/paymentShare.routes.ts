@@ -51,9 +51,13 @@ export async function paymentShareRoutes(app: FastifyInstance) {
         if (sharedCount === 0) throw new AppError('VALIDATION_ERROR', 'Select at least one payment method to share.', 400)
       }
 
-      const profile = existing
-        ? await tx.paymentShareProfile.update({ where: { userId }, data: { enabled: nextEnabled }, select: { slug: true, enabled: true } })
-        : await tx.paymentShareProfile.create({ data: { userId, slug: generatePaymentSlug(), enabled: nextEnabled }, select: { slug: true, enabled: true } })
+      // upsert (not find-then-create) so two concurrent first-time saves can't hit the userId unique constraint.
+      const profile = await tx.paymentShareProfile.upsert({
+        where: { userId },
+        update: { enabled: nextEnabled },
+        create: { userId, slug: generatePaymentSlug(), enabled: nextEnabled },
+        select: { slug: true, enabled: true },
+      })
       return { profile, wasEnabled: existing?.enabled ?? false }
     })
 
