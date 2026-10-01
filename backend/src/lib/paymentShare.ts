@@ -24,6 +24,32 @@ export function isValidPaymentSlug(v: unknown): v is string {
   return typeof v === 'string' && PAYMENT_SLUG_RE.test(v)
 }
 
+/** Usernames are accepted as vanity links (/pay/<username>) alongside the random slug. */
+export const PAYMENT_USERNAME_RE = /^[A-Za-z0-9_.-]{3,32}$/
+
+export function isValidPaymentUsername(v: unknown): v is string {
+  return typeof v === 'string' && PAYMENT_USERNAME_RE.test(v)
+}
+
+export interface SharableAddressRow {
+  coin: string
+  network: string
+  address: string
+  label: string
+}
+
+export interface PublicPaymentAddress {
+  coin: string
+  network: string
+  address: string
+  label: string
+}
+
+/** Map a stored saved address to the minimal public DTO. Never spreads the DB row. */
+export function toPublicPaymentAddress(a: SharableAddressRow): PublicPaymentAddress {
+  return { coin: clean(a.coin), network: clean(a.network), address: clean(a.address), label: clean(a.label) }
+}
+
 export interface SharableMethodRow {
   type: string
   accountName: string

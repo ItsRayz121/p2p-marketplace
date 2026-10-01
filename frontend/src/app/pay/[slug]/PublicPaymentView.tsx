@@ -102,37 +102,73 @@ export default function PublicPaymentView({ slug }: { slug: string }) {
               <UserAvatar name={state.page.displayName} avatarUrl={state.page.avatarUrl} size="lg" />
               <div className="min-w-0">
                 <h1 className="truncate text-xl font-bold text-text-primary">Pay {state.page.displayName}</h1>
-                <p className="text-sm text-text-muted">PKR payment methods</p>
+                <p className="text-sm text-text-muted">Payment details</p>
               </div>
             </div>
 
-            {state.page.methods.length === 0 ? (
+            {state.page.methods.length === 0 && state.page.addresses.length === 0 && (
               <div className="rounded-2xl border border-border bg-surface px-6 py-10 text-center text-sm text-text-muted shadow-card">
-                No payment methods are being shared right now.
+                No payment details are being shared right now.
               </div>
-            ) : (
-              <ul className="space-y-3">
-                {state.page.methods.map((m, i) => (
-                  <li key={`${m.type}-${i}`} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
-                    <div className="mb-3 flex items-center gap-3">
-                      <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.bankName ?? m.label} size="md" className="flex-shrink-0" />
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-text-primary">{m.label}</p>
-                        <p className="truncate text-sm text-text-muted">{m.accountName}</p>
+            )}
+
+            {state.page.methods.length > 0 && (
+              <section className="space-y-3" aria-label="PKR payment methods">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted">PKR payment methods</h2>
+                <ul className="space-y-3">
+                  {state.page.methods.map((m, i) => (
+                    <li key={`${m.type}-${i}`} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+                      <div className="mb-3 flex items-center gap-3">
+                        <EntityLogo type={m.type === 'bank_transfer' ? 'bank' : 'payment_method'} slug={m.bankName ?? m.label} size="md" className="flex-shrink-0" />
+                        <p className="min-w-0 truncate text-sm font-semibold text-text-primary">{m.label}</p>
                       </div>
-                    </div>
-                    <div className="space-y-2">
-                      {m.numbers.map((n) => <CopyRow key={n.label} label={n.label} value={n.value} />)}
-                    </div>
-                  </li>
-                ))}
-              </ul>
+                      <div className="space-y-2">
+                        {m.accountName && <CopyRow label="Account name" value={m.accountName} />}
+                        {m.numbers.map((n) => <CopyRow key={n.label} label={n.label} value={n.value} />)}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            )}
+
+            {state.page.addresses.length > 0 && (
+              <section className="space-y-3" aria-label="Crypto addresses">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Crypto addresses</h2>
+                <ul className="space-y-3">
+                  {state.page.addresses.map((a, i) => (
+                    <li key={`${a.coin}-${a.network}-${i}`} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
+                      <p className="mb-3 truncate text-sm font-semibold text-text-primary">
+                        {a.label} <span className="font-normal text-text-muted">· {a.coin} ({a.network})</span>
+                      </p>
+                      <CopyRow label="Address" value={a.address} />
+                    </li>
+                  ))}
+                </ul>
+                <p className="flex items-start gap-2 text-xs text-text-muted">
+                  <ShieldCheck size={14} className="mt-0.5 flex-shrink-0" aria-hidden />
+                  Send only {state.page.addresses.length === 1 ? 'the listed coin' : 'the listed coins'} on the matching network — sending on the wrong network can lose funds.
+                </p>
+              </section>
             )}
 
             <p className="flex items-start gap-2 text-xs text-text-muted">
               <ShieldCheck size={14} className="mt-0.5 flex-shrink-0" aria-hidden />
               Check that the account name matches the person you intend to pay before sending money.
             </p>
+
+            <div className="rounded-2xl border border-border bg-surface px-5 py-6 text-center shadow-card">
+              <h2 className="text-base font-semibold text-text-primary">Want your own payment page?</h2>
+              <p className="mt-1 text-sm text-text-muted">
+                Create a free RupChain account and share all your payment details in one link — no login needed for the people paying you.
+              </p>
+              <Link
+                href="/register"
+                className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover"
+              >
+                Create your payment page
+              </Link>
+            </div>
           </div>
         )}
       </div>

@@ -1423,7 +1423,7 @@ export const userPaymentMethodsApi = {
     apiRequest<void>(`/users/me/payment-methods/${id}`, { method: 'DELETE' }),
 }
 
-export interface PaymentShareState { enabled: boolean; slug: string | null }
+export interface PaymentShareState { enabled: boolean; slug: string | null; username: string | null }
 
 /** What a visitor of /pay/:slug receives — a minimal, read-only DTO. */
 export interface PublicPaymentPage {
@@ -1436,11 +1436,12 @@ export interface PublicPaymentPage {
     accountName: string
     numbers: Array<{ label: string; value: string }>
   }>
+  addresses: Array<{ coin: string; network: string; address: string; label: string }>
 }
 
 export const paymentShareApi = {
   get: () => apiRequest<PaymentShareState>('/users/me/payment-share'),
-  update: (data: { enabled?: boolean; methodIds?: string[] }) =>
+  update: (data: { enabled?: boolean; methodIds?: string[]; addressIds?: string[] }) =>
     apiRequest<PaymentShareState>('/users/me/payment-share', { method: 'PUT', body: JSON.stringify(data) }),
   regenerate: () =>
     apiRequest<PaymentShareState>('/users/me/payment-share/regenerate', { method: 'POST' }),
@@ -1449,7 +1450,7 @@ export const paymentShareApi = {
     apiRequest<PublicPaymentPage>(`/public/pay/${encodeURIComponent(slug)}`, { cache: 'no-store', ...(signal ? { signal } : {}) }),
 }
 
-/** Absolute public link for a payment page slug. */
+/** Absolute public link for a payment page — pass the owner's username (or the random slug). */
 export const paymentShareUrl = (slug: string) =>
   `${typeof window !== 'undefined' ? window.location.origin : (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com')}/pay/${slug}`
 
@@ -1509,6 +1510,8 @@ export interface SavedDeliveryAddress {
   address: string
   label: string
   hidden?: boolean
+  /** Opted in to the owner's public payment page. */
+  shared?: boolean
 }
 
 export const kycApi = {

@@ -1004,6 +1004,8 @@ model SavedAddress {
   // User-hidden (reversible) — excluded from trade delivery/tap-to-fill pickers
   // but still visible in Wallet management so it can be un-hidden.
   hidden    Boolean  @default(false)
+  // Explicit opt-in to the owner's public payment page (/pay/:slug). Private by default.
+  shared    Boolean  @default(false)
 
   @@unique([userId, coin, network, address])
   @@index([userId])

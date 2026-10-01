@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { generatePaymentSlug, isValidPaymentSlug, toPublicPaymentMethod } from '../paymentShare'
+import { generatePaymentSlug, isValidPaymentSlug, isValidPaymentUsername, toPublicPaymentAddress, toPublicPaymentMethod } from '../paymentShare'
 
 describe('paymentShare', () => {
   it('generates unguessable, valid, unique slugs', () => {
@@ -34,6 +34,16 @@ describe('paymentShare', () => {
     const dto = toPublicPaymentMethod({ type: 'nayapay', accountName: 'Ali', mobileNumber: '03167815843', bankName: null, ibanNumber: null, accountNumber: null })
     expect(dto.label).toBe('NayaPay')
     expect(dto.numbers).toEqual([{ label: 'Account number', value: '03167815843' }])
+  })
+
+  it('validates usernames used as vanity links', () => {
+    for (const ok of ['fazal', 'Fazal_Elahi', 'a.b-c']) expect(isValidPaymentUsername(ok)).toBe(true)
+    for (const bad of ['', 'ab', 'has space', '../x', 'a'.repeat(33), 5, null]) expect(isValidPaymentUsername(bad)).toBe(false)
+  })
+
+  it('address exposes only coin, network, address and label', () => {
+    const dto = toPublicPaymentAddress({ coin: 'USDT', network: 'BEP20', address: '0xabc\n', label: 'Main', ...({ id: 'x', userId: 'u' } as object) } as never)
+    expect(dto).toEqual({ coin: 'USDT', network: 'BEP20', address: '0xabc', label: 'Main' })
   })
 
   it('strips control characters', () => {
