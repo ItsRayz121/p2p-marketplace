@@ -261,7 +261,15 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             intrinsic widths; without a fixed slot they'd shift the flex-1 price
             column and knock the right-hand columns out of line). */}
         <div className="sm:w-36 flex-shrink-0 flex sm:justify-end">
-          {ad.makerBondInsufficient ? (
+          {ad.seller?.availability && !ad.seller.availability.online ? (
+            <span
+              className="px-3 py-1.5 text-xs font-semibold rounded-full bg-surface-alt text-text-muted border border-border text-center leading-tight"
+              title="This trader is outside their active hours. You can trade when they are back."
+            >
+              Offline
+              {ad.seller.availability.opensAt && <span className="block text-[10px] font-normal">back {ad.seller.availability.opensAt}</span>}
+            </span>
+          ) : ad.makerBondInsufficient ? (
             <span
               className="px-3 py-1.5 text-xs font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap"
               title="This trader's collateral bond is fully committed right now, so new trades can't start. Check back shortly."
@@ -394,7 +402,11 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
             )}
           </div>
           <div className="flex-shrink-0">
-            {ad.makerBondInsufficient ? (
+            {ad.seller?.availability && !ad.seller.availability.online ? (
+              <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-surface-alt text-text-muted border border-border text-center leading-tight">
+                Offline{ad.seller.availability.opensAt && <span className="block text-[10px] font-normal">back {ad.seller.availability.opensAt}</span>}
+              </span>
+            ) : ad.makerBondInsufficient ? (
               <span className="px-2.5 py-1.5 text-[11px] font-semibold rounded-full bg-warning/10 text-warning border border-warning/20 whitespace-nowrap">Maker unavailable</span>
             ) : parseFloat(ad.availableAmount) > 0 ? (
               <Link

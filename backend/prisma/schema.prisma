@@ -472,6 +472,15 @@ model User {
   countryCode            String?                    // ISO 3166-1 alpha-2 (e.g. "PK")
 
   lastSeenAt             DateTime?
+
+  // ── Active hours (trade creator / affiliate availability) ──
+  // One window per person, applied to ALL their ads. Minutes from local midnight in
+  // activeHoursTz (falls back to the platform timezone). Start > end wraps midnight.
+  activeHoursEnabled     Boolean   @default(false)
+  activeHoursStart       Int?
+  activeHoursEnd         Int?
+  activeHoursTz          String?
+
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 
@@ -1899,7 +1908,7 @@ model GasFeeOrder {
   promoRedemption     GasPromoRedemption?
   gasFreeCode         GasFreeCode?        @relation(fields: [gasFreeCodeId], references: [id], onDelete: SetNull)
   freeCodeRedemption  GasFreeCodeRedemption?
-  referralAccrual     GasReferralAccrual?
+  referralAccruals    GasReferralAccrual[]
 
   @@index([status, expiresAt])
   @@index([userId])
@@ -2132,14 +2141,16 @@ model GasReferralAccrual {
   referrerId  String
   referrer    User        @relation("GasReferrerAccrual", fields: [referrerId], references: [id], onDelete: Cascade)
   referredId  String
-  orderId     String      @unique
+  orderId     String
   order       GasFeeOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  level       Int         @default(1)         // 1 = direct referrer, 2 = referrer's referrer
   marginUsdt  Decimal     @db.Decimal(10, 4)  // realized margin the % was taken on
   amountUsdt  Decimal     @db.Decimal(10, 4)
   pct         Float
   status      String      @default("available") // available | withdrawn | reversed
   createdAt   DateTime    @default(now())
 
+  @@unique([orderId, level])
   @@index([referrerId, status])
 }
 

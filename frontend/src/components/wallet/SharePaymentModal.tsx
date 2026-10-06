@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { AddressLogo } from './AddressLogo'
 import { paymentShareApi, paymentShareUrl, walletApi, type PaymentShareState, type SavedDeliveryAddress, type UserPaymentMethod } from '@/lib/api'
 import { toast } from '@/lib/toast'
 
@@ -196,8 +197,9 @@ export function SharePaymentModal({ isOpen, onClose, methods, onSaved, label }: 
                   <li key={a.id}>
                     <label className="flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-surface-alt">
                       <input type="checkbox" checked={selectedAddr.has(a.id)} onChange={() => setSelectedAddr((p) => flip(p, a.id))} className="h-4 w-4 accent-primary" />
+                      <AddressLogo coin={a.coin} network={a.network} size="sm" />
                       <span className="min-w-0 flex-1">
-                        <span className="block text-sm text-text-primary truncate">{a.label} · {a.coin} ({a.network})</span>
+                        <span className="block text-sm text-text-primary truncate">{a.label} · {a.network === 'CTM' ? a.coin : `${a.coin} (${a.network})`}</span>
                         <span className="block text-xs font-mono text-text-muted truncate">{shortAddress(a.address)}</span>
                       </span>
                     </label>

@@ -837,6 +837,8 @@ export interface MarketplaceAd {
     badge: string
     lastSeenAt: string | null
     joinedAt?: string | null
+    /** Creator active hours: online=false → ad visible but can't be taken now. */
+    availability?: { online: boolean; hours: { start: string; end: string; tz: string } | null; opensAt: string | null }
     isMerchant: boolean
     merchantId: string | null
     merchantName: string | null
@@ -1429,6 +1431,8 @@ export interface PaymentShareState { enabled: boolean; slug: string | null; user
 export interface PublicPaymentPage {
   displayName: string
   avatarUrl: string | null
+  /** Owner's referral code — a visitor who signs up from this page is attributed to them. */
+  referralCode: string
   methods: Array<{
     type: UserPaymentMethod['type']
     label: string
@@ -2054,7 +2058,7 @@ export const gasApi = {
     apiRequest<{ valid: boolean; code: string; kolLabel: string; gasTokenConfigId: string; amountNative: number; amountUsdt: number; slotsLeft: number; budgetLeftUsdt: number; message: string }>('/gas-fee/free-code/preview', { method: 'POST', body: JSON.stringify(data) }),
 
   getReferralSummary: () =>
-    apiRequest<{ enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }>('/gas-fee/referral/me'),
+    apiRequest<{ enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean; level2Enabled?: boolean; level2Pct?: number | null; level2EarnedUsdt?: number }>('/gas-fee/referral/me'),
   applyReferral: (code: string) =>
     apiRequest<{ bound: boolean; referrerId: string | null }>('/gas-fee/referral/apply', { method: 'POST', body: JSON.stringify({ code }) }),
   setReferralLabel: (label: string | null) =>
@@ -2072,7 +2076,7 @@ export const gasApi = {
       caps: { maxMarginPct: number; minUserDiscountPct: number; maxLinks: number } | null
       links: Array<{ id: string; code: string; label: string | null; userDiscountPct: number; commissionPct: number; isActive: boolean; referredCount: number }>
       customLinkPolicy: { maxLinks: number; used: number; canCreate: boolean; cooldownUntil: string | null; userDiscountPct: number; commissionPct: number; isAffiliate: boolean }
-      earnings: { enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean }
+      earnings: { enabled: boolean; code: string | null; label: string | null; referralPct: number | null; referredCount: number; totalAccruedUsdt: number; availableUsdt: number; withdrawableUsdt: number; withdrawnUsdt: number; minWithdrawUsdt: number; kycOk: boolean; boundToReferrer: boolean; level2Enabled?: boolean; level2Pct?: number | null; level2EarnedUsdt?: number }
     }>('/gas-fee/affiliate/me'),
   getAffiliateQuote: (tokenConfigId: string) =>
     apiRequest<{ discountUsdt: number; discountPct: number; referrerLabel: string } | null>(`/gas-fee/affiliate/quote?tokenConfigId=${encodeURIComponent(tokenConfigId)}`),
@@ -3654,4 +3658,33 @@ export async function checkApiHealth(): Promise<HealthCheckResponse | null> {
   } catch {
     return null
   }
+}
+
+
+// ─── Active hours + manual-verification hours ────────────────────────────────
+
+export interface ActiveHoursSettings {
+  featureEnabled: boolean
+  enabled: boolean
+  start: string
+  end: string
+  timezone: string | null
+  platformTimezone: string
+  online: boolean
+}
+
+export interface ManualVerifyStatus {
+  offline: boolean
+  start: string
+  end: string
+  tz: string
+  resumesAt: string | null
+  message: string
+}
+
+export const availabilityApi = {
+  getActiveHours: () => apiRequest<ActiveHoursSettings>('/users/me/active-hours'),
+  saveActiveHours: (data: { enabled: boolean; start: string; end: string; timezone: string | null }) =>
+    apiRequest<{ enabled: boolean; start: string; end: string; timezone: string | null }>('/users/me/active-hours', { method: 'PUT', body: JSON.stringify(data) }),
+  getManualVerifyStatus: () => apiRequest<ManualVerifyStatus>('/manual-verify-status'),
 }

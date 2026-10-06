@@ -26,6 +26,7 @@ import {
 import { openEpisode, closeEpisode, reopenEpisode, bumpThreadForTradeMessage, bumpThreadForTradeStep } from '../services/chatThread.service'
 import { incrementTradeStreak, getTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx, clawbackTradePoints } from '../services/airdrop.service'
+import { getUserAvailability } from '../lib/activeHours'
 
 type JsonValue = Prisma.InputJsonValue
 type Tx = Prisma.TransactionClient
@@ -1117,6 +1118,11 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (listing.status !== 'active') throw new AppError('CONFLICT', 'Listing is not active', 409)
   if (!listing.merchantProfile.isActive) throw new AppError('CONFLICT', 'Merchant is not active', 409)
   if (listing.merchantProfile.userId === buyerId) throw new AppError('CONFLICT', 'Cannot trade with yourself', 409)
+  // Creator active hours: outside their window the listing can't be taken.
+  const creatorAvail = await getUserAvailability(listing.merchantProfile.userId)
+  if (!creatorAvail.online) {
+    throw new AppError('CREATOR_OFFLINE', `This trader is offline right now. Please come back at ${creatorAvail.opensAt}.`, 409)
+  }
   if (listing.availableAmount.lte(0)) throw new AppError('CONFLICT', 'Listing has no available tokens', 409)
 
   // BUY listings: listing creator = buyer (pays PKR), trade taker = seller (sends tokens, receives PKR).

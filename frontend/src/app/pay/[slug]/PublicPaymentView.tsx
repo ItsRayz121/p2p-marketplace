@@ -5,6 +5,7 @@ import { ShieldCheck } from 'lucide-react'
 import { ApiError, paymentShareApi, type PublicPaymentPage } from '@/lib/api'
 import { BrandLogo } from '@/components/ui/BrandLogo'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { AddressLogo } from '@/components/wallet/AddressLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 import { Spinner } from '@/components/ui/Spinner'
 import { Button } from '@/components/ui/Button'
@@ -52,8 +53,7 @@ export default function PublicPaymentView({ slug }: { slug: string }) {
     setState({ status: 'loading' })
     try {
       const page = await paymentShareApi.getPublic(slug, signal)
-      setState({ status: 'ready', page })
-    } catch (err) {
+      setState({ status: 'ready', page })    } catch (err) {
       if (signal?.aborted) return
       // A missing, malformed or disabled link all look the same on purpose.
       setState(err instanceof ApiError && (err.status === 404 || err.status === 400) ? { status: 'unavailable' } : { status: 'error' })
@@ -138,9 +138,12 @@ export default function PublicPaymentView({ slug }: { slug: string }) {
                 <ul className="space-y-3">
                   {state.page.addresses.map((a, i) => (
                     <li key={`${a.coin}-${a.network}-${i}`} className="rounded-2xl border border-border bg-surface p-4 shadow-card">
-                      <p className="mb-3 truncate text-sm font-semibold text-text-primary">
-                        {a.label} <span className="font-normal text-text-muted">· {a.coin} ({a.network})</span>
-                      </p>
+                      <div className="mb-3 flex items-center gap-3">
+                        <AddressLogo coin={a.coin} network={a.network} size="md" />
+                        <p className="min-w-0 truncate text-sm font-semibold text-text-primary">
+                          {a.label} <span className="font-normal text-text-muted">· {a.network === 'CTM' ? a.coin : `${a.coin} (${a.network})`}</span>
+                        </p>
+                      </div>
                       <CopyRow label="Address" value={a.address} />
                     </li>
                   ))}
@@ -163,7 +166,7 @@ export default function PublicPaymentView({ slug }: { slug: string }) {
                 Create a free RupChain account and share all your payment details in one link — no login needed for the people paying you.
               </p>
               <Link
-                href="/register"
+                href={`/register?ref=${encodeURIComponent(state.page.referralCode)}`}
                 className="mt-4 inline-flex min-h-[44px] items-center justify-center rounded-lg bg-primary px-5 text-sm font-semibold text-white hover:bg-primary-hover"
               >
                 Create your payment page

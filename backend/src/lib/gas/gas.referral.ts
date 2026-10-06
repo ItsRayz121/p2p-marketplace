@@ -16,7 +16,7 @@ import { db } from '../prisma'
 import { Prisma } from '@prisma/client'
 import { AppError } from '../errors'
 import { logger } from '../logger'
-import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
+import { isFlagEnabled, FLAGS, getNumberConfig, getBoolConfig } from '../../services/platformFlags.service'
 import { notify } from '../notify'
 import type { GasFeeOrder } from '@prisma/client'
 
@@ -32,6 +32,10 @@ const MIN_ORDER_CONFIG       = 'gas_referral_min_order_usd'        // skip accru
 const MAX_PER_REFERRED_CONFIG = 'gas_referral_max_per_referred_usdt' // lifetime cap per referred user (0 = none)
 const HOLD_HOURS_CONFIG      = 'gas_referral_hold_hours'          // fraud-hold before earnings are withdrawable
 const MIN_WITHDRAW_CONFIG    = 'gas_referral_min_withdraw_usdt'   // minimum withdrawal
+// Two-level affiliates: the referrer's referrer earns a share of the same order's margin.
+export const L2_ENABLED_CONFIG = 'gas_referral_l2_enabled'
+export const L2_PCT_CONFIG     = 'gas_referral_l2_pct'
+const DEFAULT_L2_PCT           = 10
 const DEFAULT_HOLD_HOURS     = 24
 const DEFAULT_MIN_WITHDRAW   = 5
 
@@ -284,6 +288,7 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
         referrerId: binding.referrerId,
         referredId: order.userId,
         orderId: order.id,
+        level: 1,
         marginUsdt: realizedMargin,
         amountUsdt: amount,
         pct,
@@ -304,7 +309,66 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
       { telegram: true },
     )
   } catch {
-    // Unique(orderId) — already accrued (e.g. retried delivery finalisation). Ignore.
+    // Unique(orderId, level) — already accrued (e.g. retried delivery finalisation). Ignore.
+  }
+
+  await accrueLevel2(order, binding.referrerId, grossMargin, realizedMargin, amount)
+}
+
+/**
+ * Level-2 commission: the person who referred the direct referrer earns a (smaller) share
+ * of the same order's margin. Opt-in (gas_referral_l2_enabled, default OFF) and capped so
+ * level 1 + level 2 together can never exceed the margin the platform actually kept.
+ * Independently idempotent via Unique(orderId, level).
+ */
+async function accrueLevel2(
+  order: GasFeeOrder,
+  level1ReferrerId: string,
+  grossMargin: number,
+  realizedMargin: number,
+  level1Amount: number,
+): Promise<void> {
+  try {
+    if (!order.userId) return
+    if (!(await getBoolConfig(L2_ENABLED_CONFIG, false))) return
+    const l2Binding = await db.gasReferral.findUnique({
+      where: { referredId: level1ReferrerId },
+      include: { code: true },
+    })
+    if (!l2Binding || !l2Binding.code.isActive) return
+    const l2ReferrerId = l2Binding.referrerId
+    // Cycle / self guards: the buyer or the direct referrer can never be their own level-2.
+    if (l2ReferrerId === order.userId || l2ReferrerId === level1ReferrerId) return
+
+    const l2Pct = Math.max(0, await getNumberConfig(L2_PCT_CONFIG, DEFAULT_L2_PCT))
+    const amount = round2(Math.min((l2Pct / 100) * grossMargin, Math.max(0, realizedMargin - level1Amount)))
+    if (amount <= 0) return
+
+    await db.gasReferralAccrual.create({
+      data: {
+        referrerId: l2ReferrerId,
+        referredId: order.userId,
+        orderId: order.id,
+        level: 2,
+        marginUsdt: realizedMargin,
+        amountUsdt: amount,
+        pct: l2Pct,
+        status: 'available',
+      },
+    })
+    logger.info({ orderId: order.id, referrerId: l2ReferrerId, amount }, 'gas referral level-2 accrued')
+    notify(
+      l2ReferrerId,
+      'referral',
+      'Level-2 referral reward earned 💰',
+      `Someone in your network just placed an order. You earned $${amount.toFixed(2)} USDT in level-2 commission. Withdraw it from your Referral page after the hold window.`,
+      { orderId: order.id, amountUsdt: amount, level: 2 },
+      undefined,
+      '/referral',
+      { telegram: true },
+    )
+  } catch {
+    // Unique(orderId, level) already accrued, or a transient error — never block delivery.
   }
 }
 
@@ -321,6 +385,9 @@ export interface ReferralSummary {
   minWithdrawUsdt: number
   kycOk: boolean
   boundToReferrer: boolean
+  level2Enabled: boolean
+  level2Pct: number | null
+  level2EarnedUsdt: number     // portion of totalAccruedUsdt earned as a level-2 referrer
 }
 
 function holdCutoff(holdHours: number): Date {
@@ -331,27 +398,30 @@ function holdCutoff(holdHours: number): Date {
 export async function getReferralSummary(userId: string): Promise<ReferralSummary> {
   const enabled = await isFlagEnabled(FLAGS.GAS_REFERRAL)
   if (!enabled) {
-    return { enabled: false, code: null, label: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawableUsdt: 0, withdrawnUsdt: 0, minWithdrawUsdt: 0, kycOk: false, boundToReferrer: false }
+    return { enabled: false, code: null, label: null, referralPct: null, referredCount: 0, totalAccruedUsdt: 0, availableUsdt: 0, withdrawableUsdt: 0, withdrawnUsdt: 0, minWithdrawUsdt: 0, kycOk: false, boundToReferrer: false, level2Enabled: false, level2Pct: null, level2EarnedUsdt: 0 }
   }
 
   const own = await getOrCreateOwnCode(userId)
-  const [holdHours, minWithdraw] = await Promise.all([
+  const [holdHours, minWithdraw, l2Enabled, l2Pct] = await Promise.all([
     getNumberConfig(HOLD_HOURS_CONFIG, DEFAULT_HOLD_HOURS),
     getNumberConfig(MIN_WITHDRAW_CONFIG, DEFAULT_MIN_WITHDRAW),
+    getBoolConfig(L2_ENABLED_CONFIG, false),
+    getNumberConfig(L2_PCT_CONFIG, DEFAULT_L2_PCT),
   ])
   const cutoff = holdCutoff(holdHours)
 
   const [referredCount, accruals, binding, user] = await Promise.all([
     db.gasReferral.count({ where: { referrerId: userId } }),
-    db.gasReferralAccrual.findMany({ where: { referrerId: userId }, select: { amountUsdt: true, status: true, createdAt: true } }),
+    db.gasReferralAccrual.findMany({ where: { referrerId: userId }, select: { amountUsdt: true, status: true, createdAt: true, level: true } }),
     db.gasReferral.findUnique({ where: { referredId: userId }, select: { id: true } }),
     db.user.findUnique({ where: { id: userId }, select: { kycLevel: true } }),
   ])
 
-  let total = 0, available = 0, withdrawable = 0, withdrawn = 0
+  let total = 0, available = 0, withdrawable = 0, withdrawn = 0, level2 = 0
   for (const a of accruals) {
     const amt = Number(a.amountUsdt)
     total += amt
+    if (a.level === 2) level2 += amt
     if (a.status === 'available') {
       available += amt
       if (a.createdAt <= cutoff) withdrawable += amt
@@ -371,6 +441,9 @@ export async function getReferralSummary(userId: string): Promise<ReferralSummar
     minWithdrawUsdt: minWithdraw,
     kycOk: !!user && user.kycLevel !== 'none',
     boundToReferrer: !!binding,
+    level2Enabled: l2Enabled,
+    level2Pct: l2Enabled ? l2Pct : null,
+    level2EarnedUsdt: round2(level2),
   }
 }
 

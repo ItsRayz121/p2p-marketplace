@@ -5,6 +5,7 @@ import { useGasCtx, PHASE, PKR_METHOD_META, type PkrMethodKey } from './GasConte
 import { CardHeader, PkrMethodIcon, pkrIsConfigured, pkrIsVisible } from './GasPrimitives'
 import { GasPromoField } from './GasPromo'
 import { GasFreeCodeField } from './GasFreeCode'
+import { ManualVerifyNotice } from './ManualVerifyNotice'
 
 export function GasPkrMethodStep() {
   const {
@@ -22,6 +23,8 @@ export function GasPkrMethodStep() {
   return (
     <div className="p-5 space-y-4">
       <CardHeader onBack={() => setPhase(PHASE.PAY_METHOD)} title="Pay with PKR" sub="Select your payment method" />
+
+      <ManualVerifyNotice />
 
       <div className="space-y-2">
         {(Object.keys(PKR_METHOD_META) as PkrMethodKey[]).filter(key => pkrIsVisible(key, pkrMethods) && pkrIsConfigured(key, pkrMethods)).map(key => {

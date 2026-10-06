@@ -5,6 +5,7 @@ import { Prisma, AdStatus } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
 import { getBondConfig, computeBondUsdt } from './makerBond.service'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
+import { AVAILABILITY_SELECT, computeAvailability, getPlatformTimezone, isActiveHoursFeatureOn, type Availability } from '../lib/activeHours'
 import { buildPriceHistory, priceRangeStart, type PriceRange, type PriceHistoryResult } from '../lib/priceHistory'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -51,6 +52,8 @@ export interface SellerInfo {
     totalReviews: number | null
   } | null
   hasCollateral: boolean
+  /** Creator active-hours state. online=false → ad is shown but can't be taken right now. */
+  availability: Availability
 }
 
 export interface AdWithSeller {
@@ -331,6 +334,7 @@ export async function getTopAds(): Promise<{
       avatarUrl: true,
       createdAt: true,
       lastSeenAt: true,
+      ...AVAILABILITY_SELECT,
       tradeStats: {
         select: {
           badge: true,
@@ -355,6 +359,7 @@ export async function getTopAds(): Promise<{
     },
   }
 
+  const [platformTz, activeHoursOn] = await Promise.all([getPlatformTimezone(), isActiveHoursFeatureOn()])
   const [buyAds, sellAds, poolAds] = await Promise.all([
     db.ad.findMany({
       where: { status: 'active', side: 'buy', coin: 'USDT' },
@@ -421,6 +426,7 @@ export async function getTopAds(): Promise<{
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,
+        availability: computeAvailability(ad.user, platformTz, activeHoursOn),
       },
     }
   }
@@ -586,6 +592,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       avatarUrl: true,
       createdAt: true,
       lastSeenAt: true,
+      ...AVAILABILITY_SELECT,
       tradeStats: {
         select: {
           badge: true,
@@ -610,6 +617,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
     },
   }
 
+  const [platformTz, activeHoursOn] = await Promise.all([getPlatformTimezone(), isActiveHoursFeatureOn()])
   const [rawItems, total] = await Promise.all([
     db.ad.findMany({
       where,
@@ -679,6 +687,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
             }
           : null,
         hasCollateral: ad.user.collateralLocks.length > 0,
+        availability: computeAvailability(ad.user, platformTz, activeHoursOn),
       },
     }
   })

@@ -31,6 +31,7 @@ import {
 } from './blockchainVerification.service'
 import { logger } from '../lib/logger'
 import { validateAddressForNetwork } from '../lib/addressValidation'
+import { getUserAvailability } from '../lib/activeHours'
 import { incrementTradeStreak, getTradeStreak, ordinal } from './tradeStreak.service'
 import { awardTradePointsTx } from './airdrop.service'
 
@@ -285,6 +286,11 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true, networks: true, price: true } })
   if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
+  // Creator active hours: outside their window the ad stays visible but can't be taken.
+  const makerAvail = await getUserAvailability(adSide.userId)
+  if (!makerAvail.online) {
+    throw new AppError('CREATOR_OFFLINE', `This trader is offline right now. Please come back at ${makerAvail.opensAt}.`, 409)
+  }
   const isBuyAd = adSide.side === 'buy'
   const buyerId = isBuyAd ? adSide.userId : initiatorId
   const sellerId = isBuyAd ? initiatorId : adSide.userId

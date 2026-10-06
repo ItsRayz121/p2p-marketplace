@@ -12,6 +12,7 @@ import {
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
+import { getUserAvailability } from '../lib/activeHours'
 
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -126,7 +127,8 @@ export async function adRoutes(app: FastifyInstance) {
       (pmId) => pmMap.get(pmId) ?? { id: pmId, type: 'unknown', label: pmId },
     )
 
-    return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods } })
+    const availability = await getUserAvailability(ad.userId)
+    return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods, availability } })
   })
 
   // GET /api/ads — user's own ads (also exposed at /ads/me for frontend convenience)

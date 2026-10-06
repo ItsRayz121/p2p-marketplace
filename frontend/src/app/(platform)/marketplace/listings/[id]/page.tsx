@@ -66,6 +66,7 @@ interface AdDetail {
   tradeWindow: number
   terms: string
   status: string
+  availability?: { online: boolean; opensAt: string | null }
   user: { id: string; username: string; fullName?: string | null; avatarUrl?: string | null; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null }
 }
 
@@ -564,6 +565,13 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
               )}
             </div>
           )}
+        </div>
+      )}
+
+      {ad.availability && !ad.availability.online && (
+        <div role="status" className="mb-4 rounded-xl border border-border bg-surface-alt p-3 text-sm text-text-secondary">
+          <span className="font-semibold text-text-primary">This trader is offline right now.</span>{' '}
+          {ad.availability.opensAt ? `They are back at ${ad.availability.opensAt}. ` : ''}You can read the terms, but trades can only be started during their active hours.
         </div>
       )}
 

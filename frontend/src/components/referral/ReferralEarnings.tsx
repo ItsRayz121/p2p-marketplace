@@ -495,6 +495,12 @@ export function ReferralEarningsSummary() {
         <Stat label="Available now" value={`$${sum.withdrawableUsdt.toFixed(2)}`} accent />
         <Stat label="Withdrawn" value={`$${sum.withdrawnUsdt.toFixed(2)}`} />
       </div>
+      {sum.level2Enabled && (
+        <p className="text-xs text-text-muted">
+          Two-level rewards are on: you also earn {sum.level2Pct}% of the margin on orders placed by people your referrals bring in
+          {typeof sum.level2EarnedUsdt === 'number' && sum.level2EarnedUsdt > 0 ? ` ($${sum.level2EarnedUsdt.toFixed(2)} earned so far)` : ''}.
+        </p>
+      )}
 
       {/* Withdraw earnings — collapsible; a "ready" chip surfaces a withdrawable balance while collapsed. */}
       <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">

@@ -100,7 +100,7 @@ export async function paymentShareRoutes(app: FastifyInstance) {
     if (!bySlug && !isValidPaymentUsername(slug)) throw new AppError('NOT_FOUND', 'This payment link is unavailable.', 404)
 
     const userSelect = {
-      fullName: true, username: true, avatarUrl: true, isBanned: true, isSuspended: true,
+      fullName: true, username: true, avatarUrl: true, isBanned: true, isSuspended: true, referralCode: true,
       paymentMethods: {
         where: { isActive: true, hidden: false, shared: true },
         orderBy: { createdAt: 'desc' as const },
@@ -134,7 +134,7 @@ export async function paymentShareRoutes(app: FastifyInstance) {
     reply.header('X-Robots-Tag', 'noindex, nofollow')
     return reply.send({
       success: true,
-      data: { displayName: profile.user.fullName || profile.user.username, avatarUrl: profile.user.avatarUrl ?? null, methods, addresses },
+      data: { displayName: profile.user.fullName || profile.user.username, avatarUrl: profile.user.avatarUrl ?? null, referralCode: profile.user.referralCode, methods, addresses },
     })
   })
 }

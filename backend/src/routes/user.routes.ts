@@ -7,6 +7,10 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { namesMatch } from '../lib/identity'
 import { recordAuditLog } from '../lib/audit'
 import {
+  AVAILABILITY_SELECT, computeAvailability, getManualVerifyStatus, getPlatformTimezone,
+  isActiveHoursFeatureOn, isValidTimezone, minutesToHHMM, parseHHMM,
+} from '../lib/activeHours'
+import {
   getSocialProfile, addSocialLink, setSocialLinkHidden, deleteSocialLink, setSocialPublic, parseSocialLinks,
 } from '../services/socialLinks.service'
 
@@ -352,6 +356,59 @@ export async function userRoutes(app: FastifyInstance) {
   // Source of truth for a user's social profiles. KYC-approved links are marked
   // `verified` (hide-only); the user may add their own extra links and choose to
   // show the set publicly on their profile.
+
+  // ── Active hours (trade creator / affiliate availability) ─────────────────
+  // GET /api/users/me/active-hours → current window + the platform timezone default
+  app.get('/users/me/active-hours', { preHandler: [authenticate] }, async (req, reply) => {
+    const u = await db.user.findUnique({ where: { id: req.user!.id }, select: AVAILABILITY_SELECT })
+    if (!u) throw new AppError('NOT_FOUND', 'User not found', 404)
+    const [platformTz, featureOn] = await Promise.all([getPlatformTimezone(), isActiveHoursFeatureOn()])
+    const availability = computeAvailability(u, platformTz, featureOn)
+    return reply.send({
+      success: true,
+      data: {
+        featureEnabled: featureOn,
+        enabled: u.activeHoursEnabled,
+        start: minutesToHHMM(u.activeHoursStart ?? 600),
+        end: minutesToHHMM(u.activeHoursEnd ?? 1320),
+        timezone: u.activeHoursTz ?? null,
+        platformTimezone: platformTz,
+        online: availability.online,
+      },
+    })
+  })
+
+  const hhmm = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, 'Use HH:MM (24h)')
+  const activeHoursSchema = z.object({
+    enabled: z.boolean(),
+    start: hhmm,
+    end: hhmm,
+    timezone: z.string().max(64).nullable().optional(),
+  })
+
+  // PUT /api/users/me/active-hours — one window, applies to all of the user's ads
+  app.put('/users/me/active-hours', { preHandler: [authenticate] }, async (req, reply) => {
+    const parsed = activeHoursSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const { enabled, start, end, timezone } = parsed.data
+    const startMin = parseHHMM(start, '10:00')
+    const endMin = parseHHMM(end, '22:00')
+    if (enabled && startMin === endMin) {
+      throw new AppError('VALIDATION_ERROR', 'Start and end time cannot be the same. Turn active hours off for 24h availability.', 400)
+    }
+    const tz = timezone?.trim() || null
+    if (tz && !isValidTimezone(tz)) throw new AppError('VALIDATION_ERROR', 'Unknown timezone', 400)
+    await db.user.update({
+      where: { id: req.user!.id },
+      data: { activeHoursEnabled: enabled, activeHoursStart: startMin, activeHoursEnd: endMin, activeHoursTz: tz },
+    })
+    return reply.send({ success: true, data: { enabled, start: minutesToHHMM(startMin), end: minutesToHHMM(endMin), timezone: tz } })
+  })
+
+  // GET /api/manual-verify-status — public: is admin's manual PKR/exchange checking offline?
+  app.get('/manual-verify-status', async (_req, reply) => {
+    return reply.send({ success: true, data: await getManualVerifyStatus() })
+  })
 
   // GET /api/users/me/social-links → { links, public }
   app.get('/users/me/social-links', { preHandler: [authenticate] }, async (req, reply) => {

@@ -14,6 +14,7 @@ import { AnnouncementsToggle } from '@/components/ui/AnnouncementsToggle'
 import { PriceAlertsManager, CtmPriceAlertsManager } from '@/components/ui/PriceAlertsPanel'
 import { WereYouReferred } from '@/components/referral/WereYouReferred'
 import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
+import { ActiveHoursCard } from '@/components/settings/ActiveHoursCard'
 import Link from 'next/link'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
@@ -935,7 +936,12 @@ export default function SettingsPage() {
         ))}
       </div>
 
-      {activeTab === 'profile' && <ProfileTab />}
+      {activeTab === 'profile' && (
+        <div className="space-y-6">
+          <ProfileTab />
+          <ActiveHoursCard />
+        </div>
+      )}
       {activeTab === 'security' && <SecurityTab />}
       {activeTab === 'notifications' && <NotificationsTab />}
       {activeTab === 'connections' && <ConnectionsTab />}

@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
+import { TimezoneSelect } from '@/components/ui/TimezoneSelect'
 import { fmtDateTime } from '@/lib/fmt'
 import { Badge } from '@/components/ui/Badge'
 
@@ -58,6 +59,10 @@ const STRUCTURED_KEYS = new Set([
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
   'trade_proof_reject_enabled', 'trade_proof_reject_max', 'trade_buyer_cancel_after_pay_minutes',
   'channels_enabled', 'channels_max_per_user', 'channels_max_members',
+  // Hours & level-2 affiliates (see "Hours & Level-2 Affiliates" panel)
+  'active_hours_enabled', 'platform_timezone',
+  'manual_verify_offline_enabled', 'manual_verify_offline_start', 'manual_verify_offline_end', 'manual_verify_offline_message',
+  'gas_referral_l2_enabled', 'gas_referral_l2_pct',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -273,6 +278,18 @@ export default function ConfigPage() {
   const [bondRatioPct, setBondRatioPct] = useState('10')
   const [bondMinUsdt, setBondMinUsdt] = useState('0')
 
+  // ── Availability & verification hours ───────────────────────────────────────
+  const [hoursOpen, setHoursOpen] = useState(false)
+  const [hoursSaving, setHoursSaving] = useState(false)
+  const [activeHoursOn, setActiveHoursOn] = useState(true)
+  const [platformTz, setPlatformTz] = useState('Asia/Karachi')
+  const [mvOffEnabled, setMvOffEnabled] = useState(false)
+  const [mvOffStart, setMvOffStart] = useState('02:00')
+  const [mvOffEnd, setMvOffEnd] = useState('09:00')
+  const [mvOffMessage, setMvOffMessage] = useState('')
+  const [l2Enabled, setL2Enabled] = useState(false)
+  const [l2Pct, setL2Pct] = useState('10')
+
   // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
   const [promoFlag, setPromoFlag] = useState(false)
   const [referralFlag, setReferralFlag] = useState(false)
@@ -410,6 +427,14 @@ export default function ConfigPage() {
       setBondEnabled(m['maker_bond_enabled'] === 'true')
       setBondRatioPct(m['maker_bond_ratio_pct'] ?? '10')
       setBondMinUsdt(m['maker_bond_min_usdt'] ?? '0')
+      setActiveHoursOn(m['active_hours_enabled'] !== 'false') // default ON
+      setPlatformTz(m['platform_timezone'] || 'Asia/Karachi')
+      setMvOffEnabled(m['manual_verify_offline_enabled'] === 'true')
+      setMvOffStart(m['manual_verify_offline_start'] || '02:00')
+      setMvOffEnd(m['manual_verify_offline_end'] || '09:00')
+      setMvOffMessage(m['manual_verify_offline_message'] ?? '')
+      setL2Enabled(m['gas_referral_l2_enabled'] === 'true')
+      setL2Pct(m['gas_referral_l2_pct'] ?? '10')
       setPromoFlag(m['gas_promo_enabled'] === 'true')
       setReferralFlag(m['gas_referral_enabled'] === 'true')
       setAffiliateFlag(m['gas_affiliate_enabled'] === 'true')
@@ -587,6 +612,24 @@ export default function ConfigPage() {
       showToast(ncEnabled ? 'Non-custodial mode is ON.' : 'Non-custodial mode is OFF.')
     } catch { showToast('Failed to save non-custodial settings.', false) }
     finally { setNcSaving(false) }
+  }
+
+  async function saveHours() {
+    setHoursSaving(true)
+    try {
+      await saveKeys([
+        { key: 'active_hours_enabled', value: activeHoursOn ? 'true' : 'false' },
+        { key: 'platform_timezone', value: platformTz.trim() || 'Asia/Karachi' },
+        { key: 'manual_verify_offline_enabled', value: mvOffEnabled ? 'true' : 'false' },
+        { key: 'manual_verify_offline_start', value: mvOffStart },
+        { key: 'manual_verify_offline_end', value: mvOffEnd },
+        { key: 'manual_verify_offline_message', value: mvOffMessage.trim() },
+        { key: 'gas_referral_l2_enabled', value: l2Enabled ? 'true' : 'false' },
+        { key: 'gas_referral_l2_pct', value: String(Math.min(Math.max(parseFloat(l2Pct) || 0, 0), 100)) },
+      ])
+      showToast('Hours & level-2 settings saved. Takes effect within ~1 minute.')
+    } catch { showToast('Failed to save hours settings.', false) }
+    finally { setHoursSaving(false) }
   }
 
   async function saveMarketing() {
@@ -796,6 +839,67 @@ export default function ConfigPage() {
 
           <div className="flex justify-end">
             <Button size="sm" loading={ncSaving} onClick={saveNonCustodial}>Save Non-Custodial Settings</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Availability & verification hours ═════════════════════════════════ */}
+      <Accordion
+        title="Hours & Level-2 Affiliates"
+        subtitle="Trader active hours, your manual-verification (sleeping) hours, and the second affiliate level"
+        open={hoursOpen}
+        onToggle={() => setHoursOpen((v) => !v)}
+        badge={mvOffEnabled ? <Badge variant="success" size="sm">Offline window ON</Badge> : <Badge variant="outline" size="sm">Offline window OFF</Badge>}
+      >
+        <div className="p-5 space-y-4">
+          <Field label="Platform timezone" hint="Pick from every timezone. All hours below, and any user without their own timezone, use this.">
+            <TimezoneSelect value={platformTz} onChange={setPlatformTz} />
+          </Field>
+
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={activeHoursOn} onChange={(e) => setActiveHoursOn(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Trader active hours <span className="font-mono text-xs text-text-muted">active_hours_enabled</span></p>
+              <p className="text-xs text-text-muted mt-0.5">Lets each trade creator / affiliate set their own hours in Settings → Profile. Outside them their ads stay visible as &ldquo;Offline, back at …&rdquo; and new trades are blocked. Turning this OFF ignores everyone&apos;s hours.</p>
+            </div>
+          </label>
+
+          <div className="border-t border-border pt-3 space-y-3">
+            <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+              <input type="checkbox" checked={mvOffEnabled} onChange={(e) => setMvOffEnabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">Manual verification offline window <span className="font-mono text-xs text-text-muted">manual_verify_offline_enabled</span></p>
+                <p className="text-xs text-text-muted mt-0.5">During these hours PKR and exchange payment screens warn users that proofs won&apos;t be checked until you are back, and recommend paying by blockchain (auto-verified). Users can still submit — nothing is blocked.</p>
+              </div>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Offline from" hint="Platform timezone">
+                <input className={inputCls} type="time" value={mvOffStart} onChange={(e) => setMvOffStart(e.target.value)} />
+              </Field>
+              <Field label="Back online at" hint="Platform timezone">
+                <input className={inputCls} type="time" value={mvOffEnd} onChange={(e) => setMvOffEnd(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Custom message (optional)" hint="Leave blank for the default text">
+              <input className={inputCls} maxLength={300} value={mvOffMessage} onChange={(e) => setMvOffMessage(e.target.value)} placeholder="Manual verification is offline until 9 AM…" />
+            </Field>
+          </div>
+
+          <div className="border-t border-border pt-3 space-y-3">
+            <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+              <input type="checkbox" checked={l2Enabled} onChange={(e) => setL2Enabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">Two-level affiliate commission <span className="font-mono text-xs text-text-muted">gas_referral_l2_enabled</span></p>
+                <p className="text-xs text-text-muted mt-0.5">The person who referred a referrer also earns a share of the same order&apos;s margin. Level 1 + level 2 are capped at the margin the platform actually kept, so it can never pay out more than it earned. Needs Referrals ON.</p>
+              </div>
+            </label>
+            <Field label="Level-2 commission (%)" hint="% of the order's gross margin paid to the level-2 referrer (level 1 keeps its own link percentage)">
+              <input className={inputCls} type="number" min="0" max="100" step="0.1" value={l2Pct} onChange={(e) => setL2Pct(e.target.value)} placeholder="10" />
+            </Field>
+          </div>
+
+          <div className="flex justify-end">
+            <Button size="sm" loading={hoursSaving} onClick={saveHours}>Save Hours &amp; Level-2</Button>
           </div>
         </div>
       </Accordion>

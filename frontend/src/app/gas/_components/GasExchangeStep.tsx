@@ -7,6 +7,7 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader } from './GasPrimitives'
 import { GasPromoField, GasPromoApplied, GasAffiliateApplied } from './GasPromo'
+import { ManualVerifyNotice } from './ManualVerifyNotice'
 
 /**
  * Exchange transfer. Two stages on one screen:
@@ -92,6 +93,8 @@ export function GasExchangeStep() {
   return (
     <div className="p-5 space-y-4">
       <CardHeader title="Exchange transfer" sub={`Order #${order.orderRef}`} />
+
+      <ManualVerifyNotice />
 
       <GasAffiliateApplied />
       <GasPromoApplied />
