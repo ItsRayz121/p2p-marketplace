@@ -138,7 +138,7 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
   // ── Cancellation ─────────────────────────────────────────────────────────────
   const [cancelling, setCancelling]       = useState(false)
   const [cancelError, setCancelError]     = useState('')
-  const [cancelPreview, setCancelPreview] = useState<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null } | null>(null)
+  const [cancelPreview, setCancelPreview] = useState<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null; warning?: string } | null>(null)
   const [cancelResult, setCancelResult]   = useState<{ cooldownLabel: string | null } | null>(null)
   const [requestingRefund, setRequestingRefund] = useState(false)
   const [refundReqError, setRefundReqError]     = useState('')

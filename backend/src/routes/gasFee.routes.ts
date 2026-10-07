@@ -46,6 +46,7 @@ import {
 } from '../lib/gas/gas.freeCode'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { releaseShareReward, releaseStaleShareRewards } from '../lib/gas/gas.share'
+import { getAffiliateDashboard, recordReferralClick } from '../lib/gas/gas.affiliateDashboard'
 import { resolveLoyaltyDiscount } from '../lib/gas/gas.loyalty'
 import { acceptsProof, manualPaymentWindowMs, manualReviewWindowMs } from '../lib/gas/gas.manualWindow'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
@@ -2195,6 +2196,22 @@ export async function gasFeeRoutes(app: FastifyInstance) {
   app.get('/gas-fee/affiliate/me', { preHandler: [authenticate] }, async (req, reply) => {
     const data = await getAffiliateOverview(req.user!.id)
     return reply.send({ success: true, data })
+  })
+
+  // GET /gas-fee/affiliate/dashboard — real-time affiliate dashboard (tier, link stats, referrals, feed).
+  app.get('/gas-fee/affiliate/dashboard', { preHandler: [authenticate] }, async (req, reply) => {
+    return reply.send({ success: true, data: await getAffiliateDashboard(req.user!.id) })
+  })
+
+  // POST /gas-fee/referral/click — public landing-page visit counter for a referral link.
+  // Deduped per visitor (IP + code) for an hour so refreshes can't inflate the number.
+  app.post('/gas-fee/referral/click', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const parsed = z.object({ code: z.string().trim().min(2).max(40) }).safeParse(req.body)
+    if (!parsed.success) return reply.send({ success: true, data: { counted: false } })
+    const code = parsed.data.code.toUpperCase()
+    const fresh = await redis.set(`refclick:${req.ip ?? 'unknown'}:${code}`, '1', 'EX', 3600, 'NX')
+    const counted = fresh === 'OK' ? await recordReferralClick(code) : false
+    return reply.send({ success: true, data: { counted } })
   })
 
   // GET /gas-fee/affiliate/quote — buyer's auto-discount preview for the checkout

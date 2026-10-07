@@ -101,6 +101,8 @@ export interface ShareTextInput {
   paidWith: 'PKR' | 'USDT'
   link: string
   handle?: string | null
+  /** Friend discount % shown in the post (the referral program's standard). */
+  discountPct?: number
 }
 
 export function buildShareText(i: ShareTextInput): string {
@@ -122,11 +124,12 @@ export function buildShareText(i: ShareTextInput): string {
     `Simple and fast, and you can pay with PKR or USDT, whether it sits on an exchange or in a wallet.`,
     `Saved me from being stuck with tokens I couldn't move. Paying in PKR or USDT, from an exchange or wallet, is easy.`,
   ]
+  const d = i.discountPct ?? 10
   const closers = [
-    `Here's where I got it:`,
-    `If you need the same:`,
-    `Link if it helps someone:`,
-    `In case it's useful:`,
+    `Use my link to get ${d}% off on every fee:`,
+    `Save ${d}% on every fee with my link:`,
+    `My link gets you ${d}% off every fee:`,
+    `Here is my link, ${d}% off on every fee:`,
   ]
   const tag = i.handle ? ` @${i.handle.replace(/^@/, '')}` : ''
   return `${pick(openers)} ${pick(middles)}\n\n${pick(closers)} ${i.link}${tag}`
@@ -185,17 +188,20 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
   const symbol = tokenCfg?.symbol ?? NATIVE_SYMBOL[order.chain] ?? String(order.chain)
   const chainName = tokenCfg?.chain.name ?? CHAIN_LABEL[order.chain] ?? String(order.chain)
 
-  let link = `${env.FRONTEND_URL}/gas`
-  if (await isFlagEnabled(FLAGS.GAS_REFERRAL)) {
-    try { link = `${env.FRONTEND_URL}/r/${(await getOrCreateOwnCode(userId)).code}` } catch { /* fall back to /gas */ }
-  }
+  // The post links to our public share page: X unfurls it into a large card with the branded
+  // image, and the page carries the user's referral link. Falls back to /gas when referrals are off.
+  const referralsOn = await isFlagEnabled(FLAGS.GAS_REFERRAL)
+  // Make sure the user has a referral code so the share page can carry their link.
+  if (referralsOn) await getOrCreateOwnCode(userId).catch(() => { /* non-fatal */ })
+  const link = referralsOn ? `${env.FRONTEND_URL}/s/${order.orderRef}` : `${env.FRONTEND_URL}/gas`
+  const discountPct = await getNumberConfig('gas_referral_user_discount_pct', 10)
   const handle = await getStringConfig(SHARE_HANDLE_KEY)
   const text = buildShareText({
     seed: `${order.orderRef}:${variant}`,
     amount: trimAmount(Number(order.gasAmountNative)),
     symbol, chainName,
     paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT',
-    link, handle,
+    link, handle, discountPct,
   })
   return {
     eligible: true,
@@ -205,6 +211,38 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
     text,
     tweetIntentUrl: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
     reward: rewardView,
+  }
+}
+
+/**
+ * Public, non-identifying facts for the share page / preview image of a DELIVERED order:
+ * amount, coin, chain, how it was paid and the owner's referral code. Never exposes the
+ * address, user or tracking details.
+ */
+export interface PublicShareData {
+  amount: string
+  symbol: string
+  chainName: string
+  paidWith: 'PKR' | 'USDT'
+  refCode: string | null
+  discountPct: number
+}
+
+export async function getPublicShareData(orderRef: string): Promise<PublicShareData | null> {
+  const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
+  if (!order || order.status !== 'delivered' || order.isFreeGrant || !order.userId) return null
+  if (!(await isFlagEnabled(FLAGS.GAS_REFERRAL))) return null
+  const tokenCfg = order.gasTokenConfigId
+    ? await db.gasTokenConfig.findUnique({ where: { id: order.gasTokenConfigId }, include: { chain: { select: { name: true } } } })
+    : null
+  const code = await db.gasReferralCode.findFirst({ where: { ownerId: order.userId, deletedAt: null, isActive: true }, orderBy: { createdAt: 'asc' }, select: { code: true } })
+  return {
+    amount: trimAmount(Number(order.gasAmountNative)),
+    symbol: tokenCfg?.symbol ?? NATIVE_SYMBOL[order.chain] ?? String(order.chain),
+    chainName: tokenCfg?.chain.name ?? CHAIN_LABEL[order.chain] ?? String(order.chain),
+    paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT',
+    refCode: code?.code ?? null,
+    discountPct: await getNumberConfig('gas_referral_user_discount_pct', 10),
   }
 }
 

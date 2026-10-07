@@ -5,9 +5,10 @@
  * has been claimed. To stop abuse (repeatedly creating + cancelling orders) an
  * escalating cooldown applies, counted over a rolling 7-day window:
  *
- *   cancels 1–2  → free, no penalty
- *   cancel  3    → 6-hour cooldown before a new gas order may be placed
- *   cancel  4+   → 48-hour cooldown
+ *   cancels 1–2  → free, no penalty (the user is warned before each)
+ *   cancel  3    → 30-minute pause before a new gas order may be placed
+ *   cancel  4    → 1-hour pause
+ *   cancel  5+   → 3-hour pause
  *
  * Identity is the userId when authenticated, otherwise the client IP for guests.
  * The active cooldown is cached in Redis for fast order-creation checks, and is
@@ -23,8 +24,9 @@ import { AppError } from '../errors'
 const WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 // Cancellations up to this count incur no penalty.
 const FREE_CANCELS = 2
-const TIER3_COOLDOWN_MS = 6 * 60 * 60 * 1000   // 3rd cancel  → 6 hours
-const TIER4_COOLDOWN_MS = 48 * 60 * 60 * 1000  // 4th+ cancel → 48 hours
+const TIER3_COOLDOWN_MS = 30 * 60 * 1000       // 3rd cancel  → 30 minutes
+const TIER4_COOLDOWN_MS = 60 * 60 * 1000       // 4th cancel  → 1 hour
+const TIER5_COOLDOWN_MS = 3 * 60 * 60 * 1000   // 5th+ cancel → 3 hours
 
 export interface CancelIdentity {
   identity: string
@@ -45,11 +47,16 @@ export function gasCancelIdentity(
 function cooldownMsForCount(countIncludingThis: number): number {
   if (countIncludingThis <= FREE_CANCELS) return 0
   if (countIncludingThis === FREE_CANCELS + 1) return TIER3_COOLDOWN_MS
-  return TIER4_COOLDOWN_MS
+  if (countIncludingThis === FREE_CANCELS + 2) return TIER4_COOLDOWN_MS
+  return TIER5_COOLDOWN_MS
 }
 
 /** Human-friendly duration for user-facing messages ("6 hours", "2 days"). */
 export function humanizeDuration(ms: number): string {
+  if (ms < 60 * 60 * 1000) {
+    const mins = Math.max(1, Math.round(ms / 60000))
+    return `${mins} minute${mins > 1 ? 's' : ''}`
+  }
   const hours = Math.round(ms / (60 * 60 * 1000))
   if (hours >= 24 && hours % 24 === 0) {
     const days = hours / 24
@@ -72,6 +79,19 @@ export interface CancelPreview {
   thisCancelNumber: number
   cooldownMs: number
   cooldownLabel: string | null
+  /** Plain-language heads-up for the confirm dialog (free cancels warn about the next step). */
+  warning: string
+}
+
+function cancelWarning(thisNum: number): string {
+  const next = humanizeDuration(TIER3_COOLDOWN_MS)
+  if (thisNum < FREE_CANCELS) {
+    return `Cancelling is free. You can cancel ${FREE_CANCELS - thisNum} more order${FREE_CANCELS - thisNum === 1 ? '' : 's'} without any wait. After that, new gas orders pause for ${next}.`
+  }
+  if (thisNum === FREE_CANCELS) {
+    return `This is your last free cancellation. Cancelling another order within 7 days pauses new gas orders for ${next}.`
+  }
+  return `Cancelling will pause new gas orders for ${humanizeDuration(cooldownMsForCount(thisNum))}.`
 }
 
 /** What would happen if the caller cancelled right now (for the confirm dialog). */
@@ -84,6 +104,7 @@ export async function previewCancelPenalty(ident: CancelIdentity): Promise<Cance
     thisCancelNumber: thisNum,
     cooldownMs: ms,
     cooldownLabel: ms > 0 ? humanizeDuration(ms) : null,
+    warning: cancelWarning(thisNum),
   }
 }
 

@@ -2122,7 +2122,7 @@ export const gasApi = {
     apiRequest<{ status: string; message: string }>(`/gas-fee/orders/${orderRef}/verify-payment`, { method: 'POST', body: JSON.stringify({ txHash }) }),
 
   getCancelPreview: (orderRef: string, trackingToken?: string) =>
-    apiRequest<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null }>(
+    apiRequest<{ cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null; warning?: string }>(
       `/gas-fee/orders/${orderRef}/cancel-preview${trackingToken ? `?token=${encodeURIComponent(trackingToken)}` : ''}`),
 
   cancelOrder: (orderRef: string, trackingToken?: string) =>
@@ -3039,6 +3039,7 @@ export const adminApi = {
       socials: Record<string, string> | null; applicantNote: string | null; rejectionReason: string | null
       maxMarginPct: number; minUserDiscountPct: number; maxLinks: number; linkCount: number
       reviewedAt: string | null; createdAt: string
+      stats: { clicks: number; referred: number; orders: number; earnedUsdt: number; availableUsdt: number; tierName: string; tierPct: number }
     }>>('/admin/gas/affiliates'),
   reviewGasAffiliate: (userId: string, data: { decision: 'approve' | 'reject'; maxMarginPct?: number; minUserDiscountPct?: number; maxLinks?: number; rejectionReason?: string | null }) =>
     apiRequest<{ status: string }>(`/admin/gas/affiliates/${userId}/review`, { method: 'POST', body: JSON.stringify(data) }),
@@ -3752,4 +3753,47 @@ export interface PointsShopView {
 export const pointsShopApi = {
   get: () => apiRequest<PointsShopView>('/points/shop'),
   buy: (itemKey: string) => apiRequest<{ perkId: string; balance: number }>(`/points/shop/${encodeURIComponent(itemKey)}/buy`, { method: 'POST' }),
+}
+
+// ─── Affiliate dashboard (real-time referral tracking) ────────────────────────
+
+export interface AffiliateTierDef { key: string; name: string; minOrders: number; pct: number }
+
+export interface AffiliateDashboardData {
+  isAffiliate: boolean
+  affiliateStatus: string
+  tier: {
+    orders: number
+    tier: AffiliateTierDef
+    next: AffiliateTierDef | null
+    ordersToNext: number | null
+    progressPct: number
+    tiers: AffiliateTierDef[]
+  }
+  totals: { clicks: number; signups: number; activeReferrals: number; orders: number; conversionPct: number; level2Earned: number }
+  earnings: {
+    referralPct: number | null
+    totalAccruedUsdt: number
+    availableUsdt: number
+    withdrawableUsdt: number
+    withdrawnUsdt: number
+    level2Enabled?: boolean
+    level2Pct?: number | null
+  }
+  links: Array<{
+    id: string; code: string; label: string | null; isActive: boolean; isPrimary: boolean
+    clicks: number; lastClickAt: string | null; signups: number; orders: number; earnedUsdt: number
+  }>
+  referrals: Array<{
+    referredId: string; username: string; joinedAt: string; linkCode: string; linkLabel: string | null
+    orders: number; marginUsdt: number; earnedUsdt: number; lastOrderAt: string | null
+  }>
+  feed: Array<{ id: string; at: string; level: number; amountUsdt: number; pct: number; username: string | null; status: string }>
+  generatedAt: string
+}
+
+export const affiliateDashboardApi = {
+  get: () => apiRequest<AffiliateDashboardData>('/gas-fee/affiliate/dashboard'),
+  trackClick: (code: string) =>
+    apiRequest<{ counted: boolean }>('/gas-fee/referral/click', { method: 'POST', body: JSON.stringify({ code }) }),
 }

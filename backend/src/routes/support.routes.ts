@@ -84,6 +84,8 @@ function serializeMessage(
     kind: string
     metadata: unknown
     createdAt: Date
+    deliveredAt?: Date | null
+    readAt?: Date | null
   },
   // Admins/dispute resolution always see the original content of a deleted
   // message (with a `deletedAt` marker). Regular users get it redacted to a
@@ -101,6 +103,8 @@ function serializeMessage(
     kind: redacted ? 'text' : m.kind,
     metadata: redacted ? null : (m.metadata ?? null),
     createdAt: m.createdAt,
+    deliveredAt: m.deliveredAt ?? null,
+    readAt: m.readAt ?? null,
   }
 }
 
@@ -137,6 +141,14 @@ export async function supportRoutes(app: FastifyInstance) {
     if (!conversation) {
       return reply.send({ success: true, data: { conversation: null, messages: [] } })
     }
+
+    // The user's client now has the support team's messages → mark them delivered (2 grey ticks).
+    const nowTs = new Date()
+    await db.supportMessage.updateMany({
+      where: { conversationId: conversation.id, sender: 'admin', deliveredAt: null },
+      data: { deliveredAt: nowTs },
+    })
+    for (const m of conversation.messages) if (m.sender === 'admin' && !m.deliveredAt) m.deliveredAt = nowTs
 
     return reply.send({
       success: true,
@@ -255,6 +267,10 @@ export async function supportRoutes(app: FastifyInstance) {
       where: { userId, unreadByUser: true },
       data: { unreadByUser: false },
     })
+    // Seen: blue ticks on the support team's side.
+    const readTs = new Date()
+    const convIds = (await db.supportConversation.findMany({ where: { userId }, select: { id: true } })).map((c) => c.id)
+    await db.supportMessage.updateMany({ where: { conversationId: { in: convIds }, sender: 'admin', readAt: null }, data: { readAt: readTs, deliveredAt: readTs } })
     return reply.send({ success: true })
   })
 
@@ -591,6 +607,12 @@ export async function supportRoutes(app: FastifyInstance) {
         },
       })
 
+      // The support inbox has loaded these conversations → the users' messages are delivered.
+      await db.supportMessage.updateMany({
+        where: { conversationId: { in: conversations.map((c) => c.id) }, sender: 'user', deliveredAt: null },
+        data: { deliveredAt: new Date() },
+      })
+
       return reply.send({
         success: true,
         data: conversations.map((c) => ({
@@ -629,6 +651,10 @@ export async function supportRoutes(app: FastifyInstance) {
       if (conversation.unreadByAdmin) {
         await db.supportConversation.update({ where: { id }, data: { unreadByAdmin: false } })
       }
+      // Seen: blue ticks on the user's side.
+      const seenTs = new Date()
+      await db.supportMessage.updateMany({ where: { conversationId: id, sender: 'user', readAt: null }, data: { readAt: seenTs, deliveredAt: seenTs } })
+      for (const m of conversation.messages) if (m.sender === 'user' && !m.readAt) { m.readAt = seenTs; m.deliveredAt = m.deliveredAt ?? seenTs }
 
       return reply.send({
         success: true,

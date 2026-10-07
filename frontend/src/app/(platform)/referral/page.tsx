@@ -8,9 +8,10 @@ import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { ReferralLinks } from '@/components/referral/ReferralLinks'
 import { ReferralEarnings, ReferralEarningsSummary } from '@/components/referral/ReferralEarnings'
+import { AffiliateDashboard } from '@/components/referral/AffiliateDashboard'
 import { CommunityGiveaways } from '@/components/referral/CommunityGiveaways'
 import { SocialProfilesManager } from '@/components/referral/SocialProfilesManager'
-import { ChevronDown, Users, Send, Globe, HelpCircle, Gift } from 'lucide-react'
+import { ChevronDown, HelpCircle, Gift } from 'lucide-react'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -21,42 +22,19 @@ interface ReferralStats {
   pendingEarnings: string
 }
 
-interface Referral {
-  id: string
-  username: string
-  joinedAt: string
-  status: string
-  source?: 'telegram' | 'web'
-}
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const days = Math.floor(diff / 86_400_000)
-  if (days < 1) return 'today'
-  if (days < 7) return `${days}d ago`
-  return new Date(dateStr).toLocaleDateString()
-}
-
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 function ReferralPageInner() {
   const params = useSearchParams()
   const [stats, setStats] = useState<ReferralStats | null>(null)
-  const [referrals, setReferrals] = useState<Referral[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [showReferrals, setShowReferrals] = useState(false)
   const [showHowItWorks, setShowHowItWorks] = useState(false)
   const [showRewards, setShowRewards] = useState(false)
 
   const fetchData = useCallback(async () => {
     try {
-      const [statsRes, refRes] = await Promise.all([
-        referralApi.getStats(),
-        referralApi.getReferrals({ limit: 50 }),
-      ])
-      setStats(statsRes)
-      setReferrals(refRes.referrals as Referral[])
+      setStats(await referralApi.getStats())
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load referral data')
     } finally {
@@ -122,7 +100,10 @@ function ReferralPageInner() {
         <ReferralLinks code={stats.referralCode} />
       </div>
 
-      {/* Live earnings + custom links + affiliate (single source of truth) */}
+      {/* Real-time dashboard: tier, link stats, every referral, live earnings feed */}
+      <AffiliateDashboard />
+
+      {/* Manage custom links, become an affiliate, withdraw */}
       <ReferralEarnings />
 
       {/* Community / influencer giveaways (affiliates + staff) */}
@@ -131,57 +112,7 @@ function ReferralPageInner() {
       {/* Public social profiles — opt-in display on the trader's profile */}
       <SocialProfilesManager />
 
-      {/* Referred Users — collapsible */}
-      <section className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
-        <button
-          onClick={() => setShowReferrals((v) => !v)}
-          className="w-full flex items-center justify-between px-4 py-3 hover:bg-surface-alt transition-colors"
-          aria-expanded={showReferrals}
-        >
-          <span className="flex items-center gap-2 text-base font-semibold text-text-primary">
-            <Users size={16} className="text-text-muted" />
-            Your Referrals
-            <Badge variant="default" size="sm">{referrals.length}</Badge>
-          </span>
-          <ChevronDown size={18} className={`text-text-muted transition-transform ${showReferrals ? 'rotate-180' : ''}`} />
-        </button>
-        {showReferrals && (
-          referrals.length === 0 ? (
-            <div className="py-10 text-center border-t border-border">
-              <p className="text-text-muted text-sm">No referrals yet.</p>
-              <p className="text-xs text-text-muted mt-1">Share your code and start earning!</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-border border-t border-border">
-              {referrals.map((ref) => (
-                <div key={ref.id} className="flex items-center justify-between px-4 py-3">
-                  <div className="flex items-center gap-2 min-w-0">
-                    {/* Signup source — small icon shows where they joined from */}
-                    {ref.source === 'telegram' ? (
-                      <span title="Joined via Telegram" className="flex-shrink-0 text-[#229ED9]">
-                        <Send size={14} />
-                      </span>
-                    ) : (
-                      <span title="Joined via website" className="flex-shrink-0 text-text-muted">
-                        <Globe size={14} />
-                      </span>
-                    )}
-                    <div className="min-w-0">
-                      <p className="text-sm font-medium text-text-primary truncate">{ref.username}</p>
-                      <p className="text-xs text-text-muted">Joined {timeAgo(ref.joinedAt)}</p>
-                    </div>
-                  </div>
-                  <Badge variant={ref.status === 'active' ? 'success' : 'default'} size="sm">
-                    {ref.status === 'active' ? 'Active' : 'Not traded yet'}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-          )
-        )}
-      </section>
-
-      {/* Referral rewards — the live 5% / 5% program explainer (collapsible, moved to the bottom) */}
+      {/* Referral rewards — the live 10% / 10% program explainer (collapsible, moved to the bottom) */}
       <section className="bg-surface border border-border rounded-xl overflow-hidden">
         <button
           onClick={() => setShowRewards((v) => !v)}
@@ -198,14 +129,14 @@ function ReferralPageInner() {
         {showRewards && (
           <div className="px-5 pb-5 pt-1 space-y-3 border-t border-border">
             <p className="text-sm text-text-muted">
-              Earn <strong>5% of the platform gas fee</strong> from everyone you refer — paid into your USDT balance —
-              and your friend gets <strong>5% off</strong> their gas fee automatically. Paid from our fee, never extra cost to anyone.
+              Earn <strong>10% of the platform gas fee</strong> from everyone you refer — paid into your USDT balance —
+              and your friend gets <strong>10% off</strong> their gas fee automatically. Paid from our fee, never extra cost to anyone.
             </p>
             <div className="text-xs text-text-muted space-y-1 bg-surface-alt rounded-lg border border-border px-3 py-2">
               <p>• Share your code or link above — or create named custom links.</p>
               <p>• Earnings accrue automatically once your referrals&apos; gas orders are delivered.</p>
               <p>• Withdraw to your USDT balance after a short fraud-hold window.</p>
-              <p>• Want a bigger cut? Apply to become an affiliate for up to 20–30%.</p>
+              <p>• Want a bigger cut? Apply to become an affiliate: start at 30% and climb to 60% as your referrals order more.</p>
             </div>
           </div>
         )}
@@ -229,7 +160,7 @@ function ReferralPageInner() {
             {[
               { step: '1', text: 'Share your referral code or link with friends' },
               { step: '2', text: 'Friend signs up and tops up gas using your code' },
-              { step: '3', text: 'You earn 5% of the gas fee in USDT; they get 5% off automatically' },
+              { step: '3', text: 'You earn 10% of the gas fee in USDT; they get 10% off automatically' },
               { step: '4', text: 'Withdraw your earnings to your USDT balance any time after the hold window' },
             ].map((item) => (
               <div key={item.step} className="flex items-start gap-3">

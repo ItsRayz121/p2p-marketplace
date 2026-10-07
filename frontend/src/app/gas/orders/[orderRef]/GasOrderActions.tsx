@@ -54,7 +54,7 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
   const [submitting, setSubmitting] = useState(false)
 
   // ── Cancel state ──
-  const [preview, setPreview] = useState<{ cancellable: boolean; cooldownLabel: string | null } | null>(null)
+  const [preview, setPreview] = useState<{ cancellable: boolean; cooldownLabel: string | null; warning?: string } | null>(null)
   const [cancelling, setCancelling] = useState(false)
 
   const loadPreview = useCallback(async () => {
@@ -89,8 +89,8 @@ export function GasOrderActions({ order, trackingToken, onChanged }: {
   }
 
   const handleCancel = async () => {
-    const msg = preview?.cooldownLabel
-      ? `Cancel this order? Cancelling again soon will trigger a ${preview.cooldownLabel} cooldown before you can order again.`
+    const msg = preview?.warning
+      ? `Cancel this order? ${preview.warning}`
       : 'Cancel this order? You can create a new one afterwards.'
     if (!window.confirm(msg)) return
     setCancelling(true)

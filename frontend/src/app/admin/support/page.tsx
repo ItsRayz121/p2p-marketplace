@@ -5,7 +5,8 @@ import { fmtDateTime, fmtTime } from '@/lib/fmt'
 import { useAuth } from '@/hooks/useAuth'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
-import { buildChatTimeline } from '@/lib/supportChat'
+import { buildChatTimeline, receiptStatus } from '@/lib/supportChat'
+import { MessageTicks } from '@/components/chat/MessageTicks'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { usePolling } from '@/hooks/usePolling'
 import { useSSE } from '@/hooks/useSSE'
@@ -38,6 +39,8 @@ interface ThreadMessage {
   kind?: 'text' | 'refund_request' | 'refund_response'
   metadata?: Record<string, unknown> | null
   createdAt: string
+  deliveredAt?: string | null
+  readAt?: string | null
 }
 
 interface UserSearchResult {
@@ -360,7 +363,10 @@ export default function AdminSupportPage() {
                           Refund address requested{(item.msg.metadata?.orderRef as string | undefined) ? ` · ${item.msg.metadata!.orderRef as string}` : ''}
                         </p>
                         <span className="whitespace-pre-wrap break-words">{item.msg.body}</span>
-                        <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
+                        <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-70">
+                          {fmtTime(item.msg.createdAt)}
+                          {item.msg.sender === 'admin' && !item.msg.deletedAt && <MessageTicks status={receiptStatus(item.msg)} pending={item.msg.id.startsWith('tmp-')} />}
+                        </span>
                       </div>
                     </div>
                   ) : item.msg.kind === 'refund_response' ? (

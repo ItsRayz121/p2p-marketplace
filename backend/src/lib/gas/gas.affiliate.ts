@@ -22,6 +22,7 @@ import { db } from '../prisma'
 import { AppError } from '../errors'
 import { logger } from '../logger'
 import { notify } from '../notify'
+import { loadTiers, tierFor } from './gas.affiliateTier'
 import { createAdminNotif } from '../../services/adminNotification.service'
 import { isFlagEnabled, FLAGS, getNumberConfig } from '../../services/platformFlags.service'
 import {
@@ -40,7 +41,7 @@ const DEFAULT_CUSTOM_LINK_MAX = 2
 const COOLDOWN_DAYS_CONFIG    = 'gas_custom_link_cooldown_days'
 const DEFAULT_COOLDOWN_DAYS   = 30
 const COMMISSION_PCT_CONFIG   = 'gas_referral_default_pct'
-const DEFAULT_COMMISSION_PCT  = 5
+const DEFAULT_COMMISSION_PCT  = 10
 const DAY_MS = 86_400_000
 
 export type AffiliateStatus = 'none' | 'pending' | 'approved' | 'rejected'
@@ -360,12 +361,15 @@ export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number)
   // A soft-deleted link keeps paying the owner commission but stops discounting the buyer.
   if (!binding || !binding.code.isActive || binding.code.deletedAt) return null
   if (binding.referrerId === buyerUserId) return null
-  if (!(binding.code.userDiscountPct > 0)) return null
 
   // Open to everyone: any active link with a buyer discount applies it (standard 5% for
   // self-service links, higher for approved affiliates). The discount % was validated
   // against the owner's caps at write time, and is floored at the margin below.
-  const discountPct = binding.code.userDiscountPct
+  // Everyone gets at least the standard friend discount (10% by default), even on older links
+  // created before it was raised; approved affiliates may have configured a higher one.
+  const standardDiscount = await getNumberConfig(USER_DISCOUNT_CONFIG, DEFAULT_USER_DISCOUNT)
+  const discountPct = Math.max(binding.code.userDiscountPct, standardDiscount)
+  if (!(discountPct > 0)) return null
   const raw = round2((discountPct / 100) * marginUsdt)
   const discountUsdt = Math.max(0, Math.min(raw, round2(marginUsdt)))
   if (discountUsdt <= 0) return null
@@ -391,6 +395,8 @@ export interface AdminAffiliateRow {
   linkCount: number
   reviewedAt: Date | null
   createdAt: Date
+  /** Live track record: clicks, sign-ups, orders and commission, plus current tier. */
+  stats: { clicks: number; referred: number; orders: number; earnedUsdt: number; availableUsdt: number; tierName: string; tierPct: number }
 }
 
 /** List all affiliate profiles (applications + approved), newest first. */
@@ -401,7 +407,28 @@ export async function adminListAffiliates(): Promise<AdminAffiliateRow[]> {
   })
   const counts = await db.gasReferralCode.groupBy({ by: ['ownerId'], _count: { _all: true } })
   const countMap = new Map(counts.map((c) => [c.ownerId, c._count._all]))
-  return rows.map((r) => ({
+  const ids = rows.map((r) => r.userId)
+  const [clickRows, referredRows, accrualRows, tiers] = await Promise.all([
+    db.gasReferralCode.groupBy({ by: ['ownerId'], where: { ownerId: { in: ids } }, _sum: { clickCount: true } }),
+    db.gasReferral.groupBy({ by: ['referrerId'], where: { referrerId: { in: ids } }, _count: { _all: true } }),
+    db.gasReferralAccrual.groupBy({ by: ['referrerId', 'level', 'status'], where: { referrerId: { in: ids } }, _count: { _all: true }, _sum: { amountUsdt: true } }),
+    loadTiers(),
+  ])
+  const clicksBy = new Map(clickRows.map((c) => [c.ownerId, c._sum.clickCount ?? 0]))
+  const referredBy = new Map(referredRows.map((c) => [c.referrerId, c._count._all]))
+  const statBy = new Map<string, { orders: number; earned: number; available: number }>()
+  for (const a of accrualRows) {
+    const st = statBy.get(a.referrerId) ?? { orders: 0, earned: 0, available: 0 }
+    if (a.level === 1) st.orders += a._count._all
+    st.earned += Number(a._sum.amountUsdt ?? 0)
+    if (a.status === 'available') st.available += Number(a._sum.amountUsdt ?? 0)
+    statBy.set(a.referrerId, st)
+  }
+  return rows.map((r) => {
+    const st = statBy.get(r.userId) ?? { orders: 0, earned: 0, available: 0 }
+    const { tier } = tierFor(st.orders, tiers)
+    return {
+    stats: { clicks: clicksBy.get(r.userId) ?? 0, referred: referredBy.get(r.userId) ?? 0, orders: st.orders, earnedUsdt: Math.round(st.earned * 100) / 100, availableUsdt: Math.round(st.available * 100) / 100, tierName: tier.name, tierPct: tier.pct },
     userId: r.userId,
     email: r.user?.email ?? null,
     username: r.user?.username ?? null,
@@ -416,7 +443,8 @@ export async function adminListAffiliates(): Promise<AdminAffiliateRow[]> {
     linkCount: countMap.get(r.userId) ?? 0,
     reviewedAt: r.reviewedAt,
     createdAt: r.createdAt,
-  }))
+    }
+  })
 }
 
 /**

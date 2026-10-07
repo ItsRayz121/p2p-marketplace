@@ -1296,6 +1296,10 @@ model SupportMessage {
   sender         String              // "user" | "admin" | "system"
   senderId       String?
   body           String
+  // Receipts (WhatsApp-style ticks), set by the RECIPIENT's own requests: deliveredAt when
+  // their client first fetches it, readAt when they open the conversation.
+  deliveredAt    DateTime?
+  readAt         DateTime?
   // Optional image attachment (Cloudinary URL). A message may carry an image with
   // an empty body (image-only) or alongside a caption.
   attachmentUrl  String?
@@ -2091,6 +2095,9 @@ model GasReferralCode {
   // discount — but it STILL resolves to its owner (old shared links never break) and
   // any existing bindings keep accruing commission. The base (oldest) code is never deleted.
   deletedAt       DateTime?
+  // Link-click tracking for the affiliate dashboard (public /r/CODE landing page).
+  clickCount      Int       @default(0)
+  lastClickAt     DateTime?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
 

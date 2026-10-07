@@ -219,18 +219,11 @@ export function GasCryptoQRStep() {
                     Only cancel if you haven&apos;t sent the payment. If you already paid, keep this open so we can detect it.
                   </p>
                   {cancelPreview && (
-                    cancelPreview.cooldownLabel ? (
-                      <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
-                        <p className="text-xs text-amber-700 dark:text-amber-300">
-                          You&apos;ve cancelled {cancelPreview.priorCancels} recent gas order{cancelPreview.priorCancels === 1 ? '' : 's'}. Cancelling again will
-                          {' '}<strong>block new gas orders for {cancelPreview.cooldownLabel}</strong>.
-                        </p>
-                      </div>
-                    ) : (
-                      <div className="bg-surface border border-border rounded-lg px-3 py-2">
-                        <p className="text-xs text-text-muted">No penalty for this cancellation.</p>
-                      </div>
-                    )
+                    <div className={cancelPreview.cooldownLabel ? 'bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2' : 'bg-surface border border-border rounded-lg px-3 py-2'}>
+                      <p className={cancelPreview.cooldownLabel ? 'text-xs text-amber-700 dark:text-amber-300' : 'text-xs text-text-muted'}>
+                        {cancelPreview.warning ?? (cancelPreview.cooldownLabel ? `Cancelling will pause new gas orders for ${cancelPreview.cooldownLabel}.` : 'No penalty for this cancellation.')}
+                      </p>
+                    </div>
                   )}
                   {cancelError && <p className="text-xs text-red-600 dark:text-red-400">{cancelError}</p>}
                   <div className="flex gap-2">

@@ -557,13 +557,13 @@ function CustomLinkShare({ code }: { code: string }) {
       {telegram && (
         <div className="flex items-center gap-2 rounded-lg border border-[#229ED9]/30 bg-surface px-2.5 py-1.5">
           <Send size={14} className="text-[#229ED9] shrink-0" aria-hidden />
-          <span className="truncate text-[11px] text-text-muted flex-1" title={telegram}>{telegram}</span>
+          <a href={telegram} target="_blank" rel="noopener noreferrer" className="truncate text-[11px] text-[#229ED9] hover:underline flex-1" title={telegram}>{telegram}</a>
           <CopyButton text={telegram} />
         </div>
       )}
       <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-2.5 py-1.5">
         <Globe size={14} className="text-primary shrink-0" aria-hidden />
-        <span className="truncate text-[11px] text-text-muted flex-1" title={web}>{web}</span>
+        <a href={web} target="_blank" rel="noopener noreferrer" className="truncate text-[11px] text-primary hover:underline flex-1" title={web}>{web}</a>
         <CopyButton text={web} />
       </div>
     </div>

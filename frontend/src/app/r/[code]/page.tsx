@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
+import { affiliateDashboardApi } from '@/lib/api'
 
 export default function ReferralLandingPage() {
   const { code } = useParams<{ code: string }>()
@@ -12,6 +13,8 @@ export default function ReferralLandingPage() {
   useEffect(() => {
     if (code && typeof window !== 'undefined') {
       localStorage.setItem('referralCode', code)
+      // Count the visit for the affiliate's dashboard (server dedupes per visitor).
+      void affiliateDashboardApi.trackClick(code).catch(() => { /* never block the landing page */ })
     }
   }, [code])
 

@@ -3,10 +3,11 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, ImagePlus, X, Trash2 } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { useSSE } from '@/hooks/useSSE'
-import { supportChatApi, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
+import { supportChatApi, SUPPORT_RATINGS, buildChatTimeline, receiptStatus, type SupportMessage } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { RefundAddressForm } from '@/components/support/RefundAddressForm'
 import { ReviewNudgeCard } from '@/components/support/ReviewNudgeCard'
+import { MessageTicks } from '@/components/chat/MessageTicks'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
@@ -258,7 +259,10 @@ export function SupportChatThread() {
                     </a>
                   )}
                   {item.msg.body && <span className="whitespace-pre-wrap">{item.msg.body}</span>}
-                  <span className="block text-[10px] opacity-60 mt-0.5">{fmtTime(item.msg.createdAt)}</span>
+                  <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-70">
+                    {fmtTime(item.msg.createdAt)}
+                    {item.msg.sender === 'user' && !item.msg.deletedAt && <MessageTicks status={receiptStatus(item.msg)} pending={item.msg.id.startsWith('tmp-')} />}
+                  </span>
                 </div>
               </div>
             ),

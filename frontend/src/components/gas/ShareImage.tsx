@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Download, Share2 } from 'lucide-react'
+import { Download, Share2, Copy } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/lib/toast'
 
@@ -60,7 +60,7 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxWidth: number
  * and the site address. Rendered client-side on a canvas so it can be downloaded (or shared
  * through the phone share sheet) and attached to the X post.
  */
-export function ShareImage({ card, variant }: { card: ShareImageCard; variant: number }) {
+export function ShareImage({ card, variant, text }: { card: ShareImageCard; variant: number; text?: string }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [ready, setReady] = useState(false)
   const [canShareFiles, setCanShareFiles] = useState(false)
@@ -149,12 +149,24 @@ export function ShareImage({ card, variant }: { card: ShareImageCard; variant: n
     setTimeout(() => URL.revokeObjectURL(url), 2000)
   }
 
+  async function copyImage() {
+    const blob = await toBlob()
+    if (!blob) return toast.error('Could not create the image')
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })])
+      toast.success('Image copied. Paste it into your post.')
+    } catch {
+      toast.error('Copy is not supported here. Use Download image instead.')
+    }
+  }
+
   async function share() {
     const blob = await toBlob()
     if (!blob) return toast.error('Could not create the image')
     const file = new File([blob], 'rupchain-gas-order.png', { type: 'image/png' })
     try {
-      await navigator.share({ files: [file] })
+      // Text + image together: the phone share sheet hands both to the X app.
+      await navigator.share({ files: [file], ...(text ? { text } : {}) })
     } catch { /* user cancelled */ }
   }
 
@@ -169,9 +181,10 @@ export function ShareImage({ card, variant }: { card: ShareImageCard; variant: n
       />
       <div className="flex flex-wrap gap-2">
         <Button size="sm" variant="secondary" onClick={download}><Download className="h-3.5 w-3.5" /> Download image</Button>
-        {canShareFiles && <Button size="sm" variant="secondary" onClick={share}><Share2 className="h-3.5 w-3.5" /> Share image</Button>}
+        <Button size="sm" variant="secondary" onClick={copyImage}><Copy className="h-3.5 w-3.5" /> Copy image</Button>
+        {canShareFiles && <Button size="sm" variant="secondary" onClick={share}><Share2 className="h-3.5 w-3.5" /> Share text + image</Button>}
       </div>
-      <p className="text-[11px] text-text-muted">Attach this image to your post for more attention.</p>
+      <p className="text-[11px] text-text-muted">The post link shows this image automatically on X. On a phone, the Share text + image button sends both together.</p>
     </div>
   )
 }

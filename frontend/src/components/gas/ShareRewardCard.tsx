@@ -95,7 +95,7 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
 
       {!reward && (
         <>
-          {info.card && <ShareImage card={info.card} variant={variant} />}
+          {info.card && <ShareImage card={info.card} variant={variant} {...(info.text ? { text: info.text } : {})} />}
           <div className="rounded-lg border border-border bg-surface p-3 text-sm text-text-secondary whitespace-pre-wrap break-words">{info.text}</div>
           <div className="flex flex-wrap gap-2">
             <a

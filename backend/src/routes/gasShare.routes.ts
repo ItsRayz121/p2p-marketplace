@@ -4,7 +4,7 @@ import { authenticate, requireRole } from '../middleware/auth.middleware'
 import { AppError } from '../lib/errors'
 import { recordAuditLog } from '../lib/audit'
 import {
-  approveShareReward, getActiveShareReward, getShareInfo, listShareRewards,
+  approveShareReward, getActiveShareReward, getPublicShareData, getShareInfo, listShareRewards,
   rejectShareReward, submitSharePost,
 } from '../lib/gas/gas.share'
 
@@ -12,6 +12,14 @@ const adminOrSuper = requireRole('admin', 'super_admin')
 
 /** Share & Earn: post about a delivered gas order on X → random margin discount on the next order. */
 export async function gasShareRoutes(app: FastifyInstance) {
+  // GET /gas-fee/share/public/:orderRef — non-identifying facts for the public share page + preview image.
+  app.get('/gas-fee/share/public/:orderRef', { config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { orderRef } = req.params as { orderRef: string }
+    const data = await getPublicShareData(orderRef.slice(0, 40))
+    if (!data) return reply.code(404).send({ success: false, error: { code: 'NOT_FOUND', message: 'Not found' } })
+    return reply.send({ success: true, data })
+  })
+
   // GET /gas-fee/share/active — does the user hold an approved discount? (checkout banner)
   app.get('/gas-fee/share/active', { preHandler: [authenticate] }, async (req, reply) => {
     return reply.send({ success: true, data: await getActiveShareReward(req.user!.id) })

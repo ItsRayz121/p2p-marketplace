@@ -18,15 +18,16 @@ import { AppError } from '../errors'
 import { logger } from '../logger'
 import { isFlagEnabled, FLAGS, getNumberConfig, getBoolConfig } from '../../services/platformFlags.service'
 import { notify } from '../notify'
+import { effectiveCommissionPct } from './gas.affiliateTier'
 import type { GasFeeOrder } from '@prisma/client'
 
 const DEFAULT_PCT_CONFIG = 'gas_referral_default_pct'
-const DEFAULT_PCT = 5
+const DEFAULT_PCT = 10
 // Standard buyer discount given to a friend who joins via ANY referral link (base or
 // custom). Self-service custom links use this for both the discount and the commission;
 // the base code is healed up to this discount so the primary link also rewards the friend.
 export const USER_DISCOUNT_CONFIG = 'gas_referral_user_discount_pct'
-export const DEFAULT_USER_DISCOUNT = 5
+export const DEFAULT_USER_DISCOUNT = 10
 // Anti-abuse + withdrawal config (PlatformConfig keys; safe defaults).
 const MIN_ORDER_CONFIG       = 'gas_referral_min_order_usd'        // skip accrual below this order value
 const MAX_PER_REFERRED_CONFIG = 'gas_referral_max_per_referred_usdt' // lifetime cap per referred user (0 = none)
@@ -37,7 +38,7 @@ export const L2_ENABLED_CONFIG = 'gas_referral_l2_enabled'
 export const L2_PCT_CONFIG     = 'gas_referral_l2_pct'
 const DEFAULT_L2_PCT           = 10
 const DEFAULT_HOLD_HOURS     = 24
-const DEFAULT_MIN_WITHDRAW   = 5
+const DEFAULT_MIN_WITHDRAW   = 1
 
 function round2(n: number): number { return Math.round(n * 100) / 100 }
 export function normalizeReferralCode(code: string): string { return code.trim().toUpperCase() }
@@ -259,7 +260,8 @@ export async function accrueReferralForDelivery(order: GasFeeOrder): Promise<voi
   const realizedMargin = round2(Math.max(0, grossMargin - discount))
   if (realizedMargin <= 0) return
 
-  const pct = binding.code.referralPct
+  // Approved affiliates are paid their tier % (30% → 60% as referred orders grow); others the link's %.
+  const pct = await effectiveCommissionPct(binding.referrerId, binding.code.referralPct)
   // Commission is referralPct of the GROSS margin, but never more than the margin the
   // platform actually KEPT after all discounts (realizedMargin). This guarantees the
   // platform can never pay out more margin than it earned — affiliate commission and the

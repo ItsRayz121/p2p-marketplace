@@ -1,0 +1,2 @@
+ALTER TABLE "GasReferralCode" ADD COLUMN "clickCount" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "GasReferralCode" ADD COLUMN "lastClickAt" TIMESTAMP(3);

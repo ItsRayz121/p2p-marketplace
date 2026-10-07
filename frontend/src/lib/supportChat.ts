@@ -28,6 +28,16 @@ export interface SupportMessage {
   kind?: 'text' | 'refund_request' | 'refund_response' | 'review_nudge' | 'review_ack'
   metadata?: Record<string, unknown> | null
   createdAt: string
+  /** Receipts, set by the recipient's own requests (delivered on first fetch, read on open). */
+  deliveredAt?: string | null
+  readAt?: string | null
+}
+
+/** Tick state for a message the viewer sent: sent (1 tick), delivered (2 grey), read (2 blue). */
+export function receiptStatus(m: Pick<SupportMessage, 'deliveredAt' | 'readAt'>): 'sent' | 'delivered' | 'read' {
+  if (m.readAt) return 'read'
+  if (m.deliveredAt) return 'delivered'
+  return 'sent'
 }
 
 // USDT rails a user may pick when submitting a refund address.

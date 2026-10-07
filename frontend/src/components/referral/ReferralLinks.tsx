@@ -66,9 +66,9 @@ function LinkCard({
             </span>
           )}
         </div>
-        <p className="truncate text-xs text-text-muted" title={url}>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="block truncate text-xs text-primary hover:underline" title={url}>
           {url}
-        </p>
+        </a>
         <p className="mt-0.5 text-[11px] text-text-muted">{hint}</p>
       </div>
       {/* ≥44px touch target via min sizing on the copy control wrapper */}

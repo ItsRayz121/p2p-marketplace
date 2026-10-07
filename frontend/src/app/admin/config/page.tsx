@@ -1012,7 +1012,7 @@ export default function ConfigPage() {
             <input type="checkbox" checked={affiliateFlag} onChange={(e) => setAffiliateFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
             <div>
               <p className="text-sm font-medium text-text-primary">Custom links &amp; affiliate <span className="font-mono text-xs text-text-muted">gas_affiliate_enabled</span></p>
-              <p className="text-xs text-text-muted mt-0.5">Adds self-service custom referral links (standard 5% friend discount + 5% commission), the buyer auto-discount at gas checkout, and the &ldquo;Become an affiliate&rdquo; application. Needs Referrals ON too.</p>
+              <p className="text-xs text-text-muted mt-0.5">Adds self-service custom referral links (standard 10% friend discount + 10% commission), the buyer auto-discount at gas checkout, and the &ldquo;Become an affiliate&rdquo; application. Needs Referrals ON too.</p>
             </div>
           </label>
 

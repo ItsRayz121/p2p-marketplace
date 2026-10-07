@@ -136,7 +136,7 @@ export interface GasFlowCtx {
   // Cancellation
   cancelling: boolean
   cancelError: string
-  cancelPreview: { cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null } | null
+  cancelPreview: { cancellable: boolean; priorCancels: number; thisCancelNumber: number; cooldownMs: number; cooldownLabel: string | null; warning?: string } | null
   cancelResult: { cooldownLabel: string | null } | null
   loadCancelPreview: () => Promise<void>
   handleCancelOrder: () => Promise<void>

@@ -23,6 +23,22 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' 
   return 'default'
 }
 
+/** Social handle/URL as a clickable chip: full URLs open as-is; bare handles link to the platform when we know how. */
+function SocialChip({ platform, value }: { platform: string; value: string }) {
+  const v = value.trim()
+  const handle = v.replace(/^@/, '')
+  const bases: Record<string, string> = {
+    twitter: 'https://x.com/', x: 'https://x.com/', instagram: 'https://instagram.com/', tiktok: 'https://tiktok.com/@',
+    youtube: 'https://youtube.com/@', telegram: 'https://t.me/', facebook: 'https://facebook.com/',
+  }
+  const href = /^https?:\/\//i.test(v) ? v : bases[platform.toLowerCase()] ? bases[platform.toLowerCase()] + handle : null
+  return href ? (
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-primary hover:underline"><span className="text-text-muted">{platform}:</span> {v}</a>
+  ) : (
+    <span className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-text-secondary"><span className="text-text-muted">{platform}:</span> {v}</span>
+  )
+}
+
 export default function GasAffiliatesAdminPage() {
   const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.user?.role === 'super_admin')
@@ -179,7 +195,7 @@ export default function GasAffiliatesAdminPage() {
                     {a.socials && Object.keys(a.socials).length > 0 && (
                       <div className="mt-1.5 flex flex-wrap gap-2">
                         {Object.entries(a.socials).map(([k, v]) => (
-                          <span key={k} className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-text-secondary"><span className="text-text-muted">{k}:</span> {v}</span>
+                          <SocialChip key={k} platform={k} value={v} />
                         ))}
                       </div>
                     )}
@@ -196,6 +212,21 @@ export default function GasAffiliatesAdminPage() {
                       )}
                     </div>
                   )}
+                </div>
+                <div className="mt-3 grid grid-cols-3 sm:grid-cols-6 gap-2 text-center">
+                  {([
+                    ['Tier', `${a.stats.tierName} · ${a.stats.tierPct}%`],
+                    ['Clicks', a.stats.clicks.toLocaleString()],
+                    ['Sign-ups', String(a.stats.referred)],
+                    ['Orders', String(a.stats.orders)],
+                    ['Earned', `${a.stats.earnedUsdt.toFixed(2)}`],
+                    ['Unpaid', `${a.stats.availableUsdt.toFixed(2)}`],
+                  ] as const).map(([k, v]) => (
+                    <div key={k} className="rounded-lg bg-surface-alt px-1 py-1.5">
+                      <p className="text-[10px] text-text-muted">{k}</p>
+                      <p className="text-xs font-bold tabular-nums text-text-primary">{v}</p>
+                    </div>
+                  ))}
                 </div>
                 {a.status === 'approved' && !(edit?.userId === a.userId && edit.mode === 'caps') && (
                   <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
