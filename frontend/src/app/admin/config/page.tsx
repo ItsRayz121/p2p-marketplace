@@ -63,7 +63,7 @@ const STRUCTURED_KEYS = new Set([
   'active_hours_enabled', 'platform_timezone',
   'manual_verify_offline_enabled', 'manual_verify_offline_start', 'manual_verify_offline_end', 'manual_verify_offline_message',
   'gas_referral_l2_enabled', 'gas_referral_l2_pct',
-  'share_reward_enabled', 'share_reward_test_emails', 'share_reward_min_pct', 'share_reward_max_pct', 'share_reward_x_handle', 'airdrop_test_emails',
+  'share_reward_enabled', 'share_reward_test_emails', 'share_reward_min_pct', 'share_reward_max_pct', 'share_reward_x_handle', 'share_reward_window_hours', 'airdrop_test_emails',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -295,6 +295,7 @@ export default function ConfigPage() {
   const [shareMin, setShareMin] = useState('20')
   const [shareMax, setShareMax] = useState('50')
   const [shareHandle, setShareHandle] = useState('')
+  const [shareWindow, setShareWindow] = useState('24')
   const [airdropEmails, setAirdropEmails] = useState('fazalelahi057@gmail.com')
 
   // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
@@ -447,6 +448,7 @@ export default function ConfigPage() {
       setShareMin(m['share_reward_min_pct'] ?? '20')
       setShareMax(m['share_reward_max_pct'] ?? '50')
       setShareHandle(m['share_reward_x_handle'] ?? '')
+      setShareWindow(m['share_reward_window_hours'] ?? '24')
       setAirdropEmails(m['airdrop_test_emails'] || 'fazalelahi057@gmail.com')
       setPromoFlag(m['gas_promo_enabled'] === 'true')
       setReferralFlag(m['gas_referral_enabled'] === 'true')
@@ -643,6 +645,7 @@ export default function ConfigPage() {
         { key: 'share_reward_test_emails', value: shareEmails.trim() || 'fazalelahi057@gmail.com' },
         { key: 'share_reward_min_pct', value: String(Math.min(Math.max(parseFloat(shareMin) || 20, 1), 100)) },
         { key: 'share_reward_max_pct', value: String(Math.min(Math.max(parseFloat(shareMax) || 50, 1), 100)) },
+        { key: 'share_reward_window_hours', value: String(Math.min(Math.max(parseFloat(shareWindow) || 24, 1), 720)) },
         { key: 'share_reward_x_handle', value: shareHandle.trim().replace(/^@/, '') },
         { key: 'airdrop_test_emails', value: airdropEmails.trim() || 'fazalelahi057@gmail.com' },
       ])
@@ -936,6 +939,9 @@ export default function ConfigPage() {
                 <input className={inputCls} type="number" min="1" max="100" value={shareMax} onChange={(e) => setShareMax(e.target.value)} />
               </Field>
             </div>
+            <Field label="Offer window (hours)" hint="How long after delivery the share offer (and its countdown) stays open">
+              <input className={inputCls} type="number" min="1" max="720" value={shareWindow} onChange={(e) => setShareWindow(e.target.value)} />
+            </Field>
             <Field label="Our X handle (optional)" hint="Tagged at the end of the suggested post, without the @">
               <input className={inputCls} value={shareHandle} onChange={(e) => setShareHandle(e.target.value)} placeholder="RupChain" />
             </Field>

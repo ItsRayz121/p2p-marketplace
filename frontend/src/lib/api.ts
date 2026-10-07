@@ -3692,6 +3692,8 @@ export const availabilityApi = {
 // ─── Share & Earn (X post → random fee discount on the next gas order) ────────
 
 export interface ShareInfo {
+  deadlineAt?: string
+  rewardPct?: number
   eligible: boolean
   reason?: string
   text?: string
@@ -3723,4 +3725,30 @@ export const shareApi = {
     apiRequest<{ discountPct: number }>(`/admin/gas/share-rewards/${id}/approve`, { method: 'POST' }),
   adminReject: (id: string, reason: string) =>
     apiRequest<{ status: string }>(`/admin/gas/share-rewards/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+}
+
+// ─── Points shop ──────────────────────────────────────────────────────────────
+
+export interface PointsShopItem {
+  key: string
+  kind: 'gas_discount' | 'badge'
+  label: string
+  description: string
+  cost: number
+  discountPct?: number
+  durationDays?: number
+  emoji?: string
+  owned: boolean
+  activeUntil: string | null
+}
+
+export interface PointsShopView {
+  balance: number
+  items: PointsShopItem[]
+  perks: Array<{ id: string; itemKey: string; kind: string; label: string; discountPct: number | null; expiresAt: string | null; createdAt: string }>
+}
+
+export const pointsShopApi = {
+  get: () => apiRequest<PointsShopView>('/points/shop'),
+  buy: (itemKey: string) => apiRequest<{ perkId: string; balance: number }>(`/points/shop/${encodeURIComponent(itemKey)}/buy`, { method: 'POST' }),
 }

@@ -117,7 +117,7 @@ export default function Navbar() {
     const items = DROPDOWN_ITEMS.map((it) => ({ ...it, badge: 0 }))
     if (airdropOn) {
       const ri = items.findIndex((it) => it.href === '/referral')
-      const airdrop = { href: '/airdrop', Icon: Sparkles, label: 'Airdrop & Tasks', iconCls: 'text-fuchsia-500', bgCls: 'bg-fuchsia-500/10', group: 'social', badge: 0 }
+      const airdrop = { href: '/points', Icon: Sparkles, label: 'Points & Tasks', iconCls: 'text-fuchsia-500', bgCls: 'bg-fuchsia-500/10', group: 'social', badge: 0 }
       items.splice(ri >= 0 ? ri + 1 : items.length, 0, airdrop)
     }
     if (!msgSummary?.enabled) return items

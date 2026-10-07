@@ -46,6 +46,7 @@ import {
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { airdropLevelOrderDiscount } from '../services/airdrop.service'
 import { reserveShareReward, releaseShareReward } from '../lib/gas/gas.share'
+import { perkOrderDiscount } from '../services/pointsShop.service'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -846,7 +847,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
     // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
     const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
+    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
+    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
     const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1433,7 +1436,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
     // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
     const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
+    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
+    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
 
@@ -1606,7 +1611,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
     // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
     const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
+    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
+    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1975,7 +1982,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
     // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
     const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
+    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
+    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
     const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
     // ANY failure after the promo reservation (incl. assignUnique) releases the slot.

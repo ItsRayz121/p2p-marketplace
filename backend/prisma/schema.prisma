@@ -557,6 +557,7 @@ model User {
   gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
   gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
   gasShareRewards        GasShareReward[]
+  pointsPerks            PointsPerk[]
   gasAffiliate           GasAffiliate?           @relation("GasAffiliateUser")
   tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
   tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
@@ -3329,4 +3330,27 @@ model GasShareReward {
 
   @@index([status])
   @@index([userId, status])
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// POINTS SHOP — RupChain Points spent on time-limited gas-fee discounts and badges.
+// Spending writes a negative AirdropLedger row (source 'redeem', metadata.shop) and
+// decrements the account balance in one transaction. A gas_discount perk gives pct% off
+// the platform MARGIN of every gas order while active (never the base cost).
+// ────────────────────────────────────────────────────────────────────────────
+model PointsPerk {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemKey     String
+  kind        String                       // gas_discount | badge
+  label       String
+  discountPct Float?
+  pointsSpent Decimal   @db.Decimal(18, 4)
+  startsAt    DateTime  @default(now())
+  expiresAt   DateTime?                    // null = permanent (badges)
+  createdAt   DateTime  @default(now())
+
+  @@index([userId, kind])
+  @@index([userId, expiresAt])
 }

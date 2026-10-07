@@ -1,11 +1,19 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Copy, Check, RefreshCw, Gift } from 'lucide-react'
+import { Copy, Check, RefreshCw, Gift, Timer } from 'lucide-react'
 import { shareApi } from '@/lib/api'
 import type { ShareInfo } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/lib/toast'
+
+function fmtCountdown(ms: number): string {
+  const t = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(t / 3600)
+  const m = Math.floor((t % 3600) / 60)
+  const sec = t % 60
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+}
 
 /**
  * Share & Earn card shown on a delivered gas order. Gives a ready-made, varied X post,
@@ -18,6 +26,12 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
   const [copied, setCopied] = useState(false)
   const [url, setUrl] = useState('')
   const [busy, setBusy] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
 
   useEffect(() => {
     let live = true
@@ -27,6 +41,9 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
 
   if (!info?.eligible) return null
   const reward = info.reward
+  const msLeft = info.deadlineAt ? new Date(info.deadlineAt).getTime() - now : null
+  const expired = !reward && msLeft !== null && msLeft <= 0
+  if (expired) return null
 
   async function copy() {
     try {
@@ -51,14 +68,29 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
   return (
     <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-left space-y-3">
       <div className="flex items-start gap-2.5">
-        <Gift className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" aria-hidden />
+        <Gift className="mt-0.5 h-6 w-6 flex-shrink-0 text-primary" aria-hidden />
         <div className="min-w-0">
-          <p className="text-sm font-bold text-text-primary">Share your experience, get a fee discount</p>
-          <p className="text-xs text-text-muted mt-0.5">
-            Post about this order on X and send us the link. Once approved you get a random 20–50% discount on the platform fee of your next gas order.
-          </p>
+          {!reward ? (
+            <>
+              <p className="text-base font-black text-text-primary leading-snug">
+                You have a chance to get <span className="text-success">{info.rewardPct}% OFF</span> your next gas order
+              </p>
+              <p className="text-xs text-text-muted mt-1">
+                Post about this order on X, then paste the link to your post below. We review it and the discount is yours.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm font-bold text-text-primary">Share &amp; Earn</p>
+          )}
         </div>
       </div>
+
+      {!reward && msLeft !== null && (
+        <div className="flex items-center justify-between gap-2 rounded-lg bg-warning/10 border border-warning/30 px-3 py-2">
+          <span className="flex items-center gap-1.5 text-xs font-semibold text-warning"><Timer className="h-4 w-4" aria-hidden /> Offer ends in</span>
+          <span className="font-mono text-base font-black tabular-nums text-warning">{fmtCountdown(msLeft)}</span>
+        </div>
+      )}
 
       {!reward && (
         <>

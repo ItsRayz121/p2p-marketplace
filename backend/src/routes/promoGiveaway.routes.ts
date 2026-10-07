@@ -300,6 +300,43 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
 
   // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────
 
+  // GET /promo-giveaways/open — open community tasks for the Points & Tasks page.
+  // Public (optional auth for alreadyEntered). Empty when the feature is off.
+  app.get('/promo-giveaways/open', { preHandler: [optionalAuth] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.PROMO_GIVEAWAY))) return reply.send({ success: true, data: [] })
+    const rows = await db.promoGiveaway.findMany({
+      where: {
+        isActive: true,
+        status: 'open',
+        OR: [{ entryDeadline: null }, { entryDeadline: { gt: new Date() } }],
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 20,
+    })
+    const ids = rows.map((r) => r.id)
+    const [counts, mine] = await Promise.all([
+      ids.length ? db.promoGiveawayEntry.groupBy({ by: ['giveawayId'], where: { giveawayId: { in: ids } }, _count: { _all: true } }) : Promise.resolve([]),
+      req.user && ids.length ? db.promoGiveawayEntry.findMany({ where: { giveawayId: { in: ids }, userId: req.user.id }, select: { giveawayId: true } }) : Promise.resolve([]),
+    ])
+    const countBy = new Map(counts.map((c) => [c.giveawayId, c._count._all]))
+    const enteredSet = new Set(mine.map((m) => m.giveawayId))
+    return reply.send({
+      success: true,
+      data: rows.map((g) => ({
+        code: g.code,
+        title: g.title,
+        description: g.description ? g.description.slice(0, 200) : null,
+        thumbnailUrl: g.thumbnailUrl,
+        tasks: parseTasks(g.tasks).map((t) => ({ id: t.id, label: t.label, required: t.required })),
+        rewardAmount: g.rewardAmount,
+        rewardToken: g.rewardToken,
+        entryDeadline: g.entryDeadline?.toISOString() ?? null,
+        entryCount: countBy.get(g.id) ?? 0,
+        alreadyEntered: enteredSet.has(g.id),
+      })),
+    })
+  })
+
   // GET /promo-giveaways/public/:code — entry page info
   app.get('/promo-giveaways/public/:code', { preHandler: [optionalAuth] }, async (req, reply) => {
     if (!(await isFlagEnabled(FLAGS.PROMO_GIVEAWAY))) throw new AppError('GIVEAWAY_DISABLED', 'Giveaways are not available right now.', 400)

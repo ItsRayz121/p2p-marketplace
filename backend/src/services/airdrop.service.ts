@@ -241,11 +241,11 @@ export interface LevelTier {
 }
 
 export const LEVEL_TIERS: LevelTier[] = [
-  { key: 'diamond',  name: 'Diamond',  min: 300_000, discountPct: 50 },
-  { key: 'platinum', name: 'Platinum', min: 100_000, discountPct: 35 },
-  { key: 'gold',     name: 'Gold',     min: 25_000,  discountPct: 20 },
-  { key: 'silver',   name: 'Silver',   min: 5_000,   discountPct: 10 },
-  { key: 'bronze',   name: 'Bronze',   min: 0,       discountPct: 0 },
+  { key: 'diamond',  name: 'Diamond',  min: 5_000, discountPct: 20 },
+  { key: 'platinum', name: 'Platinum', min: 2_000, discountPct: 15 },
+  { key: 'gold',     name: 'Gold',     min: 500,   discountPct: 10 },
+  { key: 'silver',   name: 'Silver',   min: 100,   discountPct: 5 },
+  { key: 'bronze',   name: 'Bronze',   min: 0,     discountPct: 0 },
 ]
 
 export interface UserLevel {
@@ -259,8 +259,12 @@ export interface UserLevel {
 
 /** Cumulative lifetime points = net total across all of a user's season accounts. */
 async function cumulativePoints(userId: string): Promise<number> {
-  const agg = await db.airdropAccount.aggregate({ where: { userId }, _sum: { totalPoints: true } })
-  return Math.max(0, Number(agg._sum.totalPoints ?? 0))
+  const [agg, spent] = await Promise.all([
+    db.airdropAccount.aggregate({ where: { userId }, _sum: { totalPoints: true } }),
+    db.pointsPerk.aggregate({ where: { userId }, _sum: { pointsSpent: true } }),
+  ])
+  // Lifetime = current balance + points spent in the shop, so buying rewards never drops a level.
+  return Math.max(0, Number(agg._sum.totalPoints ?? 0) + Number(spent._sum.pointsSpent ?? 0))
 }
 
 function tierFor(points: number, cap: number, tiers: LevelTier[]): { tier: LevelTier; next: LevelTier | null } {
@@ -297,8 +301,8 @@ export async function getUserLevel(userId: string): Promise<UserLevel> {
  */
 export async function getAirdropFeeDiscountPct(userId: string | null): Promise<number> {
   if (!userId) return 0
-  if (!(await isFlagEnabled(FLAGS.AIRDROP))) return 0
-  if (!(await isFlagEnabled(FLAGS.AIRDROP_LEVELS))) return 0
+  if (!(await isAirdropEnabled())) return 0
+  if (!(await isFlagEnabled(FLAGS.AIRDROP_LEVELS, true))) return 0
   const { discountPct } = await getUserLevel(userId)
   return discountPct
 }
@@ -322,8 +326,9 @@ export async function airdropLevelOrderDiscount(
   return { discountUsdt: Math.min(raw, Math.round(room * 100) / 100) }
 }
 
+/** RupChain Points are live for everyone by default; set airdrop_enabled=false to switch them off. */
 export function isAirdropEnabled(): Promise<boolean> {
-  return isFlagEnabled(FLAGS.AIRDROP)
+  return isFlagEnabled(FLAGS.AIRDROP, true)
 }
 
 /** Comma-separated emails that see the airdrop before it is live for everyone. */
@@ -792,7 +797,7 @@ export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
     db.user.count(),
     db.airdropLedger.findUnique({ where: { eventKey: `checkin:${userId}:${dayStr}` }, select: { id: true } }),
     getUserLevel(userId),
-    isFlagEnabled(FLAGS.AIRDROP_LEVELS),
+    isFlagEnabled(FLAGS.AIRDROP_LEVELS, true),
   ])
 
   const breakdown = grouped

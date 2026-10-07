@@ -115,7 +115,21 @@ export interface CreatePromoPayload {
   code?: string
 }
 
+export interface OpenCommunityTask {
+  code: string
+  title: string
+  description: string | null
+  thumbnailUrl: string | null
+  tasks: { id: string; label: string; required: boolean }[]
+  rewardAmount: string | null
+  rewardToken: string | null
+  entryDeadline: string | null
+  entryCount: number
+  alreadyEntered: boolean
+}
+
 export const promoGiveawayApi = {
+  listOpen: () => apiRequest<OpenCommunityTask[]>('/promo-giveaways/open'),
   create: (p: CreatePromoPayload) =>
     apiRequest<PromoGiveaway>('/promo-giveaways', { method: 'POST', body: JSON.stringify(p) }),
   listMine: () => apiRequest<PromoGiveaway[]>('/promo-giveaways/mine'),

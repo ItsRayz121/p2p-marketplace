@@ -23,8 +23,8 @@ export const SHARE_TEST_EMAILS_KEY = 'share_reward_test_emails'  // comma list; 
 export const SHARE_MIN_PCT_KEY = 'share_reward_min_pct'          // default 20
 export const SHARE_MAX_PCT_KEY = 'share_reward_max_pct'          // default 50
 export const SHARE_HANDLE_KEY = 'share_reward_x_handle'          // e.g. "RupChain" (no @)
+export const SHARE_WINDOW_HOURS_KEY = 'share_reward_window_hours' // how long after delivery the offer stays open (default 24)
 const DEFAULT_TEST_EMAILS = 'fazalelahi057@gmail.com'
-const SOURCE_ORDER_MAX_AGE_DAYS = 30
 
 function round2(n: number): number { return Math.round(n * 100) / 100 }
 
@@ -55,6 +55,14 @@ export function drawDiscountPct(min: number, max: number, rand: () => number = M
   const hi = Math.min(100, Math.max(min, max))
   const u = rand()
   return Math.round(lo + (hi - lo) * u * u)
+}
+
+/**
+ * The reward for an order is fixed by the order itself (seeded draw), so the % we show
+ * before they post is exactly what approval grants, and refreshing can't re-roll it.
+ */
+export function rewardPctForOrder(orderRef: string, min: number, max: number): number {
+  return drawDiscountPct(min, max, mulberry32(hashSeed(`share-reward:${orderRef}`)))
 }
 
 // ── Tweet URL normalisation ──────────────────────────────────────────────────
@@ -109,11 +117,11 @@ export function buildShareText(i: ShareTextInput): string {
     `Bought ${i.amount} ${i.symbol} to pay ${i.chainName} transaction fees${via}.`,
   ]
   const middles = [
-    `It landed in my wallet within minutes, no exchange account needed.`,
-    `The gas just showed up in my wallet, no waiting around.`,
-    `Handy if you ever hold tokens but can't send them because you have no gas.`,
-    `Simple and fast. Good to know about if you get stuck without gas.`,
-    `Saved me from being stuck with tokens I couldn't move.`,
+    `It landed in my wallet within minutes. You can pay in PKR or USDT, from an exchange or straight from a wallet.`,
+    `The gas just showed up in my wallet, no waiting around. PKR or USDT both work, from an exchange or a wallet.`,
+    `Handy if you ever hold tokens but have no gas to send them. You can pay in PKR or USDT, from an exchange or a wallet.`,
+    `Simple and fast, and you can pay with PKR or USDT, whether it sits on an exchange or in a wallet.`,
+    `Saved me from being stuck with tokens I couldn't move. Paying in PKR or USDT, from an exchange or wallet, is easy.`,
   ]
   const closers = [
     `Here's where I got it:`,
@@ -135,6 +143,10 @@ function trimAmount(n: number): string {
 // ── User-facing: info + submit ───────────────────────────────────────────────
 
 export interface ShareInfo {
+  /** When the offer closes (ISO). Present while the offer is still open. */
+  deadlineAt?: string
+  /** The discount % this order unlocks if the post is approved. */
+  rewardPct?: number
   eligible: boolean
   reason?: string
   text?: string
@@ -158,9 +170,13 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
 
   if (!user || !(await isShareFeatureOn()) || !(await isUserAllowedToShare(user.email))) return { eligible: false, reward: null }
   if (order.status !== 'delivered' || order.isFreeGrant) return { eligible: false, reward: rewardView }
-  if (Date.now() - order.createdAt.getTime() > SOURCE_ORDER_MAX_AGE_DAYS * 86_400_000) {
-    return { eligible: false, reason: 'This order is too old to share.', reward: rewardView }
+  const windowHours = await getNumberConfig(SHARE_WINDOW_HOURS_KEY, 24)
+  const deadline = new Date((order.deliveredAt ?? order.updatedAt).getTime() + windowHours * 3_600_000)
+  if (!reward && Date.now() > deadline.getTime()) {
+    return { eligible: false, reason: 'This offer has expired.', reward: rewardView }
   }
+  const [minPct, maxPct] = await Promise.all([getNumberConfig(SHARE_MIN_PCT_KEY, 20), getNumberConfig(SHARE_MAX_PCT_KEY, 50)])
+  const rewardPct = rewardPctForOrder(order.orderRef, minPct, maxPct)
 
   const tokenCfg = order.gasTokenConfigId
     ? await db.gasTokenConfig.findUnique({ where: { id: order.gasTokenConfigId }, include: { chain: { select: { name: true } } } })
@@ -182,6 +198,8 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
   })
   return {
     eligible: true,
+    deadlineAt: deadline.toISOString(),
+    rewardPct,
     text,
     tweetIntentUrl: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
     reward: rewardView,
@@ -253,7 +271,9 @@ export async function listShareRewards(status?: string) {
 
 export async function approveShareReward(id: string, adminId: string): Promise<{ discountPct: number }> {
   const [min, max] = await Promise.all([getNumberConfig(SHARE_MIN_PCT_KEY, 20), getNumberConfig(SHARE_MAX_PCT_KEY, 50)])
-  const pct = drawDiscountPct(min, max)
+  const pending = await db.gasShareReward.findUnique({ where: { id }, select: { sourceOrderId: true } })
+  const src = pending ? await db.gasFeeOrder.findUnique({ where: { id: pending.sourceOrderId }, select: { orderRef: true } }) : null
+  const pct = src ? rewardPctForOrder(src.orderRef, min, max) : drawDiscountPct(min, max)
   const res = await db.gasShareReward.updateMany({
     where: { id, status: 'submitted' },
     data: { status: 'approved', discountPct: pct, reviewedById: adminId, reviewedAt: new Date() },

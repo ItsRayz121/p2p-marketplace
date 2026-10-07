@@ -25,7 +25,7 @@ export interface SupportMessage {
   // user; 'refund_response' is their submitted answer. 'review_nudge' is a system
   // Trustpilot review ask; 'review_ack' is the user's self-reported response.
   // Plain chat omits kind ('text').
-  kind?: 'text' | 'refund_request' | 'refund_response' | 'review_nudge' | 'review_ack'
+  kind?: 'text' | 'refund_request' | 'refund_response' | 'review_nudge' | 'review_ack' | 'gas_offer'
   metadata?: Record<string, unknown> | null
   createdAt: string
 }

@@ -1,3 +1,4 @@
+import { buyItem, getShop } from '../services/pointsShop.service'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
@@ -23,8 +24,19 @@ export async function airdropRoutes(app: FastifyInstance) {
   // GET /api/v1/airdrop/ledger — the user's recent point-earning history (the
   // "where did my points come from" feed). Empty when the system is off.
   app.get('/airdrop/ledger', { preHandler: [authenticate] }, async (req, reply) => {
-    const entries = await getAirdropLedger(req.user!.id, 50)
+    const entries = await getAirdropLedger(req.user!.id, 10)
     return reply.send({ success: true, data: { entries } })
+  })
+
+  // GET /api/v1/points/shop — catalog (with owned state), the user's balance and active perks.
+  app.get('/points/shop', { preHandler: [authenticate] }, async (req, reply) => {
+    return reply.send({ success: true, data: await getShop(req.user!.id) })
+  })
+
+  // POST /api/v1/points/shop/:itemKey/buy — spend points on a perk.
+  app.post('/points/shop/:itemKey/buy', { preHandler: [authenticate] }, async (req, reply) => {
+    const { itemKey } = req.params as { itemKey: string }
+    return reply.code(201).send({ success: true, data: await buyItem(req.user!.id, itemKey) })
   })
 
   // POST /api/v1/airdrop/checkin — daily check-in: advance the streak (+ small
