@@ -136,6 +136,7 @@ enum TransactionType {
   bond_seized
   bond_received
   airdrop_redeem
+  task_reward
 }
 
 enum ReferralRewardStatus {
@@ -3360,4 +3361,67 @@ model PointsPerk {
 
   @@index([userId, kind])
   @@index([userId, expiresAt])
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// PLATFORM TASKS — admin-defined tasks (e.g. "Follow our official Telegram") that pay
+// RupChain Points or USDT. One claim per user per task (unique), a start/end window, an
+// optional max-claims cap and an optional total USDT budget (both reserved ATOMICALLY at
+// claim time and released on rejection). Verification: telegram_auto (bot checks channel
+// membership), manual_proof (admin approves) or self_claim (points only).
+// USDT payout: "auto" credits the user's internal wallet at completion; "manual" parks the
+// claim in awaiting_payout until an admin pays off-platform and records the tx hash.
+// Completion statuses: pending_review → awaiting_payout → completed, or rejected.
+// ────────────────────────────────────────────────────────────────────────────
+model PlatformTask {
+  id           String    @id @default(cuid())
+  title        String
+  description  String?
+  url          String?                                 // link the user opens (e.g. https://t.me/…)
+  telegramChat String?                                 // @channelusername used by telegram_auto verification
+  verifyMode   String                                  // telegram_auto | manual_proof | self_claim
+  rewardType   String                                  // points | usdt
+  rewardPoints Decimal?  @db.Decimal(18, 4)
+  rewardUsdt   Decimal?  @db.Decimal(18, 8)
+  payoutMode   String    @default("auto")              // usdt only: auto | manual
+  requireKyc   Boolean   @default(false)
+  startsAt     DateTime?
+  endsAt       DateTime?
+  maxClaims    Int?
+  claimedCount Int       @default(0)
+  budgetUsdt   Decimal?  @db.Decimal(18, 8)
+  spentUsdt    Decimal   @default(0) @db.Decimal(18, 8)
+  isActive     Boolean   @default(true)
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  completions  PlatformTaskCompletion[]
+
+  @@index([isActive, endsAt])
+}
+
+model PlatformTaskCompletion {
+  id              String       @id @default(cuid())
+  taskId          String
+  task            PlatformTask @relation(fields: [taskId], references: [id])
+  userId          String
+  status          String                                // pending_review | awaiting_payout | completed | rejected
+  proof           String?
+  rewardType      String                                // snapshot of the task's reward at claim time
+  rewardPoints    Decimal?     @db.Decimal(18, 4)
+  rewardUsdt      Decimal?     @db.Decimal(18, 8)
+  payoutMode      String?
+  payoutNetwork   String?                               // manual USDT: where the user wants it
+  payoutAddress   String?
+  txHash          String?      @unique                  // manual USDT: admin-recorded transfer hash
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([taskId, userId])
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
 }

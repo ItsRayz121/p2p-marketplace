@@ -139,10 +139,10 @@ export function buildChatTimeline<M extends { id: string; createdAt: string; sen
 
 export const supportChatApi = {
   get: () => apiRequest<SupportChatState>('/support/chat'),
-  send: (body: string, attachmentUrl?: string) =>
+  send: (body: string, attachmentUrl?: string, replyToId?: string) =>
     apiRequest<SupportMessage>('/support/chat/messages', {
       method: 'POST',
-      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}) }),
+      body: JSON.stringify({ body, ...(attachmentUrl ? { attachmentUrl } : {}), ...(replyToId ? { replyToId } : {}) }),
     }),
   deleteMessage: (id: string) =>
     apiRequest<unknown>(`/support/chat/messages/${id}/delete`, { method: 'POST' }),

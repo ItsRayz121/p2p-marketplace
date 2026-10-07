@@ -498,6 +498,18 @@ async function writeLedger(
   })
 }
 
+/** Credit points for a completed platform task (source 'social'). Runs inside the caller's
+ *  transaction; `eventKey` (unique) makes a second award for the same claim impossible. */
+export async function awardTaskPointsTx(
+  tx: Tx,
+  a: { userId: string; points: number; eventKey: string; metadata?: Prisma.InputJsonValue },
+): Promise<void> {
+  if (!(await isAirdropAccruing())) throw new AppError('POINTS_OFF', 'Points are not live right now.', 400)
+  const seasonId = await resolveActiveSeasonId(tx)
+  if (!seasonId) throw new AppError('POINTS_OFF', 'No active points season.', 400)
+  await writeLedger(tx, { userId: a.userId, seasonId, source: 'social', points: a.points, eventKey: a.eventKey, ...(a.metadata ? { metadata: a.metadata } : {}) })
+}
+
 /** Wash-trade decay: the Nth trade with the same counterparty this season pays
  *  max(min, 1 − step·N) of full rate. Kills back-and-forth farming between two
  *  accounts while leaving genuine repeat partners mostly intact early on. */

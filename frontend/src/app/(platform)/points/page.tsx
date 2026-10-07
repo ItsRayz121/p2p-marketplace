@@ -4,6 +4,8 @@ import { airdropApi, type AirdropStatus, type AirdropLedgerEntry, type AirdropRe
 import Link from 'next/link'
 import { promoGiveawayApi, type OpenCommunityTask, type MyTaskEntry } from '@/lib/promoGiveaway'
 import { pointsShopApi, type PointsShopView } from '@/lib/api'
+import { platformTaskApi, type UserTasksView, type UserPlatformTask } from '@/lib/platformTasks'
+import { PlatformTaskCard } from '@/components/points/PlatformTaskCard'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { toast } from '@/lib/toast'
@@ -396,21 +398,26 @@ interface TaskRow {
   reward?: string
   action?: { label: string; href?: string; onClick?: () => void; busy?: boolean }
   badge?: { text: string; cls: string }
+  /** Admin-defined platform task — rendered by PlatformTaskCard instead of the generic row. */
+  platform?: UserPlatformTask
 }
 
 function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () => void }) {
   const [open, setOpen] = useState<OpenCommunityTask[] | null>(null)
   const [mine, setMine] = useState<MyTaskEntry[] | null>(null)
+  const [platform, setPlatform] = useState<UserTasksView | null>(null)
   const [bucket, setBucket] = useState<TaskBucket>('available')
   const [checkingIn, setCheckingIn] = useState(false)
 
   const load = useCallback(async () => {
-    const [o, m] = await Promise.all([
+    const [o, m, p] = await Promise.all([
       promoGiveawayApi.listOpen().catch(() => []),
       promoGiveawayApi.myEntries().catch(() => []),
+      platformTaskApi.list().catch(() => null),
     ])
     setOpen(o)
     setMine(m)
+    setPlatform(p)
   }, [])
   useEffect(() => { void load() }, [load])
 
@@ -437,6 +444,16 @@ function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () =>
     reward: '+1 point',
     ...(done ? { badge: { text: 'Done today', cls: 'text-success bg-success/10' } } : { action: { label: 'Check in', onClick: checkin, busy: checkingIn } }),
   })
+
+  for (const pt of platform?.tasks ?? []) {
+    const s = pt.claim?.status
+    rows.push({
+      id: `platform:${pt.id}`,
+      bucket: !s ? 'available' : s === 'pending_review' || s === 'awaiting_payout' ? 'pending' : 'completed',
+      title: pt.title,
+      platform: pt,
+    })
+  }
 
   const joinedCodes = new Set(mine.map((m) => m.code))
   for (const g of open) {
@@ -502,7 +519,15 @@ function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () =>
         <p className="text-sm text-text-muted py-6 text-center">{emptyText[bucket]}</p>
       ) : (
         <div className="space-y-3">
-          {shown.map((t) => (
+          {shown.map((t) => t.platform ? (
+            <PlatformTaskCard
+              key={t.id}
+              task={t.platform}
+              telegramLinked={platform?.telegramLinked ?? false}
+              kycOk={platform?.kycOk ?? false}
+              onDone={() => { void load(); onChange() }}
+            />
+          ) : (
             <div key={t.id} className="rounded-xl border border-border p-4 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">

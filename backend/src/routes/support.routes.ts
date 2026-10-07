@@ -36,10 +36,45 @@ const sendSchema = z
   .object({
     body: z.string().trim().max(MAX_BODY).optional().default(''),
     attachmentUrl: z.string().url().max(500).optional(),
+    // Quote-reply: id of an earlier message in the SAME conversation.
+    replyToId: z.string().min(1).max(64).optional(),
   })
   .refine((v) => v.body.trim().length > 0 || !!v.attachmentUrl, {
     message: 'Message is empty',
   })
+
+// Strip the lightweight formatting markers (**bold**, __underline__, _italic_, ~strike~)
+// so a reply preview reads as plain text.
+function stripFormatting(s: string): string {
+  return s
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/(?<![A-Za-z0-9])_([^_\n]+)_(?![A-Za-z0-9])/g, '$1')
+    .replace(/(?<![A-Za-z0-9])~([^~\n]+)~(?![A-Za-z0-9])/g, '$1')
+}
+
+// Resolve a quote-reply into message metadata. The target must belong to the same
+// conversation (never trust a client-supplied id across threads). Stores only a short
+// plain-text snapshot; clients prefer the live message so a later delete is respected.
+async function buildReplyMetadata(
+  conversationId: string,
+  replyToId?: string,
+): Promise<{ replyTo: { id: string; sender: string; preview: string; hasImage: boolean } } | null> {
+  if (!replyToId) return null
+  const target = await db.supportMessage.findFirst({
+    where: { id: replyToId, conversationId },
+    select: { id: true, sender: true, body: true, attachmentUrl: true, deletedAt: true, kind: true },
+  })
+  if (!target || target.deletedAt || target.kind !== 'text') return null
+  return {
+    replyTo: {
+      id: target.id,
+      sender: target.sender,
+      preview: stripFormatting(target.body).slice(0, 120),
+      hasImage: !!target.attachmentUrl,
+    },
+  }
+}
 
 const rateSchema = z.object({
   score: z.number().int().min(1).max(3), // 1=bad 2=okay 3=great
@@ -167,7 +202,7 @@ export async function supportRoutes(app: FastifyInstance) {
   // POST /support/chat/messages — send a message (creates conversation on first send)
   app.post('/support/chat/messages', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
-    const { body, attachmentUrl } = sendSchema.parse(req.body)
+    const { body, attachmentUrl, replyToId } = sendSchema.parse(req.body)
 
     // One conversation box per user, forever: reuse the user's most recent
     // conversation regardless of status. A closed conversation is reopened below
@@ -184,8 +219,13 @@ export async function supportRoutes(app: FastifyInstance) {
     // second admin notification for rapid follow-up messages.
     const alreadyUnread = conversation.unreadByAdmin
 
+    const replyMeta = await buildReplyMetadata(conversation.id, replyToId)
     const message = await db.supportMessage.create({
-      data: { conversationId: conversation.id, sender: 'user', senderId: userId, body, ...(attachmentUrl ? { attachmentUrl } : {}) },
+      data: {
+        conversationId: conversation.id, sender: 'user', senderId: userId, body,
+        ...(attachmentUrl ? { attachmentUrl } : {}),
+        ...(replyMeta ? { metadata: replyMeta } : {}),
+      },
     })
     await db.supportConversation.update({
       where: { id: conversation.id },
@@ -681,13 +721,18 @@ export async function supportRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
     async (req, reply) => {
       const { id } = req.params as { id: string }
-      const { body, attachmentUrl } = sendSchema.parse(req.body)
+      const { body, attachmentUrl, replyToId } = sendSchema.parse(req.body)
 
       const conversation = await db.supportConversation.findUnique({ where: { id } })
       if (!conversation) throw Errors.NOT_FOUND('Conversation')
 
+      const replyMeta = await buildReplyMetadata(id, replyToId)
       const message = await db.supportMessage.create({
-        data: { conversationId: id, sender: 'admin', senderId: req.user!.id, body, ...(attachmentUrl ? { attachmentUrl } : {}) },
+        data: {
+          conversationId: id, sender: 'admin', senderId: req.user!.id, body,
+          ...(attachmentUrl ? { attachmentUrl } : {}),
+          ...(replyMeta ? { metadata: replyMeta } : {}),
+        },
       })
       await db.supportConversation.update({
         where: { id },

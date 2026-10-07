@@ -13,6 +13,8 @@ import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
+import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
+import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
 
 // Messages can only be retracted within this window of sending (mirrors backend).
 const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
@@ -40,6 +42,8 @@ export function SupportChatThread() {
   const [rating, setRating] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const draftRef = useRef<HTMLTextAreaElement>(null)
+  const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
 
   // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
   // sent with the next message (optionally with a caption).
@@ -116,25 +120,29 @@ export function SupportChatThread() {
     const image = pendingImage
     // A message needs text OR an image.
     if ((!text && !image) || sending) return
+    const quoting = replyTo
     setSending(true)
     setDraft('')
     setPendingImage(null)
+    setReplyTo(null)
     // Optimistic append
     const optimistic: SupportMessage = {
       id: `tmp-${Date.now()}`,
       sender: 'user',
       body: text,
       attachmentUrl: image,
+      metadata: quoting ? { replyTo: { id: quoting.id, sender: quoting.sender, preview: quoting.preview, hasImage: quoting.hasImage } } : null,
       createdAt: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, optimistic])
     setStatus('open') // sending reopens the conversation — drop any stale closed marker
     try {
-      await supportChatApi.send(text, image ?? undefined)
+      await supportChatApi.send(text, image ?? undefined, quoting?.id)
       await refresh()
     } catch {
       setDraft(text)
       setPendingImage(image)
+      setReplyTo(quoting)
       setMessages((prev) => prev.filter((m) => m.id !== optimistic.id))
     } finally {
       setSending(false)
@@ -245,6 +253,19 @@ export function SupportChatThread() {
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
                 )}
+                {!item.msg.id.startsWith('tmp-') && (!item.msg.kind || item.msg.kind === 'text') && (
+                  <MessageActions
+                    body={item.msg.body}
+                    className={item.msg.sender === 'user' ? 'order-1' : 'order-3'}
+                    onReply={() => setReplyTo({
+                      id: item.msg.id,
+                      sender: item.msg.sender,
+                      name: item.msg.sender === 'user' ? 'You' : 'Support',
+                      preview: item.msg.body.slice(0, 120),
+                      hasImage: !!item.msg.attachmentUrl,
+                    })}
+                  />
+                )}
                 <div
                   className={`order-2 max-w-[80%] px-3 py-2 rounded-2xl text-sm break-words ${
                     item.msg.sender === 'user'
@@ -252,13 +273,19 @@ export function SupportChatThread() {
                       : 'bg-surface border border-border text-text-primary rounded-bl-sm'
                   }`}
                 >
+                  {(() => {
+                    const rr = getReplyRef(item.msg.metadata)
+                    if (!rr) return null
+                    const orig = messages.find((x) => x.id === rr.id)
+                    return <ReplyQuote reply={rr} own={item.msg.sender === 'user'} name={rr.sender === 'user' ? 'You' : 'Support'} deleted={!!orig?.deletedAt} />
+                  })()}
                   {isTrustedImageUrl(item.msg.attachmentUrl) && (
                     <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                     </a>
                   )}
-                  {item.msg.body && <span className="whitespace-pre-wrap">{item.msg.body}</span>}
+                  {item.msg.body && <span className="whitespace-pre-wrap"><RichText text={item.msg.body} /></span>}
                   <span className="mt-0.5 flex items-center justify-end gap-1 text-[10px] opacity-70">
                     {fmtTime(item.msg.createdAt)}
                     {item.msg.sender === 'user' && !item.msg.deletedAt && <MessageTicks status={receiptStatus(item.msg)} pending={item.msg.id.startsWith('tmp-')} />}
@@ -314,6 +341,8 @@ export function SupportChatThread() {
             ) : null}
           </div>
         )}
+        {replyTo && <ReplyBanner reply={replyTo} name={replyTo.name} onCancel={() => setReplyTo(null)} />}
+        <FormatToolbar onFormat={(m) => applyFormat(draftRef, draft, setDraft, m)} />
         <div className="flex items-end gap-2 p-3">
           <input
             ref={fileInputRef}
@@ -332,6 +361,7 @@ export function SupportChatThread() {
             <ImagePlus className="w-5 h-5" />
           </button>
           <textarea
+            ref={draftRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => {
