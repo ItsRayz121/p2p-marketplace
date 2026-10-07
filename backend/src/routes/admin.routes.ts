@@ -6824,6 +6824,8 @@ export async function adminRoutes(app: FastifyInstance) {
     await notifyMerchantWebhook(id, 'delivered').catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: merchant webhook failed'))
     const { accrueReferralForDelivery } = await import('../lib/gas/gas.referral')
     await accrueReferralForDelivery(order).catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: referral accrual failed'))
+    const { markShareRewardUsed } = await import('../lib/gas/gas.share')
+    await markShareRewardUsed(order)
     const { awardGasPointsForDelivery } = await import('../services/airdrop.service')
     await awardGasPointsForDelivery(order).catch((e) => log.warn({ err: e, orderId: id }, 'manual delivery: airdrop award failed'))
     if (order.userId) queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})

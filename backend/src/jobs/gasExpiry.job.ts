@@ -4,6 +4,7 @@ import { queues } from '../queues/definitions'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
 import { releasePromoForExpiredOrder } from '../lib/gas/gas.promo'
 import { logger } from '../lib/logger'
+import { releaseStaleShareRewards } from '../lib/gas/gas.share'
 
 // Handles two modes:
 //   expire-order  — delayed per-order job (job.data.orderId present): expire only that order
@@ -43,6 +44,8 @@ export async function runGasExpiryJob(job: Job<{ orderId?: string }>) {
   for (const o of promoOrdersToFree) {
     await releasePromoForExpiredOrder(o.id)
   }
+  // Give back any Share & Earn reward held by an order that expired/cancelled/refunded.
+  await releaseStaleShareRewards().catch((e) => logger.warn({ err: e }, 'releaseStaleShareRewards failed'))
 
   // Edge case: payment_detected orders past their expiry window — payment arrived but
   // the order was never claimed for delivery (e.g. delivery job never ran).

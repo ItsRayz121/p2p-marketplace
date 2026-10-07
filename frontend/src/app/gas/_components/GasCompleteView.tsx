@@ -2,6 +2,7 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
+import { ShareRewardCard } from '@/components/gas/ShareRewardCard'
 import { useGasCtx } from './GasContext'
 import { explorerUrl } from './GasPrimitives'
 import { GasFreeCodeApplied } from './GasFreeCode'
@@ -47,6 +48,7 @@ export function GasCompleteView() {
       {/* Happy-path review nudge — only on a clean delivery (no refund/failure),
           capped to once per ~75 days, dark until NEXT_PUBLIC_TRUSTPILOT_URL is
           set. The in-app flow is untouched; this is purely additive. */}
+      {order.status === 'delivered' && user && <ShareRewardCard orderRef={order.orderRef} />}
       {order.status === 'delivered' && <TrustpilotPrompt surface="gas" />}
 
       <div className="space-y-2">

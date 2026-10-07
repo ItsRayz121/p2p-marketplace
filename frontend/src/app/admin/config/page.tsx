@@ -63,6 +63,7 @@ const STRUCTURED_KEYS = new Set([
   'active_hours_enabled', 'platform_timezone',
   'manual_verify_offline_enabled', 'manual_verify_offline_start', 'manual_verify_offline_end', 'manual_verify_offline_message',
   'gas_referral_l2_enabled', 'gas_referral_l2_pct',
+  'share_reward_enabled', 'share_reward_test_emails', 'share_reward_min_pct', 'share_reward_max_pct', 'share_reward_x_handle', 'airdrop_test_emails',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -289,6 +290,12 @@ export default function ConfigPage() {
   const [mvOffMessage, setMvOffMessage] = useState('')
   const [l2Enabled, setL2Enabled] = useState(false)
   const [l2Pct, setL2Pct] = useState('10')
+  const [shareEnabled, setShareEnabled] = useState(true)
+  const [shareEmails, setShareEmails] = useState('fazalelahi057@gmail.com')
+  const [shareMin, setShareMin] = useState('20')
+  const [shareMax, setShareMax] = useState('50')
+  const [shareHandle, setShareHandle] = useState('')
+  const [airdropEmails, setAirdropEmails] = useState('fazalelahi057@gmail.com')
 
   // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
   const [promoFlag, setPromoFlag] = useState(false)
@@ -435,6 +442,12 @@ export default function ConfigPage() {
       setMvOffMessage(m['manual_verify_offline_message'] ?? '')
       setL2Enabled(m['gas_referral_l2_enabled'] === 'true')
       setL2Pct(m['gas_referral_l2_pct'] ?? '10')
+      setShareEnabled(m['share_reward_enabled'] !== 'false') // default ON
+      setShareEmails(m['share_reward_test_emails'] || 'fazalelahi057@gmail.com')
+      setShareMin(m['share_reward_min_pct'] ?? '20')
+      setShareMax(m['share_reward_max_pct'] ?? '50')
+      setShareHandle(m['share_reward_x_handle'] ?? '')
+      setAirdropEmails(m['airdrop_test_emails'] || 'fazalelahi057@gmail.com')
       setPromoFlag(m['gas_promo_enabled'] === 'true')
       setReferralFlag(m['gas_referral_enabled'] === 'true')
       setAffiliateFlag(m['gas_affiliate_enabled'] === 'true')
@@ -626,6 +639,12 @@ export default function ConfigPage() {
         { key: 'manual_verify_offline_message', value: mvOffMessage.trim() },
         { key: 'gas_referral_l2_enabled', value: l2Enabled ? 'true' : 'false' },
         { key: 'gas_referral_l2_pct', value: String(Math.min(Math.max(parseFloat(l2Pct) || 0, 0), 100)) },
+        { key: 'share_reward_enabled', value: shareEnabled ? 'true' : 'false' },
+        { key: 'share_reward_test_emails', value: shareEmails.trim() || 'fazalelahi057@gmail.com' },
+        { key: 'share_reward_min_pct', value: String(Math.min(Math.max(parseFloat(shareMin) || 20, 1), 100)) },
+        { key: 'share_reward_max_pct', value: String(Math.min(Math.max(parseFloat(shareMax) || 50, 1), 100)) },
+        { key: 'share_reward_x_handle', value: shareHandle.trim().replace(/^@/, '') },
+        { key: 'airdrop_test_emails', value: airdropEmails.trim() || 'fazalelahi057@gmail.com' },
       ])
       showToast('Hours & level-2 settings saved. Takes effect within ~1 minute.')
     } catch { showToast('Failed to save hours settings.', false) }
@@ -898,8 +917,38 @@ export default function ConfigPage() {
             </Field>
           </div>
 
+          <div className="border-t border-border pt-3 space-y-3">
+            <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+              <input type="checkbox" checked={shareEnabled} onChange={(e) => setShareEnabled(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+              <div>
+                <p className="text-sm font-medium text-text-primary">Share &amp; Earn (X post) <span className="font-mono text-xs text-text-muted">share_reward_enabled</span></p>
+                <p className="text-xs text-text-muted mt-0.5">After a delivered gas order the user can post on X and submit the link. You approve it in Gas → Share &amp; Earn, which draws a random fee discount for their next gas order (margin only).</p>
+              </div>
+            </label>
+            <Field label="Visible to (emails)" hint="Comma-separated test accounts. Type * to open it to everyone.">
+              <input className={inputCls} value={shareEmails} onChange={(e) => setShareEmails(e.target.value)} placeholder="fazalelahi057@gmail.com" />
+            </Field>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Minimum discount (%)" hint="Most rewards land near this">
+                <input className={inputCls} type="number" min="1" max="100" value={shareMin} onChange={(e) => setShareMin(e.target.value)} />
+              </Field>
+              <Field label="Maximum discount (%)" hint="Rare: about 3% of draws land within 2 points of it">
+                <input className={inputCls} type="number" min="1" max="100" value={shareMax} onChange={(e) => setShareMax(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Our X handle (optional)" hint="Tagged at the end of the suggested post, without the @">
+              <input className={inputCls} value={shareHandle} onChange={(e) => setShareHandle(e.target.value)} placeholder="RupChain" />
+            </Field>
+          </div>
+
+          <div className="border-t border-border pt-3 space-y-3">
+            <Field label="Airdrop & Tasks visible to (emails)" hint="Comma-separated test accounts that see the Airdrop tab, check-in and tasks while the global airdrop_enabled switch is OFF. Turning that switch ON opens it to everyone.">
+              <input className={inputCls} value={airdropEmails} onChange={(e) => setAirdropEmails(e.target.value)} placeholder="fazalelahi057@gmail.com" />
+            </Field>
+          </div>
+
           <div className="flex justify-end">
-            <Button size="sm" loading={hoursSaving} onClick={saveHours}>Save Hours &amp; Level-2</Button>
+            <Button size="sm" loading={hoursSaving} onClick={saveHours}>Save Hours, Level-2 &amp; Share</Button>
           </div>
         </div>
       </Accordion>

@@ -2,6 +2,8 @@
 import Navbar from '@/components/layout/Navbar'
 import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
+import Link from 'next/link'
+import { Headphones } from 'lucide-react'
 
 // Wraps the /gas section with the same unified site header (Navbar), Footer, and
 // mobile BottomNav used across the rest of the platform, so the Crypto Gas Fees
@@ -21,6 +23,15 @@ export default function GasChrome({ children }: { children: React.ReactNode }) {
       <div className="hidden lg:block">
         <Footer />
       </div>
+      {/* Small support shortcut: opens the RupChain Official support thread in Messages. */}
+      <Link
+        href="/messages/support"
+        aria-label="Chat with support"
+        title="Chat with support"
+        className="fixed right-4 bottom-[calc(5.5rem+env(safe-area-inset-bottom))] lg:bottom-6 z-40 flex h-11 w-11 items-center justify-center rounded-full bg-primary text-white shadow-lg hover:opacity-90 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/50"
+      >
+        <Headphones className="h-5 w-5" />
+      </Link>
       <BottomNav />
     </div>
   )

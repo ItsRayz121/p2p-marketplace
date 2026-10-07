@@ -1,11 +1,11 @@
 'use client'
-import { useState, useCallback, useMemo, Fragment } from 'react'
+import { useState, useEffect, useCallback, useMemo, Fragment } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
-import { notificationsApi } from '@/lib/api'
+import { notificationsApi, airdropApi } from '@/lib/api'
 import { messagingApi, type InboxSummary } from '@/lib/messaging'
 import { cn } from '@/lib/utils'
 import { BrandLogo } from '@/components/ui/BrandLogo'
@@ -14,6 +14,7 @@ import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import {
   ArrowLeftRight,
   Coins,
+  Sparkles,
   Fuel,
   Trophy,
   LayoutGrid,
@@ -101,19 +102,32 @@ export default function Navbar() {
 
   usePolling(fetchMsgSummary, 60_000, !!user)
 
+  // Airdrop tab: shown only when the server says it is live for THIS user (globally ON, or
+  // an allowlisted test account). Silent-fails; the tab stays hidden.
+  const [airdropOn, setAirdropOn] = useState(false)
+  useEffect(() => {
+    if (!user) { setAirdropOn(false); return }
+    airdropApi.getStatus().then((st) => setAirdropOn(!!st.enabled)).catch(() => setAirdropOn(false))
+  }, [user])
+
   // Insert "Messaging" into the Trading group when the feature is enabled. Its
   // badge shows active-trade count first (the merchant work-queue signal), else
   // unread threads.
   const dropdownItems = useMemo(() => {
-    if (!msgSummary?.enabled) return DROPDOWN_ITEMS.map((it) => ({ ...it, badge: 0 }))
-    const badge = msgSummary.activeTrades || msgSummary.unreadThreads || 0
     const items = DROPDOWN_ITEMS.map((it) => ({ ...it, badge: 0 }))
+    if (airdropOn) {
+      const ri = items.findIndex((it) => it.href === '/referral')
+      const airdrop = { href: '/airdrop', Icon: Sparkles, label: 'Airdrop & Tasks', iconCls: 'text-fuchsia-500', bgCls: 'bg-fuchsia-500/10', group: 'social', badge: 0 }
+      items.splice(ri >= 0 ? ri + 1 : items.length, 0, airdrop)
+    }
+    if (!msgSummary?.enabled) return items
+    const badge = msgSummary.activeTrades || msgSummary.unreadThreads || 0
     const idx = items.findIndex((it) => it.href === '/my-ads')
     const messaging = { href: '/messages', Icon: MessageSquare, label: 'Messaging', iconCls: 'text-indigo-500', bgCls: 'bg-indigo-500/10', group: 'trading', badge }
     if (idx >= 0) items.splice(idx + 1, 0, messaging)
     else items.push(messaging)
     return items
-  }, [msgSummary])
+  }, [msgSummary, airdropOn])
 
   const kycBadge =
     user?.kycStatus === 'approved' && user?.kycLevel === 'enhanced'

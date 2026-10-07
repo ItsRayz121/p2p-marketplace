@@ -3688,3 +3688,39 @@ export const availabilityApi = {
     apiRequest<{ enabled: boolean; start: string; end: string; timezone: string | null }>('/users/me/active-hours', { method: 'PUT', body: JSON.stringify(data) }),
   getManualVerifyStatus: () => apiRequest<ManualVerifyStatus>('/manual-verify-status'),
 }
+
+// ─── Share & Earn (X post → random fee discount on the next gas order) ────────
+
+export interface ShareInfo {
+  eligible: boolean
+  reason?: string
+  text?: string
+  tweetIntentUrl?: string
+  reward: { status: string; discountPct: number | null; rejectionReason: string | null } | null
+}
+
+export interface ShareRewardAdminRow {
+  id: string
+  status: string
+  postUrl: string
+  discountPct: number | null
+  rejectionReason: string | null
+  createdAt: string
+  reviewedAt: string | null
+  usedAt: string | null
+  user: { id: string; username: string; email: string }
+  order: { orderRef: string; amount: string; chain: string } | null
+}
+
+export const shareApi = {
+  getInfo: (orderRef: string, variant = 0) =>
+    apiRequest<ShareInfo>(`/gas-fee/share/orders/${encodeURIComponent(orderRef)}?variant=${variant}`),
+  submit: (orderRef: string, url: string) =>
+    apiRequest<{ status: string }>(`/gas-fee/share/orders/${encodeURIComponent(orderRef)}/submit`, { method: 'POST', body: JSON.stringify({ url }) }),
+  adminList: (status = 'submitted') =>
+    apiRequest<ShareRewardAdminRow[]>(`/admin/gas/share-rewards?status=${encodeURIComponent(status)}`),
+  adminApprove: (id: string) =>
+    apiRequest<{ discountPct: number }>(`/admin/gas/share-rewards/${id}/approve`, { method: 'POST' }),
+  adminReject: (id: string, reason: string) =>
+    apiRequest<{ status: string }>(`/admin/gas/share-rewards/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+}

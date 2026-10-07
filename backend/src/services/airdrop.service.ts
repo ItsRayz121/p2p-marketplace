@@ -326,6 +326,26 @@ export function isAirdropEnabled(): Promise<boolean> {
   return isFlagEnabled(FLAGS.AIRDROP)
 }
 
+/** Comma-separated emails that see the airdrop before it is live for everyone. */
+export const AIRDROP_TEST_EMAILS_KEY = 'airdrop_test_emails'
+const DEFAULT_AIRDROP_TEST_EMAILS = 'fazalelahi057@gmail.com'
+
+/**
+ * Per-user view of the airdrop switch: live for everyone when `airdrop_enabled` is ON,
+ * otherwise live only for the allowlisted test accounts. Used by every user-facing airdrop
+ * action (status, check-in, repair, reset, redeem). Fee discounts (levels) and the USDT
+ * redeem payout keep their own global flags, so a test account never moves real money
+ * unless those are switched on too.
+ */
+export async function isAirdropEnabledFor(userId: string): Promise<boolean> {
+  if (await isAirdropEnabled()) return true
+  const row = await db.platformConfig.findUnique({ where: { key: AIRDROP_TEST_EMAILS_KEY } })
+  const raw = row?.value?.trim() || DEFAULT_AIRDROP_TEST_EMAILS
+  const user = await db.user.findUnique({ where: { id: userId }, select: { email: true } })
+  if (!user) return false
+  return raw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean).includes(user.email.toLowerCase())
+}
+
 /**
  * Whether point ACCRUAL should run right now. Deliberately decoupled from the
  * user-facing `airdrop_enabled` flag: points accrue SILENTLY in the background
@@ -658,7 +678,7 @@ export interface CheckinResult {
 }
 
 export async function dailyCheckin(userId: string): Promise<CheckinResult> {
-  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  if (!(await isAirdropEnabledFor(userId))) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
   const cfg = await loadAirdropConfig()
   return db.$transaction(async (tx) => {
     const seasonId = await resolveActiveSeasonId(tx)
@@ -683,7 +703,7 @@ export async function dailyCheckin(userId: string): Promise<CheckinResult> {
 
 // ── Public: repair a broken streak (spend points) ───────────────────────────
 export async function repairStreak(userId: string): Promise<{ restored: number; cost: number }> {
-  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  if (!(await isAirdropEnabledFor(userId))) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
   const cfg = await loadAirdropConfig()
   return db.$transaction(async (tx) => {
     const seasonId = await resolveActiveSeasonId(tx)
@@ -719,7 +739,7 @@ export async function repairStreak(userId: string): Promise<{ restored: number; 
 
 // ── Public: voluntary reset to zero ─────────────────────────────────────────
 export async function resetStreak(userId: string): Promise<void> {
-  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  if (!(await isAirdropEnabledFor(userId))) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
   const seasonId = await resolveActiveSeasonId(db)
   if (!seasonId) return
   await db.airdropAccount.updateMany({
@@ -754,7 +774,7 @@ export interface AirdropStatus {
 }
 
 export async function getAirdropStatus(userId: string): Promise<AirdropStatus> {
-  const enabled = await isAirdropEnabled()
+  const enabled = await isAirdropEnabledFor(userId)
   const season = await db.airdropSeason.findFirst({ where: { status: 'active' }, orderBy: { index: 'desc' } })
   if (!enabled || !season) {
     const target = await getNumberConfig(CFG.targetUsers, DEF.targetUsers)
@@ -885,7 +905,7 @@ export interface RedeemQuote {
 /** Read model for the redemption card on the Airdrop tab. */
 export async function getRedeemQuote(userId: string): Promise<RedeemQuote> {
   const [airdropOn, redeemFlag, cfg, seasonId] = await Promise.all([
-    isAirdropEnabled(),
+    isAirdropEnabledFor(userId),
     isFlagEnabled(FLAGS.AIRDROP_USDT_REDEEM),
     loadAirdropConfig(),
     resolveActiveSeasonId(db),
@@ -934,7 +954,7 @@ export interface RedeemResult {
  * applied.
  */
 export async function redeemPointsForUsdt(userId: string, pointsToRedeem: number): Promise<RedeemResult> {
-  if (!(await isAirdropEnabled())) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
+  if (!(await isAirdropEnabledFor(userId))) throw new AppError('AIRDROP_OFF', 'The airdrop is not live yet.', 400)
   if (!(await isFlagEnabled(FLAGS.AIRDROP_USDT_REDEEM))) {
     throw new AppError('REDEEM_DISABLED', 'Points redemption is not available right now.', 400)
   }

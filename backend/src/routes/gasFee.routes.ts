@@ -45,6 +45,7 @@ import {
 } from '../lib/gas/gas.freeCode'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { airdropLevelOrderDiscount } from '../services/airdrop.service'
+import { reserveShareReward, releaseShareReward } from '../lib/gas/gas.share'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -843,7 +844,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const affDisc = aff.discountUsdt
     // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
+    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
+    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
     const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -867,6 +870,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             discountUsdt:    totalDiscount,
             affiliateDiscountUsdt: affDisc,
             affiliateReferrer:     aff.referrer,
+            ...(share.rewardId ? { shareRewardId: share.rewardId } : {}),
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             toAddress,
             fromHotWallet:  hotWallet.address,
@@ -876,6 +880,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         })
       } catch (e) {
         if (promoRes) await releaseReservation(promoRes)
+        await releaseShareReward(share.rewardId)
         throw e
       }
     })()
@@ -1426,7 +1431,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const affDisc = aff.discountUsdt
     // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
+    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
+    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
 
@@ -1450,6 +1457,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             discountUsdt:     totalDiscount,
             affiliateDiscountUsdt: affDisc,
             affiliateReferrer:     aff.referrer,
+            ...(share.rewardId ? { shareRewardId: share.rewardId } : {}),
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             pkrAmount:        finalPkrAmount,
             pkrPaymentMethod,
@@ -1461,6 +1469,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         })
       } catch (e) {
         if (promoRes) await releaseReservation(promoRes)
+        await releaseShareReward(share.rewardId)
         throw e
       }
     })()
@@ -1595,7 +1604,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
+    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
+    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1618,6 +1629,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             discountUsdt:     totalDiscount,
             affiliateDiscountUsdt: affDisc,
             affiliateReferrer:     aff.referrer,
+            ...(share.rewardId ? { shareRewardId: share.rewardId } : {}),
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             exchangeName:       account.displayName,
             exchangeAccountUid: account.accountUid,
@@ -1629,6 +1641,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         })
       } catch (e) {
         if (promoRes) await releaseReservation(promoRes)
+        await releaseShareReward(share.rewardId)
         throw e
       }
     })()
@@ -1960,7 +1973,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const affDisc = aff.discountUsdt
     // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
     const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc) * 100) / 100
+    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
+    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt) * 100) / 100
     const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
     // ANY failure after the promo reservation (incl. assignUnique) releases the slot.
@@ -1985,6 +2000,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
             discountUsdt:     totalDiscount,
             affiliateDiscountUsdt: affDisc,
             affiliateReferrer:     aff.referrer,
+            ...(share.rewardId ? { shareRewardId: share.rewardId } : {}),
             ...(promoRes ? { promoCodeId: promoRes.promoCodeId } : {}),
             fromHotWallet:    hotWallet.address,
             toAddress,
@@ -1994,6 +2010,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
         })
       } catch (e) {
         if (promoRes) await releaseReservation(promoRes)
+        await releaseShareReward(share.rewardId)
         throw e
       }
     })()

@@ -13,6 +13,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
+import { ShareRewardCard } from '@/components/gas/ShareRewardCard'
 import { GasOrderActions } from './GasOrderActions'
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -418,6 +419,7 @@ function GasOrderTrackingPageInner() {
         {/* Public review ask — only on a clean delivery, where a returning user
             lands from "My Orders". Self-gates on NEXT_PUBLIC_TRUSTPILOT_URL and a
             ~75-day per-browser cap, so a repeat visitor won't see it again. */}
+        {order.status === 'delivered' && <ShareRewardCard orderRef={order.orderRef} />}
         {order.status === 'delivered' && <TrustpilotPrompt surface="gas" />}
 
         {/* Footer actions */}

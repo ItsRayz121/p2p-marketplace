@@ -556,6 +556,7 @@ model User {
   gasReferralAsReferred  GasReferral?            @relation("GasReferredUser")
   gasReferralsAsReferrer GasReferral[]           @relation("GasReferrerUser")
   gasReferralAccruals    GasReferralAccrual[]    @relation("GasReferrerAccrual")
+  gasShareRewards        GasShareReward[]
   gasAffiliate           GasAffiliate?           @relation("GasAffiliateUser")
   tradeStreaksAsA        TradeStreak[]           @relation("StreakUserA")
   tradeStreaksAsB        TradeStreak[]           @relation("StreakUserB")
@@ -1841,6 +1842,8 @@ model GasFeeOrder {
   // Lets the checkout/tracking screens show "X% off courtesy of <referrer>" after refresh.
   affiliateDiscountUsdt Decimal          @default(0) @db.Decimal(10, 4)
   affiliateReferrer     String?
+  // Share-&-earn reward (X post) reserved/applied to this order as a margin discount.
+  shareRewardId         String?
   // true = an admin-issued free-gas delivery: paymentAmount is 0 and the platform
   // funds the FULL cost (base + margin). The order is created already in
   // payment_detected so it routes straight to the normal delivery worker.
@@ -3298,3 +3301,32 @@ model AirdropRedemptionBudget {
 }
 
 
+
+// ────────────────────────────────────────────────────────────────────────────
+// SHARE & EARN (X post → random margin discount on the user's next gas order)
+// After a delivered gas order the user can post about it on X and submit the link.
+// An admin approves it, drawing a random discountPct (default 20–50%, high end rare).
+// The discount applies to the platform MARGIN of the next order only (never base cost).
+// Lifecycle: submitted → approved → reserved (on an unpaid order) → used (delivered).
+// rejected is terminal. One reward per source order; one tweet can only be used once.
+// ────────────────────────────────────────────────────────────────────────────
+model GasShareReward {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sourceOrderId   String    @unique            // the delivered order the post is about
+  postUrl         String
+  postKey         String    @unique            // normalised tweet id → blocks reusing a post
+  status          String    @default("submitted") // submitted | approved | reserved | used | rejected
+  discountPct     Float?                       // drawn at approval
+  reservedOrderId String?                      // order currently holding / that consumed the reward
+  rejectionReason String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status])
+  @@index([userId, status])
+}

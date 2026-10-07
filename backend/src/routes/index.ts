@@ -21,6 +21,7 @@ import { webhookRoutes } from './webhook.routes'
 import { rateAlertRoutes } from './rateAlert.routes'
 import { savedTermsRoutes } from './savedTerms.routes'
 import { gasFeeRoutes } from './gasFee.routes'
+import { gasShareRoutes } from './gasShare.routes'
 import { merchantGasRoutes } from './merchantGas.routes'
 import { adminRoutes } from './admin.routes'
 import { ctmTokenRoutes } from '../ctm/ctm.token.routes'
@@ -70,6 +71,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(rateAlertRoutes, { prefix: '/api/v1' })
   await app.register(savedTermsRoutes, { prefix: '/api/v1' })
   await app.register(gasFeeRoutes, { prefix: '/api/v1' })
+  await app.register(gasShareRoutes, { prefix: '/api/v1' })
   await app.register(merchantGasRoutes, { prefix: '/api/v1' })
   await app.register(adminRoutes, { prefix: '/api/v1' })
   await app.register(ctmTokenRoutes, { prefix: '/api/v1' })
