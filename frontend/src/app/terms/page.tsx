@@ -80,7 +80,7 @@ export default function TermsPage() {
             title: '6. Account Security',
             content: [
               'You are solely responsible for maintaining the security of your account credentials.',
-              'You must notify us immediately at fazalelahi5577@gmail.com of any unauthorized access.',
+              'You must notify us immediately at support@rupchain.com of any unauthorized access.',
               'We recommend enabling Two-Factor Authentication (2FA).',
               'RupChain will never ask for your password via email, WhatsApp, or any other channel.',
             ],
@@ -100,7 +100,7 @@ export default function TermsPage() {
             content: [
               'We reserve the right to suspend or terminate accounts that violate these Terms.',
               'Suspected fraudulent activity will result in immediate account suspension.',
-              'Users may request account deletion by contacting fazalelahi5577@gmail.com.',
+              'Users may request account deletion by contacting support@rupchain.com.',
               'Upon termination, any funds in your wallet will be returned after identity verification.',
             ],
           },
@@ -136,7 +136,7 @@ export default function TermsPage() {
 
         <div className="bg-surface border border-border rounded-xl p-5 text-sm text-text-muted">
           <p className="font-semibold text-text-primary mb-1">Contact Us</p>
-          <p>For questions about these Terms, contact us at <a href="mailto:fazalelahi5577@gmail.com" className="text-primary underline">fazalelahi5577@gmail.com</a></p>
+          <p>For questions about these Terms, contact us at <a href="mailto:support@rupchain.com" className="text-primary underline">support@rupchain.com</a></p>
         </div>
       </div>
     </div>
