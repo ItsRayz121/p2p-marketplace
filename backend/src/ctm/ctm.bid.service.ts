@@ -1,4 +1,4 @@
-import { assertNotOnTradingHold } from '../lib/tradingHold'
+import { assertNotOnTradingHold, assertCounterpartyNotOnHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -145,6 +145,7 @@ export async function acceptListingBid(merchantUserId: string, bidId: string) {
   })
   if (!bid) throw new AppError('NOT_FOUND', 'Bid not found', 404)
   if (bid.listing.merchantProfile.userId !== merchantUserId) throw new AppError('FORBIDDEN', 'Access denied', 403)
+  await assertCounterpartyNotOnHold(bid.bidder.id)
   if (bid.status !== 'pending') throw new AppError('CONFLICT', `Bid is already ${bid.status}`, 409)
   if (new Date() > bid.expiresAt) throw new AppError('CONFLICT', 'Bid has expired', 409)
 

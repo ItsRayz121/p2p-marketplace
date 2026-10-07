@@ -1,4 +1,4 @@
-import { assertNotOnTradingHold } from '../lib/tradingHold'
+import { assertNotOnTradingHold, assertCounterpartyNotOnHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -260,6 +260,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
       where: { id: bidId },
       select: { bidderId: true, request: { select: { side: true } } },
     })
+    if (preBid) await assertCounterpartyNotOnHold(preBid.bidderId)
     if (preBid) {
       await assertCanOpenTrade(userId, 'self')               // the requester accepting
       await assertCanOpenTrade(preBid.bidderId, 'counterparty') // the bidder
