@@ -19,6 +19,7 @@ import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, Histo
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { swrGet, swrSet } from '@/lib/swrCache'
+import { DEFAULT_MARKET_FILTERS, marketAdsCacheKey } from '@/lib/prefetch'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
 import { activeLabel } from '@/lib/onlineStatus'
@@ -483,20 +484,13 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
   )
 }
 
-const DEFAULT_FILTERS: Filters = {
-  side: 'buy',
-  network: '',
-  paymentMethod: '',
-  minAmount: '',
-  maxAmount: '',
-  seller: '',
-}
+const DEFAULT_FILTERS: Filters = { ...DEFAULT_MARKET_FILTERS }
 
 // First page of listings per filter set, so reopening the marketplace (or
 // switching back to a filter already seen) paints instantly while the fetch
 // below refreshes it.
 interface AdsCache { ads: MarketplaceAd[]; total: number }
-const adsCacheKey = (f: Filters) => `mkt:ads:${JSON.stringify(f)}`
+const adsCacheKey = (f: Filters) => marketAdsCacheKey(f)
 
 export default function MarketplacePage() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)

@@ -7,6 +7,7 @@ import BottomNav from '@/components/layout/BottomNav'
 import { usePolling } from '@/hooks/usePolling'
 import { marketplaceApi } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
+import { prefetchCommonScreens } from '@/lib/prefetch'
 import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
 import { InstallAppBanner } from '@/components/ui/InstallAppBanner'
 import { AnnouncementBanner } from '@/components/ui/AnnouncementBanner'
@@ -31,7 +32,7 @@ const noticeColors: Record<string, string> = {
 }
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
-  const { isLoading: authLoading, user } = useAuthStore()
+  const { isLoading: authLoading, user, accessToken } = useAuthStore()
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
   const pathname = usePathname()
@@ -92,6 +93,11 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
     }
     setDismissed(true)
   }
+
+  // Once we hold a live session, quietly warm the screens people open next.
+  useEffect(() => {
+    if (user && accessToken) prefetchCommonScreens(user.id)
+  }, [user, accessToken])
 
   const showNotice = notice && !dismissed
 

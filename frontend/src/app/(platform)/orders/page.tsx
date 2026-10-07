@@ -11,7 +11,8 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getTradeStatus } from '@/lib/tradeStatus'
-import { swrGet, swrSet, userKey } from '@/lib/swrCache'
+import { swrGet, swrSet } from '@/lib/swrCache'
+import { ordersFirstPageKey } from '@/lib/prefetch'
 import { ClipboardList } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 
@@ -64,7 +65,7 @@ export default function OrdersPage() {
   const [status, setStatus] = useState<StatusFilter>('all')
   const [role, setRole] = useState<RoleFilter>('all')
   // Default view (all / all, first page) is remembered per user so reopening Orders paints at once.
-  const ordersKey = userKey(user?.id, 'orders:first')
+  const ordersKey = ordersFirstPageKey(user?.id)
   const [seed] = useState(() => swrGet<{ trades: Trade[]; total: number }>(ordersKey))
   const [trades, setTrades] = useState<Trade[]>(seed?.trades ?? [])
   const [total, setTotal] = useState(seed?.total ?? 0)
