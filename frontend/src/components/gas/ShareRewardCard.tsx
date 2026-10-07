@@ -6,6 +6,7 @@ import { shareApi } from '@/lib/api'
 import type { ShareInfo } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { toast } from '@/lib/toast'
+import { ShareImage } from '@/components/gas/ShareImage'
 
 function fmtCountdown(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000))
@@ -94,6 +95,7 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
 
       {!reward && (
         <>
+          {info.card && <ShareImage card={info.card} variant={variant} />}
           <div className="rounded-lg border border-border bg-surface p-3 text-sm text-text-secondary whitespace-pre-wrap break-words">{info.text}</div>
           <div className="flex flex-wrap gap-2">
             <a

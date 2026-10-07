@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { airdropApi, type AirdropStatus, type AirdropLedgerEntry, type AirdropRedeemQuote } from '@/lib/api'
 import Link from 'next/link'
-import { promoGiveawayApi, type OpenCommunityTask } from '@/lib/promoGiveaway'
+import { promoGiveawayApi, type OpenCommunityTask, type MyTaskEntry } from '@/lib/promoGiveaway'
 import { pointsShopApi, type PointsShopView } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -384,56 +384,151 @@ function RedeemCard({ onChange }: { onChange: () => void }) {
   )
 }
 
-// ─── Community tasks ──────────────────────────────────────────────────────────
-function CommunityTasks() {
-  const [items, setItems] = useState<OpenCommunityTask[] | null>(null)
-  useEffect(() => {
-    promoGiveawayApi.listOpen().then(setItems).catch(() => setItems([]))
+// ─── Tasks tab (available / pending / completed) ──────────────────────────────
+type TaskBucket = 'available' | 'pending' | 'completed'
+
+interface TaskRow {
+  id: string
+  bucket: TaskBucket
+  title: string
+  subtitle?: string
+  detail?: string[]
+  reward?: string
+  action?: { label: string; href?: string; onClick?: () => void; busy?: boolean }
+  badge?: { text: string; cls: string }
+}
+
+function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () => void }) {
+  const [open, setOpen] = useState<OpenCommunityTask[] | null>(null)
+  const [mine, setMine] = useState<MyTaskEntry[] | null>(null)
+  const [bucket, setBucket] = useState<TaskBucket>('available')
+  const [checkingIn, setCheckingIn] = useState(false)
+
+  const load = useCallback(async () => {
+    const [o, m] = await Promise.all([
+      promoGiveawayApi.listOpen().catch(() => []),
+      promoGiveawayApi.myEntries().catch(() => []),
+    ])
+    setOpen(o)
+    setMine(m)
   }, [])
+  useEffect(() => { void load() }, [load])
+
+  async function checkin() {
+    setCheckingIn(true)
+    try {
+      const r = await airdropApi.checkin()
+      toast.success(r.pointsAwarded > 0 ? `Checked in! +${r.pointsAwarded} point${r.pointsAwarded === 1 ? '' : 's'}` : 'Checked in')
+      onChange()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Check-in failed')
+    } finally { setCheckingIn(false) }
+  }
+
+  if (open === null || mine === null) return <p className="text-sm text-text-muted py-8 text-center">Loading tasks…</p>
+
+  const rows: TaskRow[] = []
+  const done = status.streak?.checkedInToday ?? false
+  rows.push({
+    id: 'checkin',
+    bucket: done ? 'completed' : 'available',
+    title: 'Daily check-in',
+    subtitle: 'Check in every day to keep your streak and earn points.',
+    reward: '+1 point',
+    ...(done ? { badge: { text: 'Done today', cls: 'text-success bg-success/10' } } : { action: { label: 'Check in', onClick: checkin, busy: checkingIn } }),
+  })
+
+  const joinedCodes = new Set(mine.map((m) => m.code))
+  for (const g of open) {
+    if (joinedCodes.has(g.code)) continue
+    rows.push({
+      id: `open:${g.code}`,
+      bucket: 'available',
+      title: g.title,
+      subtitle: g.description ?? undefined,
+      detail: g.tasks.map((t) => `${t.label}${t.required ? '' : ' (optional)'}`),
+      reward: g.rewardAmount ? `${g.rewardAmount}${g.rewardToken ? ` ${g.rewardToken}` : ''}` : undefined,
+      action: { label: 'Join', href: `/giveaway/${g.code}` },
+    })
+  }
+  for (const m of mine) {
+    const reward = m.rewardAmount ? `${m.rewardAmount}${m.rewardToken ? ` ${m.rewardToken}` : ''}` : undefined
+    const isPending = m.status === 'entered' || m.status === 'pending'
+    rows.push({
+      id: `entry:${m.entryId}`,
+      bucket: isPending ? 'pending' : 'completed',
+      title: m.title,
+      subtitle: m.status === 'rejected' && m.note ? `Not approved: ${m.note}` : isPending ? 'Entry received. Waiting for the organiser to review and send the reward.' : m.status === 'sent' ? 'Reward sent.' : undefined,
+      reward,
+      badge: isPending
+        ? { text: 'Pending', cls: 'text-warning bg-warning/10' }
+        : m.status === 'sent' ? { text: 'Reward sent', cls: 'text-success bg-success/10' } : { text: 'Rejected', cls: 'text-danger bg-danger/10' },
+      action: { label: 'View', href: `/giveaway/${m.code}` },
+    })
+  }
+
+  const counts: Record<TaskBucket, number> = { available: 0, pending: 0, completed: 0 }
+  for (const r of rows) counts[r.bucket]++
+  const shown = rows.filter((r) => r.bucket === bucket)
+  const emptyText: Record<TaskBucket, string> = {
+    available: 'No new tasks right now. Check back soon.',
+    pending: 'Nothing waiting for review.',
+    completed: 'Completed tasks will show up here.',
+  }
 
   return (
     <div className="rounded-2xl border border-border bg-surface p-5">
       <div className="flex items-center gap-2 mb-1">
         <ListChecks className="w-4 h-4 text-primary" aria-hidden />
-        <h2 className="text-sm font-semibold text-text-primary">Community tasks</h2>
+        <h2 className="text-sm font-semibold text-text-primary">Tasks</h2>
       </div>
-      <p className="text-xs text-text-muted mb-3">Complete simple tasks from our community partners to join their rewards.</p>
-      {items === null ? (
-        <p className="text-sm text-text-muted py-4 text-center">Loading tasks…</p>
-      ) : items.length === 0 ? (
-        <p className="text-sm text-text-muted py-4 text-center">No community tasks right now. Check back soon.</p>
+      <p className="text-xs text-text-muted mb-3">Finish simple tasks from RupChain and our community partners.</p>
+
+      <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-surface-alt p-1 mb-4" role="tablist">
+        {(['available', 'pending', 'completed'] as const).map((b) => (
+          <button
+            key={b}
+            role="tab"
+            aria-selected={bucket === b}
+            onClick={() => setBucket(b)}
+            className={`rounded-lg py-1.5 text-xs font-semibold capitalize transition-colors ${bucket === b ? 'bg-surface text-text-primary shadow-sm' : 'text-text-muted hover:text-text-primary'}`}
+          >
+            {b} <span className="tabular-nums opacity-70">({counts[b]})</span>
+          </button>
+        ))}
+      </div>
+
+      {shown.length === 0 ? (
+        <p className="text-sm text-text-muted py-6 text-center">{emptyText[bucket]}</p>
       ) : (
         <div className="space-y-3">
-          {items.map((g) => (
-            <div key={g.code} className="rounded-xl border border-border p-4 space-y-2">
+          {shown.map((t) => (
+            <div key={t.id} className="rounded-xl border border-border p-4 space-y-2">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-text-primary">{g.title}</p>
-                  {g.rewardAmount && (
-                    <p className="text-xs text-emerald-500 font-medium mt-0.5">Reward: {g.rewardAmount}{g.rewardToken ? ` ${g.rewardToken}` : ''}</p>
-                  )}
+                  <p className="text-sm font-semibold text-text-primary">{t.title}</p>
+                  {t.reward && <p className="text-xs text-emerald-500 font-medium mt-0.5">Reward: {t.reward}</p>}
                 </div>
-                <Link
-                  href={`/giveaway/${g.code}`}
-                  className={`flex-shrink-0 rounded-lg px-3 py-1.5 text-xs font-semibold ${g.alreadyEntered ? 'bg-surface-alt text-text-secondary' : 'bg-primary text-white hover:opacity-90'}`}
-                >
-                  {g.alreadyEntered ? 'View entry' : 'Join'}
-                </Link>
+                {t.badge && <span className={`flex-shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${t.badge.cls}`}>{t.badge.text}</span>}
+                {t.action && (t.action.href ? (
+                  <Link href={t.action.href} className="flex-shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90">{t.action.label}</Link>
+                ) : (
+                  <button onClick={t.action.onClick} disabled={t.action.busy} className="flex-shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-60">
+                    {t.action.busy ? 'Please wait…' : t.action.label}
+                  </button>
+                ))}
               </div>
-              {g.description && <p className="text-xs text-text-muted line-clamp-2">{g.description}</p>}
-              {g.tasks.length > 0 && (
+              {t.subtitle && <p className="text-xs text-text-muted line-clamp-2">{t.subtitle}</p>}
+              {t.detail && t.detail.length > 0 && (
                 <ul className="space-y-1">
-                  {g.tasks.map((t) => (
-                    <li key={t.id} className="flex items-start gap-1.5 text-xs text-text-secondary">
+                  {t.detail.map((d, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-xs text-text-secondary">
                       <CheckCircle2 className="w-3.5 h-3.5 mt-px flex-shrink-0 text-text-muted" aria-hidden />
-                      <span>{t.label}{t.required ? '' : ' (optional)'}</span>
+                      <span>{d}</span>
                     </li>
                   ))}
                 </ul>
               )}
-              <p className="text-[11px] text-text-muted">
-                {g.entryCount} joined{g.entryDeadline ? ` · ends ${new Date(g.entryDeadline).toLocaleDateString()}` : ''}
-              </p>
             </div>
           ))}
         </div>
@@ -501,6 +596,41 @@ function ShopTab({ onChange }: { onChange: () => void }) {
     )
   }
 
+  const BADGE_RING: Record<string, string> = {
+    badge_supporter: 'from-amber-300 to-yellow-500',
+    badge_trader: 'from-orange-400 to-red-500',
+    badge_whale: 'from-sky-400 to-indigo-600',
+  }
+  const medallion = (key: string, emoji: string | undefined, size: string, dim = false) => (
+    <span className={`flex items-center justify-center rounded-full bg-gradient-to-br ${BADGE_RING[key] ?? 'from-fuchsia-400 to-primary'} p-1 shadow-md ${size} ${dim ? 'opacity-60 grayscale' : ''}`}>
+      <span className="flex h-full w-full items-center justify-center rounded-full bg-surface text-3xl leading-none">{emoji ?? '🎖️'}</span>
+    </span>
+  )
+  const renderBadge = (item: PointsShopView['items'][number]) => {
+    const canAfford = shop.balance >= item.cost
+    return (
+      <div key={item.key} className="flex flex-col items-center gap-2 rounded-xl border border-border bg-surface p-4 text-center">
+        {medallion(item.key, item.emoji, 'h-20 w-20', !item.owned)}
+        <div>
+          <p className="text-sm font-bold text-text-primary">{item.label}</p>
+          <p className="text-xs text-text-muted mt-0.5">{item.description}</p>
+        </div>
+        <span className="text-sm font-black tabular-nums text-primary">{fmtPoints(item.cost)} pts</span>
+        {item.owned ? (
+          <span className="text-xs font-semibold text-success">Owned ✓</span>
+        ) : (
+          <button
+            onClick={() => buy(item.key, item.label, item.cost)}
+            disabled={busyKey === item.key || !canAfford}
+            className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            {busyKey === item.key ? 'Buying…' : !canAfford ? 'Not enough points' : 'Buy'}
+          </button>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-gradient-to-br from-fuchsia-500/10 to-primary/5 p-5">
@@ -521,17 +651,18 @@ function ShopTab({ onChange }: { onChange: () => void }) {
 
       <div>
         <h2 className="text-sm font-semibold text-text-primary mb-2">Badges</h2>
-        <div className="grid gap-3 sm:grid-cols-2">{badges.map(renderCard)}</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{badges.map(renderBadge)}</div>
       </div>
 
       {shop.perks.some((p) => p.kind === 'badge') && (
         <div>
           <h2 className="text-sm font-semibold text-text-primary mb-2">My badges</h2>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-4">
             {shop.perks.filter((p) => p.kind === 'badge').map((p) => (
-              <span key={p.id} className="rounded-full border border-border bg-surface px-3 py-1 text-xs font-semibold text-text-primary">
-                {shop.items.find((i) => i.key === p.itemKey)?.emoji ?? '🎖️'} {p.label}
-              </span>
+              <div key={p.id} className="flex flex-col items-center gap-1">
+                {medallion(p.itemKey, shop.items.find((i) => i.key === p.itemKey)?.emoji, 'h-16 w-16')}
+                <span className="text-[11px] font-semibold text-text-secondary">{p.label}</span>
+              </div>
             ))}
           </div>
         </div>
@@ -546,7 +677,7 @@ export default function PointsPage() {
   const [ledger, setLedger] = useState<AirdropLedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<'overview' | 'shop'>('overview')
+  const [tab, setTab] = useState<'overview' | 'tasks' | 'shop'>('overview')
 
   const fetchData = useCallback(async () => {
     try {
@@ -595,8 +726,8 @@ export default function PointsPage() {
       </div>
 
       {/* Tabs */}
-      <div className="grid grid-cols-2 gap-1.5 rounded-xl bg-surface p-1.5" role="tablist">
-        {([['overview', 'Points & Tasks'], ['shop', 'Rewards Shop']] as const).map(([id, label]) => (
+      <div className="grid grid-cols-3 gap-1.5 rounded-xl bg-surface p-1.5" role="tablist">
+        {([['overview', 'Points'], ['tasks', 'Tasks'], ['shop', 'Rewards Shop']] as const).map(([id, label]) => (
           <button
             key={id}
             role="tab"
@@ -609,6 +740,7 @@ export default function PointsPage() {
         ))}
       </div>
 
+      {tab === 'tasks' && <TasksTab status={status} onChange={fetchData} />}
       {tab === 'shop' && <ShopTab onChange={fetchData} />}
 
       {tab === 'overview' && (
@@ -618,9 +750,6 @@ export default function PointsPage() {
 
       {/* Streak */}
       <StreakCard status={status} onChange={fetchData} />
-
-      {/* Community tasks (open giveaways with tasks) */}
-      <CommunityTasks />
 
       {/* Redeem points for USDT (hidden entirely unless the redeem flag is on) */}
       <RedeemCard onChange={fetchData} />

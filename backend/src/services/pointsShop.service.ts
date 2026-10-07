@@ -26,27 +26,33 @@ export interface ShopItem {
 export const POINTS_SHOP_ITEMS_KEY = 'points_shop_items'
 
 export const DEFAULT_ITEMS: ShopItem[] = [
-  { key: 'gas20_week', kind: 'gas_discount', label: '20% off gas fees · 1 week', description: '20% off the platform fee on every gas order for 7 days.', cost: 50, discountPct: 20, durationDays: 7, emoji: '⛽' },
-  { key: 'gas30_month', kind: 'gas_discount', label: '30% off gas fees · 1 month', description: '30% off the platform fee on every gas order for 30 days.', cost: 100, discountPct: 30, durationDays: 30, emoji: '🔥' },
-  { key: 'gas20_year', kind: 'gas_discount', label: '20% off gas fees · 1 year', description: '20% off the platform fee on every gas order for a full year.', cost: 400, discountPct: 20, durationDays: 365, emoji: '🏆' },
-  { key: 'badge_supporter', kind: 'badge', label: 'Supporter badge', description: 'Show a Supporter star next to your name on your points page.', cost: 30, emoji: '⭐' },
-  { key: 'badge_trader', kind: 'badge', label: 'Power Trader badge', description: 'A Power Trader flame for people who trade often.', cost: 150, emoji: '🔥' },
-  { key: 'badge_whale', kind: 'badge', label: 'Whale badge', description: 'The Whale badge, a rare collector item.', cost: 500, emoji: '🐋' },
+  { key: 'gas20_week', kind: 'gas_discount', label: '20% off gas fees · 1 week', description: '20% off our service fee on every gas order for 7 days.', cost: 50, discountPct: 20, durationDays: 7, emoji: '⛽' },
+  { key: 'gas30_month', kind: 'gas_discount', label: '30% off gas fees · 1 month', description: '30% off our service fee on every gas order for 30 days.', cost: 100, discountPct: 30, durationDays: 30, emoji: '🔥' },
+  { key: 'gas40_week', kind: 'gas_discount', label: '40% off gas fees · 1 week', description: '40% off our service fee on every gas order for 7 days.', cost: 150, discountPct: 40, durationDays: 7, emoji: '⚡' },
+  { key: 'gas50_month', kind: 'gas_discount', label: '50% off gas fees · 1 month', description: '50% off our service fee on every gas order for 30 days.', cost: 300, discountPct: 50, durationDays: 30, emoji: '💎' },
+  { key: 'gas20_year', kind: 'gas_discount', label: '20% off gas fees · 1 year', description: '20% off our service fee on every gas order for a full year.', cost: 400, discountPct: 20, durationDays: 365, emoji: '🏆' },
+  { key: 'gas70_3days', kind: 'gas_discount', label: '70% off gas fees · 3 days', description: '70% off our service fee on every gas order for 3 days.', cost: 450, discountPct: 70, durationDays: 3, emoji: '🚀' },
+  { key: 'gas90_day', kind: 'gas_discount', label: '90% off gas fees · 24 hours', description: '90% off our service fee on every gas order for 24 hours. The biggest discount we offer.', cost: 800, discountPct: 90, durationDays: 1, emoji: '👑' },
+  { key: 'badge_supporter', kind: 'badge', label: 'Supporter', description: 'A Supporter star for your collection.', cost: 30, emoji: '⭐' },
+  { key: 'badge_trader', kind: 'badge', label: 'Power Trader', description: 'A Power Trader flame for people who trade often.', cost: 150, emoji: '🔥' },
+  { key: 'badge_whale', kind: 'badge', label: 'Whale', description: 'The rare Whale badge.', cost: 500, emoji: '🐋' },
 ]
+
+const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback)
 
 function validItem(o: unknown): ShopItem | null {
   const r = o as Record<string, unknown>
-  const key = String(r?.key ?? '').trim()
+  const key = str(r?.key).trim()
   const kind = r?.kind
   const cost = Number(r?.cost)
   if (!/^[a-z0-9_]{2,40}$/.test(key) || (kind !== 'gas_discount' && kind !== 'badge')) return null
   if (!Number.isFinite(cost) || cost <= 0) return null
   const item: ShopItem = {
     key, kind, cost,
-    label: String(r?.label ?? key).slice(0, 80),
-    description: String(r?.description ?? '').slice(0, 200),
+    label: str(r?.label, key).slice(0, 80),
+    description: str(r?.description).slice(0, 200),
   }
-  if (r?.emoji) item.emoji = String(r.emoji).slice(0, 4)
+  if (typeof r?.emoji === 'string' && r.emoji) item.emoji = r.emoji.slice(0, 4)
   if (kind === 'gas_discount') {
     const pct = Number(r?.discountPct), days = Number(r?.durationDays)
     if (!Number.isFinite(pct) || pct <= 0 || pct > 90 || !Number.isFinite(days) || days <= 0) return null
@@ -156,18 +162,4 @@ export async function getActiveGasDiscountPct(userId: string | null | undefined)
     select: { discountPct: true },
   })
   return best?.discountPct ?? 0
-}
-
-/** Margin-only discount for a gas order from an active shop perk. Floored at the margin still undiscounted. */
-export async function perkOrderDiscount(
-  userId: string | null | undefined,
-  marginUsdt: number,
-  alreadyDiscountedUsdt: number,
-): Promise<{ discountUsdt: number }> {
-  const pct = await getActiveGasDiscountPct(userId)
-  if (pct <= 0) return { discountUsdt: 0 }
-  const room = Math.round(Math.max(0, marginUsdt - alreadyDiscountedUsdt) * 100) / 100
-  if (room <= 0) return { discountUsdt: 0 }
-  const raw = Math.round((pct / 100) * marginUsdt * 100) / 100
-  return { discountUsdt: Math.min(raw, room) }
 }

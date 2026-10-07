@@ -6,7 +6,6 @@ import { useSSE } from '@/hooks/useSSE'
 import { supportChatApi, SUPPORT_RATINGS, buildChatTimeline, type SupportMessage } from '@/lib/supportChat'
 import { ChatDivider, SupportRatingChip, SupportSystemNote } from '@/components/support/ChatDivider'
 import { RefundAddressForm } from '@/components/support/RefundAddressForm'
-import Link from 'next/link'
 import { ReviewNudgeCard } from '@/components/support/ReviewNudgeCard'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
@@ -218,14 +217,6 @@ export function SupportChatThread() {
                 answer={reviewAckFor(item.msg.id)}
                 onSubmitted={(msg) => setMessages((prev) => [...prev, msg])}
               />
-            ) : item.msg.kind === 'gas_offer' ? (
-              <div key={item.key} className="rounded-2xl border border-primary/30 bg-primary/5 px-3 py-3 space-y-2">
-                <p className="text-sm text-text-primary">{item.msg.body}</p>
-                <div className="flex flex-wrap gap-2">
-                  <Link href="/gas" className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90">Buy gas</Link>
-                  <Link href="/points" className="rounded-lg bg-surface-alt px-3 py-1.5 text-xs font-semibold text-text-secondary hover:text-text-primary">Points shop</Link>
-                </div>
-              </div>
             ) : item.msg.kind === 'review_ack' ? (
               // Rendered inside the nudge card's "answered" state — skip the standalone bubble.
               null

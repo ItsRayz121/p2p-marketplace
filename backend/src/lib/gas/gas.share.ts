@@ -23,10 +23,9 @@ export const SHARE_TEST_EMAILS_KEY = 'share_reward_test_emails'  // comma list; 
 export const SHARE_MIN_PCT_KEY = 'share_reward_min_pct'          // default 20
 export const SHARE_MAX_PCT_KEY = 'share_reward_max_pct'          // default 50
 export const SHARE_HANDLE_KEY = 'share_reward_x_handle'          // e.g. "RupChain" (no @)
-export const SHARE_WINDOW_HOURS_KEY = 'share_reward_window_hours' // how long after delivery the offer stays open (default 24)
+export const SHARE_WINDOW_HOURS_KEY = 'share_reward_window_hours' // how long after delivery the offer stays open (default 1 hour)
 const DEFAULT_TEST_EMAILS = 'fazalelahi057@gmail.com'
 
-function round2(n: number): number { return Math.round(n * 100) / 100 }
 
 async function getStringConfig(key: string): Promise<string | null> {
   const row = await db.platformConfig.findUnique({ where: { key } })
@@ -147,6 +146,8 @@ export interface ShareInfo {
   deadlineAt?: string
   /** The discount % this order unlocks if the post is approved. */
   rewardPct?: number
+  /** Minimal facts for the share image (amount, coin, chain, how they paid). */
+  card?: { amount: string; symbol: string; chainName: string; paidWith: 'PKR' | 'USDT' }
   eligible: boolean
   reason?: string
   text?: string
@@ -170,7 +171,7 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
 
   if (!user || !(await isShareFeatureOn()) || !(await isUserAllowedToShare(user.email))) return { eligible: false, reward: null }
   if (order.status !== 'delivered' || order.isFreeGrant) return { eligible: false, reward: rewardView }
-  const windowHours = await getNumberConfig(SHARE_WINDOW_HOURS_KEY, 24)
+  const windowHours = await getNumberConfig(SHARE_WINDOW_HOURS_KEY, 1)
   const deadline = new Date((order.deliveredAt ?? order.updatedAt).getTime() + windowHours * 3_600_000)
   if (!reward && Date.now() > deadline.getTime()) {
     return { eligible: false, reason: 'This offer has expired.', reward: rewardView }
@@ -200,6 +201,7 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
     eligible: true,
     deadlineAt: deadline.toISOString(),
     rewardPct,
+    card: { amount: trimAmount(Number(order.gasAmountNative)), symbol, chainName, paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT' },
     text,
     tweetIntentUrl: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
     reward: rewardView,
@@ -299,29 +301,20 @@ export async function rejectShareReward(id: string, adminId: string, reason: str
 
 // ── Checkout integration (called from the gas order-creation paths) ──────────
 
-/**
- * Reserve the user's approved reward as a margin discount for an order being created.
- * Atomic (CAS approved → reserved) so two concurrent orders can't both use it. The
- * discount is pct% of the margin, floored at the margin still undiscounted.
- */
-export async function reserveShareReward(
-  userId: string | null | undefined,
-  marginUsdt: number,
-  alreadyDiscountedUsdt: number,
-): Promise<{ discountUsdt: number; rewardId: string | null }> {
-  const none = { discountUsdt: 0, rewardId: null }
-  if (!userId) return none
-  const room = round2(Math.max(0, marginUsdt - alreadyDiscountedUsdt))
-  if (room <= 0) return none
-  const reward = await db.gasShareReward.findFirst({
+/** The user's oldest approved (unreserved) reward, without claiming it. */
+export async function peekShareReward(userId: string): Promise<{ id: string; discountPct: number } | null> {
+  const r = await db.gasShareReward.findFirst({
     where: { userId, status: 'approved', discountPct: { not: null } },
     orderBy: { createdAt: 'asc' },
+    select: { id: true, discountPct: true },
   })
-  if (!reward || !reward.discountPct) return none
-  const claimed = await db.gasShareReward.updateMany({ where: { id: reward.id, status: 'approved' }, data: { status: 'reserved' } })
-  if (claimed.count === 0) return none
-  const discountUsdt = Math.min(round2((reward.discountPct / 100) * marginUsdt), room)
-  return { discountUsdt, rewardId: reward.id }
+  return r?.discountPct ? { id: r.id, discountPct: r.discountPct } : null
+}
+
+/** Atomically claim a specific approved reward (approved → reserved). False if already taken. */
+export async function reserveSpecificShareReward(rewardId: string): Promise<boolean> {
+  const claimed = await db.gasShareReward.updateMany({ where: { id: rewardId, status: 'approved' }, data: { status: 'reserved' } })
+  return claimed.count === 1
 }
 
 /** Order creation failed after reserving — put the reward back. */

@@ -300,6 +300,32 @@ export async function promoGiveawayRoutes(app: FastifyInstance) {
 
   // ─── PUBLIC ENDPOINTS ────────────────────────────────────────────────────
 
+  // GET /promo-giveaways/my-entries — tasks the caller has joined, with their status
+  // (entered/pending = waiting on the organiser, sent = reward delivered, rejected).
+  app.get('/promo-giveaways/my-entries', { preHandler: [authenticate] }, async (req, reply) => {
+    if (!(await isFlagEnabled(FLAGS.PROMO_GIVEAWAY))) return reply.send({ success: true, data: [] })
+    const entries = await db.promoGiveawayEntry.findMany({
+      where: { userId: req.user!.id },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: { giveaway: { select: { code: true, title: true, rewardAmount: true, rewardToken: true, status: true } } },
+    })
+    return reply.send({
+      success: true,
+      data: entries.map((e) => ({
+        entryId: e.id,
+        status: e.status,
+        note: e.status === 'rejected' ? e.note : null,
+        joinedAt: e.createdAt.toISOString(),
+        code: e.giveaway.code,
+        title: e.giveaway.title,
+        rewardAmount: e.giveaway.rewardAmount,
+        rewardToken: e.giveaway.rewardToken,
+        giveawayStatus: e.giveaway.status,
+      })),
+    })
+  })
+
   // GET /promo-giveaways/open — open community tasks for the Points & Tasks page.
   // Public (optional auth for alreadyEntered). Empty when the feature is off.
   app.get('/promo-giveaways/open', { preHandler: [optionalAuth] }, async (req, reply) => {

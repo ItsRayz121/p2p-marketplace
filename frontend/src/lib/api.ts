@@ -3694,6 +3694,7 @@ export const availabilityApi = {
 export interface ShareInfo {
   deadlineAt?: string
   rewardPct?: number
+  card?: { amount: string; symbol: string; chainName: string; paidWith: 'PKR' | 'USDT' }
   eligible: boolean
   reason?: string
   text?: string

@@ -44,9 +44,8 @@ import {
   type FreeCodeResolution,
 } from '../lib/gas/gas.freeCode'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
-import { airdropLevelOrderDiscount } from '../services/airdrop.service'
-import { reserveShareReward, releaseShareReward } from '../lib/gas/gas.share'
-import { perkOrderDiscount } from '../services/pointsShop.service'
+import { releaseShareReward } from '../lib/gas/gas.share'
+import { resolveLoyaltyDiscount } from '../lib/gas/gas.loyalty'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -843,13 +842,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
-    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
-    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
-    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
+    // Loyalty (points level / points-shop perk / share reward): only the single best offer applies,
+    // and total discount stays within gas_max_discount_pct (default 90%) of the margin.
+    const share = await resolveLoyaltyDiscount(userId, platformFeeUsdt, promoDisc + affDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + share.discountUsdt) * 100) / 100
     const finalPaymentAmount = Math.round((paymentAmount - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1432,13 +1428,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
-    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
-    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
-    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
+    // Loyalty (points level / points-shop perk / share reward): only the single best offer applies,
+    // and total discount stays within gas_max_discount_pct (default 90%) of the margin.
+    const share = await resolveLoyaltyDiscount(userId, platformFeeUsdt, promoDisc + affDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + share.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
     const finalPkrAmount = finalPaymentUsd * usdPkrRate
 
@@ -1608,12 +1601,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
-    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
-    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
+    // Loyalty (points level / points-shop perk / share reward): only the single best offer applies,
+    // and total discount stays within gas_max_discount_pct (default 90%) of the margin.
+    const share = await resolveLoyaltyDiscount(userId, platformFeeUsdt, promoDisc + affDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + share.discountUsdt) * 100) / 100
     const finalPaymentUsd = Math.round((paymentAmountUsd - totalDiscount) * 100) / 100
 
     const order = await (async () => {
@@ -1978,13 +1969,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const promoDisc = promoRes?.discountUsdt ?? 0
     const aff = await affiliateOrderDiscount(userId, platformFeeUsdt, promoDisc)
     const affDisc = aff.discountUsdt
-    // Airdrop level: additional margin-only discount (0 unless airdrop_levels_enabled).
-    const lvlDisc = (await airdropLevelOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc)).discountUsdt
-    // Share & Earn: random margin discount from an approved X-post reward (reserved atomically).
-    const share = await reserveShareReward(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc)
-    // Points shop: active gas-discount perk bought with RupChain Points (margin-only).
-    const perk = await perkOrderDiscount(userId, platformFeeUsdt, promoDisc + affDisc + lvlDisc + share.discountUsdt)
-    const totalDiscount = Math.round((promoDisc + affDisc + lvlDisc + share.discountUsdt + perk.discountUsdt) * 100) / 100
+    // Loyalty (points level / points-shop perk / share reward): only the single best offer applies,
+    // and total discount stays within gas_max_discount_pct (default 90%) of the margin.
+    const share = await resolveLoyaltyDiscount(userId, platformFeeUsdt, promoDisc + affDisc)
+    const totalDiscount = Math.round((promoDisc + affDisc + share.discountUsdt) * 100) / 100
     const discountedBase = Math.round((baseCharge - totalDiscount) * 100) / 100
     // Assign the unique amount AND create the order inside the same guarded block, so
     // ANY failure after the promo reservation (incl. assignUnique) releases the slot.

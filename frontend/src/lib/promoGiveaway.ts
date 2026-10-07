@@ -128,7 +128,20 @@ export interface OpenCommunityTask {
   alreadyEntered: boolean
 }
 
+export interface MyTaskEntry {
+  entryId: string
+  status: string
+  note: string | null
+  joinedAt: string
+  code: string
+  title: string
+  rewardAmount: string | null
+  rewardToken: string | null
+  giveawayStatus: string
+}
+
 export const promoGiveawayApi = {
+  myEntries: () => apiRequest<MyTaskEntry[]>('/promo-giveaways/my-entries'),
   listOpen: () => apiRequest<OpenCommunityTask[]>('/promo-giveaways/open'),
   create: (p: CreatePromoPayload) =>
     apiRequest<PromoGiveaway>('/promo-giveaways', { method: 'POST', body: JSON.stringify(p) }),
