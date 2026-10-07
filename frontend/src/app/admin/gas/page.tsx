@@ -611,7 +611,7 @@ function PollerHealthCard() {
 
   useEffect(() => {
     load()
-    const id = setInterval(load, 60_000)
+    const id = setInterval(() => { if (document.visibilityState !== 'hidden') void load() }, 60_000)
     return () => clearInterval(id)
   }, [load])
 
@@ -678,7 +678,7 @@ function ChainHealthCard() {
     catch { setErr(true) }
     finally { setLoading(false) }
   }, [])
-  useEffect(() => { load(); const id = setInterval(load, 120_000); return () => clearInterval(id) }, [load])
+  useEffect(() => { load(); const id = setInterval(() => { if (document.visibilityState !== 'hidden') void load() }, 120_000); return () => clearInterval(id) }, [load])
 
   if (err && !data) return null
 

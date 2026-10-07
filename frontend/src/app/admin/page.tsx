@@ -6,6 +6,7 @@ import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { cn } from '@/lib/utils'
+import { swrGet, swrSet } from '@/lib/swrCache'
 import { ADMIN_ROUTES, gasActiveOrdersHref, gasProofQueueHref, transactionsHref } from '@/lib/adminRoutes'
 import {
   ShieldCheck, AlertTriangle, Wallet, Fuel, FileText,
@@ -49,9 +50,11 @@ function fmt(n: string | number) {
 }
 
 export default function AdminDashboardPage() {
-  const [stats, setStats] = useState<Stats | null>(null)
+  // Last stats snapshot (default 'today' range) so the dashboard paints instantly on revisit.
+  const [seedStats] = useState(() => swrGet<Stats>('admin:stats:today'))
+  const [stats, setStats] = useState<Stats | null>(seedStats ?? null)
   const [error, setError]   = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seedStats)
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
   const [range, setRange] = useState<StatsRange>('today')
 
@@ -59,6 +62,7 @@ export default function AdminDashboardPage() {
     try {
       const data = await adminApi.getStats(r)
       setStats(data)
+      swrSet('admin:stats:' + r, data)
       setError(null)
       setLastRefresh(new Date())
     } catch (err) {

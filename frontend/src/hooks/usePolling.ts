@@ -38,10 +38,28 @@ export function usePolling(
   useEffect(() => {
     if (!enabled) return
 
-    run()
+    let lastRun = Date.now()
+    const tick = () => {
+      lastRun = Date.now()
+      void run()
+    }
+    tick()
 
-    const interval = setInterval(run, intervalMs)
-    return () => clearInterval(interval)
+    // A hidden tab (backgrounded, phone locked) has nobody looking at the data,
+    // so skip the tick instead of spending requests and battery on it. When the
+    // tab comes back, refresh right away if a tick was missed.
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      tick()
+    }, intervalMs)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && Date.now() - lastRun >= intervalMs) tick()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [intervalMs, enabled, run])
 
   useEffect(() => {

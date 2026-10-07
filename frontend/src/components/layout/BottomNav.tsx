@@ -6,6 +6,7 @@ import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { messagingApi, type InboxSummary } from '@/lib/messaging'
+import { dedupe, userKey } from '@/lib/swrCache'
 import {
   Home,
   ArrowLeftRight,
@@ -93,7 +94,7 @@ export default function BottomNav() {
   const fetchMsgSummary = useCallback(async () => {
     if (!user) return
     try {
-      const summary = await messagingApi.getSummary()
+      const summary = await dedupe(userKey(user.id, 'msg-summary'), 5_000, () => messagingApi.getSummary())
       setMsgSummary(summary)
       writeCachedEnabled(summary.enabled)
     } catch {

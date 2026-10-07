@@ -7,6 +7,7 @@ import { ApiError } from '@/lib/api'
 import { messagingApi, type InboxItem, type ChatUser } from '@/lib/messaging'
 import { channelsApi, type MyChannel } from '@/lib/channels'
 import { supportChatApi } from '@/lib/supportChat'
+import { swrGet, swrSet, dedupe, userKey } from '@/lib/swrCache'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -38,7 +39,8 @@ function LastMessageTick({ status }: { status: 'sent' | 'delivered' | 'read' | n
 function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
   const { user } = useAuth()
   const router = useRouter()
-  const [items, setItems] = useState<InboxItem[] | null>(null)
+  const inboxKey = userKey(user?.id, 'inbox')
+  const [items, setItems] = useState<InboxItem[] | null>(() => swrGet<InboxItem[]>(inboxKey) ?? null)
   const [error, setError] = useState<string | null>(null)
 
   // Find-by-username search — starts a conversation even without a shared
@@ -94,16 +96,18 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
 
   const load = useCallback(async () => {
     try {
-      const summary = await messagingApi.getSummary()
+      const summary = await dedupe(userKey(user?.id, 'msg-summary'), 5_000, () => messagingApi.getSummary())
       if (!summary.enabled) {
         router.replace('/dashboard')
         return
       }
-      setItems(await messagingApi.getInbox())
+      const inbox = await messagingApi.getInbox()
+      swrSet(inboxKey, inbox)
+      setItems(inbox)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load messages')
     }
-  }, [router])
+  }, [router, inboxKey, user?.id])
 
   useEffect(() => {
     if (user) void load()
@@ -371,7 +375,7 @@ function MessagesInboxInner() {
   const [messagingEnabled, setMessagingEnabled] = useState(true)
   useEffect(() => {
     if (!user) return
-    messagingApi.getSummary().then((s) => setMessagingEnabled(s.enabled)).catch(() => {})
+    dedupe(userKey(user?.id, 'msg-summary'), 5_000, () => messagingApi.getSummary()).then((s) => setMessagingEnabled(s.enabled)).catch(() => {})
   }, [user])
 
   // Fetched once here (not again inside ChannelsTab) — this single call both

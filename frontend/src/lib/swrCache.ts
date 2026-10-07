@@ -34,3 +34,20 @@ export function swrClear(): void {
 
 /** Namespace a key by user so cached private data is never shared across accounts. */
 export const userKey = (userId: string | undefined, key: string): string => `u:${userId ?? 'anon'}:${key}`
+
+const inflight = new Map<string, { promise: Promise<unknown>; at: number }>()
+
+/**
+ * Share one request between callers that ask for the same thing at about the
+ * same time (e.g. Navbar and BottomNav both polling the message summary). The
+ * result is reused for `ttlMs` (failures are not kept), then the next call fetches.
+ */
+export function dedupe<T>(key: string, ttlMs: number, fn: () => Promise<T>): Promise<T> {
+  const hit = inflight.get(key)
+  if (hit && Date.now() - hit.at < ttlMs) return hit.promise as Promise<T>
+  const promise = fn()
+  inflight.set(key, { promise, at: Date.now() })
+  // A failed fetch must not be replayed to later callers — let the next one retry.
+  promise.catch(() => { if (inflight.get(key)?.promise === promise) inflight.delete(key) })
+  return promise
+}

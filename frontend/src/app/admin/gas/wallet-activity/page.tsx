@@ -226,7 +226,7 @@ function LiveBalancesPanel() {
 
   useEffect(() => { void fetchBalances() }, [fetchBalances])
   useEffect(() => {
-    const id = setInterval(() => void fetchBalances(true), 60_000)
+    const id = setInterval(() => { if (document.visibilityState !== 'hidden') void fetchBalances(true) }, 60_000)
     return () => clearInterval(id)
   }, [fetchBalances])
 

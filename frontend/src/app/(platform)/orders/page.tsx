@@ -11,6 +11,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { getTradeStatus } from '@/lib/tradeStatus'
+import { swrGet, swrSet, userKey } from '@/lib/swrCache'
 import { ClipboardList } from 'lucide-react'
 import { UserAvatar } from '@/components/ui/UserAvatar'
 
@@ -62,10 +63,13 @@ export default function OrdersPage() {
   const router = useRouter()
   const [status, setStatus] = useState<StatusFilter>('all')
   const [role, setRole] = useState<RoleFilter>('all')
-  const [trades, setTrades] = useState<Trade[]>([])
-  const [total, setTotal] = useState(0)
+  // Default view (all / all, first page) is remembered per user so reopening Orders paints at once.
+  const ordersKey = userKey(user?.id, 'orders:first')
+  const [seed] = useState(() => swrGet<{ trades: Trade[]; total: number }>(ordersKey))
+  const [trades, setTrades] = useState<Trade[]>(seed?.trades ?? [])
+  const [total, setTotal] = useState(seed?.total ?? 0)
   const [page, setPage] = useState(1)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!seed)
   const [loadingMore, setLoadingMore] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -79,16 +83,18 @@ export default function OrdersPage() {
       })
       setTrades((prev) => (append ? [...prev, ...res.trades] : res.trades))
       setTotal(res.total)
+      if (p === 1 && status === 'all' && role === 'all') swrSet(ordersKey, { trades: res.trades, total: res.total })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load orders')
     } finally {
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [status, role])
+  }, [status, role, ordersKey])
 
   useEffect(() => {
-    setLoading(true)
+    // Keep showing the remembered list (no spinner) when it matches this view.
+    if (!(status === 'all' && role === 'all' && swrGet(ordersKey))) setLoading(true)
     setPage(1)
     fetchTrades(1, false)
   }, [fetchTrades])

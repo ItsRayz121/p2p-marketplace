@@ -96,7 +96,7 @@ export default function BrowseListingsPage() {
   }, [fetchListings])
 
   useEffect(() => {
-    const id = setInterval(fetchListings, 30_000)
+    const id = setInterval(() => { if (document.visibilityState !== 'hidden') void fetchListings() }, 30_000)
     return () => clearInterval(id)
   }, [fetchListings])
 

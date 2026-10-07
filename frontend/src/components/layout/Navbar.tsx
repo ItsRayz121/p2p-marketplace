@@ -6,6 +6,7 @@ import * as DropdownMenu from '@radix-ui/react-dropdown-menu'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
 import { notificationsApi, airdropApi } from '@/lib/api'
+import { dedupe, userKey } from '@/lib/swrCache'
 import { messagingApi, type InboxSummary } from '@/lib/messaging'
 import { cn } from '@/lib/utils'
 import { BrandLogo } from '@/components/ui/BrandLogo'
@@ -94,7 +95,7 @@ export default function Navbar() {
   const fetchMsgSummary = useCallback(async () => {
     if (!user) return
     try {
-      setMsgSummary(await messagingApi.getSummary())
+      setMsgSummary(await dedupe(userKey(user.id, 'msg-summary'), 5_000, () => messagingApi.getSummary()))
     } catch {
       // silently fail — item stays hidden
     }

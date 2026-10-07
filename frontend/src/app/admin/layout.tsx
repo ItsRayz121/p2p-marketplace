@@ -716,6 +716,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     void fetchUnreadCount()
     void fetchNavCounts()
     const id = setInterval(() => {
+      if (document.visibilityState === 'hidden') return
       void fetchUnreadCount()
       void fetchNavCounts()
     }, 30_000)
