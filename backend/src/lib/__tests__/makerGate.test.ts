@@ -109,4 +109,29 @@ describe('decideInitialStatus', () => {
     expect(await decideInitialStatus('u', 100)).toBe('active')
     expect(await decideInitialStatus('u', null)).toBe('active')
   })
+
+  it('only counts ads that actually went live, so create-then-close cannot skip review', async () => {
+    mocks.isFlagEnabled.mockResolvedValue(true)
+    const approvedAt = new Date('2026-10-01T00:00:00Z')
+    mocks.userFindUnique.mockResolvedValue({ isTrusted: false, makerApprovedAt: approvedAt })
+    mocks.adCount.mockResolvedValue(0); mocks.listingCount.mockResolvedValue(0)
+    await decideInitialStatus('u', 10)
+
+    const adWhere = mocks.adCount.mock.calls[0]![0].where
+    expect(adWhere.status).toEqual({ notIn: ['pending_review', 'rejected'] })
+    // admin-approved, OR created before the maker was approved (grandfathered history)
+    expect(adWhere.OR).toEqual([{ reviewedBy: { not: null } }, { createdAt: { lte: approvedAt } }])
+
+    const listingWhere = mocks.listingCount.mock.calls[0]![0].where
+    expect(listingWhere.NOT).toEqual([{ status: 'pending_review' }, { status: 'cancelled', reviewNote: { not: null } }])
+    expect(listingWhere.OR).toEqual(adWhere.OR)
+  })
+
+  it('without an approval date only admin-approved ads count', async () => {
+    mocks.isFlagEnabled.mockResolvedValue(true)
+    mocks.userFindUnique.mockResolvedValue({ isTrusted: false, makerApprovedAt: null })
+    mocks.adCount.mockResolvedValue(0); mocks.listingCount.mockResolvedValue(0)
+    await decideInitialStatus('u', 10)
+    expect(mocks.adCount.mock.calls[0]![0].where.reviewedBy).toEqual({ not: null })
+  })
 })

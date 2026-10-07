@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, MousePointerClick, UserPlus, ShoppingCart, Wallet, Trophy, Send, Globe, Share2, Search, Radio } from 'lucide-react'
+import { ChevronDown, ExternalLink, MousePointerClick, UserPlus, ShoppingCart, Wallet, Trophy, Send, Globe, Share2, Search, Radio } from 'lucide-react'
 import { affiliateDashboardApi, type AffiliateDashboardData } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { buildReferralLinks } from '@/lib/telegram'
@@ -155,6 +155,32 @@ function LinkRow({ link }: { link: AffiliateDashboardData['links'][number] }) {
   )
 }
 
+/**
+ * A card whose body is hidden until the header is tapped, and hides again on a
+ * second tap — the same pattern as "Referral rewards" lower on this page. Long
+ * lists (200 referrals, the earnings feed) start collapsed so the page stays short.
+ */
+function CollapsibleCard({ title, count, defaultOpen = false, children }: { title: string; count?: number; defaultOpen?: boolean; children: React.ReactNode }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="overflow-hidden rounded-2xl border border-border bg-surface">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 px-4 py-3.5 text-left transition-colors hover:bg-surface-alt"
+      >
+        <h2 className="text-sm font-semibold text-text-primary">
+          {title}
+          {count !== undefined && <span className="ml-1 text-text-muted">({count})</span>}
+        </h2>
+        <ChevronDown size={18} className={`flex-shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && <div className="space-y-3 border-t border-border p-4">{children}</div>}
+    </section>
+  )
+}
+
 function ReferralsPanel({ rows }: { rows: AffiliateDashboardData['referrals'] }) {
   const [q, setQ] = useState('')
   const [all, setAll] = useState(false)
@@ -165,16 +191,15 @@ function ReferralsPanel({ rows }: { rows: AffiliateDashboardData['referrals'] })
   const shown = all ? filtered : filtered.slice(0, 10)
 
   return (
-    <div className="rounded-2xl border border-border bg-surface p-4 space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-text-primary">Your referrals <span className="text-text-muted">({rows.length})</span></h2>
-        {rows.length > 5 && (
+    <CollapsibleCard title="Your referrals" count={rows.length}>
+      {rows.length > 5 && (
+        <div className="flex justify-end">
           <label className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-alt px-2 py-1">
             <Search className="h-3.5 w-3.5 text-text-muted" aria-hidden />
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search username" className="w-28 bg-transparent text-xs text-text-primary outline-none sm:w-40" />
           </label>
-        )}
-      </div>
+        </div>
+      )}
 
       {rows.length === 0 ? (
         <p className="py-6 text-center text-sm text-text-muted">No referrals yet. Share a link above and they will appear here the moment they sign up.</p>
@@ -207,7 +232,7 @@ function ReferralsPanel({ rows }: { rows: AffiliateDashboardData['referrals'] })
           {all ? 'Show fewer' : `Show all ${filtered.length}`}
         </button>
       )}
-    </div>
+    </CollapsibleCard>
   )
 }
 
@@ -253,8 +278,7 @@ export function AffiliateDashboard() {
 
       <ReferralsPanel rows={data.referrals} />
 
-      <div className="rounded-2xl border border-border bg-surface p-4">
-        <h2 className="mb-2 text-sm font-semibold text-text-primary">Recent earnings</h2>
+      <CollapsibleCard title="Recent earnings" count={data.feed.length}>
         {data.feed.length === 0 ? (
           <p className="py-4 text-center text-sm text-text-muted">Your commissions will show up here as soon as a referral&apos;s order is delivered.</p>
         ) : (
@@ -272,7 +296,7 @@ export function AffiliateDashboard() {
             ))}
           </div>
         )}
-      </div>
+      </CollapsibleCard>
 
       <p className="text-[11px] text-text-muted">
         Need help or want to be reviewed for a higher tier? <Link href="/messages/support" className="font-semibold text-primary underline">Contact support</Link>.

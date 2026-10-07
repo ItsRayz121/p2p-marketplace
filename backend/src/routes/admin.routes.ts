@@ -19,7 +19,7 @@ import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscript
 import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
-import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
+import { FLAGS, isFlagEnabled, clearFlagCache } from '../services/platformFlags.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { previewAccountMerge, adminMergeAccounts, adminEraseIdentity } from '../services/accountLink.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
@@ -3758,6 +3758,7 @@ export async function adminRoutes(app: FastifyInstance) {
     })
     await createAuditLog(req.user!.id, 'CONFIG_UPDATED', 'PlatformConfig', updated.id, { key: parsed.data.key, value: parsed.data.value }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
+    clearFlagCache()
     return reply.send({ success: true, data: updated })
   })
 

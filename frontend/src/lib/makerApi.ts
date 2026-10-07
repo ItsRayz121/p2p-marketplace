@@ -62,7 +62,17 @@ export interface PendingAdItem {
   maker: { id: string; username: string | null; kycLevel: string; tradeStats: { totalTrades: number; completedTrades: number } | null }
 }
 
+export interface MakerReviewSettings {
+  /** A maker's first N ads/listings wait for approval. 0 = never review by count. */
+  reviewFirstN: number
+  /** Also review any USDT ad whose max order exceeds this many USDT. 0 = off. */
+  reviewAboveUsdt: number
+}
+
 export const adminMakerApi = {
+  getSettings: () => apiRequest<MakerReviewSettings>('/admin/makers/settings'),
+  saveSettings: (data: MakerReviewSettings) =>
+    apiRequest<MakerReviewSettings>('/admin/makers/settings', { method: 'PUT', body: JSON.stringify(data) }),
   getApplications: (status: 'pending' | 'approved' | 'rejected' = 'pending') =>
     apiRequest<{ gateEnabled: boolean; applications: MakerApplication[] }>(`/admin/makers?status=${status}`),
   decideMaker: (id: string, data: { approve: boolean; note?: string }) =>

@@ -24,6 +24,8 @@ export interface InboxItem {
   lastMessageStatus: 'sent' | 'delivered' | 'read' | null
   unread: boolean
   activeTrades: number
+  /** Trades between the two of you that are in dispute right now. */
+  disputedTrades?: number
   totalTrades: number
 }
 

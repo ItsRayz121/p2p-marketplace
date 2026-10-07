@@ -5,6 +5,7 @@ import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from './adminNotification.service'
 import { autoShareToOwnerChannels } from './channel.service'
 import { getMakerStatus, normalizeWhatsapp } from '../lib/makerGate'
+import { getNumberConfig } from './platformFlags.service'
 
 /** Maker applications + the new-ad review queue (stage 2). */
 
@@ -205,4 +206,37 @@ export async function reviewPendingAd(adminId: string, kind: 'usdt' | 'ctm', id:
     undefined,
     kind === 'usdt' ? '/my-ads' : '/ctm/my-listings',
   )
+}
+
+// ─── Review rules (admin) ────────────────────────────────────────────────────
+
+export interface MakerReviewSettings {
+  /** A maker's first N ads/listings wait for approval. 0 = never review by count. */
+  reviewFirstN: number
+  /** Also review any USDT ad whose max order exceeds this many USDT. 0 = off. */
+  reviewAboveUsdt: number
+}
+
+export async function getMakerReviewSettings(): Promise<MakerReviewSettings> {
+  const [reviewFirstN, reviewAboveUsdt] = await Promise.all([
+    getNumberConfig('maker_review_first_n', 3),
+    getNumberConfig('maker_review_above_usdt', 0),
+  ])
+  return { reviewFirstN, reviewAboveUsdt }
+}
+
+export async function saveMakerReviewSettings(adminId: string, input: MakerReviewSettings): Promise<MakerReviewSettings> {
+  const rows: Array<[string, number]> = [
+    ['maker_review_first_n', Math.round(input.reviewFirstN)],
+    ['maker_review_above_usdt', input.reviewAboveUsdt],
+  ]
+  for (const [key, value] of rows) {
+    await db.platformConfig.upsert({
+      where: { key },
+      create: { key, value: String(value) },
+      update: { value: String(value) },
+    })
+  }
+  await recordAuditLog(adminId, 'MAKER_REVIEW_SETTINGS_UPDATED', 'PlatformConfig', 'maker_review', { ...input })
+  return getMakerReviewSettings()
 }

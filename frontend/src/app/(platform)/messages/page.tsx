@@ -304,6 +304,11 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                    {(t.disputedTrades ?? 0) > 0 && (
+                      <span className="inline-flex items-center gap-1 px-1.5 h-[18px] rounded-full bg-danger/10 text-danger text-[10px] font-semibold">
+                        {t.disputedTrades} disputed
+                      </span>
+                    )}
                     {t.activeTrades > 0 && (
                       <span className="inline-flex items-center px-1.5 h-[18px] rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-semibold">
                         {t.activeTrades} in progress

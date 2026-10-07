@@ -112,10 +112,24 @@ export async function decideInitialStatus(
   ])
   if (aboveUsdt > 0 && sizeUsdt !== null && sizeUsdt > aboveUsdt) return 'pending_review'
 
-  // Ads that have already passed review (anything not pending/rejected) count as history.
+  // History = ads that genuinely went live: approved by an admin, or created before the
+  // maker was approved (which is how grandfathered makers' old ads count). Ads the
+  // maker created and then closed or deleted while they were still pending never
+  // count, otherwise create-then-close three times would skip review for good.
+  const maker = await db.user.findUnique({ where: { id: userId }, select: { makerApprovedAt: true } })
+  const wentLive = maker?.makerApprovedAt
+    ? { OR: [{ reviewedBy: { not: null } }, { createdAt: { lte: maker.makerApprovedAt } }] }
+    : { reviewedBy: { not: null } }
   const [ads, listings] = await Promise.all([
-    db.ad.count({ where: { userId, status: { notIn: ['pending_review', 'rejected'] } } }),
-    db.ctmListing.count({ where: { merchantProfile: { userId }, status: { not: 'pending_review' } } }),
+    db.ad.count({ where: { userId, status: { notIn: ['pending_review', 'rejected'] }, ...wentLive } }),
+    db.ctmListing.count({
+      where: {
+        merchantProfile: { userId },
+        // 'cancelled' with a reviewNote is an admin rejection, not a live listing.
+        NOT: [{ status: 'pending_review' }, { status: 'cancelled', reviewNote: { not: null } }],
+        ...wentLive,
+      },
+    }),
   ])
   return ads + listings < firstN ? 'pending_review' : 'active'
 }

@@ -2417,11 +2417,11 @@ export const adminApi = {
   setUserReview: (id: string, data: { active: boolean; reason: string }) =>
     apiRequest<void>(`/admin/users/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
   setTradingHold: (id: string, data: { reason: string }) =>
-    apiRequest<{ paused: { ads: number; listings: number } }>(`/admin/users//trading-hold`, { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<{ paused: { ads: number; listings: number } }>(`/admin/users/${id}/trading-hold`, { method: 'POST', body: JSON.stringify(data) }),
   releaseTradingHold: (id: string, data?: { reason?: string }) =>
-    apiRequest<void>(`/admin/users//trading-hold/release`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+    apiRequest<void>(`/admin/users/${id}/trading-hold/release`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
   setUserTrusted: (id: string, data: { trusted: boolean; reason?: string }) =>
-    apiRequest<void>(`/admin/users//trusted`, { method: 'POST', body: JSON.stringify(data) }),
+    apiRequest<void>(`/admin/users/${id}/trusted`, { method: 'POST', body: JSON.stringify(data) }),
   getScammerList: () =>
     apiRequest<ScammerListRow[]>('/admin/scammer-list'),
   resetTrustScore: (id: string, data: { reason: string }) =>

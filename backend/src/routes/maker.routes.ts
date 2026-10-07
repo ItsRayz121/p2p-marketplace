@@ -5,6 +5,7 @@ import { AppError } from '../lib/errors'
 import { getMakerStatus, isMakerGateOn } from '../lib/makerGate'
 import {
   saveWhatsappNumber, applyForMaker, listMakerApplications, decideMaker, listPendingAds, reviewPendingAd,
+  getMakerReviewSettings, saveMakerReviewSettings,
 } from '../services/maker.service'
 
 const adminOrSuper = requireRole('admin', 'super_admin')
@@ -43,6 +44,20 @@ export async function makerRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'approve (boolean) is required', 400)
     await decideMaker(req.user!.id, id, parsed.data.approve, parsed.data.note)
     return reply.send({ success: true })
+  })
+
+  // ── Admin: review rules (how many ads, or what size, need approval) ──
+  app.get('/admin/makers/settings', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    return reply.send({ success: true, data: await getMakerReviewSettings() })
+  })
+
+  app.put('/admin/makers/settings', { preHandler: [authenticate, adminOrSuper], config: rate }, async (req, reply) => {
+    const parsed = z.object({
+      reviewFirstN: z.number().int().min(0).max(50),
+      reviewAboveUsdt: z.number().min(0).max(1_000_000),
+    }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Ads to review must be 0-50 and the size threshold 0-1,000,000', 400)
+    return reply.send({ success: true, data: await saveMakerReviewSettings(req.user!.id, parsed.data) })
   })
 
   // ── Admin: ad review queue ──

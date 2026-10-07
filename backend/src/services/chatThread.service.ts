@@ -243,6 +243,8 @@ export async function getInbox(userId: string) {
     const disputed = disputedIds.has(other.id)
     const unread = isA ? t.unreadByA : t.unreadByB
     const activeTrades = t.episodes.filter((e) => e.outcome === 'active').length
+    // Trades between these two people that are in dispute right now (cleared when it resolves).
+    const disputedTrades = t.episodes.filter((e) => e.outcome === 'disputed').length
     const last = t.messages[0]
     return {
       threadId: t.id,
@@ -254,6 +256,7 @@ export async function getInbox(userId: string) {
         : null,
       unread,
       activeTrades,
+      disputedTrades,
       totalTrades: t.episodes.length,
     }
   })

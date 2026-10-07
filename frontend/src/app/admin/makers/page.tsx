@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { BadgeCheck } from 'lucide-react'
+import { MakerReviewSettingsCard } from '@/components/maker/MakerReviewSettingsCard'
 
 type Tab = 'pending' | 'approved' | 'rejected'
 
@@ -84,6 +85,8 @@ export default function MakerApplicationsPage() {
           posts ads was approved automatically.
         </p>
       )}
+
+      <MakerReviewSettingsCard />
 
       <div className="flex gap-2 mb-4">
         {(['pending', 'approved', 'rejected'] as Tab[]).map((t) => (
