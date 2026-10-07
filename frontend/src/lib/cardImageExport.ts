@@ -1,7 +1,7 @@
 // Card-level "download/share as image" support for P2P offer cards.
 // Shared by the CTM (ctm/page.tsx) and USDT (marketplace/page.tsx) listing
 // cards so both get identical export behavior from one implementation.
-import { toBlob } from 'html-to-image'
+// html-to-image is loaded on first export, not with the page that offers it.
 
 // 1x1 transparent GIF — used so a logo that fails to embed (e.g. blocked by
 // CORS) renders as blank space instead of a broken-image glyph.
@@ -59,6 +59,7 @@ export async function captureCardAsPngBlob(node: HTMLElement): Promise<Blob> {
   const width = Math.ceil(rect.width)
   const height = Math.ceil(rect.height) + 2
 
+  const { toBlob } = await import('html-to-image')
   const blob = await toBlob(node, {
     cacheBust: true,
     pixelRatio,

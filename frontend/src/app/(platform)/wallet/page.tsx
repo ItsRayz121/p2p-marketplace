@@ -4,7 +4,10 @@ import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi } from '@/lib/
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
-import { QRCodeSVG } from 'qrcode.react'
+import dynamic from 'next/dynamic'
+
+// The QR renderer is only needed once the deposit modal is open.
+const QRCodeSVG = dynamic(() => import('qrcode.react').then((m) => m.QRCodeSVG), { ssr: false })
 import { CopyButton } from '@/components/ui/CopyButton'
 import { SharePaymentModal } from '@/components/wallet/SharePaymentModal'
 import { Modal } from '@/components/ui/Modal'

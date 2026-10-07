@@ -5,7 +5,13 @@ import { useRouter } from 'next/navigation'
 import { blogApi, ctmApi, gasApi, type BlogPost, type BlogUpsert, type GasChain, ApiError } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
-import { BlogEditor } from './BlogEditor'
+import dynamic from 'next/dynamic'
+
+// Tiptap + extensions are heavy; load them after the form shell paints.
+const BlogEditor = dynamic(() => import('./BlogEditor').then((m) => m.BlogEditor), {
+  ssr: false,
+  loading: () => <div className="h-64 rounded-lg border border-border bg-surface-alt animate-pulse" />,
+})
 import { SeoChecklist } from './SeoChecklist'
 import { cn } from '@/lib/utils'
 import { BLOG_CATEGORY_LABELS, CATEGORY, OTHER_OPTION, subcategoriesFor } from '@/lib/blogTaxonomy'
