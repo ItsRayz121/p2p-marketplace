@@ -6,6 +6,30 @@ import { getNumberConfig } from '../services/platformFlags.service'
 export async function marketplaceRoutes(app: FastifyInstance) {
   // All routes are public (no auth required)
 
+  // Edge/browser caching for the read-only public snapshots. Cloudflare sits in
+  // front of the API but only caches what a Cache Rule opts in; these headers
+  // set how long it may reuse each response. Short TTLs + stale-while-revalidate
+  // keep prices fresh while sparing a Singapore round trip on most reads.
+  // /ads is deliberately excluded — listings go inactive quickly.
+  const PUBLIC_CACHE: Record<string, string> = {
+    '/rates': 'public, max-age=10, s-maxage=20, stale-while-revalidate=60',
+    '/rates/summary': 'public, max-age=10, s-maxage=20, stale-while-revalidate=60',
+    '/rates/usdt-insight': 'public, max-age=10, s-maxage=20, stale-while-revalidate=60',
+    '/rates/usdt-reference': 'public, max-age=10, s-maxage=20, stale-while-revalidate=60',
+    '/rates/usdt-history': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    '/stats': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    '/top-ads': 'public, max-age=10, s-maxage=15, stale-while-revalidate=30',
+    '/config': 'public, max-age=30, s-maxage=60, stale-while-revalidate=120',
+    '/recent-trades': 'public, max-age=15, s-maxage=30, stale-while-revalidate=60',
+  }
+  app.addHook('onSend', async (req, reply, payload) => {
+    if (req.method !== 'GET' || reply.statusCode !== 200 || reply.hasHeader('Cache-Control')) return payload
+    const path = req.url.split('?')[0]!.replace(/\/+$/, '')
+    const key = Object.keys(PUBLIC_CACHE).find((k) => path.endsWith(`/marketplace${k}`) || path === k)
+    if (key) reply.header('Cache-Control', PUBLIC_CACHE[key]!)
+    return payload
+  })
+
   app.get('/rate/:coin', async (req, reply) => {
     const { coin } = req.params as { coin: string }
     const data = await marketplaceService.getRateCoin(coin.toUpperCase())
