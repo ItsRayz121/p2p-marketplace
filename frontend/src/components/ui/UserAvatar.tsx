@@ -56,6 +56,21 @@ const SIZE = {
   xl:  'w-16 h-16 text-xl',
 }
 
+// Rendered px per size (matches SIZE above). Cloudinary serves the original
+// upload (often ~1000px, 250KB+) unless asked otherwise, which on the homepage
+// was a 28px avatar costing a quarter-megabyte on mobile.
+const SIZE_PX = { xs: 20, sm: 28, md: 36, lg: 48, xl: 64 }
+
+// Insert a resize + auto-format/quality transform right after /image/upload/.
+// Requests 2x for retina. URLs that are not plain Cloudinary uploads, or that
+// already carry a transform, are returned untouched.
+function optimizedAvatarUrl(url: string, px: number): string {
+  const m = url.match(/^(https:\/\/res\.cloudinary\.com\/[^/]+\/image\/upload\/)(v\d+\/.+)$/)
+  if (!m) return url
+  const d = px * 2
+  return `${m[1]}c_fill,g_auto,w_${d},h_${d},f_auto,q_auto/${m[2]}`
+}
+
 export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, glow }: Props) {
   const initials = name
     .split(/[\s_]+/)
@@ -73,7 +88,9 @@ export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, glow
     <img
       loading="lazy"
       decoding="async"
-      src={avatarUrl}
+      src={optimizedAvatarUrl(avatarUrl, SIZE_PX[size])}
+      width={SIZE_PX[size]}
+      height={SIZE_PX[size]}
       alt={name}
       className={cn('rounded-full object-cover flex-shrink-0', SIZE[size], tierRing, className)}
     />

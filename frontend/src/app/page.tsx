@@ -211,6 +211,7 @@ export default async function HomePage() {
       />
       <MarketingHeader />
 
+      <main>
       {/* ── 1. HERO ── */}
       <section className="relative bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 border-b border-slate-800 overflow-hidden">
         <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.03)_1px,transparent_1px),linear-gradient(to_right,rgba(255,255,255,0.03)_1px,transparent_1px)] [background-size:48px_48px] pointer-events-none" />
@@ -459,6 +460,7 @@ export default async function HomePage() {
       {/* ── 7. FAQ — client island (accordion state) ── */}
       <FaqAccordion items={faqs} />
 
+      </main>
       <Footer />
     </div>
   )
