@@ -27,6 +27,7 @@ import { BankSelect } from '@/components/ui/BankSelect'
 import { validateAddressForNetwork } from '@/lib/addressValidation'
 import { ArrowUpDown, Lock, Clock, AlertTriangle, Pencil, Eye, EyeOff, Trash2, Share2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
+import { makerApi } from '@/lib/makerApi'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1701,6 +1702,12 @@ export default function WalletPage() {
 
   const [depositCoin, setDepositCoin] = useState<string | null>(null)
   const [withdrawWallet, setWithdrawWallet] = useState<{ coin: string; network: string } | null>(null)
+  const [tab, setTab] = useState<'methods' | 'balance'>('methods')
+  const [isMaker, setIsMaker] = useState(false)
+
+  useEffect(() => {
+    makerApi.getStatus().then((s) => setIsMaker(s.makerStatus === 'approved')).catch(() => {})
+  }, [])
 
   const fetchBalances = useCallback(async () => {
     try {
@@ -1763,13 +1770,32 @@ export default function WalletPage() {
     : null
 
   const hasFunds = balances.some((b) => parseFloat(b.available) > 0 || parseFloat(b.locked) > 0)
+  // Makers need a deposit to post ads, so they get the balance tab even at zero.
+  const showBalanceTab = hasFunds || isMaker
+  const activeTab = showBalanceTab ? tab : 'methods'
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-text-primary">Payment Methods</h1>
-        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto.</p>
+        <h1 className="text-2xl font-bold text-text-primary">Wallet &amp; Payment Methods</h1>
+        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto{showBalanceTab ? ', plus your balance and deposits.' : '.'}</p>
       </div>
+
+      {showBalanceTab && (
+        <div role="tablist" className="flex gap-1 border-b border-border -mb-4">
+          {([['methods', 'Payment methods'], ['balance', 'Balance & deposits']] as const).map(([id, label]) => (
+            <button
+              key={id}
+              role="tab"
+              aria-selected={activeTab === id}
+              onClick={() => setTab(id)}
+              className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeTab === id ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Withdrawal security lock banner ── */}
       {wdLockActive && (
@@ -1789,7 +1815,7 @@ export default function WalletPage() {
           (or have collateral locked in) a balance see this, so nobody is locked out
           of funds they already have. Nothing is deleted — drop the hasFunds gate to
           bring it back for everyone. */}
-      {hasFunds && (
+      {showBalanceTab && activeTab === 'balance' && (
       <section>
         <h2 className="text-base font-semibold text-text-primary mb-1">RupChain balance</h2>
         <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Small withdrawals send instantly, larger ones require admin review.</p>
@@ -1860,23 +1886,27 @@ export default function WalletPage() {
       </section>
       )}
 
-      {/* ── PKR Payment Methods ── */}
-      <div id="payment-methods">
-        <PaymentMethodsSection />
-      </div>
+      {activeTab === 'methods' && (
+        <>
+          {/* ── PKR Payment Methods ── */}
+          <div id="payment-methods">
+            <PaymentMethodsSection />
+          </div>
 
-      {/* ── Saved Delivery Addresses ── */}
-      <div id="saved-addresses">
-        <SavedDeliveryAddressesSection />
-      </div>
+          {/* ── Saved Delivery Addresses ── */}
+          <div id="saved-addresses">
+            <SavedDeliveryAddressesSection />
+          </div>
 
-      {/* ── Trusted addresses ── */}
-      <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
+          {/* ── Trusted addresses ── */}
+          <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
+        </>
+      )}
 
-      {hasFunds && <RecentDeposits />}
+      {activeTab === 'balance' && hasFunds && <RecentDeposits />}
 
       {/* ── Transaction history — only for accounts with wallet activity ── */}
-      {(hasFunds || transactions.length > 0) && (
+      {activeTab === 'balance' && (hasFunds || transactions.length > 0) && (
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-text-primary">Transactions</h2>

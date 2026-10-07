@@ -30,7 +30,7 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 // Order requested: Wallet · Address Book · Gas · USDT Market · CTM · Referral.
 // (My Trades intentionally dropped — reachable via bottom nav + dropdown.)
 const QUICK_ACTIONS = [
-  { href: '/wallet',        label: 'Payment Methods', Icon: Wallet,         iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
+  { href: '/wallet',        label: 'Wallet & Payment Methods', Icon: Wallet,         iconCls: 'text-cyan-500',    bgCls: 'bg-cyan-500/10'    },
   { href: '/address-book',  label: 'Address Book', Icon: BookUser,       iconCls: 'text-violet-500',  bgCls: 'bg-violet-500/10'  },
   { href: '/gas',           label: 'Gas Fees',     Icon: Fuel,           iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10'   },
   { href: '/marketplace',   label: 'USDT Market',  Icon: ArrowLeftRight, iconCls: 'text-blue-500',    bgCls: 'bg-blue-500/10'    },
