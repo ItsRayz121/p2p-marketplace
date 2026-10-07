@@ -218,7 +218,7 @@ function TradeDetailModal({
             <div>
               <p className="text-sm font-medium text-text-primary mb-2">Payment Proof</p>
               <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-                <img src={trade.paymentProofUrl} alt="Payment proof" className="w-full max-h-48 object-contain rounded-xl border border-border" />
+                <img loading="lazy" decoding="async" src={trade.paymentProofUrl} alt="Payment proof" className="w-full max-h-48 object-contain rounded-xl border border-border" />
               </a>
             </div>
           )}
@@ -231,7 +231,7 @@ function TradeDetailModal({
                 {trade.proofs!.map((p, i) => (
                   p.fileUrl ? (
                     <a key={p.id ?? i} href={p.fileUrl} target="_blank" rel="noopener noreferrer" className="group">
-                      <img src={p.fileUrl} alt="proof" className="w-full h-24 object-cover rounded-xl border border-border group-hover:opacity-90 transition" />
+                      <img loading="lazy" decoding="async" src={p.fileUrl} alt="proof" className="w-full h-24 object-cover rounded-xl border border-border group-hover:opacity-90 transition" />
                       <p className="text-xs text-text-muted mt-0.5">{p.proofType} · {fmtDt(p.createdAt)}</p>
                     </a>
                   ) : (

@@ -38,7 +38,7 @@ function LookupDisplay({ result }: { result: TokenLookupResult }) {
         <div className="flex items-center gap-2">
           {result.logoUrl && (
             // eslint-disable-next-line @next/next/no-img-element
-            <img src={result.logoUrl} alt={result.name ?? result.symbol} className="w-8 h-8 rounded-full border border-border-subtle bg-white" />
+            <img loading="lazy" decoding="async" src={result.logoUrl} alt={result.name ?? result.symbol} className="w-8 h-8 rounded-full border border-border-subtle bg-white" />
           )}
           <div className="min-w-0">
             <p className="text-sm font-semibold text-text-primary truncate">{result.name ?? result.symbol}</p>

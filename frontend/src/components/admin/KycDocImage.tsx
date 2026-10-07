@@ -52,7 +52,7 @@ export function KycDocImage({
           <video src={url} controls className="rounded-lg w-full aspect-video object-contain border border-border bg-surface" />
         ) : (
           <a href={url} target="_blank" rel="noopener noreferrer">
-            <img src={url} alt={label} className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
+            <img loading="lazy" decoding="async" src={url} alt={label} className="rounded-lg w-full aspect-video object-contain border border-border hover:opacity-80 transition-opacity bg-surface" />
           </a>
         )
       )}

@@ -499,7 +499,7 @@ export default function DisputesPage() {
                 <p className="text-sm font-medium text-text-primary mb-2">Token Transfer Screenshot (seller)</p>
                 <a href={selected.trade.sellerDeliveryProofUrl} target="_blank" rel="noopener noreferrer">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={selected.trade.sellerDeliveryProofUrl} alt="Token transfer proof" className="max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer" />
+                  <img loading="lazy" decoding="async" src={selected.trade.sellerDeliveryProofUrl} alt="Token transfer proof" className="max-w-xs rounded-lg border border-border hover:opacity-90 transition-opacity cursor-pointer" />
                 </a>
               </div>
             )}

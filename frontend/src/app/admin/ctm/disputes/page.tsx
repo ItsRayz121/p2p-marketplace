@@ -268,7 +268,7 @@ export default function AdminCtmDisputesPage() {
                   {proofs.map((p: any, i: number) => (
                     p.fileUrl ? (
                       <a key={i} href={p.fileUrl} target="_blank" rel="noopener noreferrer">
-                        <img src={p.fileUrl} alt="proof" className="w-full h-32 object-cover rounded-xl border border-border" />
+                        <img loading="lazy" decoding="async" src={p.fileUrl} alt="proof" className="w-full h-32 object-cover rounded-xl border border-border" />
                         <p className="text-xs text-text-muted mt-1">{p.proofType} · {new Date(p.createdAt).toLocaleDateString()}</p>
                       </a>
                     ) : (

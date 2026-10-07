@@ -231,7 +231,7 @@ export default function GasGiveawaysAdminPage() {
             <label className="text-xs font-semibold text-text-primary">Banner image (optional)</label>
             <div className="mt-1 flex items-center gap-3">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              {form.thumbnailUrl && <img src={form.thumbnailUrl} alt="banner" className="w-16 h-16 rounded-lg object-cover border border-border" />}
+              {form.thumbnailUrl && <img loading="lazy" decoding="async" src={form.thumbnailUrl} alt="banner" className="w-16 h-16 rounded-lg object-cover border border-border" />}
               <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg cursor-pointer hover:bg-surface-alt">
                 {uploadingThumb ? 'Uploading…' : form.thumbnailUrl ? 'Change image' : 'Upload image'}
                 <input type="file" accept="image/*" onChange={onThumb} className="hidden" disabled={uploadingThumb} />

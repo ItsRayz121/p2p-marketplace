@@ -216,7 +216,7 @@ function RestrictedInner() {
               {evidence.map((u, i) => (
                 <div key={i} className="relative w-16 h-16 rounded-lg overflow-hidden border border-border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={u} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
+                  <img loading="lazy" decoding="async" src={u} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
                   <button onClick={() => setEvidence((p) => p.filter((_, idx) => idx !== i))} className="absolute top-0 right-0 bg-danger text-white rounded-bl p-0.5"><X size={12} /></button>
                 </div>
               ))}

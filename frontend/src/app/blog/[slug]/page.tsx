@@ -146,7 +146,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
             {post.coverImageUrl && (
               <figure className="mt-6">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
+                <img fetchPriority="high" decoding="async" src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
                 {post.coverImageCaption && (
                   <figcaption className="mt-2 text-center text-sm italic text-text-muted">{post.coverImageCaption}</figcaption>
                 )}

@@ -244,7 +244,7 @@ function CreateForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
       <div>
         <label className="text-xs font-medium text-text-muted">Thumbnail (optional)</label>
         <div className="mt-1 flex items-center gap-3">
-          {thumbnailUrl && <img src={thumbnailUrl} alt="thumbnail" className="w-16 h-16 rounded-lg object-cover border border-border" />}
+          {thumbnailUrl && <img loading="lazy" decoding="async" src={thumbnailUrl} alt="thumbnail" className="w-16 h-16 rounded-lg object-cover border border-border" />}
           <label className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-border rounded-lg cursor-pointer hover:bg-surface">
             {uploading ? 'Uploading…' : thumbnailUrl ? 'Change image' : 'Upload image'}
             <input type="file" accept="image/*" onChange={onThumb} className="hidden" disabled={uploading} />

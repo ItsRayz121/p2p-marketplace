@@ -98,7 +98,7 @@ function ImageUploadField({
       {uploadError && <p className="text-xs text-red-500 mt-1">{uploadError}</p>}
       {value && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={value} alt="" className="mt-2 h-10 w-10 rounded object-contain border border-border bg-surface" />
+        <img loading="lazy" decoding="async" src={value} alt="" className="mt-2 h-10 w-10 rounded object-contain border border-border bg-surface" />
       )}
     </div>
   )

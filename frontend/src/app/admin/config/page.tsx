@@ -105,7 +105,7 @@ function LogoUploadField({ logoUrl, onLogoUrlChange }: { logoUrl: string; onLogo
 
       {logoUrl && !imgError && (
         <div className="flex items-center gap-3 p-2 bg-surface rounded-lg border border-border">
-          <img src={logoUrl} alt="Logo preview" className="w-10 h-10 rounded-full object-contain border border-border" onError={() => setImgError(true)} />
+          <img loading="lazy" decoding="async" src={logoUrl} alt="Logo preview" className="w-10 h-10 rounded-full object-contain border border-border" onError={() => setImgError(true)} />
           <div className="flex-1 min-w-0">
             <p className="text-xs text-text-muted truncate">{logoUrl}</p>
           </div>

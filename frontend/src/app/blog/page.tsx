@@ -77,7 +77,7 @@ export default async function BlogIndexPage({
                 >
                   {p.coverImageUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.coverImageUrl} alt={p.coverImageAlt || p.title} className="aspect-video w-full object-cover" />
+                    <img loading="lazy" decoding="async" src={p.coverImageUrl} alt={p.coverImageAlt || p.title} className="aspect-video w-full object-cover" />
                   ) : (
                     <div className="aspect-video w-full bg-gradient-to-br from-slate-800 to-blue-950" />
                   )}

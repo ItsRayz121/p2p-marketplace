@@ -107,7 +107,7 @@ function ProfileTab() {
       <div className="flex items-center gap-4">
         <div className="relative">
           {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
+            <img loading="lazy" decoding="async" src={user.avatarUrl} alt="Avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
           ) : (
             <div className="w-16 h-16 rounded-full bg-primary/10 text-primary text-xl font-bold flex items-center justify-center border-2 border-border">
               {initials}
@@ -339,7 +339,7 @@ function SecurityTab() {
           <div className="space-y-4">
             <div className="text-center">
               {/* QR Code displayed as img from data URL */}
-              <img src={twoFaSetup.qrCode} alt="2FA QR Code" className="w-40 h-40 mx-auto border border-border rounded-lg" />
+              <img loading="lazy" decoding="async" src={twoFaSetup.qrCode} alt="2FA QR Code" className="w-40 h-40 mx-auto border border-border rounded-lg" />
             </div>
             <div className="bg-surface rounded-lg p-3">
               <p className="text-xs text-text-muted mb-1">Manual entry secret</p>

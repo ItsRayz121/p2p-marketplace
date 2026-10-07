@@ -81,7 +81,7 @@ export function AppealCard({ appeal, onChange, showUser = true }: { appeal: Appe
           {appeal.evidenceUrls.map((u, i) => (
             <a key={i} href={u} target="_blank" rel="noopener noreferrer" className="block w-16 h-16 rounded-lg overflow-hidden border border-border hover:ring-2 hover:ring-primary">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={u} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
+              <img loading="lazy" decoding="async" src={u} alt={`Evidence ${i + 1}`} className="w-full h-full object-cover" />
             </a>
           ))}
         </div>

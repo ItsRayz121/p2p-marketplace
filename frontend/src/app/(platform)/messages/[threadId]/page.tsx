@@ -641,7 +641,7 @@ export default function MessageThreadPage() {
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                    <img loading="lazy" decoding="async" src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                   </a>
                 )}
                 {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} mine={mine} /></div>}
@@ -669,7 +669,7 @@ export default function MessageThreadPage() {
             ) : pendingImage ? (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                <img loading="lazy" decoding="async" src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
                 <button
                   type="button"
                   onClick={() => setPendingImage(null)}

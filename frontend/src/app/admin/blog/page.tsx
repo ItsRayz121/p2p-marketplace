@@ -78,7 +78,7 @@ export default function AdminBlogListPage() {
             <div key={p.id} className="flex items-center gap-3 px-4 py-3 hover:bg-surface-alt/50">
               {p.coverImageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={p.coverImageUrl} alt="" className="w-12 h-12 rounded-md object-cover border border-border shrink-0" />
+                <img loading="lazy" decoding="async" src={p.coverImageUrl} alt="" className="w-12 h-12 rounded-md object-cover border border-border shrink-0" />
               ) : (
                 <div className="w-12 h-12 rounded-md bg-surface-alt border border-border shrink-0" />
               )}

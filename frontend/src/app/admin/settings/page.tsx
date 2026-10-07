@@ -212,7 +212,7 @@ function SecurityTab() {
         {!twoFaEnabled && twoFaSetup && (
           <div className="space-y-4">
             <div className="text-center">
-              <img src={twoFaSetup.qrCode} alt="2FA QR Code" className="w-40 h-40 mx-auto border border-border rounded-lg" />
+              <img loading="lazy" decoding="async" src={twoFaSetup.qrCode} alt="2FA QR Code" className="w-40 h-40 mx-auto border border-border rounded-lg" />
             </div>
             <div className="bg-surface rounded-lg p-3">
               <p className="text-xs text-text-muted mb-1">Manual entry secret</p>

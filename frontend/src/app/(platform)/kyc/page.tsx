@@ -174,7 +174,7 @@ function FileUploadField({
               <video src={preview} className="h-24 rounded-lg mx-auto" controls />
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
+              <img loading="lazy" decoding="async" src={preview} alt="Preview" className="h-24 object-cover rounded-lg mx-auto" />
             )}
             {uploaded ? (
               <p className="text-xs text-success font-medium">Uploaded — pending admin review</p>

@@ -388,7 +388,7 @@ export default function ChannelPage() {
                         {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} /></div>}
                         {isTrustedImageUrl(m.attachmentUrl) && (
                           <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
-                            <img src={m.attachmentUrl!} alt="Broadcast attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                            <img loading="lazy" decoding="async" src={m.attachmentUrl!} alt="Broadcast attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                           </a>
                         )}
                         {m.body && <div className="whitespace-pre-wrap break-words">{renderChannelText(m.body)}</div>}
@@ -437,7 +437,7 @@ export default function ChannelPage() {
                 <div className="px-3 pt-2">
                   {pendingImage ? (
                     <div className="relative inline-block">
-                      <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                      <img loading="lazy" decoding="async" src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
                       <button
                         onClick={() => setPendingImage(null)}
                         aria-label="Remove image"
@@ -614,7 +614,7 @@ function EditChannelModal({ isOpen, onClose, channel, onSaved }: {
         <div className="flex items-center gap-4">
           <div className="relative">
             {avatarUrl ? (
-              <img src={avatarUrl} alt="Channel avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
+              <img loading="lazy" decoding="async" src={avatarUrl} alt="Channel avatar" className="w-16 h-16 rounded-full object-cover border-2 border-border" />
             ) : (
               <UserAvatar name={name || channel.name} avatarUrl={null} size="lg" />
             )}

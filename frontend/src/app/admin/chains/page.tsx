@@ -112,7 +112,7 @@ function TokenIdentifierPanel() {
           }`}>
             {result.logoUrl && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={result.logoUrl} alt={result.name ?? ''} className="w-8 h-8 rounded-full border border-border-subtle bg-white flex-shrink-0" />
+              <img loading="lazy" decoding="async" src={result.logoUrl} alt={result.name ?? ''} className="w-8 h-8 rounded-full border border-border-subtle bg-white flex-shrink-0" />
             )}
             <div className="min-w-0">
               <div className="flex items-center gap-2">

@@ -75,6 +75,8 @@ export function EntityLogo({
   if (resolvedUrl) {
     return (
       <img
+        loading="lazy"
+        decoding="async"
         src={resolvedUrl}
         alt={slug}
         // bg-white keeps logos with transparent/dark artwork visible on any

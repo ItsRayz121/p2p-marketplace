@@ -144,7 +144,7 @@ export default function AdminCtmTradeDetailPage() {
         <div className="bg-surface shadow-card border border-border rounded-xl p-4">
           <p className="text-sm font-medium text-text-primary mb-2">Payment Proof</p>
           <a href={trade.paymentProofUrl} target="_blank" rel="noopener noreferrer">
-            <img src={trade.paymentProofUrl} alt="Payment proof" className="max-h-64 object-contain rounded-xl border border-border" />
+            <img loading="lazy" decoding="async" src={trade.paymentProofUrl} alt="Payment proof" className="max-h-64 object-contain rounded-xl border border-border" />
           </a>
         </div>
       )}
@@ -157,7 +157,7 @@ export default function AdminCtmTradeDetailPage() {
             {proofs.map((p: any, i: number) => (
               p.fileUrl ? (
                 <a key={p.id ?? i} href={p.fileUrl} target="_blank" rel="noopener noreferrer">
-                  <img src={p.fileUrl} alt="proof" className="w-full h-28 object-cover rounded-xl border border-border" />
+                  <img loading="lazy" decoding="async" src={p.fileUrl} alt="proof" className="w-full h-28 object-cover rounded-xl border border-border" />
                   <p className="text-xs text-text-muted mt-0.5">{p.proofType} · {fmtDt(p.createdAt)}</p>
                 </a>
               ) : (

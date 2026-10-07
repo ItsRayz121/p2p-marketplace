@@ -336,7 +336,7 @@ export default function PromoGiveawayEntryPage() {
               <p className="text-sm font-semibold text-text-primary">Distribution proof</p>
               <a href={g.resultsSheetUrl} target="_blank" rel="noopener noreferrer">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={g.resultsSheetUrl} alt="Distribution proof" className="w-full rounded-lg border border-border" />
+                <img loading="lazy" decoding="async" src={g.resultsSheetUrl} alt="Distribution proof" className="w-full rounded-lg border border-border" />
               </a>
             </div>
           )}

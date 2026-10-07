@@ -71,7 +71,7 @@ export default function AdminCtmProofsPage() {
           {proofs.map((p) => (
             <button key={p.id} onClick={() => { setSelected(p); setAdminNote('') }} className="bg-surface shadow-card border border-border rounded-xl overflow-hidden hover:border-primary transition-colors text-left">
               {p.fileUrl ? (
-                <img src={p.fileUrl} alt="proof" className="w-full h-36 object-cover" />
+                <img loading="lazy" decoding="async" src={p.fileUrl} alt="proof" className="w-full h-36 object-cover" />
               ) : (
                 <div className="w-full h-36 bg-surface flex items-center justify-center text-text-muted text-sm">
                   {p.txHash ? 'TX Hash' : 'No image'}
@@ -118,7 +118,7 @@ export default function AdminCtmProofsPage() {
           <div className="space-y-5">
             {selected.fileUrl && (
               <a href={selected.fileUrl} target="_blank" rel="noopener noreferrer">
-                <img src={selected.fileUrl} alt="proof" className="w-full rounded-xl border border-border" />
+                <img loading="lazy" decoding="async" src={selected.fileUrl} alt="proof" className="w-full rounded-xl border border-border" />
                 <p className="text-xs text-primary mt-1 hover:underline">Open full resolution ↗</p>
               </a>
             )}

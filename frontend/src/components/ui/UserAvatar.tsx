@@ -71,6 +71,8 @@ export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, glow
 
   return avatarUrl ? (
     <img
+      loading="lazy"
+      decoding="async"
       src={avatarUrl}
       alt={name}
       className={cn('rounded-full object-cover flex-shrink-0', SIZE[size], tierRing, className)}

@@ -282,7 +282,7 @@ export function SupportChatThread() {
                   {isTrustedImageUrl(item.msg.attachmentUrl) && (
                     <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
+                      <img loading="lazy" decoding="async" src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                     </a>
                   )}
                   {item.msg.body && <span className="whitespace-pre-wrap"><RichText text={item.msg.body} /></span>}
@@ -328,7 +328,7 @@ export function SupportChatThread() {
             ) : pendingImage ? (
               <div className="relative inline-block">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
+                <img loading="lazy" decoding="async" src={pendingImage} alt="Attachment preview" className="h-20 w-20 rounded-lg border border-border object-cover" />
                 <button
                   type="button"
                   onClick={() => setPendingImage(null)}
