@@ -64,7 +64,11 @@ export async function getMakerStatus(userId: string): Promise<MakerStatusView> {
     { key: 'approval', label: 'Approved by RupChain', met: makerStatus === 'approved' },
   ]
   const prerequisitesMet = requirements.filter((r) => r.key !== 'approval').every((r) => r.met)
-  const eligible = !gateEnabled || u.isTrusted || requirements.every((r) => r.met)
+  // The prerequisites (Level 2 KYC, Telegram, WhatsApp) gate APPLYING. Once an admin has approved
+  // someone, that approval is what lets them post: otherwise every maker the migration
+  // auto-approved (many only have Level 1 KYC and no WhatsApp number) would be locked out
+  // the moment the gate is switched on.
+  const eligible = !gateEnabled || u.isTrusted || makerStatus === 'approved'
 
   return {
     gateEnabled,

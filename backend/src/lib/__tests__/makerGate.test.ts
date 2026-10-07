@@ -59,6 +59,18 @@ describe('assertMakerEligible', () => {
     await expect(assertMakerEligible('u1')).rejects.toThrow(/Level 2 KYC.*WhatsApp/)
   })
 
+  it('lets an admin-approved maker through even if the newer prerequisites are not all met', async () => {
+    // e.g. an existing maker auto-approved by the migration: Level 1 KYC, no WhatsApp number
+    mocks.isFlagEnabled.mockResolvedValue(true)
+    mocks.userFindUnique.mockResolvedValue({ ...fullUser, kycLevel: 'basic', whatsappNumber: null, makerStatus: 'approved' })
+    await expect(assertMakerEligible('u1')).resolves.toBeUndefined()
+    // ...but a pending or rejected applicant is still blocked
+    mocks.userFindUnique.mockResolvedValue({ ...fullUser, makerStatus: 'pending' })
+    await expect(assertMakerEligible('u1')).rejects.toMatchObject({ code: 'MAKER_NOT_APPROVED' })
+    mocks.userFindUnique.mockResolvedValue({ ...fullUser, makerStatus: 'rejected' })
+    await expect(assertMakerEligible('u1')).rejects.toMatchObject({ code: 'MAKER_NOT_APPROVED' })
+  })
+
   it('lets a fully approved maker and a trusted account through', async () => {
     mocks.isFlagEnabled.mockResolvedValue(true)
     mocks.userFindUnique.mockResolvedValue(fullUser)
