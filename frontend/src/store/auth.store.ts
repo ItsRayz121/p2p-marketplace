@@ -23,6 +23,8 @@ export interface AuthUser {
   createdAt: string
   withdrawalLockedUntil: string | null
   withdrawalLockReason: string | null
+  tradingHold?: boolean
+  tradingHoldReason?: string | null
   avatarUrl: string | null
   usernameChangedAt: string | null
   tradeStats: {

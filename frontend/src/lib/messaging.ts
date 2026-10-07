@@ -7,6 +7,8 @@ import { apiRequest } from '@/lib/api'
 export interface ChatUser {
   id: string
   username: string | null
+  /** Open dispute against this user, or on a trading hold. */
+  disputed?: boolean
   fullName: string | null
   avatarUrl: string | null
   badge?: string | null

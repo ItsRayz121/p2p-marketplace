@@ -20,6 +20,8 @@ interface Listing {
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   makerBondInsufficient?: boolean
+  /** Listing creator has an open dispute against them or is on a trading hold. */
+  disputed?: boolean
   token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
   merchantProfile: {
     tier: string

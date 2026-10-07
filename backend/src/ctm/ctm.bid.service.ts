@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -52,6 +53,7 @@ export async function placeBid(
     buyerPaymentMethodId?: string
   },
 ) {
+  await assertNotOnTradingHold(bidderId, 'trade')
   const listing = await db.ctmListing.findUnique({
     where: { id: listingId },
     include: { merchantProfile: true, token: true },
@@ -131,6 +133,7 @@ export async function placeBid(
 }
 
 export async function acceptListingBid(merchantUserId: string, bidId: string) {
+  await assertNotOnTradingHold(merchantUserId, 'trade')
   const bid = await db.ctmListingBid.findUnique({
     where: { id: bidId },
     include: {

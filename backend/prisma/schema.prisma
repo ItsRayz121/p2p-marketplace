@@ -441,6 +441,17 @@ model User {
   underReview            Boolean  @default(false)  // flagged for review; informational, does not block access
   moderationReason       String?  @db.VarChar(1000) // current active reason (ban or suspend)
 
+  // ── Trading hold (scam / dispute control) ──
+  // Distinct from suspend/ban: the user can still log in, chat and answer their
+  // dispute, but cannot post ads/listings or open/accept trades until an admin
+  // releases it. Their live ads are paused when the hold is applied.
+  tradingHold            Boolean   @default(false)
+  tradingHoldReason      String?   @db.VarChar(1000)
+  tradingHoldSince       DateTime?
+  tradingHoldBy          String?   // admin user id
+  // Trusted accounts skip maker deposit/approval/ad-review rules (never the hold).
+  isTrusted              Boolean   @default(false)
+
   dailyBuyUsed           Decimal @default(0) @db.Decimal(14, 2)
   dailyBuyReset          DateTime?
   monthlyBuyUsed         Decimal @default(0) @db.Decimal(14, 2)

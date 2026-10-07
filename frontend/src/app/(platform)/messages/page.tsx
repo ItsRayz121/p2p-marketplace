@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { DisputedBadge } from '@/components/ui/DisputedBadge'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { ChannelsTab } from '@/components/channels/ChannelsTab'
 import { activeLabel } from '@/lib/onlineStatus'
@@ -293,6 +294,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className={`truncate font-semibold ${t.unread ? 'text-text-primary' : 'text-text-primary/90'}`}>{name}</span>
+                      {t.other.disputed && <DisputedBadge compact />}
                       {t.unread && <span className="w-2 h-2 rounded-full bg-primary flex-shrink-0" aria-label="unread" />}
                       {activity && <span className={`text-[10px] flex-shrink-0 ${activity.cls}`}>{activity.text}</span>}
                     </div>

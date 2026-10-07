@@ -149,6 +149,7 @@ async function createAuditLog(
 import { notify } from '../lib/notify'
 import { mergeVerifiedFromKyc } from '../services/socialLinks.service'
 import { computeModerationStatus, recordModerationAction, notifyModeration, moderationStatusLabel } from '../lib/moderation'
+import { pauseUserListings } from '../lib/tradingHold'
 import { restoreAfterNoFaultClose } from '../services/disputeResume'
 
 // ─── Route Export ─────────────────────────────────────────────────────────────
@@ -654,6 +655,10 @@ export async function adminRoutes(app: FastifyInstance) {
           moderationReason: user.moderationReason,
           moderationStatus: computeModerationStatus(user),
           bannedUntil: user.bannedUntil,
+          tradingHold: user.tradingHold,
+          tradingHoldReason: user.tradingHoldReason,
+          tradingHoldSince: user.tradingHoldSince,
+          isTrusted: user.isTrusted,
           suspendedUntil: user.suspendedUntil,
           banType: user.banType,
           underReview: user.underReview,
@@ -838,6 +843,84 @@ export async function adminRoutes(app: FastifyInstance) {
     await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: active ? 'start_review' : 'end_review', reason, previousStatus: prevStatus, newStatus })
     await createAuditLog(req.user!.id, active ? 'USER_REVIEW_STARTED' : 'USER_REVIEW_ENDED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
+  })
+
+  // ── Trading hold (scam / dispute control) ──
+  // Blocks posting ads/listings and opening/accepting trades; login, chat and
+  // dispute replies keep working. Live ads are paused when the hold is applied.
+  app.post('/admin/users/:id/trading-hold', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ reason: z.string().min(1).max(1000) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'A reason is required', 400)
+    const { reason } = parsed.data
+    const user = await db.user.findUnique({ where: { id }, select: { ...MODERATION_SELECT, role: true, tradingHold: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+    if (user.role === 'admin' || user.role === 'super_admin') throw new AppError('FORBIDDEN', 'Cannot place a trading hold on a staff account', 403)
+    if (user.tradingHold) throw new AppError('ALREADY_ON_HOLD', 'User is already on a trading hold', 400)
+    const status = computeModerationStatus(user)
+    await db.user.update({ where: { id }, data: { tradingHold: true, tradingHoldReason: reason, tradingHoldSince: new Date(), tradingHoldBy: req.user!.id } })
+    const paused = await pauseUserListings(id)
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'trading_hold', reason, previousStatus: status, newStatus: status })
+    await createAuditLog(req.user!.id, 'USER_TRADING_HOLD', 'User', id, { reason, paused }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notify(id, 'moderation', 'Trading hold on your account',
+      `You cannot post ads or start trades until this is resolved. Reason: ${reason}`, { action: 'trading_hold', reason }, undefined, '/messages')
+    return reply.send({ success: true, data: { paused } })
+  })
+
+  app.post('/admin/users/:id/trading-hold/release', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const reason = (req.body as { reason?: string } | undefined)?.reason?.slice(0, 1000) || 'Hold released by admin'
+    const user = await db.user.findUnique({ where: { id }, select: { ...MODERATION_SELECT, tradingHold: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+    if (!user.tradingHold) throw new AppError('NOT_ON_HOLD', 'User is not on a trading hold', 400)
+    const status = computeModerationStatus(user)
+    await db.user.update({ where: { id }, data: { tradingHold: false, tradingHoldReason: null, tradingHoldSince: null, tradingHoldBy: null } })
+    await recordModerationAction({ targetUserId: id, moderatorId: req.user!.id, action: 'trading_hold_release', reason, previousStatus: status, newStatus: status })
+    await createAuditLog(req.user!.id, 'USER_TRADING_HOLD_RELEASED', 'User', id, { reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    notify(id, 'moderation', 'Trading hold lifted', 'You can post ads and start trades again. Any ads that were paused can be re-activated from My Ads.', { action: 'trading_hold_release' })
+    return reply.send({ success: true })
+  })
+
+  // Trusted accounts skip maker deposit / approval / ad-review rules — never the
+  // trading hold. Super admin only, always audited.
+  app.post('/admin/users/:id/trusted', { preHandler: [authenticate, superAdminOnly], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ trusted: z.boolean(), reason: z.string().max(500).optional() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'trusted (boolean) is required', 400)
+    const user = await db.user.findUnique({ where: { id }, select: { id: true } })
+    if (!user) throw Errors.NOT_FOUND('User')
+    await db.user.update({ where: { id }, data: { isTrusted: parsed.data.trusted } })
+    await createAuditLog(req.user!.id, parsed.data.trusted ? 'USER_MARKED_TRUSTED' : 'USER_UNMARKED_TRUSTED', 'User', id, { reason: parsed.data.reason ?? null }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true })
+  })
+
+  // Scammer list: everyone on a trading hold plus everyone with an open dispute
+  // against them, so admins see risky accounts before a hold is even applied.
+  app.get('/admin/scammer-list', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    const [held, usdt, ctm] = await Promise.all([
+      db.user.findMany({ where: { tradingHold: true }, select: { id: true } }),
+      db.dispute.findMany({ where: { status: { not: 'resolved' } }, select: { openedById: true, createdAt: true, trade: { select: { id: true, buyerId: true, sellerId: true } } } }),
+      db.ctmDispute.findMany({ where: { status: { not: 'resolved' } }, select: { openedById: true, createdAt: true, trade: { select: { id: true, tradeRef: true, buyerId: true, sellerId: true } } } }),
+    ])
+    const disputes = new Map<string, Array<{ market: 'usdt' | 'ctm'; tradeId: string; tradeRef: string | null; openedAt: Date }>>()
+    const addDispute = (respondent: string, row: { market: 'usdt' | 'ctm'; tradeId: string; tradeRef: string | null; openedAt: Date }) => {
+      const list = disputes.get(respondent) ?? []
+      list.push(row)
+      disputes.set(respondent, list)
+    }
+    for (const d of usdt) addDispute(d.openedById === d.trade.buyerId ? d.trade.sellerId : d.trade.buyerId, { market: 'usdt', tradeId: d.trade.id, tradeRef: null, openedAt: d.createdAt })
+    for (const d of ctm) addDispute(d.openedById === d.trade.buyerId ? d.trade.sellerId : d.trade.buyerId, { market: 'ctm', tradeId: d.trade.id, tradeRef: d.trade.tradeRef, openedAt: d.createdAt })
+
+    const ids = Array.from(new Set([...held.map((h) => h.id), ...disputes.keys()]))
+    const users = ids.length === 0 ? [] : await db.user.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, username: true, email: true, kycLevel: true, kycStatus: true, isTrusted: true, isBanned: true, isSuspended: true, tradingHold: true, tradingHoldReason: true, tradingHoldSince: true },
+    })
+    const rows = users.map((u) => ({
+      ...u,
+      openDisputes: disputes.get(u.id) ?? [],
+    })).sort((a, b) => Number(b.tradingHold) - Number(a.tradingHold) || b.openDisputes.length - a.openDisputes.length)
+    return reply.send({ success: true, data: rows })
   })
 
   // ── Reset trust score (clears manual override + forces a fresh recalculation) ──

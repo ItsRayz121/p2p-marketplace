@@ -1,3 +1,4 @@
+import { getDisputedUserIds } from '../lib/tradingHold'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { db } from '../lib/prisma'
@@ -210,6 +211,9 @@ export async function userRoutes(app: FastifyInstance) {
         )],
       })),
     }
+
+    const disputedIds = await getDisputedUserIds([user.id])
+    ;(profile as Record<string, unknown>).disputed = disputedIds.has(user.id)
 
     return reply.send({ success: true, data: profile })
   })

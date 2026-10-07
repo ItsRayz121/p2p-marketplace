@@ -10,6 +10,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { ALL_PAYMENT_METHODS, getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { DisputedBadge } from '@/components/ui/DisputedBadge'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
@@ -127,6 +128,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
               >
                 {sellerName}
               </Link>
+              {ad.seller?.disputed && <DisputedBadge compact className="mt-0.5" />}
               {ad.seller?.joinedAt && (
                 <p className="text-[10px] text-text-muted leading-tight">
                   Since {memberSince(ad.seller.joinedAt)}
@@ -317,6 +319,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
               >
                 {sellerName}
               </Link>
+              {ad.seller?.disputed && <DisputedBadge compact />}
               {ad.seller?.joinedAt && (
                 <span className="text-[10px] text-text-muted flex-shrink-0">· Since {memberSince(ad.seller.joinedAt)}</span>
               )}

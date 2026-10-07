@@ -833,6 +833,8 @@ export interface MarketplaceAd {
     id: string
     username: string
     fullName: string | null
+    /** Open dispute against this seller (or on a trading hold). */
+    disputed?: boolean
     avatarUrl: string | null
     badge: string
     lastSeenAt: string | null
@@ -2412,6 +2414,14 @@ export const adminApi = {
     apiRequest<void>(`/admin/users/${id}/restore-access`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
   setUserReview: (id: string, data: { active: boolean; reason: string }) =>
     apiRequest<void>(`/admin/users/${id}/review`, { method: 'POST', body: JSON.stringify(data) }),
+  setTradingHold: (id: string, data: { reason: string }) =>
+    apiRequest<{ paused: { ads: number; listings: number } }>(`/admin/users//trading-hold`, { method: 'POST', body: JSON.stringify(data) }),
+  releaseTradingHold: (id: string, data?: { reason?: string }) =>
+    apiRequest<void>(`/admin/users//trading-hold/release`, { method: 'POST', body: JSON.stringify(data ?? {}) }),
+  setUserTrusted: (id: string, data: { trusted: boolean; reason?: string }) =>
+    apiRequest<void>(`/admin/users//trusted`, { method: 'POST', body: JSON.stringify(data) }),
+  getScammerList: () =>
+    apiRequest<ScammerListRow[]>('/admin/scammer-list'),
   resetTrustScore: (id: string, data: { reason: string }) =>
     apiRequest<void>(`/admin/users/${id}/reset-trust`, { method: 'POST', body: JSON.stringify(data) }),
   getUserModeration: (id: string) =>
@@ -3796,4 +3806,20 @@ export const affiliateDashboardApi = {
   get: () => apiRequest<AffiliateDashboardData>('/gas-fee/affiliate/dashboard'),
   trackClick: (code: string) =>
     apiRequest<{ counted: boolean }>('/gas-fee/referral/click', { method: 'POST', body: JSON.stringify({ code }) }),
+}
+
+/** One row of the admin scammer list (trading-hold accounts + accounts with open disputes against them). */
+export interface ScammerListRow {
+  id: string
+  username: string | null
+  email: string
+  kycLevel: string
+  kycStatus: string
+  isTrusted: boolean
+  isBanned: boolean
+  isSuspended: boolean
+  tradingHold: boolean
+  tradingHoldReason: string | null
+  tradingHoldSince: string | null
+  openDisputes: Array<{ market: 'usdt' | 'ctm'; tradeId: string; tradeRef: string | null; openedAt: string }>
 }

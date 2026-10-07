@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -20,6 +21,7 @@ export async function placeBid(
   adId: string,
   data: { pricePerUnit: number; usdtAmount: number; message?: string | undefined },
 ) {
+  await assertNotOnTradingHold(bidderId, 'trade')
   const ad = await db.ad.findUnique({ where: { id: adId }, include: { user: { select: { id: true, username: true } } } })
   if (!ad) throw new AppError('NOT_FOUND', 'Listing not found', 404)
   if (ad.status !== 'active') throw new AppError('CONFLICT', 'Listing is not active', 409)
@@ -68,6 +70,7 @@ export async function placeBid(
 }
 
 export async function acceptAdBid(adOwnerUserId: string, bidId: string) {
+  await assertNotOnTradingHold(adOwnerUserId, 'trade')
   const bid = await db.adBid.findUnique({
     where: { id: bidId },
     include: { ad: true, bidder: { select: { id: true, username: true } } },

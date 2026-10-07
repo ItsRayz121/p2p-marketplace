@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold, getDisputedUserIds } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { assertTokenAddressFormat } from './ctm.address'
@@ -81,6 +82,7 @@ export interface ListingsFilter {
 }
 
 export async function createListing(userId: string, data: CreateListingInput) {
+  await assertNotOnTradingHold(userId, 'post')
   let merchantProfile = await db.ctmMerchantProfile.findUnique({
     where: { userId },
     include: { merchant: { select: { status: true } } },
@@ -335,6 +337,9 @@ export async function getListings(filters: ListingsFilter = {}) {
       return { id, type: m.type as string, label }
     }),
   }))
+
+  const disputedMakers = await getDisputedUserIds(listings.map((l) => l.merchantProfile.user.id))
+  listings.forEach((l, i) => { if (disputedMakers.has(l.merchantProfile.user.id)) resolvedListings[i]!.disputed = true })
 
   // Maker-bond availability annotation (flag-gated). Marks listings whose maker
   // (listing creator) can't cover the USDT bond for even their min order, so the

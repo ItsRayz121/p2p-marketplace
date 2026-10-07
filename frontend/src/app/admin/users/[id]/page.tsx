@@ -16,6 +16,7 @@ import {
   Sparkles, Mail, KeyRound, Copy, Check, ExternalLink,
   ShieldCheck, Link2, Twitter, Instagram, Facebook, Youtube, Send, Globe,
 } from 'lucide-react'
+import { TradingHoldPanel } from '@/components/admin/TradingHoldPanel'
 import { ModerationPanel, type ModerationStatus } from '@/components/admin/ModerationPanel'
 import { AppealCard } from '@/components/admin/AppealCard'
 import { KycDocImage } from '@/components/admin/KycDocImage'
@@ -1012,6 +1013,18 @@ export default function AdminUserProfilePage() {
                   banType: p.banType,
                   moderationReason: p.moderationReason ?? p.suspendReason,
                 }}
+                onChange={refresh}
+              />
+            </div>
+          </Section>
+          <Section title="Trading Hold">
+            <div className="p-5">
+              <TradingHoldPanel
+                userId={id}
+                tradingHold={!!p.tradingHold}
+                reason={p.tradingHoldReason}
+                since={p.tradingHoldSince}
+                isTrusted={!!p.isTrusted}
                 onChange={refresh}
               />
             </div>

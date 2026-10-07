@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -51,6 +52,7 @@ export interface GetUserAdsParams {
 // ─── Service Functions ────────────────────────────────────────────────────────
 
 export async function createAd(userId: string, data: CreateAdInput) {
+  await assertNotOnTradingHold(userId, 'post')
   const user = await db.user.findUnique({
     where: { id: userId },
     select: { kycStatus: true, kycLevel: true },

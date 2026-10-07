@@ -1,3 +1,4 @@
+import { getDisputedUserIds } from '../lib/tradingHold'
 import { Prisma } from '@prisma/client'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
@@ -235,15 +236,17 @@ export async function getInbox(userId: string) {
     }).catch(() => {})
   }
 
+  const disputedIds = await getDisputedUserIds(threads.map((t) => (t.userAId === userId ? t.userBId : t.userAId)))
   return threads.map((t) => {
     const isA = t.userAId === userId
     const other = toChatUser(isA ? t.userB : t.userA)
+    const disputed = disputedIds.has(other.id)
     const unread = isA ? t.unreadByA : t.unreadByB
     const activeTrades = t.episodes.filter((e) => e.outcome === 'active').length
     const last = t.messages[0]
     return {
       threadId: t.id,
-      other,
+      other: disputed ? { ...other, disputed: true } : other,
       lastMessageAt: t.lastMessageAt,
       lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : last.sharedGasChainSlug ? '⛽ Shared gas fees' : '')) : null,
       lastMessageStatus: last && last.senderId === userId

@@ -1,3 +1,4 @@
+import { getDisputedUserIds } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
@@ -34,6 +35,8 @@ export interface SellerInfo {
   id: string
   username: string
   fullName: string | null
+  /** Set when the seller has an open dispute against them or is on a trading hold. */
+  disputed?: boolean
   avatarUrl: string | null
   badge: string
   lastSeenAt: string | null
@@ -696,6 +699,9 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   // ads whose maker can't cover the bond for even their min order, so the UI can
   // show "maker unavailable" instead of letting the buyer hit a trade-time
   // rejection. One batched balance query for the whole page (no N+1).
+  const disputedSellers = await getDisputedUserIds(items.map((i) => i.seller.id))
+  for (const it of items) if (disputedSellers.has(it.seller.id)) it.seller.disputed = true
+
   const bondCfg = await getBondConfig()
   if (bondCfg.enabled && items.length > 0) {
     const makerIds = [...new Set(items.map((it) => it.seller.id))]

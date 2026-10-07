@@ -11,6 +11,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { DisputedBadge } from '@/components/ui/DisputedBadge'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Clock, Zap, Heart, Lock } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -20,6 +21,8 @@ interface TraderProfile {
   id: string
   username: string
   isFavorited: boolean
+  /** Open dispute against this trader, or on a trading hold. */
+  disputed?: boolean
   fullName: string
   avatarUrl: string | null
   profilePublic: boolean
@@ -184,6 +187,7 @@ export default function TraderProfilePage() {
           <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" className="mx-auto" />
           <div>
             <h1 className="text-lg font-bold text-text-primary">{profile.fullName || profile.username}</h1>
+            {profile.disputed && <div className="mt-1"><DisputedBadge /></div>}
             <p className="text-xs text-text-muted">@{profile.username} · Member since {memberSince(profile.createdAt)}</p>
           </div>
           <div className="flex items-center justify-center gap-1.5 text-sm text-text-muted pt-1">

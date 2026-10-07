@@ -104,6 +104,8 @@ export interface SafeUser {
   createdAt: Date
   withdrawalLockedUntil: Date | null
   withdrawalLockReason: string | null
+  tradingHold: boolean
+  tradingHoldReason: string | null
   avatarUrl: string | null
   usernameChangedAt: Date | null
   tradeStats: {
@@ -179,6 +181,8 @@ function toSafeUser(
     createdAt: Date
     withdrawalLockedUntil: Date | null
     withdrawalLockReason: string | null
+    tradingHold: boolean
+    tradingHoldReason: string | null
     avatarUrl: string | null
     usernameChangedAt: Date | null
     tradeStats: {
@@ -211,6 +215,8 @@ function toSafeUser(
     createdAt: user.createdAt,
     withdrawalLockedUntil: user.withdrawalLockedUntil,
     withdrawalLockReason: user.withdrawalLockReason,
+    tradingHold: user.tradingHold,
+    tradingHoldReason: user.tradingHoldReason,
     avatarUrl: user.avatarUrl,
     usernameChangedAt: user.usernameChangedAt,
     tradeStats: user.tradeStats
@@ -248,6 +254,8 @@ const USER_SELECT = {
   createdAt: true,
   withdrawalLockedUntil: true,
   withdrawalLockReason: true,
+  tradingHold: true,
+  tradingHoldReason: true,
   avatarUrl: true,
   usernameChangedAt: true,
   tradeStats: {

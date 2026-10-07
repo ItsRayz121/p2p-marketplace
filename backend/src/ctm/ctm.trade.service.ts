@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold, assertCounterpartyNotOnHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
@@ -1118,6 +1119,8 @@ export async function createTradeFromListing(buyerId: string, listingId: string,
   if (listing.status !== 'active') throw new AppError('CONFLICT', 'Listing is not active', 409)
   if (!listing.merchantProfile.isActive) throw new AppError('CONFLICT', 'Merchant is not active', 409)
   if (listing.merchantProfile.userId === buyerId) throw new AppError('CONFLICT', 'Cannot trade with yourself', 409)
+  await assertNotOnTradingHold(buyerId, 'trade')
+  await assertCounterpartyNotOnHold(listing.merchantProfile.userId)
   // Creator active hours: outside their window the listing can't be taken.
   const creatorAvail = await getUserAvailability(listing.merchantProfile.userId)
   if (!creatorAvail.online) {

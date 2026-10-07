@@ -120,6 +120,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         </div>
       )}
 
+      {user?.tradingHold && (
+        <div className="border-b border-danger/20 bg-danger/10 text-danger px-4 py-2 text-sm text-center">
+          <strong>Trading hold:</strong> you cannot post ads or start trades right now.
+          {user.tradingHoldReason ? ` Reason: ${user.tradingHoldReason}.` : ''} Answer your open dispute in Messages or contact support to have it lifted.
+        </div>
+      )}
+
       {user && <AnnouncementBanner />}
 
       {/* Hold page content until auth hydration finishes to avoid unauthenticated

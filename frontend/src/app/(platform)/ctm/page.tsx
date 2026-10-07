@@ -6,6 +6,7 @@ import type { RecentTrade, MarketRateToken } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { DisputedBadge } from '@/components/ui/DisputedBadge'
 import { traderDisplayName } from '@/lib/traderName'
 import { BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
@@ -46,6 +47,8 @@ interface Listing {
   usdtPaymentMethods?: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   makerBondInsufficient?: boolean
+  /** Listing creator has an open dispute against them or is on a trading hold. */
+  disputed?: boolean
   token: {
     id: string
     slug: string
@@ -240,6 +243,7 @@ function ListingRow({
               >
                 {displayName}
               </button>
+              {listing.disputed && <DisputedBadge compact className="mt-0.5" />}
               {user.createdAt && (
                 <p className="text-[10px] text-text-muted leading-tight">Since {memberSince(user.createdAt)}</p>
               )}
@@ -422,6 +426,7 @@ function ListingRow({
               <button type="button" onClick={openProfile} className="text-sm font-bold text-text-primary hover:text-primary truncate leading-tight text-left cursor-pointer">
                 {displayName}
               </button>
+              {listing.disputed && <DisputedBadge compact />}
               {user.createdAt && <span className="text-[10px] text-text-muted flex-shrink-0">· Since {memberSince(user.createdAt)}</span>}
             </div>
             <div className="flex items-center gap-1 flex-wrap mt-0.5">

@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold, assertCounterpartyNotOnHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
@@ -286,6 +287,8 @@ export async function createTrade(initiatorId: string, adId: string, data: Creat
   const adSide = await db.ad.findUnique({ where: { id: adId }, select: { side: true, userId: true, network: true, networks: true, price: true } })
   if (!adSide) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (adSide.userId === initiatorId) throw new AppError('SELF_TRADE', 'Cannot trade on your own ad', 400)
+  await assertNotOnTradingHold(initiatorId, 'trade')
+  await assertCounterpartyNotOnHold(adSide.userId)
   // Creator active hours: outside their window the ad stays visible but can't be taken.
   const makerAvail = await getUserAvailability(adSide.userId)
   if (!makerAvail.online) {

@@ -1,3 +1,4 @@
+import { assertNotOnTradingHold } from '../lib/tradingHold'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -51,6 +52,7 @@ export interface RequestsFilter {
 }
 
 export async function createRequest(userId: string, data: CreateRequestInput) {
+  await assertNotOnTradingHold(userId, 'post')
   const token = await db.ctmToken.findUnique({ where: { id: data.tokenId } })
   if (!token) throw new AppError('NOT_FOUND', 'Token not found', 404)
   if (token.status !== 'approved') throw new AppError('FORBIDDEN', 'Token is not approved', 403)
@@ -160,6 +162,7 @@ export async function submitBid(bidderId: string, requestId: string, data: {
   paymentMethodId?: string     // bidder's account (PKR receiving if seller; pay-FROM if buyer)
   buyerSettlementId?: string   // bidder's token receiving address (only when bidder is the buyer)
 }) {
+  await assertNotOnTradingHold(bidderId, 'trade')
   const request = await db.ctmRequest.findUnique({ where: { id: requestId }, include: { token: true } })
   if (!request) throw new AppError('NOT_FOUND', 'Request not found', 404)
   if (request.status !== 'open') throw new AppError('CONFLICT', 'Request is not open', 409)
@@ -242,6 +245,7 @@ export async function acceptBid(userId: string, requestId: string, bidId: string
   paymentMethodId?: string   // requester's account (PKR receiving if seller; pay-FROM if buyer)
   settlementId?: string      // requester's token receiving address (only when requester is the buyer)
 }) {
+  await assertNotOnTradingHold(userId, 'trade')
   // Concurrency cap (anti-scam): pre-check BOTH parties before opening the
   // transaction (avoids nested DB reads inside the tx). Existence/status are
   // re-validated inside the tx below.
