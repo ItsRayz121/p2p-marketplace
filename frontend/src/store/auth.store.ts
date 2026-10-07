@@ -1,6 +1,7 @@
 'use client'
 import { create } from 'zustand'
 import { setAuthHint, clearAuthHint } from '../lib/authCookie'
+import { swrClear } from '../lib/swrCache'
 
 export interface AuthUser {
   id: string
@@ -115,6 +116,7 @@ export const useAuthStore = create<AuthStore>((set) => ({
   clearAuth: () => {
     clearAuthHint()
     writeCachedUser(null)
+    swrClear()
     set({ accessToken: null, user: null })
   },
 }))

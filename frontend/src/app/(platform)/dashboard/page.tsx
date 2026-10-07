@@ -12,6 +12,7 @@ import { TraderLevelCard, BadgeChip } from '@/components/ui/TraderLevelCard'
 import type { TraderBadge } from '@/components/ui/TraderLevelCard'
 import { getTradeStatus, getGasStatus, kycStatusVariant } from '@/lib/tradeStatus'
 import { cn } from '@/lib/utils'
+import { swrGet, swrSet, userKey } from '@/lib/swrCache'
 import {
   Fuel,
   ArrowLeftRight,
@@ -90,15 +91,27 @@ function timeAgo(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+interface DashboardCache {
+  summary: DashboardSummary | null
+  trades: Trade[]
+  notifications: Notification[]
+  gasOrders: RecentGasOrder[]
+}
+const EMPTY_DASHBOARD_CACHE: DashboardCache = { summary: null, trades: [], notifications: [], gasOrders: [] }
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const [summary, setSummary] = useState<DashboardSummary | null>(null)
-  const [trades, setTrades] = useState<Trade[]>([])
-  const [notifications, setNotifications] = useState<Notification[]>([])
-  const [gasOrders, setGasOrders] = useState<RecentGasOrder[]>([])
-  const [loading, setLoading] = useState(true)
+  // Seed from the last visit so returning users see the dashboard immediately;
+  // fetchAll below still refreshes everything in the background.
+  const cacheKey = userKey(user?.id, 'dashboard')
+  const [cached] = useState(() => swrGet<DashboardCache>(cacheKey))
+  const [summary, setSummary] = useState<DashboardSummary | null>(cached?.summary ?? null)
+  const [trades, setTrades] = useState<Trade[]>(cached?.trades ?? [])
+  const [notifications, setNotifications] = useState<Notification[]>(cached?.notifications ?? [])
+  const [gasOrders, setGasOrders] = useState<RecentGasOrder[]>(cached?.gasOrders ?? [])
+  const [loading, setLoading] = useState(!cached)
   const [error, setError] = useState<string | null>(null)
 
   const fetchAll = useCallback(async () => {
@@ -110,17 +123,19 @@ export default function DashboardPage() {
         gasApi.getOrderHistory({ limit: 3, page: 1 }),
       ])
 
-      if (summaryRes.status === 'fulfilled') setSummary(summaryRes.value)
-      if (tradesRes.status === 'fulfilled') setTrades(tradesRes.value.trades ?? [])
-      if (notifRes.status === 'fulfilled') setNotifications(notifRes.value.notifications ?? [])
-      if (gasRes.status === 'fulfilled') setGasOrders((gasRes.value.orders ?? []).slice(0, 3) as RecentGasOrder[])
+      const next: DashboardCache = { ...(swrGet<DashboardCache>(cacheKey) ?? EMPTY_DASHBOARD_CACHE) }
+      if (summaryRes.status === 'fulfilled') { next.summary = summaryRes.value; setSummary(next.summary) }
+      if (tradesRes.status === 'fulfilled') { next.trades = tradesRes.value.trades ?? []; setTrades(next.trades) }
+      if (notifRes.status === 'fulfilled') { next.notifications = notifRes.value.notifications ?? []; setNotifications(next.notifications) }
+      if (gasRes.status === 'fulfilled') { next.gasOrders = (gasRes.value.orders ?? []).slice(0, 3) as RecentGasOrder[]; setGasOrders(next.gasOrders) }
+      swrSet(cacheKey, next)
 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load dashboard')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [cacheKey])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 

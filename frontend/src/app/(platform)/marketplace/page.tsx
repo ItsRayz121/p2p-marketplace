@@ -18,6 +18,7 @@ import { buildOfferFilename } from '@/lib/cardImageExport'
 import { ChevronDown, ShieldCheck, Clock, CheckCircle2, TrendingUp, Coins, History, Search, X, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import type { RecentTrade } from '@/lib/api'
 import { toast } from '@/lib/toast'
+import { swrGet, swrSet } from '@/lib/swrCache'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
 import { activeLabel } from '@/lib/onlineStatus'
@@ -482,15 +483,24 @@ function MarketplaceStatsStrip({ stats }: { stats: MarketStats }) {
   )
 }
 
+const DEFAULT_FILTERS: Filters = {
+  side: 'buy',
+  network: '',
+  paymentMethod: '',
+  minAmount: '',
+  maxAmount: '',
+  seller: '',
+}
+
+// First page of listings per filter set, so reopening the marketplace (or
+// switching back to a filter already seen) paints instantly while the fetch
+// below refreshes it.
+interface AdsCache { ads: MarketplaceAd[]; total: number }
+const adsCacheKey = (f: Filters) => `mkt:ads:${JSON.stringify(f)}`
+
 export default function MarketplacePage() {
-  const [filters, setFilters] = useState<Filters>({
-    side: 'buy',
-    network: '',
-    paymentMethod: '',
-    minAmount: '',
-    maxAmount: '',
-    seller: '',
-  })
+  const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS)
+  const [initialAds] = useState(() => swrGet<AdsCache>(adsCacheKey(DEFAULT_FILTERS)))
   // Seller search: debounced input so we don't refetch on every keystroke.
   const [sellerInput, setSellerInput] = useState('')
   const [searchOpen, setSearchOpen] = useState(false)
@@ -500,8 +510,8 @@ export default function MarketplacePage() {
     }, 350)
     return () => clearTimeout(t)
   }, [sellerInput])
-  const [ads, setAds] = useState<MarketplaceAd[]>([])
-  const [total, setTotal] = useState(0)
+  const [ads, setAds] = useState<MarketplaceAd[]>(initialAds?.ads ?? [])
+  const [total, setTotal] = useState(initialAds?.total ?? 0)
   const [page, setPage] = useState(1)
 
   // Honour ?side=buy|sell from deep links (e.g. homepage Top Offers → View Market)
@@ -511,7 +521,7 @@ export default function MarketplacePage() {
       setFilters((f) => (f.side === side ? f : { ...f, side }))
     }
   }, [])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(!initialAds)
   const [error, setError] = useState<string | null>(null)
   const [recentTrades, setRecentTrades] = useState<RecentTrade[]>([])
   const [marketStats, setMarketStats] = useState<MarketStats | null>(null)
@@ -533,6 +543,7 @@ export default function MarketplacePage() {
       const res = await marketplaceApi.getAds(params)
       setAds((prev) => (append ? [...prev, ...res.ads] : res.ads))
       setTotal(res.total)
+      if (!append) swrSet<AdsCache>(adsCacheKey(filters), { ads: res.ads, total: res.total })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load listings')
     } finally {
@@ -541,10 +552,17 @@ export default function MarketplacePage() {
   }, [filters])
 
   useEffect(() => {
-    setLoading(true)
+    const hit = swrGet<AdsCache>(adsCacheKey(filters))
+    if (hit) {
+      setAds(hit.ads)
+      setTotal(hit.total)
+      setLoading(false)
+    } else {
+      setLoading(true)
+    }
     setPage(1)
     fetchAds(1, false)
-  }, [fetchAds])
+  }, [fetchAds, filters])
 
   const pollFn = useCallback(async () => {
     try {
