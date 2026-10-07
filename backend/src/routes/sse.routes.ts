@@ -45,7 +45,7 @@ export async function sseRoutes(app: FastifyInstance) {
    * Frame format:
    *   data: {"type":"notification","payload":{...}}\n\n
    *   data: {"type":"trade_update","payload":{...}}\n\n
-   *   data: {"type":"ping"}\n\n         (every 25 s keepalive)
+   *   data: {"type":"ping"}\n\n         (every 15 s keepalive)
    */
   // Keyed by IP, not user: EventSource cannot send an Authorization header (the
   // ticket exists for exactly this reason), so the global keyGenerator falls back
@@ -88,21 +88,29 @@ export async function sseRoutes(app: FastifyInstance) {
     const raw = reply.raw
 
     raw.setHeader('Content-Type', 'text/event-stream')
-    raw.setHeader('Cache-Control', 'no-cache')
+    // no-transform stops Cloudflare from buffering/compressing the stream, which
+    // would hold events back until its buffer fills.
+    raw.setHeader('Cache-Control', 'no-cache, no-transform')
     raw.setHeader('Connection', 'keep-alive')
     raw.setHeader('X-Accel-Buffering', 'no')
     raw.flushHeaders()
 
     const clientId = sseRegister(userId, raw)
 
-    // Keepalive ping every 25 s so proxies don't close idle connections
+    // Send a body immediately. Production logs showed every stream dying at ~25 s
+    // (the first keepalive) with zero bytes ever delivered: a proxy in front
+    // treats a stream that has sent only headers as stalled. The immediate ping
+    // also resets the client's reconnect back-off (see useSSE).
+    raw.write('retry: 5000\n\ndata: {"type":"ping"}\n\n')
+
+    // Keepalive ping — frequent enough to stay under proxy idle limits.
     const ping = setInterval(() => {
       try {
         raw.write('data: {"type":"ping"}\n\n')
       } catch {
         clearInterval(ping)
       }
-    }, 25_000)
+    }, 15_000)
 
     req.socket.on('close', () => {
       clearInterval(ping)
