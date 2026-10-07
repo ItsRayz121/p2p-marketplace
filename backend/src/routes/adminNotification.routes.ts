@@ -58,17 +58,22 @@ export async function adminNotificationRoutes(app: FastifyInstance) {
     '/admin/nav-counts',
     { preHandler: [authenticate, requireRole('admin', 'super_admin', 'kyc_reviewer')] },
     async (_req, reply) => {
-      const [kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests] = await Promise.all([
+      const [kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests, makers, adReview] = await Promise.all([
         db.kycSubmission.count({ where: { status: 'pending' } }),
         db.appeal.count({ where: { status: { in: ['pending', 'more_info_requested'] } } }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
         db.ctmDispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
         db.withdrawal.count({ where: { status: { in: ['pending', 'first_approved'] } } }),
         db.gasCustomRequest.count({ where: { status: 'pending' } }),
+        db.user.count({ where: { makerStatus: 'pending' } }),
+        Promise.all([
+          db.ad.count({ where: { status: 'pending_review' } }),
+          db.ctmListing.count({ where: { status: 'pending_review' } }),
+        ]).then(([a, l]) => a + l),
       ])
       return reply.send({
         success: true,
-        data: { kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests },
+        data: { kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests, makers, adReview },
       })
     },
   )

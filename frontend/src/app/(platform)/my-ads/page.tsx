@@ -32,6 +32,7 @@ interface CtmListing {
   tradeWindowMins?: number
   terms?: string | null
   createdAt: string
+  reviewNote?: string | null
   token: { id: string; name: string; symbol: string; logoUrl?: string }
 }
 
@@ -41,8 +42,8 @@ type Tab = 'usdt' | 'ctm' | 'analytics'
 
 function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' {
   if (s === 'active') return 'success'
-  if (s === 'paused') return 'warning'
-  if (s === 'inactive') return 'danger'
+  if (s === 'paused' || s === 'pending_review') return 'warning'
+  if (s === 'inactive' || s === 'rejected') return 'danger'
   return 'default'
 }
 
@@ -50,6 +51,8 @@ const AD_STATUS_LABELS: Record<string, string> = {
   active: 'Active',
   paused: 'Paused',
   inactive: 'Inactive',
+  pending_review: 'Pending review',
+  rejected: 'Rejected',
 }
 const adStatusLabel = (s: string) => AD_STATUS_LABELS[s] ?? s.charAt(0).toUpperCase() + s.slice(1)
 
@@ -235,6 +238,8 @@ function UsdtAdsTab() {
                   </div>
                   <Badge variant={statusVariant(ad.status)} size="sm">{adStatusLabel(ad.status)}</Badge>
                 </div>
+                {ad.status === 'pending_review' && <p className="text-xs text-warning">Waiting for admin approval — it will go live once approved.</p>}
+                {ad.status === 'rejected' && ad.reviewNote && <p className="text-xs text-danger">Not approved: {ad.reviewNote}</p>}
                 <div className="grid grid-cols-2 gap-2 text-sm">
                   <div>
                     <p className="text-text-muted text-xs">Price</p>
@@ -427,11 +432,13 @@ function CtmListingsTab() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-text-primary">{l.side === 'sell' ? 'Selling' : 'Buying'} {l.token.name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : l.status === 'paused' ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : 'bg-surface-alt text-text-secondary'}`}>
-                        {l.status.charAt(0).toUpperCase() + l.status.slice(1)}
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : l.status === 'paused' || l.status === 'pending_review' ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : l.status === 'rejected' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-surface-alt text-text-secondary'}`}>
+                        {adStatusLabel(l.status)}
                       </span>
                     </div>
                     <p className="text-xs text-text-muted">PKR {Number(l.pricePerUnit).toLocaleString()} · {Number(l.availableAmount).toLocaleString()} {l.token.symbol} available</p>
+                    {l.status === 'pending_review' && <p className="text-xs text-warning mt-0.5">Waiting for admin approval — it will go live once approved.</p>}
+                    {l.status === 'rejected' && l.reviewNote && <p className="text-xs text-danger mt-0.5">Not approved: {l.reviewNote}</p>}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

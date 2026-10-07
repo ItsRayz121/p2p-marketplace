@@ -1,4 +1,5 @@
 'use client'
+import { MakerGuard } from '@/components/maker/MakerGuard'
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { ctmApi, apiRequest, savedTermsApi, walletApi } from '@/lib/api'
@@ -807,8 +808,10 @@ function CreateListingInner() {
 
 export default function CreateListingPage() {
   return (
-    <Suspense fallback={<div className="max-w-2xl mx-auto px-4 py-12 text-center text-text-muted">Loading…</div>}>
-      <CreateListingInner />
-    </Suspense>
+    <MakerGuard>
+      <Suspense fallback={<div className="max-w-2xl mx-auto px-4 py-12 text-center text-text-muted">Loading…</div>}>
+        <CreateListingInner />
+      </Suspense>
+    </MakerGuard>
   )
 }

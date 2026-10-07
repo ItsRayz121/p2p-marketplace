@@ -30,6 +30,7 @@ import { runEvmDepositPoller } from '../jobs/evmDepositPoller.job'
 import { runHotWalletDepositPoller } from '../jobs/gasHotWalletDepositPoller.job'
 import { runWithdrawalConfirmationWatcher } from '../jobs/withdrawalConfirmationWatcher.job'
 import { runModerationExpiry } from '../jobs/moderationExpiry.job'
+import { runDisputeAutoHold } from '../jobs/disputeAutoHold.job'
 import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
@@ -89,6 +90,9 @@ export function startWorkers() {
   // Plain-interval sweep (see scheduler.ts) — ran with BullMQ attempts:1, so no
   // retry behavior is lost by moving it off the queue.
   scheduleSweep('moderation-expiry', runModerationExpiry, 60_000)
+
+  // Hold anyone who has ignored an open dispute for 24h (checked every 10 minutes).
+  scheduleSweep('dispute-auto-hold', runDisputeAutoHold, 10 * 60_000)
 
   // Active workers
   createWorker(QUEUE_NAMES.OCR, async (job) => {

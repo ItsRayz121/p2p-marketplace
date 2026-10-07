@@ -56,6 +56,8 @@ enum AdStatus {
   active
   paused
   completed
+  pending_review  // new maker ad awaiting admin approval (hidden from the marketplace)
+  rejected        // admin rejected the ad; see reviewNote
 }
 
 enum TradeStatus {
@@ -320,6 +322,7 @@ enum CtmListingStatus {
   completed
   expired
   cancelled
+  pending_review  // new maker listing awaiting admin approval (hidden from the marketplace)
 }
 
 enum CtmRequestStatus {
@@ -451,6 +454,16 @@ model User {
   tradingHoldBy          String?   // admin user id
   // Trusted accounts skip maker deposit/approval/ad-review rules (never the hold).
   isTrusted              Boolean   @default(false)
+
+  // ── Maker approval (stage 2) ──
+  // Only enforced while the maker_gate_enabled flag is ON. none -> pending (applied)
+  // -> approved | rejected. Existing makers were auto-approved by the migration.
+  makerStatus            String    @default("none")
+  makerAppliedAt         DateTime?
+  makerApprovedAt        DateTime?
+  makerApprovedBy        String?
+  makerReviewNote        String?   @db.VarChar(500)
+  whatsappNumber         String?   @db.VarChar(32)
 
   dailyBuyUsed           Decimal @default(0) @db.Decimal(14, 2)
   dailyBuyReset          DateTime?
@@ -720,6 +733,9 @@ model Ad {
   tradeWindow       Int       @default(30)
   terms             String    @default("") @db.VarChar(2000)
   status            AdStatus  @default(active)
+  reviewNote        String?   @db.VarChar(500)  // admin note when pending_review is rejected
+  reviewedBy        String?
+  reviewedAt        DateTime?
   // Hides a completed/cancelled ad from the default "My Ads" list without deleting
   // it — only settable once the ad is out of the active/paused lifecycle.
   archived        Boolean   @default(false)
@@ -2878,6 +2894,9 @@ model CtmListing {
   usdtPaymentMethods String[]          @default([])
   // Maker's USDT receive points for a SELL listing: [{ method, address, label }].
   usdtSettlementDestinations Json?
+  reviewNote        String?            @db.VarChar(500)
+  reviewedBy        String?
+  reviewedAt        DateTime?
   tradeWindowMins   Int                @default(45)
   terms             String             @default("") @db.VarChar(2000)
   status            CtmListingStatus   @default(active)

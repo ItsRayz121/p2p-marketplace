@@ -26,6 +26,18 @@ export const FLAGS = {
    */
   MAKER_BOND: 'maker_bond_enabled',
   /**
+   * Maker gate (stage 2). When ON, posting an ad or CTM listing requires Level 2 KYC,
+   * a username, a linked Telegram, a WhatsApp number and admin approval; a new maker's
+   * first ads wait in an admin review queue. OFF (default) = unchanged behavior.
+   */
+  MAKER_GATE: 'maker_gate_enabled',
+  /**
+   * Dispute auto-hold. When ON, anyone who has not written a single dispute message
+   * within 24h of a dispute against them is put on a trading hold automatically.
+   * OFF (default) so old unresolved disputes are not mass-held the moment this ships.
+   */
+  DISPUTE_AUTO_HOLD: 'dispute_auto_hold_enabled',
+  /**
    * Gas-Payment promo/referral system master switch. When ON, promo codes and
    * referral rewards may be applied to gas orders — but ONLY ever drawing from
    * the platform margin, never the base gas cost. OFF (default) = no promo/

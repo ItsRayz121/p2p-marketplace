@@ -10,6 +10,7 @@ interface Listing {
   id: string
   side: string
   status: string
+  reviewNote?: string | null
   archived?: boolean
   pricePerUnit: string
   availableAmount: string
@@ -124,9 +125,11 @@ export default function MyListingsPage() {
                   <div>
                     <div className="flex items-center gap-2">
                       <p className="font-semibold text-text-primary">{l.side === 'sell' ? 'Selling' : 'Buying'} {l.token.name}</p>
-                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : l.status === 'paused' ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : 'bg-surface-alt text-text-secondary'}`}>{l.status.charAt(0).toUpperCase() + l.status.slice(1)}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${l.status === 'active' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : l.status === 'paused' || l.status === 'pending_review' ? 'bg-yellow-500/15 text-yellow-700 dark:text-yellow-300' : 'bg-surface-alt text-text-secondary'}`}>{l.status === 'pending_review' ? 'Pending review' : l.status.charAt(0).toUpperCase() + l.status.slice(1)}</span>
                     </div>
                     <p className="text-xs text-text-muted">PKR {Number(l.pricePerUnit).toLocaleString()} · {Number(l.availableAmount).toLocaleString()} {l.token.symbol} available</p>
+                    {l.status === 'pending_review' && <p className="text-xs text-warning mt-0.5">Waiting for admin approval — it will go live once approved.</p>}
+                    {l.status === 'cancelled' && l.reviewNote && <p className="text-xs text-danger mt-0.5">Not approved: {l.reviewNote}</p>}
                   </div>
                 </div>
 

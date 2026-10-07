@@ -16,6 +16,7 @@ const AUTH_REQUIRED = [
   '/notifications',
   '/referral',
   '/ctm',
+  '/maker',
   '/gas/orders',
 ]
 

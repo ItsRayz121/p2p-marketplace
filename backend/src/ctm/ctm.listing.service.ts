@@ -1,4 +1,5 @@
 import { assertNotOnTradingHold, getDisputedUserIds } from '../lib/tradingHold'
+import { assertMakerEligible, decideInitialStatus } from '../lib/makerGate'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { assertTokenAddressFormat } from './ctm.address'
@@ -83,6 +84,8 @@ export interface ListingsFilter {
 
 export async function createListing(userId: string, data: CreateListingInput) {
   await assertNotOnTradingHold(userId, 'post')
+  await assertMakerEligible(userId)
+  const initialStatus = await decideInitialStatus(userId, null)
   let merchantProfile = await db.ctmMerchantProfile.findUnique({
     where: { userId },
     include: { merchant: { select: { status: true } } },
@@ -114,7 +117,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
     if (user?.kycLevel !== 'enhanced') {
       const l1Max = Math.floor(await getNumberConfig('noncustodial_l1_max_ads_ctm', 1))
       const activeCount = await db.ctmListing.count({
-        where: { merchantProfileId: merchantProfile.id, tokenId: data.tokenId, side: data.side, status: { in: ['active', 'paused'] } },
+        where: { merchantProfileId: merchantProfile.id, tokenId: data.tokenId, side: data.side, status: { in: ['active', 'paused', 'pending_review'] } },
       })
       if (activeCount >= l1Max) {
         throw new AppError(
@@ -206,6 +209,7 @@ export async function createListing(userId: string, data: CreateListingInput) {
     data: {
       merchantProfileId: merchantProfile.id,
       tokenId: data.tokenId,
+      status: initialStatus,
       side: data.side as never,
       settlementType: data.settlementType,
       priceType: 'fixed',
@@ -234,13 +238,16 @@ export async function createListing(userId: string, data: CreateListingInput) {
     userId,
     'listing_created',
     'Listing created ✓',
-    `Your ${sideLabel} ${token.symbol} listing is now live in Community Tokens.`,
+    initialStatus === 'pending_review'
+      ? `Your ${sideLabel} ${token.symbol} listing was submitted and will go live once an admin approves it.`
+      : `Your ${sideLabel} ${token.symbol} listing is now live in Community Tokens.`,
     { listingId: listing.id, side: data.side, tokenSymbol: token.symbol },
     undefined,
     '/ctm/my-listings',
   )
 
-  void autoShareToOwnerChannels(userId, { market: 'ctm', id: listing.id })
+  // Pending listings stay private until an admin approves them (see adReview.service).
+  if (initialStatus === 'active') void autoShareToOwnerChannels(userId, { market: 'ctm', id: listing.id })
 
   return listing
 }
@@ -523,7 +530,7 @@ export async function updateListing(userId: string, listingId: string, data: {
     },
   })
 
-  if (data.pricePerUnit !== undefined) {
+  if (data.pricePerUnit !== undefined && listing.status === 'active') {
     void autoShareToOwnerChannels(userId, { market: 'ctm', id: listingId }, 'Price updated ⚡', listing.pricePerUnit.toString())
   }
 
@@ -549,6 +556,7 @@ export async function activateListing(userId: string, listingId: string) {
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
   if (listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'Not your listing', 403)
   if (listing.status !== 'paused') throw new AppError('CONFLICT', 'Listing is not paused', 409)
+  await assertNotOnTradingHold(userId, 'post')
   return db.ctmListing.update({ where: { id: listingId }, data: { status: 'active' } })
 }
 

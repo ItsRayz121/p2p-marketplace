@@ -48,6 +48,8 @@ const TELEGRAM_IMPORTANT_TYPES = new Set<string>([
   'dispute',      // dispute opened / resolved
   'kyc',          // identity verification result
   'moderation',   // account restricted (security)
+  'maker_review', // maker application approved / rejected (user is waiting on it)
+  'ad_review',    // new ad/listing approved / rejected
   'AD_TRADE_READY', // a marketplace trade just opened
   // ── CTM: settlement / escrow / dispute / completion (NOT bid noise) ──
   'ctm_trade_created', // a CTM trade just opened against the merchant's listing

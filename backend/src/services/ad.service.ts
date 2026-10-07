@@ -1,4 +1,5 @@
 import { assertNotOnTradingHold } from '../lib/tradingHold'
+import { assertMakerEligible, decideInitialStatus } from '../lib/makerGate'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { Prisma } from '@prisma/client'
@@ -53,6 +54,8 @@ export interface GetUserAdsParams {
 
 export async function createAd(userId: string, data: CreateAdInput) {
   await assertNotOnTradingHold(userId, 'post')
+  await assertMakerEligible(userId)
+  const initialStatus = await decideInitialStatus(userId, data.coin === 'USDT' ? Number(data.maxOrder) : null)
   const user = await db.user.findUnique({
     where: { id: userId },
     select: { kycStatus: true, kycLevel: true },
@@ -72,7 +75,7 @@ export async function createAd(userId: string, data: CreateAdInput) {
     // scammer being able to run a full storefront. Level 2 (enhanced) is unlimited.
     const l1Row = await db.platformConfig.findUnique({ where: { key: 'noncustodial_l1_max_ads' } })
     const l1Max = l1Row ? parseInt(l1Row.value, 10) : 1
-    const activeCount = await db.ad.count({ where: { userId, side: data.side, status: { in: ['active', 'paused'] } } })
+    const activeCount = await db.ad.count({ where: { userId, side: data.side, status: { in: ['active', 'paused', 'pending_review'] } } })
     if (activeCount >= l1Max) {
       throw new AppError(
         'KYC_LEVEL2_REQUIRED',
@@ -205,7 +208,7 @@ export async function createAd(userId: string, data: CreateAdInput) {
       settlementDestinations: resolvedDestinations.length ? (resolvedDestinations as unknown as Prisma.InputJsonValue) : Prisma.JsonNull,
       tradeWindow: data.tradeWindow ?? 30,
       terms: data.terms ?? '',
-      status: 'active',
+      status: initialStatus,
     },
   })
 
@@ -216,13 +219,16 @@ export async function createAd(userId: string, data: CreateAdInput) {
     userId,
     'listing_created',
     'Listing created ✓',
-    `Your ${sideLabel} ${ad.coin} listing is now live on the marketplace.`,
+    initialStatus === 'pending_review'
+      ? `Your ${sideLabel} ${ad.coin} listing was submitted and will go live once an admin approves it.`
+      : `Your ${sideLabel} ${ad.coin} listing is now live on the marketplace.`,
     { adId: ad.id, side: ad.side, coin: ad.coin },
     undefined,
     '/my-ads',
   )
 
-  void autoShareToOwnerChannels(userId, { market: 'usdt', id: ad.id })
+  // Pending ads stay private until an admin approves them (see adReview.service).
+  if (initialStatus === 'active') void autoShareToOwnerChannels(userId, { market: 'usdt', id: ad.id })
 
   return ad
 }
@@ -282,7 +288,7 @@ export async function updateAd(userId: string, adId: string, data: UpdateAdInput
 
   const updated = await db.ad.update({ where: { id: adId }, data: updateData })
 
-  if (data.price != null) {
+  if (data.price != null && ad.status === 'active') {
     void autoShareToOwnerChannels(userId, { market: 'usdt', id: adId }, 'Price updated ⚡', ad.price.toString())
   }
 
@@ -294,6 +300,11 @@ export async function toggleAdStatus(userId: string, adId: string, status: 'acti
   if (!ad) throw new AppError('NOT_FOUND', 'Ad not found', 404)
   if (ad.userId !== userId) throw new AppError('FORBIDDEN', 'You do not own this ad', 403)
   if (ad.status === 'completed') throw new AppError('CONFLICT', 'Cannot change status of a completed ad', 409)
+  // Only an admin can move an ad out of the review queue (or back from rejection).
+  if (ad.status === 'pending_review' || ad.status === 'rejected') {
+    throw new AppError('CONFLICT', 'This ad is waiting for admin review and cannot be activated yet', 409)
+  }
+  if (status === 'active') await assertNotOnTradingHold(userId, 'post')
 
   return db.ad.update({ where: { id: adId }, data: { status } })
 }

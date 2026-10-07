@@ -771,7 +771,9 @@ export interface Ad {
   settlementMethod?: string
   tradeWindow: number
   terms?: string
-  status: 'active' | 'paused' | 'completed'
+  status: 'active' | 'paused' | 'completed' | 'pending_review' | 'rejected'
+  /** Admin's reason when a new ad was rejected from the review queue. */
+  reviewNote?: string | null
   archived?: boolean
   archivedAt?: string | null
   createdAt: string
@@ -3230,6 +3232,8 @@ export const adminApi = {
       ctmDisputes: number
       withdrawals: number
       gasRequests: number
+      makers: number
+      adReview: number
     }>('/admin/nav-counts'),
   markAdminNotifRead: (id: string) =>
     apiRequest<void>(`/admin/notifications/${id}/read`, { method: 'PATCH' }),
