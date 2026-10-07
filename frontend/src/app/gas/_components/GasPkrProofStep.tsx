@@ -8,6 +8,7 @@ import { CardHeader, PkrMethodIcon } from './GasPrimitives'
 import { PKR_METHOD_META } from './GasContext'
 import { GasPromoApplied, GasAffiliateApplied } from './GasPromo'
 import { ManualVerifyNotice } from './ManualVerifyNotice'
+import { PaymentDeadline } from './PaymentDeadline'
 
 export function GasPkrProofStep() {
   const {
@@ -25,6 +26,8 @@ export function GasPkrProofStep() {
   return (
     <div className="p-5 space-y-4">
       <CardHeader title="Make Payment" sub={`Order #${order.orderRef}`} />
+
+      <PaymentDeadline />
 
       <ManualVerifyNotice />
 

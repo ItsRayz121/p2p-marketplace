@@ -327,7 +327,7 @@ export async function releaseShareReward(rewardId: string | null): Promise<void>
 export async function markShareRewardUsed(order: Pick<GasFeeOrder, 'id' | 'shareRewardId'>): Promise<void> {
   if (!order.shareRewardId) return
   await db.gasShareReward
-    .updateMany({ where: { id: order.shareRewardId, status: 'reserved' }, data: { status: 'used', usedAt: new Date(), reservedOrderId: order.id } })
+    .updateMany({ where: { id: order.shareRewardId, status: { in: ['reserved', 'approved'] } }, data: { status: 'used', usedAt: new Date(), reservedOrderId: order.id } })
     .catch((e) => logger.warn({ err: e, orderId: order.id }, 'markShareRewardUsed failed'))
 }
 

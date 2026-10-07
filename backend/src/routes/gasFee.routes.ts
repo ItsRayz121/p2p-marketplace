@@ -46,6 +46,7 @@ import {
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { releaseShareReward } from '../lib/gas/gas.share'
 import { resolveLoyaltyDiscount } from '../lib/gas/gas.loyalty'
+import { acceptsProof, manualLateProofGraceMs, manualPaymentWindowMs, manualReviewWindowMs } from '../lib/gas/gas.manualWindow'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -1346,7 +1347,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const dbChainEnum   = chainCfg.backendChainId as 'TRON' | 'BSC' | 'ETH' | 'SOL' | 'MATIC' | 'ARB' | 'BASE' | 'OP' | 'AVAX' | 'TON' | 'SUI'
     const orderRef      = generateOrderRef('GF')
     const trackingToken = generateTrackingToken()
-    const expiresAt     = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    // Manual payment: the user must pay + upload proof within this window (default 30 min).
+    const payWindowMs   = await manualPaymentWindowMs()
+    const expiresAt     = new Date(Date.now() + payWindowMs)
 
     // Free code: instant, 100%-free order (platform pays base + margin) — mutually
     // exclusive with promo/affiliate/airdrop discounts (nothing left to discount).
@@ -1478,7 +1481,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
 
     if (idempKey) await redis.setex(`idem:gasfee:pkr:${idempKey}`, 86400, order.id)
-    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: payWindowMs, jobId: `gas-expire-${order.id}` })
 
     flagIfRisky(order, req.ip ?? 'unknown').catch(() => {})
     logger.info({ orderId: order.id, userId, pkrAmount: finalPkrAmount, pkrPaymentMethod }, 'PKR gas order created')
@@ -1594,7 +1597,9 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     const orderRef      = generateOrderRef('GF')
     const trackingToken = generateTrackingToken()
     // Manual review can take a while — same 24h window as the PKR proof flow.
-    const expiresAt     = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    // Manual payment: the user must pay + upload proof within this window (default 30 min).
+    const payWindowMs   = await manualPaymentWindowMs()
+    const expiresAt     = new Date(Date.now() + payWindowMs)
 
     const promoIdent = promoIdentity(userId, req.ip ?? 'unknown')
     const promoRes = await reserveOrderPromo(promoCode, paymentAmountUsd, platformFeeUsdt, promoIdent)
@@ -1650,7 +1655,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     }
 
     if (idempKey) await redis.setex(`idem:gasfee:exchange:${idempKey}`, 86400, order.id)
-    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: 24 * 60 * 60 * 1000, jobId: `gas-expire-${order.id}` })
+    await queues.gasFee.add('expire-order', { orderId: order.id }, { delay: payWindowMs, jobId: `gas-expire-${order.id}` })
 
     flagIfRisky(order, req.ip ?? 'unknown').catch(() => {})
     logger.info({ orderId: order.id, userId, exchange: account.exchange, paymentAmount: finalPaymentUsd }, 'Exchange-transfer gas order created')
@@ -1703,8 +1708,10 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (order.paymentNetwork !== 'EXCHANGE') {
       throw new AppError('INVALID_STATUS', 'This order is not an exchange-transfer order', 400)
     }
-    if (order.expiresAt < new Date()) throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
-    if (order.status !== 'payment_pending') {
+    if (!acceptsProof(order, await manualLateProofGraceMs())) {
+      if (order.status === 'payment_pending' || order.status === 'expired') {
+        throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
+      }
       throw new AppError('INVALID_STATUS', `Cannot submit details for order in status ${order.status}`, 400)
     }
 
@@ -1717,15 +1724,19 @@ export async function gasFeeRoutes(app: FastifyInstance) {
 
     let updated
     try {
-      updated = await db.gasFeeOrder.update({
-        where: { orderRef },
+      // CAS on status: a submit racing the expiry sweep (or a double submit) is applied once.
+      const claimed = await db.gasFeeOrder.updateMany({
+        where: { orderRef, status: { in: ['payment_pending', 'expired'] } },
         data: {
           status: 'payment_uploaded',
+          expiresAt: new Date(Date.now() + (await manualReviewWindowMs())),
           exchangeUserUid,
           ...(exchangeOrderId ? { exchangeOrderId } : {}),
           ...(proofUrl ? { paymentProofUrl: proofUrl } : {}),
         },
       })
+      if (claimed.count === 0) throw new AppError('INVALID_STATUS', 'This order can no longer accept details.', 409)
+      updated = await db.gasFeeOrder.findUniqueOrThrow({ where: { orderRef } })
     } catch (e) {
       if ((e as { code?: string }).code === 'P2002') {
         throw new AppError('CONFLICT', 'That transfer order ID has already been used on another order.', 409)
@@ -2666,17 +2677,21 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (order.paymentCoin !== 'PKR') {
       throw new AppError('INVALID_STATUS', 'Proof upload is only for PKR payment orders', 400)
     }
-    if (order.expiresAt < new Date()) {
-      throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
-    }
-    if (order.status !== 'payment_pending') {
+    const graceMs = await manualLateProofGraceMs()
+    if (!acceptsProof(order, graceMs)) {
+      if (order.status === 'payment_pending' || order.status === 'expired') {
+        throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
+      }
       throw new AppError('INVALID_STATUS', `Cannot submit proof for order in status ${order.status}`, 400)
     }
 
-    const updated = await db.gasFeeOrder.update({
-      where: { orderRef },
-      data: { status: 'payment_uploaded', paymentProofUrl: parsed.data.proofUrl },
+    // CAS on status so a proof racing the expiry sweep (or a double submit) is applied once.
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { orderRef, status: { in: ['payment_pending', 'expired'] } },
+      data: { status: 'payment_uploaded', paymentProofUrl: parsed.data.proofUrl, expiresAt: new Date(Date.now() + (await manualReviewWindowMs())) },
     })
+    if (claimed.count === 0) throw new AppError('INVALID_STATUS', 'This order can no longer accept a proof.', 409)
+    const updated = await db.gasFeeOrder.findUniqueOrThrow({ where: { orderRef } })
 
     logger.info({ orderRef, userId: req.user!.id }, 'PKR payment proof submitted')
 

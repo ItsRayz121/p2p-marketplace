@@ -63,7 +63,7 @@ const STRUCTURED_KEYS = new Set([
   'active_hours_enabled', 'platform_timezone',
   'manual_verify_offline_enabled', 'manual_verify_offline_start', 'manual_verify_offline_end', 'manual_verify_offline_message',
   'gas_referral_l2_enabled', 'gas_referral_l2_pct',
-  'share_reward_enabled', 'share_reward_test_emails', 'share_reward_min_pct', 'share_reward_max_pct', 'share_reward_x_handle', 'share_reward_window_hours', 'airdrop_test_emails',
+  'share_reward_enabled', 'share_reward_test_emails', 'share_reward_min_pct', 'share_reward_max_pct', 'share_reward_x_handle', 'share_reward_window_hours', 'gas_manual_payment_window_minutes', 'gas_manual_review_window_hours', 'gas_manual_late_proof_grace_minutes', 'airdrop_test_emails',
   // Media retention (see "Media Retention & Storage" panel)
   'media_retention_enabled', 'media_retention_days', 'media_retention_last_run',
 ])
@@ -296,6 +296,9 @@ export default function ConfigPage() {
   const [shareMax, setShareMax] = useState('50')
   const [shareHandle, setShareHandle] = useState('')
   const [shareWindow, setShareWindow] = useState('1')
+  const [manualPayMin, setManualPayMin] = useState('30')
+  const [manualReviewHrs, setManualReviewHrs] = useState('24')
+  const [lateGraceMin, setLateGraceMin] = useState('120')
   const [airdropEmails, setAirdropEmails] = useState('fazalelahi057@gmail.com')
 
   // ── Marketing & Growth (gas promo / referral / giveaway / free-gas flags) ────
@@ -449,6 +452,9 @@ export default function ConfigPage() {
       setShareMax(m['share_reward_max_pct'] ?? '50')
       setShareHandle(m['share_reward_x_handle'] ?? '')
       setShareWindow(m['share_reward_window_hours'] ?? '1')
+      setManualPayMin(m['gas_manual_payment_window_minutes'] ?? '30')
+      setManualReviewHrs(m['gas_manual_review_window_hours'] ?? '24')
+      setLateGraceMin(m['gas_manual_late_proof_grace_minutes'] ?? '120')
       setAirdropEmails(m['airdrop_test_emails'] || 'fazalelahi057@gmail.com')
       setPromoFlag(m['gas_promo_enabled'] === 'true')
       setReferralFlag(m['gas_referral_enabled'] === 'true')
@@ -646,6 +652,9 @@ export default function ConfigPage() {
         { key: 'share_reward_min_pct', value: String(Math.min(Math.max(parseFloat(shareMin) || 20, 1), 100)) },
         { key: 'share_reward_max_pct', value: String(Math.min(Math.max(parseFloat(shareMax) || 50, 1), 100)) },
         { key: 'share_reward_window_hours', value: String(Math.min(Math.max(parseFloat(shareWindow) || 1, 0.25), 720)) },
+        { key: 'gas_manual_payment_window_minutes', value: String(Math.min(Math.max(parseInt(manualPayMin, 10) || 30, 5), 120)) },
+        { key: 'gas_manual_review_window_hours', value: String(Math.min(Math.max(parseInt(manualReviewHrs, 10) || 24, 1), 168)) },
+        { key: 'gas_manual_late_proof_grace_minutes', value: String(Math.min(Math.max(parseInt(lateGraceMin, 10) || 0, 0), 1440)) },
         { key: 'share_reward_x_handle', value: shareHandle.trim().replace(/^@/, '') },
         { key: 'airdrop_test_emails', value: airdropEmails.trim() || 'fazalelahi057@gmail.com' },
       ])
@@ -894,6 +903,17 @@ export default function ConfigPage() {
                 <p className="text-xs text-text-muted mt-0.5">During these hours PKR and exchange payment screens warn users that proofs won&apos;t be checked until you are back, and recommend paying by blockchain (auto-verified). Users can still submit — nothing is blocked.</p>
               </div>
             </label>
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Pay + upload window (minutes)" hint="PKR / exchange orders close if no proof is uploaded in this time. 30 recommended (5 to 120)">
+                <input className={inputCls} type="number" min="5" max="120" value={manualPayMin} onChange={(e) => setManualPayMin(e.target.value)} />
+              </Field>
+              <Field label="Review window after upload (hours)" hint="Once proof is uploaded the order stays open this long for you to verify it, even while you are offline">
+                <input className={inputCls} type="number" min="1" max="168" value={manualReviewHrs} onChange={(e) => setManualReviewHrs(e.target.value)} />
+              </Field>
+            </div>
+            <Field label="Late proof grace (minutes)" hint="After an order expires, a proof is still accepted for this long, so someone who really paid but uploaded late is not left without an order. 0 = off">
+              <input className={inputCls} type="number" min="0" max="1440" value={lateGraceMin} onChange={(e) => setLateGraceMin(e.target.value)} />
+            </Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Offline from" hint="Platform timezone">
                 <input className={inputCls} type="time" value={mvOffStart} onChange={(e) => setMvOffStart(e.target.value)} />
