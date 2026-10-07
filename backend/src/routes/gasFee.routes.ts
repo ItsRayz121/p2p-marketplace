@@ -30,6 +30,7 @@ import {
   reservePromo,
   recordRedemption,
   releaseReservation,
+  releasePromoForExpiredOrder,
   previewPromo,
   promoIdentity,
   type PromoResolution,
@@ -44,9 +45,9 @@ import {
   type FreeCodeResolution,
 } from '../lib/gas/gas.freeCode'
 import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
-import { releaseShareReward } from '../lib/gas/gas.share'
+import { releaseShareReward, releaseStaleShareRewards } from '../lib/gas/gas.share'
 import { resolveLoyaltyDiscount } from '../lib/gas/gas.loyalty'
-import { acceptsProof, manualLateProofGraceMs, manualPaymentWindowMs, manualReviewWindowMs } from '../lib/gas/gas.manualWindow'
+import { acceptsProof, manualPaymentWindowMs, manualReviewWindowMs } from '../lib/gas/gas.manualWindow'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
   getAffiliateQuote,
@@ -254,8 +255,22 @@ const createOrderLegacySchema = z.object({
 // themselves (uploaded/detected orders are already past their control).
 async function assertNoUnpaidGasOrder(userId: string | null | undefined): Promise<void> {
   if (!userId) return
+  // An order past its payment window is dead. Close it now (instead of waiting for the 60s
+  // sweep) so the user can start a new order immediately and keeps any promo / reward it held.
+  const stale = await db.gasFeeOrder.findMany({
+    where: { userId, status: 'payment_pending', expiresAt: { lt: new Date() } },
+    select: { id: true },
+  })
+  if (stale.length > 0) {
+    await db.gasFeeOrder.updateMany({
+      where: { id: { in: stale.map((o) => o.id) }, status: 'payment_pending' },
+      data: { status: 'expired' },
+    })
+    for (const o of stale) await releasePromoForExpiredOrder(o.id)
+    await releaseStaleShareRewards().catch(() => {})
+  }
   const existing = await db.gasFeeOrder.findFirst({
-    where: { userId, status: 'payment_pending' },
+    where: { userId, status: 'payment_pending', expiresAt: { gte: new Date() } },
     orderBy: { createdAt: 'desc' },
     select: { orderRef: true },
   })
@@ -1708,7 +1723,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (order.paymentNetwork !== 'EXCHANGE') {
       throw new AppError('INVALID_STATUS', 'This order is not an exchange-transfer order', 400)
     }
-    if (!acceptsProof(order, await manualLateProofGraceMs())) {
+    if (!acceptsProof(order)) {
       if (order.status === 'payment_pending' || order.status === 'expired') {
         throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
       }
@@ -1726,7 +1741,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     try {
       // CAS on status: a submit racing the expiry sweep (or a double submit) is applied once.
       const claimed = await db.gasFeeOrder.updateMany({
-        where: { orderRef, status: { in: ['payment_pending', 'expired'] } },
+        where: { orderRef, status: 'payment_pending', expiresAt: { gte: new Date() } },
         data: {
           status: 'payment_uploaded',
           expiresAt: new Date(Date.now() + (await manualReviewWindowMs())),
@@ -2677,17 +2692,16 @@ export async function gasFeeRoutes(app: FastifyInstance) {
     if (order.paymentCoin !== 'PKR') {
       throw new AppError('INVALID_STATUS', 'Proof upload is only for PKR payment orders', 400)
     }
-    const graceMs = await manualLateProofGraceMs()
-    if (!acceptsProof(order, graceMs)) {
+    if (!acceptsProof(order)) {
       if (order.status === 'payment_pending' || order.status === 'expired') {
         throw new AppError('ORDER_EXPIRED', 'This order has expired. Please create a new order.', 400)
       }
       throw new AppError('INVALID_STATUS', `Cannot submit proof for order in status ${order.status}`, 400)
     }
 
-    // CAS on status so a proof racing the expiry sweep (or a double submit) is applied once.
+    // CAS on status + deadline so a proof racing the expiry (or a double submit) is applied once.
     const claimed = await db.gasFeeOrder.updateMany({
-      where: { orderRef, status: { in: ['payment_pending', 'expired'] } },
+      where: { orderRef, status: 'payment_pending', expiresAt: { gte: new Date() } },
       data: { status: 'payment_uploaded', paymentProofUrl: parsed.data.proofUrl, expiresAt: new Date(Date.now() + (await manualReviewWindowMs())) },
     })
     if (claimed.count === 0) throw new AppError('INVALID_STATUS', 'This order can no longer accept a proof.', 409)

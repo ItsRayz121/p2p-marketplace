@@ -8,7 +8,7 @@ import { useGasCtx, PHASE } from './GasContext'
 import { CardHeader } from './GasPrimitives'
 import { GasPromoField, GasPromoApplied, GasAffiliateApplied } from './GasPromo'
 import { ManualVerifyNotice } from './ManualVerifyNotice'
-import { PaymentDeadline } from './PaymentDeadline'
+import { PaymentDeadline, useManualOrderClosed } from './PaymentDeadline'
 
 /**
  * Exchange transfer. Two stages on one screen:
@@ -29,6 +29,7 @@ export function GasExchangeStep() {
     effectiveUsd,
   } = useGasCtx()
 
+  const closed = useManualOrderClosed()
   const isExchangeOrder = !!order && order.paymentNetwork === 'EXCHANGE'
 
   // ── Stage A: pick the exchange ──────────────────────────────────────────────
@@ -152,7 +153,7 @@ export function GasExchangeStep() {
 
       {exchangeError && <p className="text-sm text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{exchangeError}</p>}
 
-      <Button className="w-full" disabled={!canSubmit || submittingExchange || uploading} loading={submittingExchange} onClick={handleSubmitExchangeProof}>
+      <Button className="w-full" disabled={!canSubmit || submittingExchange || uploading || closed} loading={submittingExchange} onClick={handleSubmitExchangeProof}>
         {submittingExchange ? 'Submitting…' : 'I have sent it'}
       </Button>
     </div>

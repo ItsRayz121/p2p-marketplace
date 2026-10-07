@@ -8,7 +8,7 @@ import { CardHeader, PkrMethodIcon } from './GasPrimitives'
 import { PKR_METHOD_META } from './GasContext'
 import { GasPromoApplied, GasAffiliateApplied } from './GasPromo'
 import { ManualVerifyNotice } from './ManualVerifyNotice'
-import { PaymentDeadline } from './PaymentDeadline'
+import { PaymentDeadline, useManualOrderClosed } from './PaymentDeadline'
 
 export function GasPkrProofStep() {
   const {
@@ -18,6 +18,7 @@ export function GasPkrProofStep() {
     handleUploadFile, handleSubmitProof,
     submittingProof, proofError,
   } = useGasCtx()
+  const closed = useManualOrderClosed()
 
   if (!order || !selectedPkrMethod) return null
 
@@ -89,7 +90,7 @@ export function GasPkrProofStep() {
 
       {proofError && <p className="text-sm text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{proofError}</p>}
 
-      <Button className="w-full" disabled={!proofUrl || submittingProof} loading={submittingProof} onClick={handleSubmitProof}>
+      <Button className="w-full" disabled={!proofUrl || submittingProof || closed} loading={submittingProof} onClick={handleSubmitProof}>
         {submittingProof ? 'Submitting...' : 'Submit Payment Proof'}
       </Button>
     </div>
