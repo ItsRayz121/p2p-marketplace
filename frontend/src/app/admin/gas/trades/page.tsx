@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/Button'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { GAS_STATUS_LABELS, gasStatusLabel } from '@/lib/gasOrderStatus'
 import { gasOrderHref } from '@/lib/adminRoutes'
+import { GasOrdersTabs } from '@/components/admin/GasOrdersTabs'
 
 // The admin gas-orders endpoint returns raw GasFeeOrder rows; we only type the
 // fields this table renders.
@@ -101,6 +102,7 @@ export default function GasTradesPage() {
 
   return (
     <div className="space-y-5">
+      <GasOrdersTabs active="trades" />
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Gas Trades</h1>
         <p className="text-text-muted text-sm mt-0.5">

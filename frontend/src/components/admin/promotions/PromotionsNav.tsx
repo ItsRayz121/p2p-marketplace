@@ -3,14 +3,13 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/auth.store'
 
-export type PromoTab = 'overview' | 'promo' | 'giveaways' | 'rewards' | 'tasks'
+export type PromoTab = 'overview' | 'promo' | 'giveaways' | 'rewards'
 
 const TABS: { key: PromoTab; label: string; href: string; superOnly?: boolean }[] = [
   { key: 'overview', label: 'Overview', href: '/admin/promotions' },
   { key: 'promo', label: 'Promo Codes', href: '/admin/gas/promo-codes' },
   { key: 'giveaways', label: 'Giveaways', href: '/admin/gas/giveaways' },
   { key: 'rewards', label: 'Gas Rewards', href: '/admin/gas/free-gas' },
-  { key: 'tasks', label: 'Community Tasks', href: '/admin/tasks', superOnly: true },
 ]
 
 export const GIVEAWAY_SUBTABS = [

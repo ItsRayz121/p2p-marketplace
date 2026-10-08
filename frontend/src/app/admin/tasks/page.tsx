@@ -4,7 +4,6 @@ import { adminPlatformTaskApi, type AdminPlatformTask, type AdminSubmission, typ
 import { LoadingState } from '@/components/ui/LoadingState'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/components/chat/richText'
-import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 import { CommunityTaskStarter } from '@/components/admin/promotions/CommunityTaskStarter'
 import { TaskLogoField } from '@/components/admin/promotions/TaskLogoField'
 
@@ -108,7 +107,6 @@ export default function AdminTasksPage() {
 
   return (
     <div className="space-y-5">
-      <PromotionsNav active="tasks" current="/admin/tasks" />
       <div className="flex items-start justify-between gap-3">
       <div>
           <h1 className="text-xl font-bold text-text-primary">Community Tasks</h1>

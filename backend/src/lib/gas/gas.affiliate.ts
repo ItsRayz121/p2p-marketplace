@@ -380,13 +380,40 @@ export async function getAffiliateQuote(buyerUserId: string, marginUsdt: number)
 
 // ── Admin ────────────────────────────────────────────────────────────────────
 
+/** Per-platform verification marks live beside the handles in the `socials` JSON (key `_verified`). */
+export interface SocialVerification { at: string; by: string }
+const VERIFIED_KEY = '_verified'
+
+/** Split the stored JSON into the applicant's handles and the admin's verification marks. */
+export function splitSocials(raw: unknown): { socials: Record<string, string> | null; verified: Record<string, SocialVerification> } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return { socials: null, verified: {} }
+  const { [VERIFIED_KEY]: v, ...rest } = raw as Record<string, unknown>
+  const socials: Record<string, string> = {}
+  for (const [k, val] of Object.entries(rest)) if (typeof val === 'string') socials[k] = val
+  const verified = v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, SocialVerification>) : {}
+  return { socials: Object.keys(socials).length ? socials : null, verified }
+}
+
+/** Mark one submitted social profile as verified (or clear the mark). */
+export async function adminVerifyAffiliateSocial(adminId: string, userId: string, platform: string, verified: boolean): Promise<{ verified: Record<string, SocialVerification> }> {
+  const existing = await db.gasAffiliate.findUnique({ where: { userId } })
+  if (!existing) throw new AppError('NOT_FOUND', 'Affiliate application not found.', 404)
+  const { socials, verified: marks } = splitSocials(existing.socials)
+  if (!socials || !(platform in socials)) throw new AppError('VALIDATION_ERROR', 'That social profile was not submitted.', 400)
+  if (verified) marks[platform] = { at: new Date().toISOString(), by: adminId }
+  else delete marks[platform]
+  await db.gasAffiliate.update({ where: { userId }, data: { socials: { ...socials, [VERIFIED_KEY]: marks } as unknown as Prisma.InputJsonValue } })
+  return { verified: marks }
+}
+
 export interface AdminAffiliateRow {
   userId: string
   email: string | null
   username: string | null
   referralCode: string | null
   status: AffiliateStatus
-  socials: unknown
+  socials: Record<string, string> | null
+  socialsVerified: Record<string, SocialVerification>
   applicantNote: string | null
   rejectionReason: string | null
   maxMarginPct: number
@@ -434,7 +461,8 @@ export async function adminListAffiliates(): Promise<AdminAffiliateRow[]> {
     username: r.user?.username ?? null,
     referralCode: r.user?.referralCode ?? null,
     status: r.status as AffiliateStatus,
-    socials: r.socials,
+    socials: splitSocials(r.socials).socials,
+    socialsVerified: splitSocials(r.socials).verified,
     applicantNote: r.applicantNote,
     rejectionReason: r.rejectionReason,
     maxMarginPct: r.maxMarginPct,

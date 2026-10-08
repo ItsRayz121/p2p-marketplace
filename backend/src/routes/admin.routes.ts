@@ -42,7 +42,7 @@ import { listReconciliationRuns, getReconciliationRun, resolveDiscrepancy } from
 import { getChainBurnRates, getChainRunways, getProfitabilityByChain, getVolumeTimeSeries } from '../lib/gas/gas.analytics'
 import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
 import { listMerchantAccounts, createMerchantAccount, updateMerchantAccount, getMerchantAccount, listMerchantSettlements, approveSettlement } from '../lib/gas/gas.merchant-settlement'
-import { adminListAffiliates, adminReviewAffiliate } from '../lib/gas/gas.affiliate'
+import { adminListAffiliates, adminReviewAffiliate, adminVerifyAffiliateSocial, splitSocials } from '../lib/gas/gas.affiliate'
 import { listWalletTransactions, walletTransactionSummary, type TxFilters } from '../lib/walletTransactions'
 import { GAS_ACTIVE_STATUSES, MANUAL_PROOF_WHERE, MANUAL_DELIVERY_WHERE, PAID_FAILED_WHERE, isPaidFailed, REJECTABLE_STATUS, manualDeliveryIneligibleReason, normalizeTxHash } from '../lib/gas/gas.orderStates'
 type JsonValue = Prisma.InputJsonValue
@@ -625,7 +625,7 @@ export async function adminRoutes(app: FastifyInstance) {
       totalEarnedUsdt: round2(totalEarnedUsdt),
       availableUsdt: round2(availableUsdt),
       withdrawnUsdt: round2(withdrawnUsdt),
-      affiliate: affiliateProfile,
+      affiliate: affiliateProfile ? { ...affiliateProfile, socials: splitSocials(affiliateProfile.socials).socials } : affiliateProfile,
       codes: gasCodes.map((c) => ({ ...c, referredCount: perCodeMap.get(c.id) ?? 0 })),
     }
 
@@ -5814,6 +5814,17 @@ export async function adminRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     const result = await adminReviewAffiliate(req.user!.id, userId, parsed.data)
     await createAuditLog(req.user!.id, 'GAS_AFFILIATE_REVIEW', 'GasAffiliate', userId, { changes: parsed.data }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, data: result })
+  })
+
+  // POST /admin/gas/affiliates/:userId/verify-social — mark one submitted social profile verified / unverified
+  const affiliateVerifySocialSchema = z.object({ platform: z.string().trim().min(1).max(40), verified: z.boolean() })
+  app.post('/admin/gas/affiliates/:userId/verify-social', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { userId } = req.params as { userId: string }
+    const parsed = affiliateVerifySocialSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const result = await adminVerifyAffiliateSocial(req.user!.id, userId, parsed.data.platform, parsed.data.verified)
+    await createAuditLog(req.user!.id, 'GAS_AFFILIATE_VERIFY_SOCIAL', 'GasAffiliate', userId, { changes: parsed.data }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true, data: result })
   })
 

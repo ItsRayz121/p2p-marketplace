@@ -1,4 +1,5 @@
 import { db } from '../prisma'
+import { splitSocials } from './gas.affiliate'
 import { loadTiers, tierFor, type AffiliateTier } from './gas.affiliateTier'
 import { getNumberConfig } from '../../services/platformFlags.service'
 
@@ -34,6 +35,7 @@ export interface AffiliatePerf {
   referralCode: string | null
   status: string
   socials: Record<string, string> | null
+  socialsVerified: Record<string, { at: string; by: string }>
   applicantNote: string | null
   rejectionReason: string | null
   tier: string | null
@@ -92,7 +94,8 @@ export async function affiliateOverview() {
       email: a.user?.email ?? null,
       referralCode: a.user?.referralCode ?? null,
       status: a.status,
-      socials: (a.socials as Record<string, string> | null) ?? null,
+      socials: splitSocials(a.socials).socials,
+      socialsVerified: splitSocials(a.socials).verified,
       applicantNote: a.applicantNote,
       rejectionReason: a.rejectionReason,
       tier: null, tierPct: null,

@@ -16,6 +16,7 @@ import { Modal } from '@/components/ui/Modal'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { RejectProofModal } from '@/components/admin/GasOrderActionModals'
 import { GAS_STATUS_LABELS, gasStatusVariant, isPaidFailed } from '@/lib/gasOrderStatus'
+import { GasOrdersTabs } from '@/components/admin/GasOrdersTabs'
 import { PAYMENT_ORDERS_ROUTE, gasOrderHref, paymentOrdersHref, parseGasOrderFilters, type GasPaymentType } from '@/lib/adminRoutes'
 
 interface GasOrder {
@@ -320,6 +321,7 @@ function PaymentOrdersInner() {
 
   return (
     <div className="space-y-5">
+      <GasOrdersTabs active="payments" />
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Payment Orders</h1>
@@ -350,8 +352,8 @@ function PaymentOrdersInner() {
 
       {/* Filters */}
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label className="md:col-span-2 relative block">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="relative block min-w-[240px] flex-1">
             <span className="sr-only">Search orders</span>
             <Search className="w-4 h-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" aria-hidden />
             <input
@@ -362,7 +364,7 @@ function PaymentOrdersInner() {
               className="w-full pl-9 pr-3 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
             />
           </label>
-          <label className="block">
+          <label className="block w-full sm:w-40">
             <span className="sr-only">Chain</span>
             <select
               value={chainFilter}
@@ -373,17 +375,17 @@ function PaymentOrdersInner() {
               {chains.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </label>
-          <div className="flex items-center gap-2">
+          <div className="flex w-full items-center gap-2 sm:w-auto">
             <input type="date" aria-label="Created from" value={from} onChange={(e) => apply(() => setFrom(e.target.value))}
-              className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary" />
+              className="min-w-0 flex-1 sm:w-40 sm:flex-none px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary" />
             <span className="text-text-muted text-xs">to</span>
             <input type="date" aria-label="Created to" value={to} onChange={(e) => apply(() => setTo(e.target.value))}
-              className="w-full px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary" />
+              className="min-w-0 flex-1 sm:w-40 sm:flex-none px-2 py-2 text-sm border border-border rounded-lg bg-surface focus:outline-none focus:ring-2 focus:ring-primary" />
           </div>
         </div>
 
-        <div>
-          <span className="block text-xs font-semibold text-text-muted mb-1.5">Payment type</span>
+        <div className="rounded-lg border border-border bg-surface-alt/40 p-3">
+          <span className="block text-xs font-semibold text-text-muted mb-2">Payment type</span>
           <div className="flex flex-wrap gap-2">
             {PAYMENT_TYPES.map((pt) => (
               <button
@@ -399,23 +401,25 @@ function PaymentOrdersInner() {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <span className="block text-xs font-semibold text-text-muted">Order status</span>
-          <div className="flex flex-wrap gap-x-5 gap-y-2">
+        <div>
+          <span className="block text-xs font-semibold text-text-muted mb-2">Order status</span>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             {STATUS_GROUPS.map((g) => (
-              <div key={g.label} className="flex flex-wrap items-center gap-1.5">
-                <span className="text-[10px] uppercase tracking-wide text-text-muted mr-1">{g.label}</span>
-                {g.statuses.map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    aria-pressed={statusFilter === s}
-                    onClick={() => apply(() => setStatusFilter(s))}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'}`}
-                  >
-                    {s === 'all' ? 'All' : s === 'active' ? 'Active (in flight)' : (GAS_STATUS_LABELS[s] ?? s)}
-                  </button>
-                ))}
+              <div key={g.label} className="rounded-lg border border-border bg-surface-alt/40 p-3">
+                <span className="block text-[10px] font-semibold uppercase tracking-wide text-text-muted mb-2">{g.label}</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {g.statuses.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      aria-pressed={statusFilter === s}
+                      onClick={() => apply(() => setStatusFilter(s))}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors border ${statusFilter === s ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'}`}
+                    >
+                      {s === 'all' ? 'All' : s === 'active' ? 'Active (in flight)' : (GAS_STATUS_LABELS[s] ?? s)}
+                    </button>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

@@ -15,6 +15,7 @@ import { Spinner } from '@/components/ui/Spinner'
 import { HBars } from '@/components/admin/charts/HBars'
 import { cn } from '@/lib/utils'
 import { fmtDate, fmtDateTime } from '@/lib/fmt'
+import { SocialIconRow, SocialVerifyList } from '@/components/admin/SocialLinks'
 
 type EarningRow = Awaited<ReturnType<typeof adminApi.getGasReferrals>>[number]
 
@@ -38,22 +39,6 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' 
   if (s === 'pending') return 'warning'
   if (s === 'rejected') return 'danger'
   return 'default'
-}
-
-/** Social handle/URL as a clickable chip: full URLs open as-is; bare handles link to the platform when we know how. */
-function SocialChip({ platform, value }: { platform: string; value: string }) {
-  const v = value.trim()
-  const handle = v.replace(/^@/, '')
-  const bases: Record<string, string> = {
-    twitter: 'https://x.com/', x: 'https://x.com/', instagram: 'https://instagram.com/', tiktok: 'https://tiktok.com/@',
-    youtube: 'https://youtube.com/@', telegram: 'https://t.me/', facebook: 'https://facebook.com/',
-  }
-  const href = /^https?:\/\//i.test(v) ? v : bases[platform.toLowerCase()] ? bases[platform.toLowerCase()] + handle : null
-  return href ? (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-primary hover:underline"><span className="text-text-muted">{platform}:</span> {v}</a>
-  ) : (
-    <span className="text-xs bg-surface-alt rounded-full px-2.5 py-0.5 text-text-secondary"><span className="text-text-muted">{platform}:</span> {v}</span>
-  )
 }
 
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
@@ -121,6 +106,17 @@ function Inner() {
     adminApi.getAffiliateDetail(detailFor.userId).then((d) => { if (!off) setDetail(d) }).catch(() => { if (!off) toast.error('Could not load affiliate detail') })
     return () => { off = true }
   }, [detailFor])
+
+  async function verifySocial(a: AffiliatePerf, platform: string, next: boolean) {
+    try {
+      const r = await adminApi.verifyAffiliateSocial(a.userId, platform, next)
+      setData((d) => d && { ...d, affiliates: d.affiliates.map((x) => (x.userId === a.userId ? { ...x, socialsVerified: r.verified } : x)) })
+      setDetailFor((d) => (d && d.userId === a.userId ? { ...d, socialsVerified: r.verified } : d))
+      toast.success(next ? `${platform} verified` : `${platform} verification removed`)
+    } catch (e) {
+      toast.error('Could not update verification', e instanceof Error ? e.message : undefined)
+    }
+  }
 
   const q = query.trim().toLowerCase()
   const matches = useCallback((a: AffiliatePerf) => !q || [a.username, a.email, a.referralCode, a.applicantNote, ...Object.values(a.socials ?? {})].some((v) => v?.toLowerCase().includes(q)), [q])
@@ -295,7 +291,7 @@ function Inner() {
                     {a.email && <span>{a.email}</span>}
                     {a.referralCode && <span>Ref code <span className="font-mono text-text-secondary">{a.referralCode}</span></span>}
                   </div>
-                  {a.socials && Object.keys(a.socials).length > 0 && <div className="mt-1.5 flex flex-wrap gap-2">{Object.entries(a.socials).map(([k, v]) => <SocialChip key={k} platform={k} value={v} />)}</div>}
+                  <SocialVerifyList socials={a.socials} verified={a.socialsVerified} canVerify onVerify={(k, next) => verifySocial(a, k, next)} />
                   {a.applicantNote && <p className="mt-1.5 text-xs italic text-text-muted">“{a.applicantNote}”</p>}
                   {a.status === 'rejected' && a.rejectionReason && <p className="mt-1 text-xs text-danger">Rejected: {a.rejectionReason}</p>}
                 </div>
@@ -357,7 +353,7 @@ function Inner() {
                     <tr key={a.userId} className="hover:bg-surface-alt/40">
                       <td className="px-4 py-2.5">
                         <p className="font-medium text-text-primary">{nameOf(a)}</p>
-                        <div className="mt-0.5 flex flex-wrap gap-1.5">{Object.entries(a.socials ?? {}).slice(0, 3).map(([k, v]) => <SocialChip key={k} platform={k} value={v} />)}</div>
+                        <div className="mt-1"><SocialIconRow socials={a.socials} verified={a.socialsVerified} /></div>
                       </td>
                       <td className="px-4 py-2.5 font-mono text-xs">{a.referralCode ?? '—'}</td>
                       <td className="px-4 py-2.5">{a.tier} <span className="text-xs text-text-muted">{a.tierPct}%</span></td>
@@ -574,6 +570,7 @@ function Inner() {
               {detailFor.isNew && <span className="rounded bg-info/10 px-1.5 py-0.5 text-[10px] font-semibold text-info">New — limited data</span>}
               <Link href={`/admin/users/${detailFor.userId}`} className="ml-auto text-xs font-medium text-primary hover:underline">Open user →</Link>
             </div>
+            <SocialVerifyList socials={detailFor.socials} verified={detailFor.socialsVerified} canVerify onVerify={(k, next) => verifySocial(detailFor, k, next)} />
             <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
               {([
                 ['Clicks', String(detailFor.clicks)], ['Sign-ups', String(detailFor.signups)], ['Verified orders', String(detailFor.verifiedOrders)], ['Conversion', pct(detailFor.conversionRate)],

@@ -2406,7 +2406,7 @@ export interface PromotionsOverview {
 
 export interface AffiliatePerf {
   userId: string; username: string | null; email: string | null; referralCode: string | null; status: string
-  socials: Record<string, string> | null; applicantNote: string | null; rejectionReason: string | null
+  socials: Record<string, string> | null; socialsVerified?: Record<string, { at: string; by: string }>; applicantNote: string | null; rejectionReason: string | null
   tier: string | null; tierPct: number | null; maxMarginPct: number; minUserDiscountPct: number; maxLinks: number; linkCount: number
   clicks: number; signups: number; buyers: number; verifiedOrders: number; signupRate: number | null; conversionRate: number | null
   attributableMarginUsdt: number; commissionEarnedUsdt: number; commissionPendingUsdt: number; commissionWithdrawableUsdt: number
@@ -3148,6 +3148,8 @@ export const adminApi = {
       reviewedAt: string | null; createdAt: string
       stats: { clicks: number; referred: number; orders: number; earnedUsdt: number; availableUsdt: number; tierName: string; tierPct: number }
     }>>('/admin/gas/affiliates'),
+  verifyAffiliateSocial: (userId: string, platform: string, verified: boolean) =>
+    apiRequest<{ verified: Record<string, { at: string; by: string }> }>(`/admin/gas/affiliates/${encodeURIComponent(userId)}/verify-social`, { method: 'POST', body: JSON.stringify({ platform, verified }) }),
   reviewGasAffiliate: (userId: string, data: { decision: 'approve' | 'reject'; maxMarginPct?: number; minUserDiscountPct?: number; maxLinks?: number; rejectionReason?: string | null }) =>
     apiRequest<{ status: string }>(`/admin/gas/affiliates/${userId}/review`, { method: 'POST', body: JSON.stringify(data) }),
 
