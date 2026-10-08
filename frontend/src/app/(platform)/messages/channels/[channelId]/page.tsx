@@ -23,7 +23,7 @@ import type { GasChain } from '@/lib/api'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
-import { MessageActions, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageMenu, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
   ExternalLink, Tag, Radio, X, Camera, ImagePlus,
@@ -73,6 +73,7 @@ export default function ChannelPage() {
   const [sending, setSending] = useState(false)
   const [joining, setJoining] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [menu, setMenu] = useState<MessageMenuAnchor | null>(null)
   const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
@@ -269,6 +270,27 @@ export default function ChannelPage() {
     }
   }
 
+  // Optimistic reaction: apply locally, then reconcile with the server's authoritative summary.
+  async function reactTo(id: string, emoji: string) {
+    if (!channel) return
+    const apply = (list: { emoji: string; count: number; mine: boolean }[], e: string) => {
+      const mineNow = list.find((r) => r.mine)
+      let next = list.map((r) => (r.mine ? { ...r, count: r.count - 1, mine: false } : r)).filter((r) => r.count > 0)
+      if (mineNow?.emoji !== e) {
+        const hit = next.find((r) => r.emoji === e)
+        next = hit ? next.map((r) => (r.emoji === e ? { ...r, count: r.count + 1, mine: true } : r)) : [...next, { emoji: e, count: 1, mine: true }]
+      }
+      return next
+    }
+    setMessages((prev) => prev && prev.map((m) => (m.id === id ? { ...m, reactions: apply(m.reactions ?? [], emoji) } : m)))
+    try {
+      const r = await channelsApi.reactMessage(channel.id, id, emoji)
+      setMessages((prev) => prev && prev.map((m) => (m.id === id ? { ...m, reactions: r.reactions } : m)))
+    } catch {
+      await load()
+    }
+  }
+
   async function deleteMessage(id: string) {
     if (!channel) return
     if (!window.confirm('Delete this broadcast? Every member will see it was removed.')) return
@@ -387,7 +409,16 @@ export default function ChannelPage() {
                       <UserAvatar name={channel.owner.fullName || 'Owner'} avatarUrl={channel.owner.avatarUrl} size="sm" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
+                      <div
+                        onClick={(ev) => {
+                          if (!m.body) return
+                          // Links / images / shared cards keep their own tap behaviour.
+                          if ((ev.target as HTMLElement).closest('a,button')) return
+                          const r = ev.currentTarget.getBoundingClientRect()
+                          setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine: false })
+                        }}
+                        className={`cursor-pointer rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}
+                      >
                         {m.replyTo && (
                           <ReplyQuote
                             reply={{ id: m.replyTo.id, sender: m.senderId, preview: m.replyTo.preview, hasImage: m.replyTo.hasImage }}
@@ -405,35 +436,21 @@ export default function ChannelPage() {
                         )}
                         {m.body && <div className="whitespace-pre-wrap break-words">{renderChannelText(m.body)}</div>}
                       </div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-[10px] text-text-muted">
-                          {fmtTime(m.createdAt)}{m.editedAt && ' · edited'}
-                        </p>
-                        {m.body && (
-                          <MessageActions
-                            body={m.body}
-                            onReply={isOwner && !editingId ? () => { setReplyTo({ id: m.id, sender: m.senderId, name: 'your broadcast', preview: m.body.slice(0, 120), hasImage: !!m.attachmentUrl }); requestAnimationFrame(() => draftRef.current?.focus()) } : undefined}
-                          />
-                        )}
-                        {withinMutateWindow && (
-                          <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-2">
-                            <button
-                              onClick={() => startEdit(m)}
-                              aria-label="Edit broadcast"
-                              className="text-text-muted hover:text-primary"
-                            >
-                              <Pencil className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => void deleteMessage(m.id)}
-                              aria-label="Delete broadcast"
-                              className="text-text-muted hover:text-danger"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
+                      <ReactionChips reactions={m.reactions ?? []} mine={false} onToggle={(e) => void reactTo(m.id, e)} />
+                      <p className="mt-0.5 text-[10px] text-text-muted">
+                        {fmtTime(m.createdAt)}{m.editedAt && ' · edited'}
+                      </p>
+                      {menu?.id === m.id && (
+                        <MessageMenu
+                          anchor={menu}
+                          body={m.body}
+                          onClose={() => setMenu(null)}
+                          onReact={(e) => void reactTo(m.id, e)}
+                          onReply={isOwner && !editingId ? () => { setReplyTo({ id: m.id, sender: m.senderId, name: 'your broadcast', preview: m.body.slice(0, 120), hasImage: !!m.attachmentUrl }); requestAnimationFrame(() => draftRef.current?.focus()) } : undefined}
+                          onEdit={withinMutateWindow ? () => startEdit(m) : undefined}
+                          onDelete={withinMutateWindow ? () => void deleteMessage(m.id) : undefined}
+                        />
+                      )}
                     </div>
                   </div>
                 )

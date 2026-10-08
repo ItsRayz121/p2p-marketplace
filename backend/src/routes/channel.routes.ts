@@ -6,7 +6,7 @@ import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import {
   listMyChannels, searchChannelDirectory, createChannel, getChannel, listChannelMessages,
   joinChannel, leaveChannel, updateChannel, regenerateInvite, deleteChannel, kickMember,
-  listMembers, postChannelMessage, deleteChannelMessage, editChannelMessage,
+  listMembers, postChannelMessage, deleteChannelMessage, editChannelMessage, reactToChannelMessage,
 } from '../services/channel.service'
 
 const createSchema = z.object({
@@ -95,6 +95,15 @@ export async function channelRoutes(app: FastifyInstance) {
     await assertEnabled()
     const { channelId, messageId } = req.params as { channelId: string; messageId: string }
     const data = await deleteChannelMessage(req.user!.id, channelId, messageId)
+    return reply.send({ success: true, data })
+  })
+
+  app.post('/channels/:channelId/messages/:messageId/react', { preHandler: [authenticate] }, async (req, reply) => {
+    await assertEnabled()
+    const { channelId, messageId } = req.params as { channelId: string; messageId: string }
+    const parsed = z.object({ emoji: z.string().max(16).nullable() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid reaction', 400)
+    const data = await reactToChannelMessage(req.user!.id, channelId, messageId, parsed.data.emoji)
     return reply.send({ success: true, data })
   })
 

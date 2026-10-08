@@ -55,6 +55,8 @@ export interface ChannelMessage {
   /** Quote-reply: the earlier broadcast this one answers (preview only; `deleted` if gone). */
   replyToId?: string | null
   replyTo?: { id: string; preview: string; hasImage: boolean; deleted: boolean } | null
+  /** Emoji reactions grouped by emoji; `mine` = the viewer reacted with it. */
+  reactions?: { emoji: string; count: number; mine: boolean }[]
 }
 
 export interface ChannelMember {
@@ -84,6 +86,9 @@ export const channelsApi = {
     }),
   deleteMessage: (channelId: string, messageId: string) =>
     apiRequest<unknown>(`/channels/${channelId}/messages/${messageId}/delete`, { method: 'POST' }),
+  /** Set / toggle (same emoji again) / clear (null) your reaction on a broadcast. */
+  reactMessage: (channelId: string, messageId: string, emoji: string | null) =>
+    apiRequest<{ reactions: { emoji: string; count: number; mine: boolean }[] }>(`/channels/${channelId}/messages/${messageId}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   editMessage: (channelId: string, messageId: string, body: string) =>
     apiRequest<ChannelMessage>(`/channels/${channelId}/messages/${messageId}`, { method: 'PATCH', body: JSON.stringify({ body }) }),
   join: (channelId: string) => apiRequest<{ joined: boolean }>(`/channels/${channelId}/join`, { method: 'POST' }),

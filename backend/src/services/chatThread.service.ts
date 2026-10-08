@@ -684,7 +684,7 @@ const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
 export const REACTION_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏'] as const
 
 /** Collapse the stored { userId: emoji } map into per-emoji counts for the viewer. */
-function summarizeReactions(raw: unknown, viewerId: string): Array<{ emoji: string; count: number; mine: boolean }> {
+export function summarizeReactions(raw: unknown, viewerId: string): Array<{ emoji: string; count: number; mine: boolean }> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
   const byEmoji = new Map<string, { count: number; mine: boolean }>()
   for (const [uid, emoji] of Object.entries(raw as Record<string, unknown>)) {

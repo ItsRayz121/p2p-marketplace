@@ -10,7 +10,7 @@ import {
   CHANNELS_MAX_MEMBERS_KEY, CHANNELS_MAX_MEMBERS_DEFAULT,
   getNumberConfig,
 } from './platformFlags.service'
-import { resolveSharedAdPreviews, resolveSharedGasPreviews, assertSharedGasChainAvailable, type Market } from './chatThread.service'
+import { resolveSharedAdPreviews, resolveSharedGasPreviews, assertSharedGasChainAvailable, summarizeReactions, REACTION_EMOJIS, type Market } from './chatThread.service'
 import { slugify as baseSlugify } from './blog.service'
 import { logger } from '../lib/logger'
 
@@ -195,7 +195,7 @@ export async function listChannelMessages(userId: string, channelId: string) {
     where: { channelId },
     orderBy: { createdAt: 'desc' },
     take: 500,
-    select: CHANNEL_MESSAGE_SELECT,
+    select: { ...CHANNEL_MESSAGE_SELECT, reactions: true },
   })
   rows.reverse()
   const messages = rows.map((m) => (m.deletedAt
@@ -220,9 +220,10 @@ export async function listChannelMessages(userId: string, channelId: string) {
   ])
   const replyTargets = await resolveReplyTargets(channelId, messages)
   return messages.map((m) => {
-    const { sharedAdPriceSnapshot, sharedAdPrevPriceSnapshot, ...rest } = m
+    const { sharedAdPriceSnapshot, sharedAdPrevPriceSnapshot, reactions: rawReactions, ...rest } = m
     return {
       ...rest,
+      reactions: m.deletedAt ? [] : summarizeReactions(rawReactions, userId),
       replyTo: m.replyToId ? (replyTargets.get(m.replyToId) ?? { id: m.replyToId, preview: '', hasImage: false, deleted: true }) : null,
       sharedAd: m.sharedAdMarket && m.sharedAdId
         ? {
@@ -592,4 +593,18 @@ export async function editChannelMessage(userId: string, channelId: string, mess
     select: CHANNEL_MESSAGE_SELECT,
   })
   return updated
+}
+
+/** Set (or, with null / the same emoji again, clear) a member's reaction on a broadcast. */
+export async function reactToChannelMessage(userId: string, channelId: string, messageId: string, emoji: string | null) {
+  if (emoji !== null && !(REACTION_EMOJIS as readonly string[]).includes(emoji)) throw new AppError('VALIDATION_ERROR', 'Unsupported reaction', 400)
+  const membership = await db.channelMember.findUnique({ where: { channelId_userId: { channelId, userId } }, select: { id: true } })
+  if (!membership) throw new AppError('FORBIDDEN', 'Join this channel to react', 403)
+  const message = await db.channelMessage.findUnique({ where: { id: messageId }, select: { channelId: true, isSystem: true, deletedAt: true, reactions: true } })
+  if (!message || message.channelId !== channelId || message.isSystem || message.deletedAt) throw new AppError('NOT_FOUND', 'Message not found', 404)
+  const current = message.reactions && typeof message.reactions === 'object' && !Array.isArray(message.reactions) ? { ...(message.reactions as Record<string, string>) } : {}
+  if (emoji === null || current[userId] === emoji) delete current[userId]
+  else current[userId] = emoji
+  await db.channelMessage.update({ where: { id: messageId }, data: { reactions: Object.keys(current).length ? current : Prisma.DbNull } })
+  return { reactions: summarizeReactions(current, userId) }
 }

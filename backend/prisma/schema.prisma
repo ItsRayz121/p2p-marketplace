@@ -1803,6 +1803,8 @@ model ChannelMessage {
   sharedAdPrevPriceSnapshot Decimal? @db.Decimal(14, 2)
   // One-tap "share gas fees" — mirrors ChatThreadMessage's sharedGasChainSlug.
   sharedGasChainSlug String?
+  // Emoji reactions: { userId: emoji } (one per member), mirrors ChatThreadMessage.reactions.
+  reactions Json?
 
   @@unique([channelId, senderId, clientId])
   @@index([channelId, createdAt])

@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Copy, Check, Reply, SmilePlus, Trash2, X } from 'lucide-react'
+import { Copy, Check, Pencil, Reply, SmilePlus, Trash2, X } from 'lucide-react'
 import { copyText, plainText } from '@/components/chat/richText'
 
 export interface ReplyRef {
@@ -104,6 +104,7 @@ export function MessageMenu({
   body,
   onReact,
   onReply,
+  onEdit,
   onDelete,
   onClose,
 }: {
@@ -111,6 +112,7 @@ export function MessageMenu({
   body: string
   onReact?: (emoji: string) => void
   onReply?: () => void
+  onEdit?: () => void
   onDelete?: () => void
   onClose: () => void
 }) {
@@ -159,6 +161,11 @@ export function MessageMenu({
               }}
             >
               {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            </button>
+          )}
+          {onEdit && (
+            <button type="button" role="menuitem" onClick={() => { onClose(); onEdit() }} aria-label="Edit message" title="Edit" className={btn}>
+              <Pencil className="h-4 w-4" />
             </button>
           )}
           {onDelete && (

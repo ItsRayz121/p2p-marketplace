@@ -17,7 +17,7 @@ import { MarketInsightWidget } from '@/components/ctm/MarketInsightWidget'
 import { TokenSelect } from '@/components/ctm/TokenSelect'
 import { CardDownloadButton } from '@/components/ui/CardDownloadButton'
 import { buildOfferFilename } from '@/lib/cardImageExport'
-import { CheckCircle2, ChevronDown, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
+import { CheckCircle2, ChevronDown, Search, X, TrendingUp, LayoutGrid, Sparkles, ShieldCheck, Clock, BadgeCheck, ArrowDownLeft, ArrowUpRight } from 'lucide-react'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
 import { toast } from '@/lib/toast'
 import { TickerBanner } from '@/components/shared/TickerBanner'
@@ -562,6 +562,14 @@ export default function CtmHomePage() {
   const [side, setSide] = useState<'buy' | 'sell'>('buy')
   const [tokenId, setTokenId] = useState('')
   const [paymentMethod, setPaymentMethod] = useState('')
+  // Seller search: debounced input so we don't refetch on every keystroke.
+  const [sellerInput, setSellerInput] = useState('')
+  const [seller, setSeller] = useState('')
+  const [searchOpen, setSearchOpen] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSeller(sellerInput.trim()), 350)
+    return () => clearTimeout(t)
+  }, [sellerInput])
   const [minAmount, setMinAmount] = useState('')
   const [maxAmount, setMaxAmount] = useState('')
   const [page, setPage] = useState(1)
@@ -589,6 +597,7 @@ export default function CtmHomePage() {
       if (side) params.side = side === 'buy' ? 'sell' : 'buy'
       if (tokenId) params.tokenId = tokenId
       if (paymentMethod) params.paymentMethod = paymentMethod
+      if (seller) params.seller = seller
       // PKR filters map to the listing service's minPricePkr/maxPricePkr if supported;
       // the listings endpoint accepts minAmount/maxAmount as price filters
       if (minAmount) params.minAmount = minAmount
@@ -603,7 +612,7 @@ export default function CtmHomePage() {
     } finally {
       setLoading(false)
     }
-  }, [side, tokenId, paymentMethod, minAmount, maxAmount])
+  }, [side, tokenId, paymentMethod, seller, minAmount, maxAmount])
 
   useEffect(() => {
     setLoading(true)
@@ -618,6 +627,7 @@ export default function CtmHomePage() {
       if (side) params.side = side === 'buy' ? 'sell' : 'buy'
       if (tokenId) params.tokenId = tokenId
       if (paymentMethod) params.paymentMethod = paymentMethod
+      if (seller) params.seller = seller
       if (minAmount) params.minAmount = minAmount
       if (maxAmount) params.maxAmount = maxAmount
       const res = await ctmApi.getListings(params)
@@ -625,7 +635,7 @@ export default function CtmHomePage() {
       setListings(data.listings)
       setTotal(data.total)
     } catch { /* silently fail */ }
-  }, [side, tokenId, paymentMethod, minAmount, maxAmount])
+  }, [side, tokenId, paymentMethod, seller, minAmount, maxAmount])
 
   usePolling(pollFn, 30_000, !loading)
 
@@ -672,6 +682,9 @@ export default function CtmHomePage() {
     setSide('buy')
     setTokenId('')
     setPaymentMethod('')
+    setSellerInput('')
+    setSeller('')
+    setSearchOpen(false)
     setMinAmount('')
     setMaxAmount('')
     setPage(1)
@@ -685,13 +698,52 @@ export default function CtmHomePage() {
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
         <div>
-          <h1 className="text-2xl font-bold text-text-primary">Community Token Market</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold text-text-primary">Community Token Market</h1>
+            {/* Search toggle — find a trusted seller/buyer by name */}
+            <button
+              type="button"
+              onClick={() => setSearchOpen((v) => !v)}
+              aria-label="Search by seller name"
+              aria-expanded={searchOpen}
+              className={`w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-lg border transition-colors ${
+                searchOpen || seller ? 'border-primary text-primary bg-primary/5' : 'border-border text-text-muted hover:text-text-primary'
+              }`}
+            >
+              <Search size={16} />
+            </button>
+          </div>
           <p className="text-text-muted text-sm">{total} listings available</p>
         </div>
         <Link href="/ctm/listings/create" className="bg-primary text-white px-4 py-2.5 rounded-xl font-semibold text-sm hover:bg-primary/90 transition-colors text-center">
           + Create Listing
         </Link>
       </div>
+
+      {/* Seller search field (revealed by the header search icon) */}
+      {(searchOpen || seller) && (
+        <div className="relative mb-4">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+          <input
+            autoFocus
+            type="text"
+            value={sellerInput}
+            onChange={(e) => setSellerInput(e.target.value)}
+            placeholder="Search by seller or buyer name / username…"
+            className="w-full border border-border rounded-lg pl-9 pr-9 py-2.5 text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+          />
+          {sellerInput && (
+            <button
+              type="button"
+              onClick={() => { setSellerInput(''); setSearchOpen(false) }}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary"
+            >
+              <X size={15} />
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Stats strip */}
       {ctmStats && <CtmStatsStrip stats={ctmStats} total={total} />}

@@ -22,7 +22,6 @@ import { toast } from '@/lib/toast'
 import { swrGet, swrSet } from '@/lib/swrCache'
 import { DEFAULT_MARKET_FILTERS, marketAdsCacheKey } from '@/lib/prefetch'
 import { checkAlerts, requestAndNotify } from '@/lib/priceAlerts'
-import { MarketplacePriceChart } from '@/components/marketplace/MarketplacePriceChart'
 import { activeLabel } from '@/lib/onlineStatus'
 import { TickerBanner } from '@/components/shared/TickerBanner'
 import { tradeTickerItem } from '@/components/shared/tickerItems'
@@ -684,11 +683,9 @@ export default function MarketplacePage() {
       {/* Stats strip */}
       {marketStats && <MarketplaceStatsStrip stats={{ ...marketStats, totalListings: total }} />}
 
-      {/* USDT price chart — PKR per USDT over time, from completed trades here.
-          mb-4 keeps a clear gap from the Recent Trades ticker below it. */}
-      <div className="mt-4 mb-4">
-        <MarketplacePriceChart />
-      </div>
+      {/* Spacing before the ticker. (The USDT price chart was removed — the
+          Market page already shows prices in more detail.) */}
+      <div className="mt-4" />
 
       {/* Recent trades ticker */}
       <TickerBanner
