@@ -42,7 +42,7 @@
  * (connection reset, DNS, offline) — i.e. when the browser would otherwise show its error screen.
  * It only helps returning visitors: a first-ever failed load happens before any worker exists.
  */
-const OFFLINE_CACHE = 'rc-offline-v1'
+const OFFLINE_CACHE = 'rc-offline-v2'
 const OFFLINE_ASSETS = ['/offline.html', '/brand/icon-192.png']
 
 // ─── Install / activate ──────────────────────────────────────────────────────
@@ -97,10 +97,21 @@ self.addEventListener('fetch', (event) => {
   const req = event.request
   // Top-level page loads only. Never intercept API calls, POSTs, uploads or sub-resources.
   if (req.mode !== 'navigate' || req.method !== 'GET') return
-  event.respondWith(
-    fetch(req).catch(async () => (await caches.match('/offline.html')) || Response.error()),
-  )
+  event.respondWith(navigateWithRetry(req))
 })
+
+// A tab left open for hours (or restored/discarded by the browser) re-fetches its document on
+// wake-up, often while the network is still reconnecting for a second or two. Retry the SAME
+// network request a few times before concluding we are offline, so a momentary blip never
+// replaces the app with the offline page. Still network-only: nothing is cached or replayed.
+async function navigateWithRetry(req) {
+  const delays = [0, 800, 2000, 4000]
+  for (let i = 0; i < delays.length; i++) {
+    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]))
+    try { return await fetch(req) } catch (e) { /* retry */ }
+  }
+  return (await caches.match('/offline.html')) || Response.error()
+}
 
 // ─── Web push ────────────────────────────────────────────────────────────────
 

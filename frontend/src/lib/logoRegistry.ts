@@ -44,6 +44,18 @@ const CHAIN_ALIASES: Record<string, string> = {
   'AVAX C-CHAIN':           'AVAX',
   // Solana
   'SOLANA':                 'SOL',
+  // Token-standard names used as "network" labels on trades/addresses
+  'BEP20':                  'BSC',
+  'BEP-20':                 'BSC',
+  'ERC20':                  'ETH',
+  'ERC-20':                 'ETH',
+  'TRC20':                  'TRON',
+  'TRC-20':                 'TRON',
+}
+
+// True for token-standard labels that name an on-chain network (BEP20, TRC20…).
+export function isWalletNetwork(label: string): boolean {
+  return /^(BEP-?20|ERC-?20|TRC-?20|APTOS|SOLANA|POLYGON|ARBITRUM|OPTIMISM|BASE|AVALANCHE|TON|SUI)$/i.test(label.trim())
 }
 
 const TOKEN_ALIASES: Record<string, string> = {

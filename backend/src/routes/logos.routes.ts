@@ -27,6 +27,14 @@ export function invalidateLogosCache(): void {
   _cache = null
 }
 
+// Guard against a USDT row pointing at USDC art (and vice versa).
+function logoMatchesSymbol(symbol: string, url: string): boolean {
+  const u = url.toLowerCase()
+  if (symbol === 'USDT') return !/usd-coin|usdc/.test(u)
+  if (symbol === 'USDC') return !/tether|usdt/.test(u)
+  return true
+}
+
 async function buildLogosMap(): Promise<LogoMap> {
   const [chainConfigs, tokenConfigs, ctmTokens, registry] = await Promise.all([
     db.gasChainConfig.findMany({
@@ -57,9 +65,15 @@ async function buildLogosMap(): Promise<LogoMap> {
     if (c.logoUrl) chain[c.slug.toUpperCase()] = c.logoUrl
   }
 
-  // Gas token configs — keyed by symbol uppercased
+  // Gas token configs — keyed by symbol uppercased. Many rows share a symbol
+  // (one per chain) and the last one used to win, so a single mislabeled row
+  // (e.g. USDT carrying the USDC image) hijacked the logo everywhere. Skip rows
+  // whose URL names a different stablecoin and keep the first valid one.
   for (const t of tokenConfigs) {
-    if (t.logoUrl) token[t.symbol.toUpperCase()] = t.logoUrl
+    if (!t.logoUrl) continue
+    const sym = t.symbol.toUpperCase()
+    if (!logoMatchesSymbol(sym, t.logoUrl) || token[sym]) continue
+    token[sym] = t.logoUrl
   }
 
   // CTM tokens — keyed by symbol uppercased (may overlap with gas tokens, CTM wins)

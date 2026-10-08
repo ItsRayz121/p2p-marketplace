@@ -4,6 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { ctmApi, walletApi } from '@/lib/api'
 import type { SavedDeliveryAddress } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
+import { isWalletNetwork } from '@/lib/logoRegistry'
 import { ctmCurrentStep, ctmFlowOrder, ctmDisputeLock } from '@/lib/ctmSettlementFlow'
 import { ladderStatus, canPartiesStillSettle } from '@/lib/disputeResume'
 import type { CtmFlowAction, CtmFlowActor } from '@/lib/ctmSettlementFlow'
@@ -689,8 +690,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       const isWallet = /^(BEP20|APTOS|ERC20|TRC20)$/i.test(method)
       return (
         <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-          <Row label="Pay in" value="USDT" />
-          {method && <Row label="Method" value={`USDT ${method}`} />}
+          <Row label="Pay in" value="USDT" icon={<EntityLogo type="token" slug="USDT" size="xs" />} />
+          {method && <Row label="Method" value={`USDT ${method}`} icon={methodLogo(method)} />}
           <Row label="Amount" value={usdtAmountLabel} copyable />
           {address && <Row label={isWallet ? 'Send to address' : 'Send to UID / account'} value={address} mono breakAll copyable />}
         </div>
@@ -760,7 +761,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       const isWallet = /^(BEP20|APTOS|ERC20|TRC20)$/i.test(b.method ?? '')
       return (
         <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
-          <Row label="Method" value={`USDT ${b.method ?? ''}`} />
+          <Row label="Method" value={`USDT ${b.method ?? ''}`} icon={b.method ? methodLogo(b.method) : undefined} />
           {b.address && <Row label={isWallet ? 'Sends from address' : 'Sends from UID / account'} value={b.address} mono breakAll copyable />}
         </div>
       )
@@ -798,7 +799,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-text-muted flex-shrink-0">Method</span>
                   <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
-                    <EntityLogo type="exchange" slug={a.network} size="xs" className="flex-shrink-0" />
+                    {methodLogo(a.network)}
                     {a.network}
                   </span>
                 </div>
@@ -1769,7 +1770,13 @@ function DisputeUnlockGate({ unlockAt, onOpen }: { unlockAt: number | null; onOp
   )
 }
 
-function Row({ label, value, mono, breakAll, copyable, highlight }: { label: string; value: string; mono?: boolean; breakAll?: boolean; copyable?: boolean; highlight?: boolean }) {
+// Logo for a USDT delivery "method": on-chain networks (BEP20, TRC20…) use the
+// chain logo, anything else (Binance UID, Gate…) uses the exchange logo.
+function methodLogo(method: string) {
+  return <EntityLogo type={isWalletNetwork(method) ? 'chain' : 'exchange'} slug={method} size="xs" className="flex-shrink-0" />
+}
+
+function Row({ label, value, mono, breakAll, copyable, highlight, icon }: { label: string; value: string; mono?: boolean; breakAll?: boolean; copyable?: boolean; highlight?: boolean; icon?: React.ReactNode }) {
   const [copied, setCopied] = useState(false)
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { /* ignore */ }
@@ -1812,6 +1819,7 @@ function Row({ label, value, mono, breakAll, copyable, highlight }: { label: str
       <span className={`flex-shrink-0 ${highlight ? 'text-text-primary font-semibold' : 'text-text-muted'}`}>{label}</span>
       <div className="flex items-center gap-1.5 min-w-0 justify-end">
         {copyBtn}
+        {icon}
         <span className={`text-right ${highlight ? 'text-primary font-bold text-base' : 'text-text-primary font-medium'} ${mono ? 'font-mono' : ''}`}>{value}</span>
       </div>
     </div>
