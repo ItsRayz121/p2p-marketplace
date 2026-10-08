@@ -19,6 +19,8 @@ import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { Send, UserPlus, Search, X, ImagePlus, Trash2 } from 'lucide-react'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
+import { ComposerPlusMenu } from '@/components/chat/ComposerPlusMenu'
 import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
 
 interface ConversationSummary {
@@ -493,6 +495,13 @@ export default function AdminSupportPage() {
                   >
                     <ImagePlus className="w-5 h-5" />
                   </button>
+                  <ComposerPlusMenu
+                    disabled={sending}
+                    onInsert={(text) => { setDraft((d) => (d.trim() ? `${d.trimEnd()}
+
+${text}` : text)); requestAnimationFrame(() => draftRef.current?.focus()) }}
+                  />
+                  <EmojiPicker disabled={sending} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
                   <textarea
                     ref={draftRef}
                     value={draft}

@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import { linkifyText } from '@/lib/linkify'
 
 /**
  * Telegram-style lightweight text formatting for channel broadcasts:
@@ -8,7 +9,8 @@ import type { ReactNode } from 'react'
  * string ever parsed and no XSS surface (React escapes all text content).
  */
 
-const TOKEN_RE = /(\*\*[^*\n]+\*\*)|(__[^_\n]+__)|(https?:\/\/[^\s<>"')]+)/g
+// Links are handled separately by linkifyText (safe scheme check, internal routing).
+const TOKEN_RE = /(\*\*[^*\n]+\*\*)|(__[^_\n]+__)/g
 
 function renderLineTokens(line: string, keyPrefix: string): ReactNode[] {
   const nodes: ReactNode[] = []
@@ -17,28 +19,15 @@ function renderLineTokens(line: string, keyPrefix: string): ReactNode[] {
   for (const match of line.matchAll(TOKEN_RE)) {
     const [token] = match
     const start = match.index ?? 0
-    if (start > lastIndex) nodes.push(line.slice(lastIndex, start))
+    if (start > lastIndex) nodes.push(...linkifyText(line.slice(lastIndex, start), `${keyPrefix}-t${i++}`))
     if (token.startsWith('**')) {
       nodes.push(<strong key={`${keyPrefix}-${i++}`}>{token.slice(2, -2)}</strong>)
     } else if (token.startsWith('__')) {
       nodes.push(<span key={`${keyPrefix}-${i++}`} className="underline">{token.slice(2, -2)}</span>)
-    } else {
-      nodes.push(
-        <a
-          key={`${keyPrefix}-${i++}`}
-          href={token}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="underline break-all"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {token}
-        </a>,
-      )
     }
     lastIndex = start + token.length
   }
-  if (lastIndex < line.length) nodes.push(line.slice(lastIndex))
+  if (lastIndex < line.length) nodes.push(...linkifyText(line.slice(lastIndex), `${keyPrefix}-t${i++}`))
   return nodes
 }
 

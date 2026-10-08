@@ -23,6 +23,8 @@ import type { GasChain } from '@/lib/api'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
+import { MessageActions, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
   ExternalLink, Tag, Radio, X, Camera, ImagePlus,
@@ -72,6 +74,7 @@ export default function ChannelPage() {
   const [sending, setSending] = useState(false)
   const [joining, setJoining] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
 
@@ -195,10 +198,11 @@ export default function ChannelPage() {
         setEditingId(null)
       } else {
         const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
-        await channelsApi.post(channel.id, body, clientId, undefined, pendingImage ?? undefined)
+        await channelsApi.post(channel.id, body, clientId, undefined, pendingImage ?? undefined, undefined, replyTo?.id)
       }
       setDraft('')
       setPendingImage(null)
+      setReplyTo(null)
       await load()
     } catch (e) {
       toast.error(editingId ? 'Could not save edit' : 'Could not post', e instanceof Error ? e.message : 'Please try again')
@@ -211,6 +215,7 @@ export default function ChannelPage() {
     // Editing only ever changes text (see editChannelMessage) — drop any
     // not-yet-sent image pick rather than silently losing it on save.
     setPendingImage(null)
+    setReplyTo(null)
     setEditingId(m.id)
     setDraft(m.body)
     requestAnimationFrame(() => draftRef.current?.focus())
@@ -384,6 +389,14 @@ export default function ChannelPage() {
                     )}
                     <div className="min-w-0 flex-1">
                       <div className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}>
+                        {m.replyTo && (
+                          <ReplyQuote
+                            reply={{ id: m.replyTo.id, sender: m.senderId, preview: m.replyTo.preview, hasImage: m.replyTo.hasImage }}
+                            own={false}
+                            name={channel.owner.fullName || channel.owner.username || 'Owner'}
+                            deleted={m.replyTo.deleted}
+                          />
+                        )}
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}
                         {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} /></div>}
                         {isTrustedImageUrl(m.attachmentUrl) && (
@@ -397,6 +410,12 @@ export default function ChannelPage() {
                         <p className="text-[10px] text-text-muted">
                           {fmtTime(m.createdAt)}{m.editedAt && ' · edited'}
                         </p>
+                        {m.body && (
+                          <MessageActions
+                            body={m.body}
+                            onReply={isOwner && !editingId ? () => { setReplyTo({ id: m.id, sender: m.senderId, name: 'your broadcast', preview: m.body.slice(0, 120), hasImage: !!m.attachmentUrl }); requestAnimationFrame(() => draftRef.current?.focus()) } : undefined}
+                          />
+                        )}
                         {withinMutateWindow && (
                           <div className="sm:opacity-0 sm:group-hover:opacity-100 transition-opacity flex items-center gap-2">
                             <button
@@ -433,6 +452,7 @@ export default function ChannelPage() {
                   </button>
                 </div>
               )}
+              {replyTo && !editingId && <ReplyBanner reply={replyTo} name={replyTo.name} onCancel={() => setReplyTo(null)} />}
               {(pendingImage || uploadingImage || compressing) && (
                 <div className="px-3 pt-2">
                   {pendingImage ? (
@@ -497,6 +517,7 @@ export default function ChannelPage() {
                     </button>
                   </div>
                 </AnchoredMenu>
+                <EmojiPicker disabled={sending} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
                 <textarea
                   ref={draftRef}
                   value={draft}

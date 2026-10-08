@@ -2,8 +2,9 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { buildMeta } from '@/lib/metadata'
-import { fetchCtmTokenBySlug, fetchMarketsOverview, fetchMarketActivity, type CtmTokenDetail } from '@/lib/marketsFetch'
-import type { MarketRow, MarketActivity, MarketTrade } from '@/lib/api'
+import { fetchCtmTokenBySlug, fetchMarketsOverview, fetchMarketActivity, fetchReferencePrices, type CtmTokenDetail } from '@/lib/marketsFetch'
+import type { MarketRow, MarketActivity, MarketTrade, ReferenceItem } from '@/lib/api'
+import { ReferencePriceCard, ChangeBadge } from '@/components/markets/ReferencePriceCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Badge } from '@/components/ui/Badge'
 import { CtmPriceChart } from '@/components/ctm/CtmPriceChart'
@@ -83,10 +84,12 @@ export default async function MarketTokenPage({ params }: { params: Promise<{ sl
   const { slug } = await params
   const lower = slug.toLowerCase()
 
-  const [overview, activity] = await Promise.all([
+  const [overview, activity, reference] = await Promise.all([
     fetchMarketsOverview(),
     fetchMarketActivity(lower),
+    lower === 'usdt' ? Promise.resolve({} as Record<string, ReferenceItem>) : fetchReferencePrices([lower]),
   ])
+  const ref = reference[lower] ?? null
   const row = overview?.rows.find((r) => r.slug.toLowerCase() === lower) ?? null
   const otherRows = overview?.rows.filter((r) => r.slug.toLowerCase() !== lower) ?? []
 
@@ -95,7 +98,7 @@ export default async function MarketTokenPage({ params }: { params: Promise<{ sl
   }
 
   if (row?.kind === 'gas') {
-    return <GasDetail row={row} activity={activity} otherRows={otherRows} />
+    return <GasDetail row={row} activity={activity} otherRows={otherRows} reference={ref} />
   }
 
   // Same normalization as generateMetadata above — keeps this in sync with the
@@ -103,7 +106,7 @@ export default async function MarketTokenPage({ params }: { params: Promise<{ sl
   // token that actually exists.
   const token = await fetchCtmTokenBySlug(lower)
   if (!token) notFound()
-  return <CtmDetail token={token} row={row} activity={activity} otherRows={otherRows} />
+  return <CtmDetail token={token} row={row} activity={activity} otherRows={otherRows} reference={ref} />
 }
 
 // ─── Breadcrumb + JSON-LD helper ──────────────────────────────────────────────
@@ -147,7 +150,7 @@ function buildJsonLd(opts: { name: string; symbol: string; url: string; pricePkr
 
 // ─── Market Activity + Recent Trades ──────────────────────────────────────────
 
-function MarketActivityCard({ activity, unit }: { activity: MarketActivity | null; unit: string }) {
+function MarketActivityCard({ activity, unit, title = 'Market Activity' }: { activity: MarketActivity | null; unit: string; title?: string }) {
   if (!activity) return null
   const hasAny = activity.buyOffers > 0 || activity.sellOffers > 0 || activity.volume24hUnits !== null
 
@@ -155,7 +158,7 @@ function MarketActivityCard({ activity, unit }: { activity: MarketActivity | nul
     <div className="rounded-xl border border-border bg-surface p-5">
       <div className="flex items-center gap-2 mb-4">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-        <h2 className="text-sm font-bold text-text-primary">Market Activity</h2>
+        <h2 className="text-sm font-bold text-text-primary">{title}</h2>
       </div>
 
       {!hasAny ? (
@@ -231,8 +234,8 @@ function RecentTradesCard({ activity, unit }: { activity: MarketActivity | null;
 
 // ─── CTM token detail ─────────────────────────────────────────────────────────
 
-function CtmDetail({ token, row, activity, otherRows }: {
-  token: CtmTokenDetail; row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[]
+function CtmDetail({ token, row, activity, otherRows, reference }: {
+  token: CtmTokenDetail; row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[]; reference: ReferenceItem | null
 }) {
   const url = `${BASE_URL}/markets/${token.slug}`
   const jsonLd = buildJsonLd({ name: token.name, symbol: token.symbol, url, pricePkr: row?.lastPricePkr ?? null, description: token.description })
@@ -301,7 +304,8 @@ function CtmDetail({ token, row, activity, otherRows }: {
 
           <CtmPriceChart tokenId={token.id} tokenSymbol={token.symbol} />
 
-          <MarketActivityCard activity={activity} unit={token.symbol} />
+          <ReferencePriceCard item={reference} symbol={token.symbol} />
+          <MarketActivityCard activity={activity} unit={token.symbol} title="RupChain activity" />
           <RecentTradesCard activity={activity} unit={token.symbol} />
 
           <Link href="/markets" className="inline-block text-sm text-primary hover:underline">← All markets</Link>
@@ -403,7 +407,7 @@ function UsdtDetail({ row, activity, otherRows }: { row: MarketRow | null; activ
 // or trade tape to show; MarketActivityCard/RecentTradesCard render their own
 // "no data yet" states when passed an all-null/empty activity object.
 
-function GasDetail({ row, activity, otherRows }: { row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[] }) {
+function GasDetail({ row, activity, otherRows, reference }: { row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[]; reference: ReferenceItem | null }) {
   const symbol = row?.symbol ?? ''
   const name = row?.name ?? symbol
   const url = `${BASE_URL}/markets/${row?.slug ?? symbol.toLowerCase()}`
@@ -432,7 +436,7 @@ function GasDetail({ row, activity, otherRows }: { row: MarketRow | null; activi
           <div>
             <div className="flex items-baseline gap-3 flex-wrap">
               <span className="text-3xl font-bold text-text-primary tabular-nums">${fmtUsdt(row?.lastPriceUsdt ?? null)}</span>
-              <ChangeChip pct={row?.changePercent24h ?? null} />
+              {reference?.status === 'ok' && <ChangeBadge pct={reference.change7dPct} period="7D" />}
             </div>
             <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per {symbol} · live rate</p>
           </div>
@@ -443,7 +447,8 @@ function GasDetail({ row, activity, otherRows }: { row: MarketRow | null; activi
             </Link>
           </div>
 
-          <MarketActivityCard activity={activity} unit={symbol} />
+          <ReferencePriceCard item={reference} symbol={symbol} />
+          <MarketActivityCard activity={activity} unit={symbol} title="RupChain activity" />
           <RecentTradesCard activity={activity} unit={symbol} />
 
           <Link href="/markets" className="inline-block text-sm text-primary hover:underline">← All markets</Link>

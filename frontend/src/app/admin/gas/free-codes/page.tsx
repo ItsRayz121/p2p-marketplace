@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
@@ -9,7 +8,8 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { GasAmountConverter } from '@/components/admin/GasAmountConverter'
-import { ArrowLeft, RefreshCw, Plus } from 'lucide-react'
+import { RefreshCw, Plus } from 'lucide-react'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 
 type FreeCode = Awaited<ReturnType<typeof adminApi.getGasFreeCodes>>[number]
 
@@ -28,7 +28,6 @@ const blankForm = () => ({
 function fmt(n: number): string { return `$${n.toFixed(2)}` }
 
 export default function GasFreeCodesPage() {
-  const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.user?.role === 'super_admin')
 
   const [codes, setCodes] = useState<FreeCode[] | null>(null)
@@ -181,8 +180,8 @@ export default function GasFreeCodesPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      <PromotionsNav active="rewards" current="/admin/gas/free-codes" />
       <div className="flex items-center gap-3">
-        <button onClick={() => router.push('/admin/gas')} className="p-2 rounded-lg hover:bg-surface-alt"><ArrowLeft className="w-4 h-4" /></button>
         <div className="flex-1">
           <h1 className="text-lg font-bold text-text-primary">KOL Free-Gas Codes</h1>
           <p className="text-xs text-text-muted">Each redeemer gets a FIXED gas amount for free (real on-chain funds), restricted to one chain/token, capped by slots + a USDT budget. Only available on a user&apos;s first-ever gas order — the code box never shows again after that. Active only when <code>gas_free_code_enabled</code> is ON.</p>

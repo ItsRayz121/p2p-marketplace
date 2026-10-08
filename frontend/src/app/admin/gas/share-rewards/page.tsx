@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { ExternalLink } from 'lucide-react'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 
 const FILTERS = ['submitted', 'approved', 'used', 'rejected', 'all'] as const
 
@@ -49,6 +50,7 @@ export default function AdminShareRewardsPage() {
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-6 space-y-4">
+      <PromotionsNav active="rewards" current="/admin/gas/share-rewards" />
       <div>
         <h1 className="text-xl font-bold text-text-primary">Share &amp; Earn posts</h1>
         <p className="text-sm text-text-muted mt-1">

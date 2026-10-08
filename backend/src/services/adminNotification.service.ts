@@ -2,7 +2,10 @@ import { db } from '../lib/prisma'
 import type { AdminNotifCategory, UserRole } from '@prisma/client'
 import { logger } from '../lib/logger'
 import { Prisma } from '@prisma/client'
-import { sendPushToRoles } from '../lib/push.service'
+import { sendPushToUser } from '../lib/push.service'
+import { redis } from '../lib/redis'
+import { classifyNotification, type NotifGroup } from '../lib/adminNotifGroups'
+import { getPrefsForUsers } from './adminNotificationPrefs.service'
 import { sendTelegramAdminAlert } from '../lib/telegram.notify'
 import { sendAdminAlertEmail } from './email.service'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
@@ -74,6 +77,7 @@ export async function createAdminNotif(payload: AdminNotifPayload): Promise<void
     await db.adminNotification.create({
       data: {
         category: payload.category,
+        prefGroup: classifyNotification({ category: payload.category, title: payload.title, href: payload.href ?? null }),
         title:    payload.title,
         body:     payload.body,
         href:     payload.href ?? null,
@@ -88,40 +92,64 @@ export async function createAdminNotif(payload: AdminNotifPayload): Promise<void
   void dispatchExternal(payload)
 }
 
+/** Identical events inside this window fan out to push/Telegram once (the in-app record is still written for each). */
+const EXTERNAL_DEDUPE_SECONDS = 90
+
+async function claimExternalSlot(group: NotifGroup, payload: AdminNotifPayload): Promise<boolean> {
+  try {
+    const key = `adminnotif:ext:${group}:${payload.title}:${payload.href ?? ''}`.slice(0, 250)
+    const res = await redis.set(key, '1', 'EX', EXTERNAL_DEDUPE_SECONDS, 'NX')
+    return res === 'OK'
+  } catch {
+    return true // Redis down: better a duplicate buzz than a missed alert
+  }
+}
+
 async function dispatchExternal(payload: AdminNotifPayload): Promise<void> {
   const roles = targetRoles(payload)
   const href  = payload.href ?? '/admin'
+  const group = classifyNotification({ category: payload.category, title: payload.title, href: payload.href ?? null })
 
-  // 1) OS-level web push, scoped to the targeted roles.
-  void sendPushToRoles(roles, { title: payload.title, body: payload.body, url: href })
+  // Alert-storm guard: a burst of identical events (e.g. a failing job retrying) buzzes devices once.
+  const claimed = await claimExternalSlot(group, payload)
 
-  // 2) Telegram DM to targeted staff who linked Telegram (important categories).
-  const wantsTelegram = payload.telegram ?? TELEGRAM_CATEGORIES.has(payload.category)
-  if (wantsTelegram) {
+  if (claimed) {
     try {
+      // Preferences are per admin account: only deliver to the staff who want this group on that channel.
       const staff = await db.user.findMany({
-        where: { role: { in: roles }, telegramId: { not: null }, telegramBlockedAt: null },
-        select: { telegramId: true },
+        where: { role: { in: roles } },
+        select: { id: true, telegramId: true, telegramBlockedAt: true },
       })
+      const prefs = await getPrefsForUsers(staff.map((s) => s.id))
+
+      // 1) OS-level web push.
       for (const s of staff) {
-        if (!s.telegramId) continue
-        const tgId = s.telegramId
-        sendTelegramAdminAlert(tgId, payload.title, payload.body, href)
-          .then((r) => {
-            if (r.blocked) {
-              db.user.updateMany({ where: { telegramId: tgId }, data: { telegramBlockedAt: new Date() } }).catch(() => {})
-            }
-          })
-          .catch(() => {})
+        if (prefs.get(s.id)![group].push) void sendPushToUser(s.id, { title: payload.title, body: payload.body, url: href })
+      }
+
+      // 2) Telegram DM (important categories by default; an admin can still turn it off for themselves).
+      const wantsTelegram = payload.telegram ?? TELEGRAM_CATEGORIES.has(payload.category)
+      if (wantsTelegram) {
+        for (const s of staff) {
+          if (!s.telegramId || s.telegramBlockedAt || !prefs.get(s.id)![group].telegram) continue
+          const tgId = s.telegramId
+          sendTelegramAdminAlert(tgId, payload.title, payload.body, href)
+            .then((r) => {
+              if (r.blocked) {
+                db.user.updateMany({ where: { telegramId: tgId }, data: { telegramBlockedAt: new Date() } }).catch(() => {})
+              }
+            })
+            .catch(() => {})
+        }
       }
     } catch (err) {
-      logger.warn({ err, title: payload.title }, 'Admin Telegram fan-out failed')
+      logger.warn({ err, title: payload.title }, 'Admin notification fan-out failed')
     }
   }
 
   // 3) Email — critical, opt-in, single inbox. Only when the payload is marked
   //    email-eligible AND the flag is ON (so it stays free by default).
-  if (payload.email) {
+  if (claimed && payload.email) {
     try {
       if (await isFlagEnabled(FLAGS.ADMIN_EMAIL_NOTIFS)) {
         await sendAdminAlertEmail(payload.title, payload.body)

@@ -1419,6 +1419,9 @@ enum AdminNotifCategory {
 model AdminNotification {
   id        String               @id @default(cuid())
   category  AdminNotifCategory
+  // Preference bucket (see lib/adminNotifGroups.ts) so each admin can mute whole groups without touching the
+  // shared record. Null only for rows written before this column existed (backfilled by the migration).
+  prefGroup String?
   title     String
   body      String
   href      String?
@@ -1428,6 +1431,17 @@ model AdminNotification {
 
   @@index([isRead, createdAt])
   @@index([category, createdAt])
+  @@index([prefGroup, createdAt])
+}
+
+// Per-admin delivery preferences. One row per admin account (plain userId, no cascade: a row for a deleted
+// account is simply never read). prefs = { groups: { <group>: { inApp, push, telegram, sound } } }.
+// Preferences only change who is notified; the AdminNotification record itself is written regardless.
+model AdminNotificationPreference {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  prefs     Json     @default("{}")
+  updatedAt DateTime @updatedAt
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1648,6 +1662,10 @@ model ChatThreadMessage {
   // postThreadMessage can detect the duplicate and return the original message
   // instead of creating a second one. Null for messages sent before this existed.
   clientId      String?
+  // Quote-reply: id of the message this one replies to (same thread). Soft reference —
+  // no FK, so a retracted/removed original never blocks anything; the reader resolves
+  // it against the loaded timeline and shows "original unavailable" if missing.
+  replyToId     String?
   // One-tap "share my listing" into the chat: references the sender's OWN
   // active Ad (usdt) or CtmListing (ctm) at send time. No FK — the referenced
   // row can later be edited/deleted/expire, so the current state is resolved
@@ -1768,6 +1786,8 @@ model ChannelMessage {
   isSystem  Boolean   @default(false)
   createdAt DateTime  @default(now())
   clientId  String?
+  // Quote-reply to an earlier broadcast in the same channel (owner posts only). Soft reference, no FK.
+  replyToId String?
   // One-tap "share my listing" — mirrors ChatThreadMessage's sharedAd fields.
   sharedAdMarket String?
   sharedAdId     String?

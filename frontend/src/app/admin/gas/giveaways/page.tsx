@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
 import { adminApi, type AdminGasChain, type AdminGasToken } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { useFileUpload } from '@/hooks/useFileUpload'
@@ -12,7 +11,8 @@ import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { CopyButton } from '@/components/ui/CopyButton'
 import { GasAmountConverter } from '@/components/admin/GasAmountConverter'
-import { ArrowLeft, RefreshCw, Plus, ChevronDown, ChevronRight, Search, Download, XCircle } from 'lucide-react'
+import { RefreshCw, Plus, ChevronDown, ChevronRight, Search, Download, XCircle } from 'lucide-react'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 
 function giveawayLink(code: string): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : ''
@@ -32,7 +32,6 @@ function deliveryVariant(s: string | null): 'success' | 'warning' | 'danger' | '
 const blankForm = () => ({ code: '', kolLabel: '', thumbnailUrl: '', tokenConfigId: '', amountNative: '', winnerCount: '10', entryDeadline: '', requireKyc: true })
 
 export default function GasGiveawaysAdminPage() {
-  const router = useRouter()
   const isSuperAdmin = useAuthStore((s) => s.user?.role === 'super_admin')
 
   const [campaigns, setCampaigns] = useState<Campaign[] | null>(null)
@@ -206,8 +205,8 @@ export default function GasGiveawaysAdminPage() {
 
   return (
     <div className="max-w-5xl mx-auto px-4 py-6 space-y-5">
+      <PromotionsNav active="giveaways" current="/admin/gas/giveaways" />
       <div className="flex items-center gap-3">
-        <button onClick={() => router.push('/admin/gas')} className="p-2 rounded-lg hover:bg-surface-alt"><ArrowLeft className="w-4 h-4" /></button>
         <div className="flex-1">
           <h1 className="text-lg font-bold text-text-primary">Gas Giveaways</h1>
           <p className="text-xs text-text-muted">KOL campaigns — entrants submit a receiving address; you draw winners and free gas is sent automatically. Active only when <code>gas_giveaway_enabled</code> is ON.</p>

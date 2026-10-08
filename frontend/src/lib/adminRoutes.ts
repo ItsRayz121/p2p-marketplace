@@ -26,15 +26,29 @@ const GAS_PAYMENT_TYPES: readonly GasPaymentType[] = ['all', 'PKR', 'EXCHANGE', 
 export interface GasOrderFilters {
   status: string
   paymentType: GasPaymentType
+  chain: string
+  from: string
+  to: string
+  q: string
 }
 
-export function gasOrdersHref(filters: Partial<GasOrderFilters> = {}): string {
+/** Payment Orders page (formerly the order list inside /admin/gas). */
+export const PAYMENT_ORDERS_ROUTE = '/admin/payment-orders'
+
+export function paymentOrdersHref(filters: Partial<GasOrderFilters> = {}): string {
   const qs = new URLSearchParams()
   if (filters.status && filters.status !== 'all') qs.set('status', filters.status)
   if (filters.paymentType && filters.paymentType !== 'all') qs.set('paymentType', filters.paymentType)
+  if (filters.chain) qs.set('chain', filters.chain)
+  if (filters.from) qs.set('from', filters.from)
+  if (filters.to) qs.set('to', filters.to)
+  if (filters.q) qs.set('q', filters.q)
   const q = qs.toString()
-  return q ? `${ADMIN_ROUTES.gas}?${q}` : ADMIN_ROUTES.gas
+  return q ? `${PAYMENT_ORDERS_ROUTE}?${q}` : PAYMENT_ORDERS_ROUTE
 }
+
+/** @deprecated kept so existing callers keep working — now resolves to Payment Orders. */
+export const gasOrdersHref = paymentOrdersHref
 
 /** Dashboard "Gas Orders Active" card. */
 export const gasActiveOrdersHref = () => gasOrdersHref({ status: GAS_STATUS_ACTIVE })
@@ -45,7 +59,14 @@ export function parseGasOrderFilters(params: { get(name: string): string | null 
   const status = params.get('status')?.trim() || 'all'
   const pt = params.get('paymentType')?.trim() ?? 'all'
   const paymentType = (GAS_PAYMENT_TYPES as readonly string[]).includes(pt) ? (pt as GasPaymentType) : 'all'
-  return { status, paymentType }
+  return {
+    status,
+    paymentType,
+    chain: params.get('chain')?.trim() ?? '',
+    from: params.get('from')?.trim() ?? '',
+    to: params.get('to')?.trim() ?? '',
+    q: params.get('q')?.trim() ?? '',
+  }
 }
 
 // ── Unified Deposits & Withdrawals ────────────────────────────────────────────

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Search } from 'lucide-react'
-import { marketsApi, type MarketRow, type MarketsOverview } from '@/lib/api'
+import { marketsApi, type MarketRow, type MarketsOverview, type ReferenceItem } from '@/lib/api'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { fmtMarketPkr as fmtPkr, fmtMarketUsdt as fmtUsdt } from '@/lib/marketsFmt'
@@ -13,6 +13,8 @@ import { fmtMarketPkr as fmtPkr, fmtMarketUsdt as fmtUsdt } from '@/lib/marketsF
 // client-side so prices/changes/sparklines refresh without a reload — the
 // backend's own 45s Redis cache is the real rate limit, this just re-reads it.
 const POLL_MS = 45_000
+// Global reference prices are cached for 15 min server-side, so re-reading more often than this is pointless.
+const REFERENCE_POLL_MS = 5 * 60_000
 
 function ChangeChip({ pct }: { pct: number | null | undefined }) {
   if (pct === null || pct === undefined) {
@@ -31,6 +33,22 @@ function ChangeChip({ pct }: { pct: number | null | undefined }) {
 export function MarketsTable({ initial }: { initial: MarketsOverview }) {
   const [overview, setOverview] = useState<MarketsOverview>(initial)
   const [query, setQuery] = useState('')
+  const [reference, setReference] = useState<Record<string, ReferenceItem>>({})
+
+  // Global 7-day reference prices for every non-USDT row. Purely additive: if this fails the table is unchanged.
+  const refSlugs = useMemo(() => overview.rows.filter((r) => r.kind !== 'usdt').map((r) => r.slug).join(','), [overview.rows])
+  useEffect(() => {
+    if (!refSlugs) return
+    let alive = true
+    const load = () => {
+      marketsApi.getReference(refSlugs.split(','))
+        .then((d) => { if (alive) setReference(Object.fromEntries(d.items.map((i) => [i.slug.toLowerCase(), i]))) })
+        .catch(() => { /* reference data is optional */ })
+    }
+    load()
+    const id = setInterval(load, REFERENCE_POLL_MS)
+    return () => { alive = false; clearInterval(id) }
+  }, [refSlugs])
 
   useEffect(() => {
     let alive = true
@@ -77,7 +95,7 @@ export function MarketsTable({ initial }: { initial: MarketsOverview }) {
       </div>
 
       <div className="space-y-2">
-        {rows.map((row) => <MarketRowCard key={row.slug} row={row} />)}
+        {rows.map((row) => <MarketRowCard key={row.slug} row={row} reference={reference[row.slug.toLowerCase()] ?? null} />)}
         {rows.length === 0 && (
           <div className="rounded-xl border border-dashed border-border py-10 text-center text-sm text-text-muted">
             No tokens match “{query}”.
@@ -88,7 +106,31 @@ export function MarketsTable({ initial }: { initial: MarketsOverview }) {
   )
 }
 
-function MarketRowCard({ row }: { row: MarketRow }) {
+/** Trend cell: RupChain's own trade trend if it has one, otherwise the global 7-day reference — each clearly labelled. */
+function TrendCell({ row, reference, size }: { row: MarketRow; reference: ReferenceItem | null; size: string }) {
+  if (row.sparkline.length >= 2) {
+    return (
+      <span className="flex flex-col items-end gap-0.5">
+        <Sparkline points={row.sparkline} className={size} />
+        <span className="text-[9px] uppercase tracking-wide text-text-muted">RupChain trades</span>
+      </span>
+    )
+  }
+  if (reference?.status === 'ok') {
+    const pct = reference.change7dPct
+    return (
+      <span className="flex flex-col items-end gap-0.5" title={`Global 7-day price from ${reference.provider}${reference.stale ? ' (delayed)' : ''}`}>
+        <Sparkline points={reference.points} className={size} />
+        <span className="text-[9px] uppercase tracking-wide text-text-muted">
+          7D global{pct !== null && <span className={pct > 0 ? ' text-emerald-600' : pct < 0 ? ' text-red-500' : ''}> {pct > 0 ? '▲ +' : pct < 0 ? '▼ −' : ''}{Math.abs(pct).toFixed(1)}%</span>}
+        </span>
+      </span>
+    )
+  }
+  return <span className="text-xs text-text-muted" title={reference?.status === 'unsupported' || reference?.status === 'unavailable' ? 'Market data unavailable' : undefined}>—</span>
+}
+
+function MarketRowCard({ row, reference }: { row: MarketRow; reference: ReferenceItem | null }) {
   return (
     <Link
       href={`/markets/${row.slug}`}
@@ -118,7 +160,7 @@ function MarketRowCard({ row }: { row: MarketRow }) {
       </div>
       <div className="mt-1.5 flex items-center justify-between text-xs text-text-muted md:hidden">
         <span>Buy {row.buyPricePkr !== null ? fmtPkr(row.buyPricePkr) : '—'} · Sell {row.sellPricePkr !== null ? fmtPkr(row.sellPricePkr) : '—'}</span>
-        {row.sparkline.length >= 2 && <Sparkline points={row.sparkline} className="h-6 w-16" />}
+        {(row.sparkline.length >= 2 || reference?.status === 'ok') && <TrendCell row={row} reference={reference} size="h-6 w-16" />}
       </div>
 
       {/* Desktop columns */}
@@ -133,7 +175,7 @@ function MarketRowCard({ row }: { row: MarketRow }) {
         <span className="text-blue-600 dark:text-blue-400">{row.sellPricePkr !== null ? fmtPkr(row.sellPricePkr) : '—'}</span>
       </span>
       <span className="hidden md:flex justify-end">
-        {row.sparkline.length >= 2 ? <Sparkline points={row.sparkline} className="h-7 w-24" /> : <span className="text-xs text-text-muted">—</span>}
+        <TrendCell row={row} reference={reference} size="h-7 w-24" />
       </span>
     </Link>
   )

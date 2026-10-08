@@ -1,5 +1,5 @@
 'use client'
-import { useState, useCallback, useEffect, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -7,8 +7,6 @@ import { adminApi, apiRequest, type GasFinancialKpi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
-import { ErrorState } from '@/components/ui/ErrorState'
-import { EmptyState } from '@/components/ui/EmptyState'
 import { Badge } from '@/components/ui/Badge'
 import { Fuel } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
@@ -17,36 +15,9 @@ import { Modal } from '@/components/ui/Modal'
 import { useAuthStore } from '@/store/auth.store'
 import { chainDisplayName } from '@/lib/chainDisplayName'
 import { EntityLogo } from '@/components/ui/EntityLogo'
-import { TokenChainLogo } from '@/components/ui/TokenChainLogo'
-import { RejectProofModal } from '@/components/admin/GasOrderActionModals'
-import { GAS_STATUS_LABELS, gasStatusVariant, isPaidFailed } from '@/lib/gasOrderStatus'
-import { ADMIN_ROUTES, GAS_STATUS_PROOF_SUBMITTED, gasOrdersHref, gasOrderHref, parseGasOrderFilters, type GasPaymentType } from '@/lib/adminRoutes'
+import { paymentOrdersHref, parseGasOrderFilters } from '@/lib/adminRoutes'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-interface GasOrder {
-  id: string
-  orderRef: string
-  tier: string | null
-  chain: string
-  gasAmountNative: string
-  paymentAmount: string
-  paymentCoin?: string | null
-  paymentNetwork?: string | null
-  pkrAmount?: string | null
-  toAddress: string
-  status: 'payment_pending' | 'payment_uploaded' | 'payment_verified' | 'payment_detected' | 'sending' | 'delivered' | 'expired' | 'failed' | 'awaiting_refund' | 'refund_pending' | 'refunded' | 'cancelled'
-  deliveryTxHash?: string
-  failureReason?: string
-  paymentTxHash?: string | null
-  retryCount?: number
-  createdAt: string
-}
-
-interface GasOrdersResponse {
-  orders: GasOrder[]
-  pagination: { total: number; page: number; limit: number; pages: number }
-}
 
 interface GasWallet {
   chain: string
@@ -94,7 +65,6 @@ interface GasAnalytics {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const CHAIN_SYMBOL: Record<string, string> = { TRON: 'TRX', BSC: 'BNB', ETHEREUM: 'ETH', ETH: 'ETH' }
 
 function fmtNative(amount: string | number): string {
   const n = parseFloat(String(amount))
@@ -455,115 +425,6 @@ function FinancialKpiSection({ kpi, loading, onTotalOrders }: { kpi: GasFinancia
   )
 }
 
-// ─── Gas Payment Confirm Modal ────────────────────────────────────────────────
-
-function GasPaymentConfirmModal({
-  isOpen,
-  onClose,
-  onConfirm,
-  order,
-  type,
-}: {
-  isOpen: boolean
-  onClose: () => void
-  onConfirm: () => Promise<void>
-  order: GasOrder | null
-  type: 'usdt' | 'pkr'
-}) {
-  const [loading, setLoading] = useState(false)
-
-  async function handleConfirm() {
-    setLoading(true)
-    try { await onConfirm() } finally { setLoading(false) }
-  }
-
-  const title = type === 'pkr' ? (order?.paymentNetwork === 'EXCHANGE' ? 'Approve Exchange Transfer' : 'Approve PKR Payment') : 'Confirm Payment & Release Gas'
-
-  const CHAIN_EXPLORER: Record<string, string> = {
-    BSC: 'https://bscscan.com/tx/',
-    TRON: 'https://tronscan.org/#/transaction/',
-    ETHEREUM: 'https://etherscan.io/tx/',
-    ETH: 'https://etherscan.io/tx/',
-  }
-
-  const explorerBase = order ? (CHAIN_EXPLORER[order.chain] ?? null) : null
-
-  function InfoRow({ label, children }: { label: string; children: React.ReactNode }) {
-    return (
-      <div className="flex items-start justify-between gap-3 py-2.5 border-b border-border last:border-0">
-        <span className="text-xs font-medium text-text-muted flex-shrink-0 mt-0.5">{label}</span>
-        <span className="text-sm text-text-primary text-right">{children}</span>
-      </div>
-    )
-  }
-
-  return (
-    <Modal
-      isOpen={isOpen}
-      onClose={onClose}
-      title={title}
-      size="sm"
-      footer={
-        <div className="flex gap-3">
-          <Button variant="secondary" size="md" onClick={onClose} disabled={loading} className="flex-1">Cancel</Button>
-          <Button variant="primary" size="md" loading={loading} onClick={handleConfirm} className="flex-1">
-            {type === 'pkr' ? 'Approve & Release Gas' : 'Confirm & Release Gas'}
-          </Button>
-        </div>
-      }
-    >
-      {!order ? (
-        <p className="text-sm text-text-muted">Loading order details…</p>
-      ) : (
-        <div className="space-y-1">
-          <InfoRow label="Order">
-            <span className="font-mono text-xs bg-surface px-1.5 py-0.5 rounded">{order.orderRef}</span>
-          </InfoRow>
-          <InfoRow label="Chain">
-            <span className="font-medium">{order.chain}</span>
-            {order.tier && <span className="ml-1 text-xs text-text-muted">· {order.tier}</span>}
-          </InfoRow>
-          <InfoRow label="Gas Amount">
-            {order.gasAmountNative} {CHAIN_SYMBOL[order.chain] ?? order.chain}
-          </InfoRow>
-          {type === 'pkr' && order.paymentNetwork !== 'EXCHANGE' ? (
-            <InfoRow label="PKR Amount">
-              <span className="font-semibold text-primary">PKR {Number(order.pkrAmount ?? 0).toLocaleString()}</span>
-            </InfoRow>
-          ) : (
-            <InfoRow label="Payment">
-              <span className="font-semibold text-primary">
-                {order.paymentAmount} {order.paymentCoin ?? 'USDT'}
-              </span>
-            </InfoRow>
-          )}
-          <InfoRow label="Deliver To">
-            <span className="font-mono text-xs break-all">{order.toAddress}</span>
-          </InfoRow>
-          {order.deliveryTxHash && (
-            <InfoRow label="Tx Hash">
-              <span className="flex items-center gap-1">
-                <span className="font-mono text-xs">{order.deliveryTxHash.slice(0, 12)}…</span>
-                {explorerBase && (
-                  <a
-                    href={`${explorerBase}${order.deliveryTxHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-primary hover:underline text-xs ml-1"
-                  >
-                    View ↗
-                  </a>
-                )}
-              </span>
-            </InfoRow>
-          )}
-          <p className="pt-3 text-xs text-text-muted">Gas delivery will be queued immediately after confirmation.</p>
-        </div>
-      )}
-    </Modal>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 interface PollerHealthNetwork {
@@ -733,24 +594,12 @@ export default function GasAdminPage() {
 function GasAdminPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const initialFilters = parseGasOrderFilters(searchParams)
   const user = useAuthStore((s) => s.user)
   const isSuperAdmin = user?.role === 'super_admin'
 
   // Stats state
   const [stats, setStats] = useState<GasStats | null>(null)
   const [statsError, setStatsError] = useState<string | null>(null)
-
-  // Orders state
-  const [orders, setOrders] = useState<GasOrder[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState(initialFilters.status)
-  // Strict PKR vs crypto separation — crypto payments must never appear in the
-  // PKR proof-review flow and vice-versa.
-  const [paymentTypeFilter, setPaymentTypeFilter] = useState<GasPaymentType>(initialFilters.paymentType)
 
   // Analytics state
   const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
@@ -776,44 +625,16 @@ function GasAdminPageInner() {
   const [testingRpc, setTestingRpc] = useState<string | null>(null)
 
   // Action state
-  const [confirmRetry, setConfirmRetry] = useState(false)
-  const [confirmRefund, setConfirmRefund] = useState(false)
   const [confirmToggle, setConfirmToggle] = useState<string | null>(null)
-  const [confirmMarkPayment, setConfirmMarkPayment] = useState(false)
-  const [confirmApprovePkr, setConfirmApprovePkr] = useState(false)
-  const [confirmRejectPkr, setConfirmRejectPkr] = useState(false)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedOrder, setSelectedOrder] = useState<GasOrder | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [actionSuccess, setActionSuccess] = useState<string | null>(null)
   const [toggling, setToggling] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState<string | null>(null)
 
-  const limit = 20
-
-  // Orders table anchor — KPI/stat cards filter the table and scroll to it.
-  const ordersSectionRef = useRef<HTMLDivElement>(null)
-  const scrollToOrders = useCallback(() => {
-    requestAnimationFrame(() => ordersSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
-  }, [])
-  const goToOrders = useCallback((filter: string, paymentType: GasPaymentType = 'all') => {
-    setStatusFilter(filter)
-    setPaymentTypeFilter(paymentType)
-    setPage(1)
-    scrollToOrders()
-  }, [scrollToOrders])
-
-  // Filters are mirrored into the URL so the view is shareable / survives refresh, and
-  // dashboard deep links (?status=…&paymentType=…) arrive pre-filtered. On a deep link
-  // the queue is scrolled into view so the pending orders are the first thing visible.
+  // Legacy deep links (/admin/gas?status=…&paymentType=…) now live on Payment Orders.
   useEffect(() => {
-    const target = gasOrdersHref({ status: statusFilter, paymentType: paymentTypeFilter })
-    const current = searchParams.toString() ? `${ADMIN_ROUTES.gas}?${searchParams.toString()}` : ADMIN_ROUTES.gas
-    if (target !== current) router.replace(target, { scroll: false })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, paymentTypeFilter])
-  useEffect(() => {
-    if (initialFilters.status !== 'all' || initialFilters.paymentType !== 'all') scrollToOrders()
+    const f = parseGasOrderFilters(searchParams)
+    if (f.status !== 'all' || f.paymentType !== 'all') router.replace(paymentOrdersHref(f))
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -826,22 +647,6 @@ function GasAdminPageInner() {
       setStatsError(err instanceof Error ? err.message : 'Failed to load stats')
     }
   }, [])
-
-  const fetchOrders = useCallback(async () => {
-    try {
-      const params: Record<string, string | number> = { page, limit }
-      if (statusFilter !== 'all') params.status = statusFilter
-      if (paymentTypeFilter !== 'all') params.paymentType = paymentTypeFilter
-      const data = await adminApi.getGasOrders(params) as unknown as GasOrdersResponse
-      setOrders(data.orders ?? [])
-      setTotal(data.pagination?.total ?? 0)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load gas orders')
-    } finally {
-      setLoading(false)
-    }
-  }, [page, statusFilter, paymentTypeFilter])
 
   const fetchGlobalPause = useCallback(async () => {
     try {
@@ -869,15 +674,10 @@ function GasAdminPageInner() {
   }, [kpiFrom, kpiTo])
 
   const refresh = useCallback(async () => {
-    await Promise.all([fetchStats(), fetchOrders(), fetchGlobalPause()])
-  }, [fetchStats, fetchOrders, fetchGlobalPause])
+    await Promise.all([fetchStats(), fetchGlobalPause()])
+  }, [fetchStats, fetchGlobalPause])
 
   usePolling(refresh, 30_000)
-
-  // usePolling only re-runs on mount + interval, so it won't react to filter
-  // changes. Refetch orders immediately whenever the status/payment-type filter
-  // or page changes, otherwise clicking a tab does nothing until the next poll.
-  useEffect(() => { void fetchOrders() }, [fetchOrders])
 
   // Fetch analytics on demand
   const handleShowAnalytics = useCallback(async () => {
@@ -893,72 +693,6 @@ function GasAdminPageInner() {
       setAnalytics(data)
     } catch { /* non-critical */ }
   }, [])
-
-  async function handleRetry() {
-    if (!selectedId) return
-    setActionError(null)
-    try {
-      await adminApi.retryGasOrder(selectedId)
-      setConfirmRetry(false)
-      setActionSuccess('Gas order queued for retry.')
-      void refresh()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to retry gas order')
-    }
-  }
-
-  async function handleRefund() {
-    if (!selectedId) return
-    setActionError(null)
-    try {
-      await adminApi.refundGasOrder(selectedId)
-      setConfirmRefund(false)
-      setActionSuccess('Gas order marked as refunded.')
-      void refresh()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to refund gas order')
-    }
-  }
-
-  async function handleApprovePkr() {
-    if (!selectedId) return
-    setActionError(null)
-    try {
-      await adminApi.approvePkrOrder(selectedId)
-      setConfirmApprovePkr(false)
-      setActionSuccess('PKR payment approved — gas delivery queued.')
-      void refresh()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to approve PKR order')
-    }
-  }
-
-  async function handleMarkPayment() {
-    if (!selectedId) return
-    setActionError(null)
-    try {
-      await adminApi.markGasPaymentReceived(selectedId)
-      setConfirmMarkPayment(false)
-      setActionSuccess('Payment confirmed — gas delivery queued.')
-      void refresh()
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to confirm payment')
-    }
-  }
-
-  async function handleRejectPkr(reason: string) {
-    if (!selectedId) return
-    setActionError(null)
-    try {
-      await adminApi.rejectGasOrder(selectedId, reason)
-      setConfirmRejectPkr(false)
-      setActionSuccess('Payment rejected — the order was closed and the customer notified.')
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : 'Failed to reject the payment')
-      setConfirmRejectPkr(false)
-    }
-    void refresh()
-  }
 
   async function handleToggleChain(chain: string) {
     setToggling(chain)
@@ -1021,10 +755,7 @@ function GasAdminPageInner() {
     }
   }
 
-  const totalPages = Math.ceil(total / limit)
-
-  if (loading && !stats) return <LoadingState message="Loading gas operations..." />
-  if (error && orders.length === 0) return <ErrorState title={error} onRetry={refresh} />
+  if (!stats && !statsError) return <LoadingState message="Loading gas operations..." />
 
   return (
     <div className="space-y-5">
@@ -1055,7 +786,7 @@ function GasAdminPageInner() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
-          <p className="text-text-muted text-sm mt-0.5">{total} total orders</p>
+          <p className="text-text-muted text-sm mt-0.5">Hot wallets, chain health and financial KPIs</p>
         </div>
         {/* Mobile: an even 2-column grid so every action is visible and aligned
             (was a hidden horizontal-scroll strip that clipped the later buttons).
@@ -1107,30 +838,27 @@ function GasAdminPageInner() {
       {/* ── Operational Quick Stats (clickable → filtered orders / requests) ──── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <button
-            type="button"
-            onClick={() => goToOrders('active')}
+          <Link
+            href={paymentOrdersHref({ status: 'active' })}
             className="text-left bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
           >
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Active Orders <span className="text-primary ml-1">→</span></p>
             <p className="text-2xl font-bold text-warning mt-1">{stats.pendingCount}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => goToOrders('failed')}
+          </Link>
+          <Link
+            href={paymentOrdersHref({ status: 'failed' })}
             className="text-left bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
           >
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Failed Orders <span className="text-primary ml-1">→</span></p>
             <p className={`text-2xl font-bold mt-1 ${stats.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>{stats.failedCount}</p>
-          </button>
-          <button
-            type="button"
-            onClick={() => goToOrders('refund_pending')}
+          </Link>
+          <Link
+            href={paymentOrdersHref({ status: 'refund_pending' })}
             className={`text-left bg-surface shadow-card rounded-xl p-4 cursor-pointer hover:shadow-md transition-all ${(stats.refundPendingCount ?? 0) > 0 ? 'border border-warning/40 hover:border-warning' : 'border border-border hover:border-primary/40'}`}
           >
             <p className="text-xs text-text-muted font-medium uppercase tracking-wide">Refund Pending <span className="text-primary ml-1">→</span></p>
             <p className={`text-2xl font-bold mt-1 ${(stats.refundPendingCount ?? 0) > 0 ? 'text-warning' : 'text-text-primary'}`}>{stats.refundPendingCount ?? 0}</p>
-          </button>
+          </Link>
           <Link
             href="/admin/gas/requests"
             className="block bg-surface shadow-card border border-border rounded-xl p-4 cursor-pointer hover:border-primary/40 hover:shadow-md transition-all"
@@ -1183,10 +911,10 @@ function GasAdminPageInner() {
 
           {/* KPI cards */}
           {kpiTab === 'today' && (
-            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} onTotalOrders={() => goToOrders('all')} />
+            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} onTotalOrders={() => router.push(paymentOrdersHref())} />
           )}
           {kpiTab === 'alltime' && (
-            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} onTotalOrders={() => goToOrders('all')} />
+            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} onTotalOrders={() => router.push(paymentOrdersHref())} />
           )}
           {kpiTab === 'custom' && (
             <FinancialKpiSection kpi={customKpi} loading={customKpiLoading} />
@@ -1219,18 +947,15 @@ function GasAdminPageInner() {
         </div>
       )}
 
-      {/* ── PKR Proof Review Alert ───────────────────────────────────────────── */}
-      {/* PKR-only: crypto payments auto-verify on-chain and must never enter the
-          manual proof-review flow. */}
-      {orders.some(o => o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE')) && statusFilter === 'all' && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-amber-500/10 border border-amber-500/30 rounded-xl text-sm text-amber-800 dark:text-amber-300">
-          <svg className="w-5 h-5 flex-shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
-          <span><strong>PKR and exchange payments pending review.</strong> Orders with &ldquo;Proof Submitted&rdquo; status need approval before gas is released.</span>
-          <button onClick={() => goToOrders(GAS_STATUS_PROOF_SUBMITTED, 'MANUAL')} className="ml-auto text-xs font-bold border border-amber-500/50 rounded-lg px-2.5 py-1 hover:bg-amber-500/15">
-            View All →
-          </button>
-        </div>
-      )}
+      {/* ── Payment Orders shortcut ─────────────────────────────────────────── */}
+      <Link
+        href={paymentOrdersHref()}
+        className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl text-sm text-text-primary hover:bg-primary/10 transition-colors"
+      >
+        <Fuel className="w-5 h-5 text-primary flex-shrink-0" aria-hidden />
+        <span><strong>Payment orders moved.</strong> Proof review, approvals, refunds and the full order list now live on their own page.</span>
+        <span className="ml-auto text-xs font-bold text-primary whitespace-nowrap">Open Payment Orders →</span>
+      </Link>
 
       {/* ── Custom Gas Requests Alert ────────────────────────────────────────── */}
       {(stats?.pendingCustomRequests ?? 0) > 0 && (
@@ -1344,222 +1069,7 @@ function GasAdminPageInner() {
         </div>
       )}
 
-      {/* ── Status Filters ───────────────────────────────────────────────────── */}
-      <div ref={ordersSectionRef} className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-3 scroll-mt-4">
-        {/* Payment type — keeps PKR (manual proof) and crypto (auto-verified) flows
-            separate. Label on its own line above the buttons so it doesn't crowd
-            the chips on narrow widths. */}
-        <div>
-          <span className="block text-xs font-semibold text-text-muted mb-1.5">Payment type</span>
-          <div className="admin-toolbar gap-2">
-            {([
-              { v: 'all',    label: 'All' },
-              { v: 'MANUAL', label: 'All manual review' },
-              { v: 'PKR',    label: 'PKR (manual review)' },
-              { v: 'EXCHANGE', label: 'Exchange transfer (manual review)' },
-              { v: 'CRYPTO', label: 'Crypto (auto-verify)' },
-            ] as const).map((pt) => (
-              <button
-                key={pt.v}
-                onClick={() => { setPaymentTypeFilter(pt.v); setPage(1) }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors border ${
-                  paymentTypeFilter === pt.v
-                    ? 'bg-primary text-white border-primary'
-                    : 'bg-surface text-text-secondary border-border hover:bg-surface'
-                }`}
-              >
-                {pt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-        {/* Status chips WRAP onto multiple lines instead of scrolling off-screen,
-            so Expired / Failed / Refund stay visible under the earlier chips. */}
-        <div className="flex flex-wrap gap-2">
-          {['all', 'active', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending', 'delivered', 'expired', 'failed', 'awaiting_refund', 'refund_pending', 'refunded', 'cancelled'].map((s) => (
-            <button
-              key={s}
-              onClick={() => { setStatusFilter(s); setPage(1) }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-                statusFilter === s
-                  ? 'bg-primary text-white border-primary'
-                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
-              }`}
-            >
-              {s === 'all' ? 'All' : s === 'active' ? 'Active (in flight)' : (GAS_STATUS_LABELS[s] ?? s)}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Orders Table ─────────────────────────────────────────────────────── */}
-      {orders.length === 0 ? (
-        <EmptyState icon={Fuel} title="No gas orders found" description="No gas orders match the current filter." />
-      ) : (
-        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-surface border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Order Ref</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Chain / Tier</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Amount</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">To Address</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Created</th>
-                  <th className="px-4 py-3 text-right font-medium text-text-muted">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {orders.map((o) => (
-                  <tr key={o.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/admin/gas/orders/${o.orderRef}`}
-                        className="font-mono text-xs text-primary hover:underline"
-                      >
-                        {o.orderRef}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-1.5">
-                        <EntityLogo type="chain" slug={o.chain} size="xs" />
-                        <Badge variant="outline" size="sm">{o.chain}</Badge>
-                        {o.tier && <Badge variant="default" size="sm">{o.tier}</Badge>}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">
-                      <span className="font-medium">{fmtNative(o.gasAmountNative)} {CHAIN_SYMBOL[o.chain] ?? o.chain}</span>
-                      <span className="text-text-muted text-xs ml-1">/ ${parseFloat(String(o.paymentAmount)).toFixed(2)}</span>
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary">
-                      {o.toAddress.slice(0, 6)}…{o.toAddress.slice(-4)}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div>
-                        <Badge variant={gasStatusVariant(o.status)} size="sm">{GAS_STATUS_LABELS[o.status] ?? o.status}</Badge>
-                        {o.failureReason && (
-                          <p className="text-xs text-danger mt-0.5 max-w-[160px] truncate" title={o.failureReason}>{o.failureReason}</p>
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-text-secondary">{fmtDate(o.createdAt)}</td>
-                    <td className="px-4 py-3 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <Link href={gasOrderHref(o.orderRef)}>
-                          <Button size="sm" variant="ghost">View</Button>
-                        </Link>
-                        {o.status === 'payment_uploaded' && (o.paymentCoin === 'PKR' || o.paymentNetwork === 'EXCHANGE') && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmApprovePkr(true) }}
-                            >
-                              {o.paymentNetwork === 'EXCHANGE' ? 'Approve transfer' : 'Approve PKR'}
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRejectPkr(true) }}
-                            >
-                              Reject
-                            </Button>
-                          </>
-                        )}
-                        {o.status === 'payment_uploaded' && o.paymentCoin !== 'PKR' && o.paymentNetwork !== 'EXCHANGE' && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmMarkPayment(true) }}
-                            >
-                              Confirm Payment
-                            </Button>
-                          </>
-                        )}
-                        {isPaidFailed(o) && (
-                          <>
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRetry(true) }}
-                            >
-                              Retry
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="ghost"
-                              onClick={() => { setSelectedId(o.id); setSelectedOrder(o); setActionError(null); setConfirmRefund(true) }}
-                            >
-                              Refund
-                            </Button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <p className="text-text-muted text-sm">Page {page} of {totalPages} · {total} orders</p>
-              <div className="flex gap-2">
-                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ── Modals ───────────────────────────────────────────────────────────── */}
-      <GasPaymentConfirmModal
-        isOpen={confirmMarkPayment}
-        onClose={() => setConfirmMarkPayment(false)}
-        onConfirm={handleMarkPayment}
-        order={selectedOrder}
-        type="usdt"
-      />
-      <GasPaymentConfirmModal
-        isOpen={confirmApprovePkr}
-        onClose={() => setConfirmApprovePkr(false)}
-        onConfirm={handleApprovePkr}
-        order={selectedOrder}
-        type="pkr"
-      />
-
-      <RejectProofModal
-        isOpen={confirmRejectPkr}
-        onClose={() => setConfirmRejectPkr(false)}
-        orderRef={selectedOrder?.orderRef ?? ''}
-        subject={selectedOrder?.paymentNetwork === 'EXCHANGE' ? 'exchange transfer' : 'payment proof'}
-        onConfirm={handleRejectPkr}
-      />
-
-      <ConfirmModal
-        isOpen={confirmRetry}
-        onClose={() => setConfirmRetry(false)}
-        onConfirm={handleRetry}
-        title="Retry Gas Order"
-        description="Re-queue this failed gas order for processing? It will attempt to send gas again."
-        confirmLabel="Retry"
-        confirmVariant="primary"
-      />
-
-      <ConfirmModal
-        isOpen={confirmRefund}
-        onClose={() => setConfirmRefund(false)}
-        onConfirm={handleRefund}
-        title="Mark as Refunded"
-        description="Mark this order as refunded? The user's USDT must be returned manually via the hot wallet before confirming."
-        confirmLabel="Mark Refunded"
-        confirmVariant="danger"
-      />
-
       {confirmToggle && (() => {
         const toggleWallet = stats?.wallets?.find((w) => w.chain === confirmToggle)
         if (!toggleWallet) return null

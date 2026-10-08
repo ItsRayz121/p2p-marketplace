@@ -392,7 +392,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true, replyToId: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -460,7 +460,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null; sharedGasChainSlug: string | null }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null; sharedGasChainSlug: string | null; replyToId: string | null }
   // Prefix trade-message ids so they can never collide with thread-message ids.
   // Only the thread's own messages support soft delete + shared-ad references —
   // folded trade-room lines never carry a deletedAt, but DO carry their own real
@@ -469,9 +469,9 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug })),
-    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
-    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug, replyToId: m.replyToId })),
+    ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null, replyToId: null })),
+    ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null, replyToId: null })),
   ].sort((a, b) => (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) // id tie-break keeps same-millisecond lifecycle lines in a stable order across polls
     // Redact retracted messages to a tombstone in the inbox view (the row itself
     // is retained in the DB for dispute review). Also clear the shared-ad/
@@ -493,8 +493,18 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     resolveSharedAdPreviews(sharedRefs),
     resolveSharedGasPreviews(sharedGasSlugs),
   ])
+  const byId = new Map(messages.map((x) => [x.id, x]))
   const messagesWithSharedAd = messages.map((m) => ({
     ...m,
+    replyTo: m.replyToId
+      ? (() => {
+          const o = byId.get(m.replyToId!)
+          if (!o) return { id: m.replyToId!, senderId: '', preview: '', hasImage: false, deleted: true }
+          return o.deletedAt
+            ? { id: o.id, senderId: o.senderId, preview: '', hasImage: false, deleted: true }
+            : { id: o.id, senderId: o.senderId, preview: o.body.slice(0, 120), hasImage: !!o.attachmentUrl, deleted: false }
+        })()
+      : null,
     sharedAd: m.sharedAdMarket && m.sharedAdId
       ? sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }
       : null,
@@ -547,7 +557,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   }
 }
 
-const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true } as const
+const MESSAGE_SELECT = { id: true, senderId: true, body: true, attachmentUrl: true, isSystem: true, createdAt: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true, replyToId: true } as const
 
 /**
  * Post a message to a thread. Sender must be a participant. Bumps the other's
@@ -568,6 +578,8 @@ export async function postThreadMessage(
   clientId?: string,
   sharedAd?: { market: Market; id: string },
   sharedGasChainSlug?: string,
+  /** Quote-reply to an earlier message in this same thread. */
+  replyToId?: string,
 ) {
   const text = body.trim()
   if (!text && !attachmentUrl && !sharedAd && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
@@ -581,6 +593,14 @@ export async function postThreadMessage(
   const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
   if (await isBlockedEitherWay(userId, otherId)) {
     throw new AppError('FORBIDDEN', 'You can no longer message this person', 403)
+  }
+
+  if (replyToId) {
+    // Folded trade-room lines (tm_/cm_) live in other tables and can't be quoted.
+    const original = replyToId.startsWith('tm_') || replyToId.startsWith('cm_')
+      ? null
+      : await db.chatThreadMessage.findFirst({ where: { id: replyToId, threadId }, select: { id: true } })
+    if (!original) throw new AppError('VALIDATION_ERROR', 'The message you are replying to is not available', 400)
   }
 
   if (sharedAd) {
@@ -606,6 +626,7 @@ export async function postThreadMessage(
       db.chatThreadMessage.create({
         data: {
           threadId, senderId: userId, body: text, clientId: clientId ?? null,
+          ...(replyToId ? { replyToId } : {}),
           ...(attachmentUrl ? { attachmentUrl } : {}),
           ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
           ...(gasChainSlug ? { sharedGasChainSlug: gasChainSlug } : {}),

@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/Button'
 import { promoGiveawayApi, type PromoGiveaway } from '@/lib/promoGiveaway'
 import { PromoEntriesManager } from '@/components/referral/PromoEntriesManager'
 import { ExternalLink } from 'lucide-react'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 
 export default function AdminPromoGiveawaysPage() {
   const [rows, setRows] = useState<PromoGiveaway[]>([])
@@ -50,6 +51,7 @@ export default function AdminPromoGiveawaysPage() {
 
   return (
     <div className="space-y-4">
+      <PromotionsNav active="giveaways" current="/admin/promo-giveaways" />
       <div>
         <h1 className="text-2xl font-black text-text-primary">Community Giveaways</h1>
         <p className="text-sm text-text-muted">Every affiliate & admin giveaway. Review entrant collection and disable anything that looks wrong.</p>

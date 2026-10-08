@@ -1,27 +1,21 @@
 'use client'
-import { useState } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { ctmApi } from '@/lib/api'
+import { ctmApi, adminApi, type DisputeFilter, type DisputeOverview, type DisputeOverviewRow } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { Spinner } from '@/components/ui/Spinner'
-import { AlertTriangle, ShieldAlert } from 'lucide-react'
+import { ErrorState } from '@/components/ui/ErrorState'
+import { ShieldAlert } from 'lucide-react'
+import { DisputeMarketTabs } from '@/components/admin/disputes/DisputeMarketTabs'
+import { DisputeFilterBar } from '@/components/admin/disputes/DisputeFilterBar'
+import { DisputeCasesTable } from '@/components/admin/disputes/DisputeCasesTable'
+import { DisputeInsightsPanel } from '@/components/admin/disputes/DisputeInsightsPanel'
+import { disputeOutcomeLabel, disputeOutcomeVariant } from '@/components/admin/disputes/disputeLabels'
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-
-interface Dispute {
-  id: string; reason: string; description: string; status: string
-  openedById: string; escalatedAt?: string; createdAt: string; resolution?: string; winner?: string
-  trade: {
-    id: string; tradeRef: string; tokenId: string; fiatAmount: string; tokenAmount?: string; pricePerUnit?: string
-    buyerId: string; sellerId: string; status: string
-    buyer?: { id: string; username: string }
-    seller?: { id: string; username: string }
-    token?: { name: string; symbol: string }
-    proofs: Array<{ fileUrl?: string; proofType: string; uploadedBy: string; createdAt: string }>
-  }
-}
 
 function fmtDt(iso: string) {
   return new Date(iso).toLocaleString('en-PK', { dateStyle: 'short', timeStyle: 'short' })
@@ -48,10 +42,16 @@ const CTM_RESOLUTION_TEMPLATES: Record<'buyer' | 'seller' | 'split' | 'dismissed
   ],
 }
 
+const PAGE_SIZE = 20
+
 export default function AdminCtmDisputesPage() {
-  const [disputes, setDisputes] = useState<Dispute[]>([])
-  const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Dispute | null>(null)
+  const [overview, setOverview] = useState<DisputeOverview | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [filter, setFilter] = useState<DisputeFilter>('all')
+  const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const [selected, setSelected] = useState<DisputeOverviewRow | null>(null)
   const [detail, setDetail] = useState<any | null>(null)
   const [tradeMessages, setTradeMessages] = useState<any[]>([])
   const [detailLoading, setDetailLoading] = useState(false)
@@ -63,41 +63,35 @@ export default function AdminCtmDisputesPage() {
   const [sendingEvidence, setSendingEvidence] = useState(false)
   const [evidenceSent, setEvidenceSent] = useState(false)
 
-  const fetchDisputes = async () => {
+  // Debounce the search box.
+  useEffect(() => {
+    const t = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Every dispute — open, escalated, resolved and closed — so completed cases stay reviewable.
+  const fetchDisputes = useCallback(async () => {
     try {
-      const data = await ctmApi.adminGetTrades({ status: 'disputed', limit: 50 }) as any
-      const trades = data.trades ?? []
-      const d = trades.filter((t: any) => t.dispute).map((t: any) => ({ ...t.dispute, trade: t }))
-      setDisputes(d)
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false)
+      setOverview(await adminApi.getDisputeOverview({ market: 'ctm', filter, page, limit: PAGE_SIZE, ...(query ? { search: query } : {}) }))
+      setError(null)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load disputes')
     }
-  }
+  }, [filter, page, query])
 
   usePolling(fetchDisputes, 30000)
-
-  const hoursAgo = (date: string) => {
-    const h = Math.floor((Date.now() - new Date(date).getTime()) / 3600000)
-    return h < 24 ? `${h}h ago` : `${Math.floor(h / 24)}d ago`
-  }
-
-  const isEscalating = (d: Dispute) => {
-    const h = (Date.now() - new Date(d.createdAt).getTime()) / 3600000
-    return h > 36 && d.status === 'open'
-  }
+  useEffect(() => { void fetchDisputes() }, [fetchDisputes])
 
   async function requestEvidence() {
     if (!selected || !evidenceMsg.trim()) return
     setSendingEvidence(true)
     try {
-      await ctmApi.adminAddDisputeMessage(selected.trade.tradeRef, evidenceMsg.trim())
+      await ctmApi.adminAddDisputeMessage(selected.tradeRef, evidenceMsg.trim())
       setEvidenceMsg('')
       setEvidenceSent(true)
       // refresh detail so the new message shows in the thread
       try {
-        const full = await ctmApi.getTrade(selected.trade.tradeRef)
+        const full = await ctmApi.getTrade(selected.tradeRef)
         setDetail(full)
       } catch { /* ignore */ }
       setTimeout(() => setEvidenceSent(false), 3000)
@@ -108,15 +102,15 @@ export default function AdminCtmDisputesPage() {
     }
   }
 
-  async function openDispute(d: Dispute) {
+  async function openDispute(d: DisputeOverviewRow) {
     setSelected(d); setWinner('buyer'); setResolution(''); setAckSettled(false)
     setEvidenceMsg(''); setEvidenceSent(false)
     setDetail(null); setTradeMessages([]); setDetailLoading(true)
     try {
-      const full = await ctmApi.getTrade(d.trade.tradeRef)
+      const full = await ctmApi.getTrade(d.tradeRef)
       setDetail(full)
       try {
-        const msgs = await ctmApi.getMessages(d.trade.tradeRef)
+        const msgs = await ctmApi.getMessages(d.tradeRef)
         setTradeMessages(Array.isArray(msgs) ? msgs : [])
       } catch { setTradeMessages([]) }
     } catch {
@@ -131,7 +125,7 @@ export default function AdminCtmDisputesPage() {
     if (winner !== 'dismissed' && !ackSettled) return
     setSubmitting(true)
     try {
-      await ctmApi.adminResolveDispute(selected.trade.tradeRef, { winner, resolution })
+      await ctmApi.adminResolveDispute(selected.tradeRef, { winner, resolution })
       setSelected(null); setResolution(''); setAckSettled(false)
       await fetchDisputes()
     } catch (err: unknown) {
@@ -141,72 +135,82 @@ export default function AdminCtmDisputesPage() {
     }
   }
 
-  const t = detail ?? selected?.trade
-  const buyerName = t?.buyer?.username ?? 'Buyer'
-  const sellerName = t?.seller?.username ?? 'Seller'
-  const proofs = detail?.proofs ?? selected?.trade.proofs ?? []
+  const t = detail
+  const buyerName = t?.buyer?.username ?? selected?.buyer.username ?? 'Buyer'
+  const sellerName = t?.seller?.username ?? selected?.seller.username ?? 'Seller'
+  const proofs = detail?.proofs ?? []
   const messages = tradeMessages
   const disputeMessages = detail?.dispute?.messages ?? []
 
+  const isClosed = selected?.disputeStatus === 'resolved'
+  const rows = overview?.rows ?? []
+  const totalPages = overview?.pagination.pages ?? 1
+
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">CTM Disputes ({disputes.length})</h1>
-        <p className="text-text-muted text-sm mt-0.5">Review evidence, rule on the outcome, then settle funds manually and record the decision.</p>
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">CTM Marketplace Disputes</h1>
+          <p className="text-text-muted text-sm mt-0.5">Review evidence, rule on the outcome, then settle funds manually and record the decision. Completed cases stay in the history.</p>
+        </div>
+        <DisputeMarketTabs active="ctm" />
       </div>
 
-      {loading ? (
-        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
-      ) : disputes.length === 0 ? (
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-card space-y-3">
+        <DisputeFilterBar value={filter} counts={overview?.counts} onChange={(f) => { setFilter(f); setPage(1) }} />
+        <label className="block">
+          <span className="sr-only">Search disputes</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search trade ref or username…"
+            className="w-full sm:max-w-sm rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </label>
+      </div>
+
+      {error && !overview ? (
+        <ErrorState title={error} onRetry={fetchDisputes} />
+      ) : !overview ? (
+        <div className="space-y-3">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-16 animate-pulse" />)}</div>
+      ) : rows.length === 0 ? (
         <div className="bg-surface border border-border rounded-xl py-16 text-center">
           <ShieldAlert className="w-8 h-8 text-text-muted mx-auto mb-2" />
-          <p className="text-text-primary font-medium">No open disputes</p>
+          <p className="text-text-primary font-medium">{filter === 'all' && !query ? 'No CTM disputes yet' : 'No disputes match this filter'}</p>
           <p className="text-text-muted text-sm mt-1">CTM token trades that buyers or sellers escalate will appear here for review.</p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {disputes
-            .sort((a, b) => (isEscalating(b) ? 1 : 0) - (isEscalating(a) ? 1 : 0))
-            .map((d) => (
-              <div key={d.id} className={`bg-surface border rounded-xl p-4 ${isEscalating(d) ? 'border-danger/40 bg-danger/5' : 'border-border'}`}>
-                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <p className="font-semibold text-text-primary">#{d.trade.tradeRef.slice(-8)}</p>
-                      <Badge variant="danger" size="sm">{d.reason.replace(/_/g, ' ')}</Badge>
-                      {d.trade.token?.symbol && <Badge variant="default" size="sm">{d.trade.token.symbol}</Badge>}
-                      {isEscalating(d) && (
-                        <span className="inline-flex items-center gap-1 text-xs bg-danger text-white px-2 py-0.5 rounded-full">
-                          <AlertTriangle className="w-3 h-3" /> Escalating
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-sm text-text-muted line-clamp-2">{d.description}</p>
-                    <p className="text-xs text-text-muted mt-1">
-                      {d.trade.buyer?.username} vs {d.trade.seller?.username} · Opened {hoursAgo(d.createdAt)} · PKR {Number(d.trade.fiatAmount).toLocaleString()}
-                    </p>
-                  </div>
-                  <button onClick={() => void openDispute(d)} className="bg-primary text-white text-sm px-4 py-2 rounded-lg hover:bg-primary/90 flex-shrink-0">Review & Resolve</button>
-                </div>
+        <>
+          <DisputeCasesTable rows={rows} onReview={(r) => void openDispute(r)} />
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-text-muted">Page {page} of {totalPages} · {overview.pagination.total} cases</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
+                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
               </div>
-            ))}
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Resolve modal */}
       <Modal
         isOpen={!!selected}
         onClose={() => setSelected(null)}
-        title={selected ? `Dispute — #${selected.trade.tradeRef.slice(-8)}` : 'Dispute'}
+        title={selected ? `Dispute — ${selected.tradeRef.slice(-12)}` : 'Dispute'}
         size="lg"
         footer={
           <div className="flex gap-3">
-            <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">Cancel</button>
+            <button onClick={() => setSelected(null)} className="flex-1 border border-border py-2.5 rounded-xl text-sm font-medium text-text-primary hover:bg-surface-alt">{isClosed ? 'Close' : 'Cancel'}</button>
             {/* A dismissal moves nothing and rules against nobody, so the manual-
                 settlement acknowledgment doesn't apply and isn't required. */}
+            {!isClosed && (
             <button onClick={handleResolve} disabled={submitting || !resolution.trim() || (winner !== 'dismissed' && !ackSettled)} className="flex-1 bg-primary text-white py-2.5 rounded-xl text-sm font-semibold disabled:opacity-50">
               {submitting ? 'Recording…' : winner === 'dismissed' ? 'Dismiss dispute (no fault)' : `Record ruling: ${winner}`}
             </button>
+            )}
           </div>
         }
       >
@@ -222,17 +226,17 @@ export default function AdminCtmDisputesPage() {
                 <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Buyer</p>
                 {t?.buyer?.id
                   ? <Link href={`/admin/users/${t.buyer.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{buyerName}</Link>
-                  : <p className="font-semibold text-text-primary">{buyerName}</p>}
+                  : selected ? <Link href={`/admin/users/${selected.buyer.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{buyerName}</Link> : <p className="font-semibold text-text-primary">{buyerName}</p>}
               </div>
               <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
                 <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Seller</p>
                 {t?.seller?.id
                   ? <Link href={`/admin/users/${t.seller.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{sellerName}</Link>
-                  : <p className="font-semibold text-text-primary">{sellerName}</p>}
+                  : selected ? <Link href={`/admin/users/${selected.seller.id}`} className="font-semibold text-text-primary hover:text-primary hover:underline">{sellerName}</Link> : <p className="font-semibold text-text-primary">{sellerName}</p>}
               </div>
               <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
                 <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">PKR Amount</p>
-                <p className="font-bold text-text-primary">PKR {Number(selected.trade.fiatAmount).toLocaleString()}</p>
+                <p className="font-bold text-text-primary">{t?.fiatAmount != null ? `PKR ${Number(t.fiatAmount).toLocaleString()}` : '—'}</p>
               </div>
               <div className="bg-surface-alt/50 border border-border rounded-xl p-3">
                 <p className="text-[11px] font-semibold text-text-muted uppercase tracking-wide">Token</p>
@@ -245,11 +249,16 @@ export default function AdminCtmDisputesPage() {
               </div>
             </div>
 
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge variant={disputeOutcomeVariant(selected.disputeStatus, selected.resolutionType)} size="sm">{disputeOutcomeLabel(selected.disputeStatus, selected.resolutionType, selected.winner)}</Badge>
+              <span className="text-text-muted">Trade status: <strong className="text-text-primary">{selected.tradeStatus.replace(/_/g, ' ')}</strong></span>
+            </div>
+
             {/* Reason + description */}
             <div className="bg-danger/5 border border-danger/30 rounded-xl p-4 text-sm space-y-1">
               <p className="font-medium text-danger">Reason: {selected.reason.replace(/_/g, ' ')}</p>
-              <p className="text-text-secondary">{selected.description}</p>
-              <p className="text-xs text-text-muted">Opened by {selected.openedById === selected.trade.buyerId ? buyerName : selected.openedById === selected.trade.sellerId ? sellerName : 'a party'} · {fmtDt(selected.createdAt)}</p>
+              <p className="text-text-secondary">{detail?.dispute?.description ?? ''}</p>
+              <p className="text-xs text-text-muted">Opened by {selected.openedById === selected.buyer.id ? buyerName : selected.openedById === selected.seller.id ? sellerName : 'a party'} · {fmtDt(selected.createdAt)}</p>
             </div>
 
             {/* Payment method */}
@@ -318,6 +327,12 @@ export default function AdminCtmDisputesPage() {
               </div>
             )}
 
+            {/* Participants' dispute history + full case timeline */}
+            <div className="border-t border-border pt-4">
+              <DisputeInsightsPanel market="ctm" disputeId={selected.id} />
+            </div>
+
+            {!isClosed && (<>
             {/* ── Request more evidence ── */}
             <div className="border-t border-border pt-4">
               <label className="block text-sm font-medium text-text-primary mb-1.5">Request more evidence</label>
@@ -391,6 +406,7 @@ export default function AdminCtmDisputesPage() {
                 </label>
               )}
             </div>
+            </>)}
           </div>
         )}
       </Modal>

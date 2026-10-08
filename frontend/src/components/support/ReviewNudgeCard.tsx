@@ -3,10 +3,8 @@ import { useState } from 'react'
 import { Check } from 'lucide-react'
 import { supportChatApi, type SupportMessage } from '@/lib/supportChat'
 import { toast } from '@/lib/toast'
+import { TRUSTPILOT_URL } from '@/lib/trustpilot'
 
-const ENV_URL = process.env.NEXT_PUBLIC_TRUSTPILOT_URL
-const TRUSTPILOT_URL =
-  ENV_URL === 'off' ? undefined : (ENV_URL || 'https://www.trustpilot.com/evaluate/rupchain.com')
 
 function withStars(url: string, n: number): string {
   return `${url}${url.includes('?') ? '&' : '?'}stars=${n}`

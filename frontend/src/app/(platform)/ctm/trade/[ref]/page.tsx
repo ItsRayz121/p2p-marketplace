@@ -16,6 +16,9 @@ import { isOpaqueId } from '@/lib/pkPaymentMethods'
 import { supportMailto } from '@/lib/contact'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
+import { MessageActions } from '@/components/chat/MessageActions'
+import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
 
@@ -316,6 +319,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(true)
   const [msgText, setMsgText] = useState('')
+  const msgInputRef = useRef<HTMLInputElement>(null)
   const [sendingMsg, setSendingMsg] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [proofFile, setProofFile] = useState<File | null>(null)
@@ -1651,11 +1655,12 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 return <TradeNotice key={m.id} tone={view.tone} time={msgTime}>{view.text}</TradeNotice>
               }
               return (
-                <div key={m.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
+                <div key={m.id} className={`group flex items-center gap-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                  <MessageActions body={m.message} className={isMe ? 'order-1' : 'order-3'} />
+                  <div className={`order-2 max-w-[75%] flex flex-col gap-0.5 ${isMe ? 'items-end' : 'items-start'}`}>
                     <span className="text-[11px] font-semibold text-text-secondary px-1">{senderName}</span>
                     <div className={`px-3 py-2 rounded-2xl text-sm leading-relaxed break-words whitespace-pre-wrap shadow-sm ${isMe ? 'bg-primary text-white rounded-br-sm' : 'bg-surface border border-border text-text-primary rounded-bl-sm'}`}>
-                      {m.message}
+                      <Linkified text={m.message} />
                     </div>
                     <div className="flex items-center gap-1 px-1">
                       <span className="text-[10px] text-text-muted">{msgTime}</span>
@@ -1668,7 +1673,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             <div ref={chatEndRef} />
           </div>
           <div className="p-3 border-t border-border flex gap-2">
-            <input type="text" value={msgText} onChange={(e) => setMsgText(e.target.value)}
+            <EmojiPicker disabled={sendingMsg} onPick={(e) => insertAtCursor(msgInputRef, msgText, setMsgText, e)} />
+            <input ref={msgInputRef} type="text" value={msgText} onChange={(e) => setMsgText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
               onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
               placeholder="Type a message…" className="flex-1 min-w-0 border border-border rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30" />

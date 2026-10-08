@@ -148,8 +148,38 @@ export async function getChannel(userId: string, idOrSlug: string) {
 
 const CHANNEL_MESSAGE_SELECT = {
   id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, editedAt: true, isSystem: true, createdAt: true,
-  clientId: true, sharedAdMarket: true, sharedAdId: true, sharedAdPriceSnapshot: true, sharedAdPrevPriceSnapshot: true, sharedGasChainSlug: true,
+  clientId: true, sharedAdMarket: true, sharedAdId: true, sharedAdPriceSnapshot: true, sharedAdPrevPriceSnapshot: true, sharedGasChainSlug: true, replyToId: true,
 } as const
+
+/** Compact quote of an earlier broadcast — never exposes more than a short preview. */
+type ReplyTarget = { id: string; preview: string; hasImage: boolean; deleted: boolean }
+
+async function resolveReplyTargets(
+  channelId: string,
+  messages: Array<{ id: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; replyToId: string | null }>,
+): Promise<Map<string, ReplyTarget>> {
+  const out = new Map<string, ReplyTarget>()
+  const toTarget = (m: { id: string; body: string; attachmentUrl: string | null; deletedAt: Date | null }): ReplyTarget =>
+    m.deletedAt
+      ? { id: m.id, preview: '', hasImage: false, deleted: true }
+      : { id: m.id, preview: m.body.slice(0, 120), hasImage: !!m.attachmentUrl, deleted: false }
+  const loaded = new Map(messages.map((m) => [m.id, m]))
+  const missing: string[] = []
+  for (const m of messages) {
+    if (!m.replyToId || out.has(m.replyToId)) continue
+    const orig = loaded.get(m.replyToId)
+    if (orig) out.set(orig.id, toTarget(orig))
+    else missing.push(m.replyToId)
+  }
+  if (missing.length) {
+    const rows = await db.channelMessage.findMany({
+      where: { channelId, id: { in: [...new Set(missing)] } },
+      select: { id: true, body: true, attachmentUrl: true, deletedAt: true },
+    })
+    for (const r of rows) out.set(r.id, toTarget(r))
+  }
+  return out
+}
 
 /** Message history — members only (a non-member must join first, matching the invite-link model). */
 export async function listChannelMessages(userId: string, channelId: string) {
@@ -188,10 +218,12 @@ export async function listChannelMessages(userId: string, channelId: string) {
     resolveSharedAdPreviews(refs),
     resolveSharedGasPreviews(gasSlugs),
   ])
+  const replyTargets = await resolveReplyTargets(channelId, messages)
   return messages.map((m) => {
     const { sharedAdPriceSnapshot, sharedAdPrevPriceSnapshot, ...rest } = m
     return {
       ...rest,
+      replyTo: m.replyToId ? (replyTargets.get(m.replyToId) ?? { id: m.replyToId, preview: '', hasImage: false, deleted: true }) : null,
       sharedAd: m.sharedAdMarket && m.sharedAdId
         ? {
             ...(sharedAdMap.get(`${m.sharedAdMarket}:${m.sharedAdId}`) ?? { market: m.sharedAdMarket as Market, id: m.sharedAdId, deleted: true }),
@@ -366,6 +398,8 @@ export async function postChannelMessage(
   sharedGasChainSlug?: string,
   /** Only passed by autoShareToOwnerChannels on a price-update post — the price the listing had just before this update, so the card can show old → new. */
   sharedAdPrevPriceSnapshot?: string,
+  /** Quote-reply to an earlier broadcast in this same channel. */
+  replyToId?: string,
 ) {
   const text = body.trim()
   if (!text && !sharedAd && !attachmentUrl && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
@@ -380,6 +414,11 @@ export async function postChannelMessage(
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true, name: true, slug: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)
   assertOwner(channel, userId)
+
+  if (replyToId) {
+    const original = await db.channelMessage.findFirst({ where: { id: replyToId, channelId }, select: { id: true } })
+    if (!original) throw new AppError('VALIDATION_ERROR', 'The message you are replying to no longer exists', 400)
+  }
 
   // Price at THIS post's send time — stored on the row so it stays frozen even
   // after the listing's live price later changes (see the schema comment on
@@ -405,6 +444,7 @@ export async function postChannelMessage(
       db.channelMessage.create({
         data: {
           channelId, senderId: userId, body: text, clientId: clientId ?? null,
+          ...(replyToId ? { replyToId } : {}),
           ...(attachmentUrl ? { attachmentUrl } : {}),
           ...(sharedAd ? {
             sharedAdMarket: sharedAd.market,

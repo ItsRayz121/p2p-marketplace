@@ -24,6 +24,9 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
+import { MessageActions, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
 import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
@@ -85,6 +88,8 @@ export default function MessageThreadPage() {
   const [data, setData] = useState<ThreadView | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
+  const draftRef = useRef<HTMLInputElement>(null)
+  const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
   // Messages sent locally but not yet confirmed by the server — shown immediately
   // (optimistic) with a "sending…" clock, retried automatically on failure, and
   // left with a tap-to-retry affordance if every retry fails. Fixes the "message
@@ -332,13 +337,13 @@ export default function MessageThreadPage() {
   const sendQueueRef = useRef<Promise<void>>(Promise.resolve())
 
   /** Attempt to actually deliver one pending message, retrying transient failures. */
-  const attemptSend = useCallback(async (tempId: string, body: string, attachmentUrl?: string) => {
+  const attemptSend = useCallback(async (tempId: string, body: string, attachmentUrl?: string, replyToId?: string) => {
     for (let attempt = 0; ; attempt++) {
       try {
         // tempId doubles as the idempotency key: a retry after a lost response
         // reuses it, so the server returns the original message instead of
         // creating a duplicate.
-        await messagingApi.postMessage(threadId, body, attachmentUrl, tempId)
+        await messagingApi.postMessage(threadId, body, attachmentUrl, tempId, undefined, undefined, replyToId)
         // The message is confirmed sent at this point — drop the local placeholder
         // and treat the follow-up refresh as unrelated best-effort polish. `load`
         // never throws today (it catches internally), but keeping it outside this
@@ -370,22 +375,26 @@ export default function MessageThreadPage() {
     if (!body && !pendingImage) return
     const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
     const attachmentUrl = pendingImage ?? undefined
+    const quoting = replyTo
     // Show it immediately — the user sees their message land in the timeline
     // right away instead of waiting on the network round-trip.
     setPendingMessages((prev) => [...prev, {
       id: tempId, tempId, senderId: user.id, body, attachmentUrl: attachmentUrl ?? null,
       isSystem: false, createdAt: new Date().toISOString(), pending: true,
+      replyToId: quoting?.id ?? null,
+      replyTo: quoting ? { id: quoting.id, senderId: quoting.sender, preview: quoting.preview, hasImage: !!quoting.hasImage, deleted: false } : null,
     }])
     setDraft('')
     setPendingImage(null)
-    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(tempId, body, attachmentUrl))
+    setReplyTo(null)
+    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(tempId, body, attachmentUrl, quoting?.id))
   }
 
   /** Tap a failed bubble to try sending it again. */
   const retryPending = (m: DisplayMessage) => {
     if (!m.tempId || !m.failed) return
     setPendingMessages((prev) => prev.map((p) => (p.tempId === m.tempId ? { ...p, failed: false, pending: true } : p)))
-    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(m.tempId!, m.body, m.attachmentUrl ?? undefined))
+    sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(m.tempId!, m.body, m.attachmentUrl ?? undefined, m.replyToId ?? undefined))
   }
 
   // Pick + upload an image; the returned Cloudinary URL waits in pendingImage
@@ -634,6 +643,16 @@ export default function MessageThreadPage() {
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               )}
+              {!m.pending && !m.failed && m.body && (
+                <MessageActions
+                  body={m.body}
+                  className={mine ? 'order-1' : 'order-3'}
+                  onReply={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : () => {
+                    setReplyTo({ id: m.id, sender: m.senderId, name: mine ? 'yourself' : name, preview: m.body.slice(0, 120), hasImage: hasImage })
+                    requestAnimationFrame(() => draftRef.current?.focus())
+                  }}
+                />
+              )}
               <div
                 onClick={() => m.failed && retryPending(m)}
                 className={`order-2 max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
@@ -644,9 +663,17 @@ export default function MessageThreadPage() {
                     <img loading="lazy" decoding="async" src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                   </a>
                 )}
+                {m.replyTo && (
+                  <ReplyQuote
+                    reply={{ id: m.replyTo.id, sender: m.replyTo.senderId, preview: m.replyTo.preview, hasImage: m.replyTo.hasImage }}
+                    own={mine}
+                    name={m.replyTo.senderId === user?.id ? 'You' : name}
+                    deleted={m.replyTo.deleted}
+                  />
+                )}
                 {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} mine={mine} /></div>}
                 {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} mine={mine} /></div>}
-                {m.body && <p className="whitespace-pre-wrap break-words">{m.body}</p>}
+                {m.body && <p className="whitespace-pre-wrap break-words"><Linkified text={m.body} /></p>}
                 <div className={`flex items-center gap-1 mt-0.5 ${mine ? 'justify-end' : ''}`}>
                   {m.failed && <span className="text-[10px] text-red-200">Tap to retry ·</span>}
                   <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
@@ -682,6 +709,7 @@ export default function MessageThreadPage() {
             ) : null}
           </div>
         )}
+        {replyTo && <ReplyBanner reply={replyTo} name={replyTo.name} onCancel={() => setReplyTo(null)} />}
         <div className="flex items-center gap-2 px-3 py-3">
           <input
             ref={fileInputRef}
@@ -735,7 +763,9 @@ export default function MessageThreadPage() {
               </button>
             </div>
           </AnchoredMenu>
+          <EmojiPicker disabled={blocked} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
           <input
+            ref={draftRef}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}

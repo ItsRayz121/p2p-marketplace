@@ -2,7 +2,7 @@
 // metadata) and the sitemap. Plain fetch against the backend, no client-only
 // imports (same reasoning as blogFetch.ts: this runs on the server, and
 // api.ts pulls in a zustand auth store that must never touch SSR).
-import type { MarketsOverview, MarketActivity } from './api'
+import type { MarketsOverview, MarketActivity, ReferenceItem } from './api'
 
 function normaliseOrigin(raw: string): string {
   let v = raw.trim().replace(/\/$/, '')
@@ -97,4 +97,16 @@ export async function fetchMarketSlugsForSitemap(): Promise<{ slug: string; last
     slug: r.slug,
     lastModified: r.lastTradedAt ? new Date(r.lastTradedAt) : now,
   }))
+}
+
+/** Global reference prices (7d). Never throws: a provider problem just means the card says "unavailable". */
+export async function fetchReferencePrices(slugs: string[]): Promise<Record<string, ReferenceItem>> {
+  if (slugs.length === 0) return {}
+  try {
+    const res = await fetch(`${API}/api/v1/markets/reference?slugs=${encodeURIComponent(slugs.join(','))}`, { next: { revalidate: 300 } })
+    const data = await unwrap<{ items: ReferenceItem[] }>(res)
+    return Object.fromEntries((data?.items ?? []).map((i) => [i.slug.toLowerCase(), i]))
+  } catch {
+    return {}
+  }
 }

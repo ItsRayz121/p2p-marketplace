@@ -85,6 +85,9 @@ export interface ThreadMessage {
   /** One-tap "share gas fees" — resolved to the chain's current live state
    *  server-side. Null for an ordinary message. */
   sharedGas?: SharedGasPreview | null
+  /** Quote-reply: id of the message this answers, and a short preview of it (`deleted` if gone). */
+  replyToId?: string | null
+  replyTo?: { id: string; senderId: string; preview: string; hasImage: boolean; deleted: boolean } | null
 }
 
 export interface TradeEpisode {
@@ -157,7 +160,7 @@ export const messagingApi = {
    *  of the same message so a lost-response retry can't create a duplicate.
    *  `sharedAd` one-tap-shares the sender's own listing (see ShareAdPicker).
    *  `sharedGasChainSlug` one-tap-shares a gas chain (see GasSharePicker). */
-  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, sharedGasChainSlug?: string) =>
+  postMessage: (threadId: string, body: string, attachmentUrl?: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, sharedGasChainSlug?: string, replyToId?: string) =>
     apiRequest<ThreadMessage>(`/messages/${threadId}`, {
       method: 'POST',
       body: JSON.stringify({
@@ -166,6 +169,7 @@ export const messagingApi = {
         ...(clientId ? { clientId } : {}),
         ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
         ...(sharedGasChainSlug ? { sharedGasChainSlug } : {}),
+        ...(replyToId ? { replyToId } : {}),
       }),
     }),
   deleteMessage: (threadId: string, messageId: string) =>

@@ -34,6 +34,9 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
 import { supportMailto } from '@/lib/contact'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
+import { MessageActions } from '@/components/chat/MessageActions'
+import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
 import {
@@ -412,6 +415,7 @@ export default function TradePage() {
   const [error, setError] = useState<string | null>(null)
 
   const [messageInput, setMessageInput] = useState('')
+  const messageInputRef = useRef<HTMLInputElement>(null)
   const [sendingMsg, setSendingMsg] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -1591,8 +1595,9 @@ export default function TradePage() {
               }
               const imageUrl = msg.imageUrl ?? (msg.message.startsWith('[image]') ? msg.message.slice(7) : null)
               return (
-                <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
+                <div key={msg.id} className={`group flex items-center gap-1 ${isMine ? 'justify-end' : 'justify-start'}`}>
+                  {!imageUrl && !msg.sendStatus && <MessageActions body={msg.message} className={isMine ? 'order-1' : 'order-3'} />}
+                  <div className={`order-2 max-w-[75%] flex flex-col gap-0.5 ${isMine ? 'items-end' : 'items-start'}`}>
                     <span className="text-[11px] font-semibold text-text-secondary px-1">{senderName}</span>
                     {imageUrl ? (
                       <a href={imageUrl} target="_blank" rel="noopener noreferrer" className={`block rounded-2xl overflow-hidden border-2 shadow-sm ${isMine ? 'border-primary/30' : 'border-border'} ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
@@ -1609,7 +1614,7 @@ export default function TradePage() {
                           ? 'bg-primary text-white rounded-br-sm shadow-sm'
                           : 'bg-surface border border-border text-text-primary rounded-bl-sm shadow-sm'
                       } ${msg.sendStatus === 'failed' ? 'opacity-60' : ''}`}>
-                        {msg.message}
+                        <Linkified text={msg.message} />
                       </div>
                     )}
                     <div className="flex items-center gap-1 px-1">
@@ -1662,7 +1667,9 @@ export default function TradePage() {
                 </svg>
               )}
             </button>
+            <EmojiPicker disabled={sendingMsg} onPick={(e) => insertAtCursor(messageInputRef, messageInput, setMessageInput, e)} />
             <input
+              ref={messageInputRef}
               type="text"
               value={messageInput}
               onChange={(e) => setMessageInput(e.target.value)}

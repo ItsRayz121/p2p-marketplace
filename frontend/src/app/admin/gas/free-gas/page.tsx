@@ -6,7 +6,8 @@ import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
 import { Button } from '@/components/ui/Button'
 import { GasAmountConverter } from '@/components/admin/GasAmountConverter'
-import { ArrowLeft, Gift, Plus, X, ChevronDown, History } from 'lucide-react'
+import { Gift, Plus, X, ChevronDown, History } from 'lucide-react'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 
 // Admin-only tool to send fully platform-funded (free) gas deliveries. The platform
 // covers base + margin; each order routes through the normal delivery worker. Runs
@@ -122,8 +123,8 @@ export default function AdminFreeGasPage() {
 
   return (
     <div className="max-w-2xl mx-auto px-4 py-6 space-y-5">
+      <PromotionsNav active="rewards" current="/admin/gas/free-gas" />
       <div className="flex items-center gap-3">
-        <button onClick={() => router.push('/admin/gas')} className="p-2 rounded-lg hover:bg-surface-alt"><ArrowLeft className="w-4 h-4" /></button>
         <div className="flex items-center gap-2">
           <Gift className="w-5 h-5 text-primary" />
           <div>

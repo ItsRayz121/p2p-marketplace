@@ -19,7 +19,7 @@ import Link from 'next/link'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { toast } from '@/lib/toast'
-import { Lock, Camera, Mail, Send, Check, Download } from 'lucide-react'
+import { Lock, Camera, Mail, Send, Check, Download, Heart, HelpCircle, Users } from 'lucide-react'
 import { SUPPORT_EMAIL, openSupportEmail } from '@/lib/contact'
 import { openInstallPrompt, isRunningStandalone } from '@/lib/installApp'
 
@@ -898,6 +898,30 @@ function ConnectionsTab() {
   )
 }
 
+/** Help, favourites and community live here as well as in the account menu. */
+function ShortcutsCard() {
+  const items = [
+    { href: '/favorites', Icon: Heart, label: 'Favorites', desc: 'Saved traders and listings', cls: 'text-red-500 bg-red-500/10' },
+    { href: '/help', Icon: HelpCircle, label: 'Help Center', desc: 'Guides, FAQs and support', cls: 'text-sky-500 bg-sky-500/10' },
+    { href: '/community', Icon: Users, label: 'Community', desc: 'Telegram and WhatsApp channels', cls: 'text-teal-500 bg-teal-500/10' },
+  ]
+  return (
+    <div className="bg-surface shadow-card border border-border rounded-xl p-5">
+      <h3 className="text-base font-bold text-text-primary mb-3">Shortcuts</h3>
+      <ul className="grid gap-2 sm:grid-cols-3">
+        {items.map(({ href, Icon, label, desc, cls }) => (
+          <li key={href}>
+            <Link href={href} className="flex items-start gap-2.5 rounded-lg border border-border p-3 hover:bg-surface-alt transition-colors">
+              <span className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md ${cls}`}><Icon className="h-4 w-4" aria-hidden /></span>
+              <span className="min-w-0"><span className="block text-sm font-semibold text-text-primary">{label}</span><span className="block text-xs text-text-muted">{desc}</span></span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // ─── Page ────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -940,6 +964,7 @@ export default function SettingsPage() {
         <div className="space-y-6">
           <ProfileTab />
           <ActiveHoursCard />
+          <ShortcutsCard />
         </div>
       )}
       {activeTab === 'security' && <SecurityTab />}

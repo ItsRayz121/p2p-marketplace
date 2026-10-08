@@ -12,6 +12,12 @@ const CLAIM_BADGE: Record<ClaimStatus, { text: string; cls: string }> = {
   rejected: { text: 'Not approved', cls: 'text-danger bg-danger/10' },
 }
 
+const METHOD: Record<UserPlatformTask['verifyMode'], { label: string; hint: string }> = {
+  telegram_auto: { label: 'Verified automatically', hint: 'We check your linked Telegram account is a member. Opening the link alone does not count.' },
+  manual_proof: { label: 'Manual review', hint: 'Submit your username or a proof link; our team reviews it before the reward is released.' },
+  self_claim: { label: 'Self-confirmed', hint: 'Only claim after you have actually done the task — opening the link does not verify it.' },
+}
+
 function rewardLabel(t: UserPlatformTask): string {
   return t.rewardType === 'points' ? `${t.rewardPoints} points` : `$${(t.rewardUsdt ?? 0).toFixed(2)} USDT`
 }
@@ -66,6 +72,12 @@ export function PlatformTaskCard({
         {badge && <span className={`flex-shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${badge.cls}`}>{badge.text}</span>}
       </div>
       {task.description && <p className="text-xs text-text-muted">{task.description}</p>}
+
+      <p className="text-[11px] text-text-muted">
+        <span className="mr-1.5 rounded-full bg-surface-alt px-2 py-0.5 font-semibold text-text-secondary">{METHOD[task.verifyMode].label}</span>
+        <span className="mr-1.5 rounded-full bg-surface-alt px-2 py-0.5 font-semibold text-text-secondary">One-time</span>
+        {METHOD[task.verifyMode].hint}
+      </p>
 
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
         {task.endsAt && !task.claim && (

@@ -4,6 +4,8 @@ import { adminPlatformTaskApi, type AdminPlatformTask, type AdminSubmission, typ
 import { LoadingState } from '@/components/ui/LoadingState'
 import { toast } from '@/lib/toast'
 import { copyText } from '@/components/chat/richText'
+import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
+import { CommunityTaskStarter } from '@/components/admin/promotions/CommunityTaskStarter'
 
 const inputCls = 'w-full rounded-lg border border-border bg-canvas px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary'
 const labelCls = 'block text-xs font-semibold text-text-muted mb-1'
@@ -104,8 +106,9 @@ export default function AdminTasksPage() {
 
   return (
     <div className="space-y-5">
+      <PromotionsNav active="tasks" current="/admin/tasks" />
       <div className="flex items-start justify-between gap-3">
-        <div>
+      <div>
           <h1 className="text-xl font-bold text-text-primary">Community Tasks</h1>
           <p className="text-xs text-text-muted mt-0.5">Create tasks (e.g. follow our Telegram) that reward Points or USDT.</p>
         </div>
@@ -226,6 +229,8 @@ export default function AdminTasksPage() {
           ))}
         </div>
       )}
+
+      {tab === 'tasks' && <CommunityTaskStarter tasks={tasks} onCreated={load} />}
 
       {tab === 'tasks' && (
         <div className="space-y-3">

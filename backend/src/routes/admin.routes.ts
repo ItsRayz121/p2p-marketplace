@@ -37,6 +37,7 @@ import { getAllThresholds, getThreshold, upsertThreshold, setThresholdEnabled, v
 import { approveRefill, cancelRefill, checkAndQueueRefills, processApprovedRefills } from '../lib/gas/gas.refill'
 import { getTronHotWalletAddress, getEvmHotWalletAddress, getTronTreasuryAddress, getEvmTreasuryAddress } from '../lib/gas/gasWalletService'
 import type { GasChainId } from '../lib/gas/gas.chains'
+import { GasChain } from '@prisma/client'
 import { listReconciliationRuns, getReconciliationRun, resolveDiscrepancy } from '../lib/gas/gas.reconciliation'
 import { getChainBurnRates, getChainRunways, getProfitabilityByChain, getVolumeTimeSeries } from '../lib/gas/gas.analytics'
 import { listFlaggedOrders, reviewFlaggedOrder } from '../lib/gas/gas.risk'
@@ -1973,6 +1974,14 @@ export async function adminRoutes(app: FastifyInstance) {
     if (query.status && query.status !== 'all') {
       if (query.status === 'open') {
         where.status = { in: ['open', 'escalated'] }
+      } else if (query.status === 'closed') {
+        // Closed without a ruling: settled by the parties or dismissed (no fault).
+        where.status = 'resolved'
+        where.resolutionType = { in: ['settled_by_parties', 'dismissed'] }
+      } else if (query.status === 'resolved') {
+        // Admin-ruled cases (or older rows with no resolutionType recorded).
+        where.status = 'resolved'
+        where.OR = [{ resolutionType: null }, { resolutionType: { in: ['buyer_wins', 'seller_wins', 'split'] } }]
       } else {
         where.status = query.status
       }
@@ -2391,7 +2400,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const { page, limit, skip } = paginationParams(query)
     const where: Record<string, unknown> = {}
     if (query.status) where.status = query.status
-    if (query.chain) where.chain = query.chain
+    if (query.chain && (Object.values(GasChain) as string[]).includes(query.chain)) where.chain = query.chain
     const [subscriptions, total] = await Promise.all([
       db.moralisStreamSubscription.findMany({
         where,
@@ -4411,6 +4420,29 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     // Free-grant history: platform-funded ($0) deliveries from the Free Gas tool.
     if (query.freeGrant === 'true') where.isFreeGrant = true
+
+    // Payment Orders page filters: chain, created-date window, free-text search.
+    if (query.chain) where.chain = query.chain
+    const createdAt: Record<string, Date> = {}
+    if (query.from && !Number.isNaN(Date.parse(query.from))) createdAt.gte = new Date(query.from)
+    if (query.to && !Number.isNaN(Date.parse(query.to))) {
+      const end = new Date(query.to)
+      // A bare date (YYYY-MM-DD) means "through the end of that day".
+      if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) end.setUTCHours(23, 59, 59, 999)
+      createdAt.lte = end
+    }
+    if (createdAt.gte || createdAt.lte) where.createdAt = createdAt
+    const search = query.search?.trim().slice(0, 100)
+    if (search) {
+      // AND-wrapped so it can't clobber the OR already set by paymentType=MANUAL.
+      where.AND = [{ OR: [
+        { orderRef:       { contains: search, mode: 'insensitive' } },
+        { toAddress:      { contains: search, mode: 'insensitive' } },
+        { paymentTxHash:  { contains: search, mode: 'insensitive' } },
+        { user: { username: { contains: search, mode: 'insensitive' } } },
+        { user: { email:    { contains: search, mode: 'insensitive' } } },
+      ] }]
+    }
 
     const [orders, total] = await Promise.all([
       db.gasFeeOrder.findMany({

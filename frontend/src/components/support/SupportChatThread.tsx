@@ -14,6 +14,7 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
+import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
 
 // Messages can only be retracted within this window of sending (mirrors backend).
@@ -360,6 +361,7 @@ export function SupportChatThread() {
           >
             <ImagePlus className="w-5 h-5" />
           </button>
+          <EmojiPicker disabled={sending} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
           <textarea
             ref={draftRef}
             value={draft}

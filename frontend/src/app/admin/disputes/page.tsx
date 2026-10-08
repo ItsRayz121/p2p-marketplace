@@ -1,8 +1,8 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { adminApi } from '@/lib/api'
-import { fmtDate, fmtDateTime, fmtTime } from '@/lib/fmt'
+import { adminApi, type DisputeFilter, type DisputeOverview, type DisputeOverviewRow } from '@/lib/api'
+import { fmtDateTime, fmtTime } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -13,6 +13,11 @@ import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
+import { DisputeMarketTabs } from '@/components/admin/disputes/DisputeMarketTabs'
+import { DisputeFilterBar } from '@/components/admin/disputes/DisputeFilterBar'
+import { DisputeCasesTable } from '@/components/admin/disputes/DisputeCasesTable'
+import { DisputeInsightsPanel } from '@/components/admin/disputes/DisputeInsightsPanel'
+import { disputeOutcomeLabel, disputeOutcomeVariant } from '@/components/admin/disputes/disputeLabels'
 
 // ─── Types ──────────────────────────────────────────────────────────────────────
 
@@ -78,12 +83,6 @@ interface DisputeRecord {
   openedBy?: { id: string; username: string; email: string } | null
 }
 
-interface DisputesResponse {
-  disputes: DisputeRecord[]
-  total?: number
-  pagination?: { total: number }
-}
-
 // A raw PaymentMethod id (cuid) — never show this to the admin as the method.
 function isOpaqueId(v: string): boolean {
   return /^c[a-z0-9]{20,}$/i.test(v.trim())
@@ -96,25 +95,6 @@ const DELIVERY_METHOD_LABELS: Record<string, string> = {
 function deliveryMethodLabel(m?: string): string {
   if (!m) return '—'
   return DELIVERY_METHOD_LABELS[m] ?? m
-}
-
-function daysAgo(date: string) {
-  return Math.floor((Date.now() - new Date(date).getTime()) / (1000 * 60 * 60 * 24))
-}
-
-function slaLabel(date: string): string {
-  const ms = Date.now() - new Date(date).getTime()
-  const h = Math.floor(ms / 3600000)
-  const d = Math.floor(h / 24)
-  if (d >= 1) return `${d}d ${h % 24}h`
-  return `${h}h ${Math.floor((ms % 3600000) / 60000)}m`
-}
-
-function slaBadgeClass(date: string): string {
-  const days = daysAgo(date)
-  if (days >= 3) return 'bg-red-500/15 text-red-700 dark:text-red-300 border-red-500/30'
-  if (days >= 1) return 'bg-orange-500/15 text-orange-700 dark:text-orange-300 border-orange-500/30'
-  return 'bg-green-500/15 text-green-700 dark:text-green-300 border-green-500/30'
 }
 
 const statusVariant = (s: string): 'default' | 'success' | 'warning' | 'danger' => {
@@ -150,12 +130,13 @@ const RESOLUTION_TEMPLATES: Record<'buyer' | 'seller', string[]> = {
 }
 
 export default function DisputesPage() {
-  const [disputes, setDisputes] = useState<DisputeRecord[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
+  const [overview, setOverview] = useState<DisputeOverview | null>(null)
+  const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const [opening, setOpening] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState<DisputeFilter>('all')
 
   const [selected, setSelected] = useState<DisputeRecord | null>(null)
   const [modalOpen, setModalOpen] = useState(false)
@@ -180,22 +161,36 @@ export default function DisputesPage() {
 
   const limit = 20
 
+  // Debounce the search box.
+  useEffect(() => {
+    const t = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 350)
+    return () => clearTimeout(t)
+  }, [search])
+
+  // Every dispute — open, escalated, resolved and closed — so completed cases stay reviewable.
   const fetchDisputes = useCallback(async () => {
     try {
-      const params: Record<string, string | number> = { page, limit }
-      if (statusFilter !== 'all') params.status = statusFilter
-      const data = await adminApi.getDisputes(params) as unknown as DisputesResponse
-      setDisputes(data.disputes ?? [])
-      setTotal(data.pagination?.total ?? data.total ?? 0)
+      setOverview(await adminApi.getDisputeOverview({ market: 'usdt', filter: statusFilter, page, limit, ...(query ? { search: query } : {}) }))
       setError(null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load disputes')
-    } finally {
-      setLoading(false)
     }
-  }, [page, statusFilter])
+  }, [page, statusFilter, query])
 
   usePolling(fetchDisputes, 30_000)
+  useEffect(() => { void fetchDisputes() }, [fetchDisputes])
+
+  // The table is a slim, market-agnostic view; the resolution workbench needs the full record.
+  async function reviewRow(row: DisputeOverviewRow) {
+    setOpening(true)
+    try {
+      openModal(await adminApi.getDispute(row.id) as unknown as DisputeRecord)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open the dispute')
+    } finally {
+      setOpening(false)
+    }
+  }
 
   function openModal(d: DisputeRecord) {
     setSelected(d)
@@ -222,6 +217,7 @@ export default function DisputesPage() {
       // so the admin sees where it went instead of it appearing to vanish.
       setStatusFilter('resolved')
       setPage(1)
+      void fetchDisputes()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to resolve dispute')
     }
@@ -234,9 +230,10 @@ export default function DisputesPage() {
       await adminApi.closeDispute(selected.id, { note: closeNote.trim() })
       setConfirmClose(false)
       setModalOpen(false)
-      // Closed disputes are retained under Resolved — show them there.
-      setStatusFilter('resolved')
+      // Closed (no-ruling) disputes are retained under Closed — show them there.
+      setStatusFilter('closed')
       setPage(1)
+      void fetchDisputes()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Failed to close dispute')
     }
@@ -255,99 +252,73 @@ export default function DisputesPage() {
     }
   }
 
-  const totalPages = Math.ceil(total / limit)
+  const total = overview?.pagination.total ?? 0
+  const totalPages = overview?.pagination.pages ?? 1
   const isResolved = selected?.status === 'resolved'
 
-  if (loading) return <LoadingState message="Loading disputes..." />
-  if (error && disputes.length === 0) return <ErrorState title={error} onRetry={fetchDisputes} />
+  if (!overview && !error) return <LoadingState message="Loading disputes..." />
+  if (error && !overview) return <ErrorState title={error} onRetry={fetchDisputes} />
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Disputes</h1>
-        <p className="text-text-muted text-sm mt-0.5">{total} disputes found</p>
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-text-primary">USDT Marketplace Disputes</h1>
+          <p className="text-text-muted text-sm mt-0.5">{total} case{total === 1 ? '' : 's'} in this view. Completed cases stay in the history.</p>
+        </div>
+        <DisputeMarketTabs active="usdt" />
       </div>
 
-      {/* Filters */}
-      <div className="bg-surface shadow-card p-4 rounded-xl border border-border admin-toolbar gap-2">
-        {[
-          { value: 'all', label: 'All' },
-          { value: 'open', label: 'Open' },
-          { value: 'resolved', label: 'Resolved' },
-          { value: 'escalated', label: 'Escalated' },
-        ].map((f) => (
-          <button
-            key={f.value}
-            onClick={() => { setStatusFilter(f.value); setPage(1) }}
-            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-              statusFilter === f.value
-                ? 'bg-primary text-white border-primary'
-                : 'bg-surface text-text-secondary border-border hover:bg-surface'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
+      {error && <div role="alert" className="px-4 py-3 bg-danger/10 border border-danger/20 rounded-xl text-danger text-sm">{error}</div>}
+
+      <div className="rounded-xl border border-border bg-surface p-4 shadow-card space-y-3">
+        <DisputeFilterBar value={statusFilter} counts={overview?.counts} onChange={(f) => { setStatusFilter(f); setPage(1) }} />
+        <label className="block">
+          <span className="sr-only">Search disputes</span>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search order ref or username…"
+            className="w-full sm:max-w-sm rounded-lg border border-border bg-surface px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+          />
+        </label>
       </div>
 
-      {disputes.length === 0 ? (
+      {!overview || overview.rows.length === 0 ? (
         <EmptyState icon={ShieldAlert} title="No disputes found" description="No disputes match the current filter." />
       ) : (
-        <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm stack-sm">
-              <thead className="bg-surface border-b border-border">
-                <tr>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Trade ID</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Buyer</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Seller</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Opened</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">SLA</th>
-                  <th className="text-left px-4 py-3 font-medium text-text-muted">Status</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {disputes.map((d) => (
-                  <tr key={d.id} className="hover:bg-surface/50 transition-colors">
-                    <td className="px-4 py-3 font-mono text-xs text-text-secondary" data-label="Trade ID">
-                      #{d.trade?.orderRef?.slice(0, 8) ?? d.tradeId.slice(0, 8)}
-                    </td>
-                    <td className="px-4 py-3 text-text-primary" data-label="Buyer">{d.trade?.buyer?.username || d.trade?.buyerId?.slice(0, 8) || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-text-primary" data-label="Seller">{d.trade?.seller?.username || d.trade?.sellerId?.slice(0, 8) || 'Unknown'}</td>
-                    <td className="px-4 py-3 text-text-secondary" data-label="Opened">{fmtDate(d.createdAt)}</td>
-                    <td className="px-4 py-3" data-label="SLA">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${slaBadgeClass(d.createdAt)}`}>
-                        {slaLabel(d.createdAt)}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3" data-label="Status">
-                      <Badge variant={statusVariant(d.status)} size="sm">{disputeStatusLabel(d.status)}</Badge>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button size="sm" variant="ghost" onClick={() => openModal(d)}>View</Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        <>
+          <DisputeCasesTable rows={overview.rows} onReview={(r) => void reviewRow(r)} />
+          {opening && <p className="text-xs text-text-muted" aria-live="polite">Opening case…</p>}
           {totalPages > 1 && (
-            <div className="flex items-center justify-between px-4 py-3 border-t border-border">
-              <p className="text-text-muted text-sm">Page {page} of {totalPages}</p>
+            <div className="flex items-center justify-between">
+              <p className="text-text-muted text-sm">Page {page} of {totalPages} · {total} cases</p>
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>Prev</Button>
-                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>Next</Button>
+                <Button size="sm" variant="secondary" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
+                <Button size="sm" variant="secondary" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>Next</Button>
               </div>
             </div>
           )}
-        </div>
+        </>
       )}
 
       {/* ── Dispute Detail Modal ──────────────────────────────────────────────── */}
       <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={`Dispute — Trade #${selected?.trade?.orderRef?.slice(0, 8) ?? ''}`} size="xl">
         {selected && (
           <div className="space-y-5 max-h-[80vh] overflow-y-auto pr-1">
+
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <Badge variant={disputeOutcomeVariant(selected.status, (selected as { resolutionType?: string | null }).resolutionType ?? null)} size="sm">
+                {disputeOutcomeLabel(selected.status, (selected as { resolutionType?: string | null }).resolutionType ?? null, selected.winner)}
+              </Badge>
+              <span className="text-text-muted">Trade status: <strong className="text-text-primary">{(selected.trade?.status ?? '—').replace(/_/g, ' ')}</strong></span>
+            </div>
+
+            {/* Participants' dispute history + full case timeline */}
+            <div className="rounded-xl border border-border p-4">
+              <DisputeInsightsPanel market="usdt" disputeId={selected.id} />
+            </div>
 
             {/* Trade Summary */}
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 bg-surface rounded-xl text-sm">

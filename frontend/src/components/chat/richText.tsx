@@ -1,10 +1,12 @@
 'use client'
 import { Fragment, type ReactNode, type RefObject } from 'react'
 import { Bold, Italic, Underline, Strikethrough } from 'lucide-react'
+import { linkifyText } from '@/lib/linkify'
 
 // Lightweight chat markup (stored as plain text in the message body):
 //   **bold**   __underline__   _italic_   ~strike~
 // Rendered via React nodes only — never innerHTML — so a message can't inject markup.
+// http(s) and platform links are auto-linked (see lib/linkify).
 
 // _italic_ and ~strike~ only match at word edges so snake_case ids / "~5 USDT" are left alone.
 const TOKEN = /(\*\*[^*\n]+\*\*|__[^_\n]+__|(?<![A-Za-z0-9])_[^_\n]+_(?![A-Za-z0-9])|(?<![A-Za-z0-9])~[^~\n]+~(?![A-Za-z0-9]))/g
@@ -16,7 +18,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
     if (part.length > 4 && part.startsWith('__') && part.endsWith('__')) return <u key={key}>{renderInline(part.slice(2, -2), key)}</u>
     if (part.length > 2 && part.startsWith('_') && part.endsWith('_')) return <em key={key}>{renderInline(part.slice(1, -1), key)}</em>
     if (part.length > 2 && part.startsWith('~') && part.endsWith('~')) return <s key={key}>{renderInline(part.slice(1, -1), key)}</s>
-    return <Fragment key={key}>{part}</Fragment>
+    return <Fragment key={key}>{linkifyText(part, key)}</Fragment>
   })
 }
 

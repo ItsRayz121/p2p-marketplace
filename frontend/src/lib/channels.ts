@@ -52,6 +52,9 @@ export interface ChannelMessage {
   clientId?: string | null
   sharedAd?: SharedAdPreview | null
   sharedGas?: SharedGasPreview | null
+  /** Quote-reply: the earlier broadcast this one answers (preview only; `deleted` if gone). */
+  replyToId?: string | null
+  replyTo?: { id: string; preview: string; hasImage: boolean; deleted: boolean } | null
 }
 
 export interface ChannelMember {
@@ -67,7 +70,7 @@ export const channelsApi = {
     apiRequest<{ id: string; slug: string }>('/channels', { method: 'POST', body: JSON.stringify(input) }),
   get: (idOrSlug: string) => apiRequest<ChannelDetail>(`/channels/${idOrSlug}`),
   messages: (channelId: string) => apiRequest<ChannelMessage[]>(`/channels/${channelId}/messages`),
-  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, attachmentUrl?: string, sharedGasChainSlug?: string) =>
+  post: (channelId: string, body: string, clientId?: string, sharedAd?: { market: 'usdt' | 'ctm'; id: string }, attachmentUrl?: string, sharedGasChainSlug?: string, replyToId?: string) =>
     apiRequest<ChannelMessage>(`/channels/${channelId}/messages`, {
       method: 'POST',
       body: JSON.stringify({
@@ -76,6 +79,7 @@ export const channelsApi = {
         ...(sharedAd ? { sharedAdMarket: sharedAd.market, sharedAdId: sharedAd.id } : {}),
         ...(attachmentUrl ? { attachmentUrl } : {}),
         ...(sharedGasChainSlug ? { sharedGasChainSlug } : {}),
+        ...(replyToId ? { replyToId } : {}),
       }),
     }),
   deleteMessage: (channelId: string, messageId: string) =>

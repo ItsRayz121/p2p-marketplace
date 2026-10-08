@@ -3,15 +3,17 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '@/store/auth.store'
-import { authApi, adminApi, type AdminNotif, type AdminNotifCategory } from '@/lib/api'
+import { authApi, adminApi, type AdminNotif, type AdminNotifGroup } from '@/lib/api'
+import { GROUP_COLOR, GROUP_LABEL, PREFS_CHANGED_EVENT, groupOf, playNotifChime, resolveNotifHref } from '@/lib/adminNotifications'
 import { cn } from '@/lib/utils'
-import { ADMIN_ROUTES } from '@/lib/adminRoutes'
+import { ADMIN_ROUTES, PAYMENT_ORDERS_ROUTE } from '@/lib/adminRoutes'
 import { BrandLogo } from '@/components/ui/BrandLogo'
+import { StartupLoader } from '@/components/ui/StartupLoader'
 import CommandPalette, { type PaletteCommand } from './CommandPalette'
 
 type AdminRole = 'admin' | 'super_admin' | 'kyc_reviewer' | 'support_agent'
 
-type NavCountKey = 'kyc' | 'appeals' | 'disputes' | 'ctmDisputes' | 'withdrawals' | 'gasRequests' | 'makers' | 'adReview'
+type NavCountKey = 'kyc' | 'appeals' | 'disputes' | 'ctmDisputes' | 'withdrawals' | 'gasRequests' | 'makers' | 'adReview' | 'paymentProofs'
 type NavCounts = Record<NavCountKey, number>
 
 interface NavItem {
@@ -38,6 +40,24 @@ interface NavGroup {
 function navItemOwnsPath(item: NavItem, pathname: string): boolean {
   const prefixes = [item.href, ...(item.match ?? [])]
   return prefixes.some((p) => (p === '/admin' ? pathname === '/admin' : pathname === p || pathname.startsWith(p + '/')))
+}
+
+/**
+ * Top-level sections the collapsible groups roll up into. Purely presentational: it
+ * orders the groups and prints a small caption — routes and roles are unchanged.
+ */
+const NAV_SECTIONS: { label: string; groups: string[] }[] = [
+  { label: 'Operations', groups: ['overview', 'users', 'treasury', 'gas'] },
+  { label: 'Marketplaces & disputes', groups: ['trading', 'ads', 'trust'] },
+  { label: 'Growth', groups: ['content', 'promotions', 'affiliates'] },
+  { label: 'System', groups: ['system'] },
+]
+const SECTION_OF: Record<string, number> = Object.fromEntries(NAV_SECTIONS.flatMap((sec, i) => sec.groups.map((g) => [g, i])))
+
+/** Routes that sit under a more permissive nav item but require a stricter role (the API enforces this too). */
+const ROUTE_ROLE_OVERRIDES: Record<string, AdminRole[]> = {
+  '/admin/gas/free-gas': ['super_admin'],
+  '/admin/gas/free-codes': ['super_admin'],
 }
 
 const ALLOWED_ROLES: AdminRole[] = ['admin', 'super_admin', 'kyc_reviewer', 'support_agent']
@@ -178,7 +198,7 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'Disputes',
+        label: 'USDT Marketplace Disputes',
         href: '/admin/disputes',
         roles: ['admin', 'super_admin'],
         badgeKey: 'disputes',
@@ -199,7 +219,7 @@ const navGroups: NavGroup[] = [
         ),
       },
       {
-        label: 'CTM Disputes',
+        label: 'CTM Marketplace Disputes',
         href: '/admin/ctm/disputes',
         roles: ['admin', 'super_admin'],
         badgeKey: 'ctmDisputes',
@@ -430,6 +450,18 @@ const navGroups: NavGroup[] = [
     ),
     items: [
       {
+        label: 'Payment Orders',
+        href: PAYMENT_ORDERS_ROUTE,
+        roles: ['admin', 'super_admin'],
+        badgeKey: 'paymentProofs',
+        match: ['/admin/gas/orders'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" />
+          </svg>
+        ),
+      },
+      {
         label: 'Gas Fee',
         href: '/admin/gas',
         roles: ['admin', 'super_admin'],
@@ -478,26 +510,6 @@ const navGroups: NavGroup[] = [
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Gas Merchants',
-        href: '/admin/gas/merchants',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Exchange Accounts',
-        href: ADMIN_ROUTES.exchangeAccounts,
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
           </svg>
         ),
       },
@@ -564,62 +576,14 @@ const navGroups: NavGroup[] = [
     ),
     items: [
       {
-        label: 'Promo Codes',
-        href: '/admin/gas/promo-codes',
+        label: 'Promotions',
+        href: '/admin/promotions',
         roles: ['admin', 'super_admin'],
+        // One dashboard; the underlying pages keep their URLs and stay reachable from its tabs.
+        match: ['/admin/gas/promo-codes', '/admin/gas/giveaways', '/admin/promo-giveaways', '/admin/gas/free-gas', '/admin/gas/free-codes', '/admin/gas/share-rewards'],
         icon: (
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Giveaways',
-        href: '/admin/gas/giveaways',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v13m0-13V6a2 2 0 112 2h-2zm0 0V5.5A2.5 2.5 0 109.5 8H12zm-7 4h14M5 12a2 2 0 110-4h14a2 2 0 110 4M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Community Giveaways',
-        href: '/admin/promo-giveaways',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a4 4 0 00-3-3.87M9 20H4v-2a4 4 0 013-3.87m6-1.13a4 4 0 10-4-4 4 4 0 004 4z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Free Gas',
-        href: '/admin/gas/free-gas',
-        roles: ['super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Free-Gas Codes',
-        href: '/admin/gas/free-codes',
-        roles: ['super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-          </svg>
-        ),
-      },
-      {
-        label: 'Share & Earn',
-        href: '/admin/gas/share-rewards',
-        roles: ['admin', 'super_admin'],
-        icon: (
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
           </svg>
         ),
       },
@@ -707,6 +671,26 @@ const navGroups: NavGroup[] = [
           </svg>
         ),
       },
+      {
+        label: 'Gas Merchants',
+        href: '/admin/gas/merchants',
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-2 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+          </svg>
+        ),
+      },
+      {
+        label: 'Exchange Accounts',
+        href: ADMIN_ROUTES.exchangeAccounts,
+        roles: ['admin', 'super_admin'],
+        icon: (
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+          </svg>
+        ),
+      },
     ],
   },
 ]
@@ -738,10 +722,42 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [bellLoading, setBellLoading]   = useState(false)
   const bellRef                         = useRef<HTMLDivElement>(null)
 
+  // Sound: per-admin, per-group (see Notifications → My preferences). Loaded once, refreshed when preferences change.
+  const soundGroups = useRef<Set<AdminNotifGroup>>(new Set())
+  const seenIds = useRef<Set<string> | null>(null)
+  const lastCount = useRef<number | null>(null)
+
+  const loadSoundPrefs = useCallback(async () => {
+    try {
+      const { prefs } = await adminApi.getAdminNotificationPreferences()
+      soundGroups.current = new Set((Object.keys(prefs) as AdminNotifGroup[]).filter((g) => prefs[g].sound))
+    } catch { /* ignore — sound just stays off */ }
+  }, [])
+  useEffect(() => {
+    void loadSoundPrefs()
+    window.addEventListener(PREFS_CHANGED_EVENT, loadSoundPrefs)
+    return () => window.removeEventListener(PREFS_CHANGED_EVENT, loadSoundPrefs)
+  }, [loadSoundPrefs])
+
   const fetchUnreadCount = useCallback(async () => {
     try {
       const res = await adminApi.getAdminUnreadCount()
       setUnreadCount(res.count)
+      const prev = lastCount.current
+      lastCount.current = res.count
+      // Only look for new alerts when the unread count grew (cheap) and the tab is open.
+      if (prev !== null && res.count > prev && soundGroups.current.size > 0) {
+        const latest = await adminApi.getAdminNotifications({ unreadOnly: true, limit: 10 })
+        const seen = seenIds.current ?? new Set<string>()
+        const fresh = latest.notifications.filter((n) => !seen.has(n.id) && soundGroups.current.has(groupOf(n)))
+        latest.notifications.forEach((n) => seen.add(n.id))
+        seenIds.current = seen
+        if (fresh.length > 0) playNotifChime()
+      } else if (seenIds.current === null && res.count > 0) {
+        // First load: remember what is already there so it doesn't chime on page open.
+        const latest = await adminApi.getAdminNotifications({ unreadOnly: true, limit: 10 })
+        seenIds.current = new Set(latest.notifications.map((n) => n.id))
+      }
     } catch { /* ignore — non-critical */ }
   }, [])
 
@@ -804,17 +820,6 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     setUnreadCount(0)
   }
 
-  const CATEGORY_COLORS: Record<AdminNotifCategory, string> = {
-    KYC:        'bg-blue-500/15 text-blue-700 dark:text-blue-300',
-    TRADE:      'bg-purple-500/15 text-purple-700 dark:text-purple-300',
-    GAS:        'bg-orange-500/15 text-orange-700 dark:text-orange-300',
-    DISPUTE:    'bg-red-500/15 text-red-700 dark:text-red-300',
-    CTM:        'bg-teal-500/15 text-teal-700 dark:text-teal-300',
-    SYSTEM:     'bg-surface-alt text-text-secondary',
-    DEPOSIT:    'bg-green-500/15 text-green-700 dark:text-green-300',
-    WITHDRAWAL: 'bg-amber-500/15 text-amber-700 dark:text-amber-300',
-  }
-
   // Every group is independently collapsible. The state is plain user intent (persisted);
   // the active route only *reveals* its group when the route itself changes — it never
   // pins a group open, so a manual collapse always sticks until the admin navigates.
@@ -853,12 +858,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // Hard gate: render nothing until auth is confirmed AND role is verified.
   if (isLoading || !user || !ALLOWED_ROLES.includes(user.role as AdminRole)) {
     return (
-      <div className="flex h-screen items-center justify-center bg-surface">
-        <div className="flex items-center gap-3 text-text-muted">
-          <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Loading…</span>
-        </div>
-      </div>
+      <StartupLoader fullScreen label="Loading admin panel" />
     )
   }
 
@@ -868,6 +868,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       items: group.items.filter((item) => !item.hidden && item.roles.includes(user.role as AdminRole)),
     }))
     .filter((group) => group.items.length > 0)
+    // Group order follows the sections; within a section the original order is kept (sort is stable).
+    .sort((a, b) => (SECTION_OF[a.id] ?? 99) - (SECTION_OF[b.id] ?? 99))
 
   const allVisibleItems = visibleGroups.flatMap((g) => g.items)
 
@@ -884,8 +886,23 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   // H-10: per-route role guard — block direct URL navigation to pages the
   // user's role doesn't permit.
   const allNavItems = navGroups.flatMap((g) => g.items)
-  const currentNavItem = allNavItems.find((item) => navItemOwnsPath(item, pathname))
-  if (currentNavItem && !currentNavItem.roles.includes(user.role as AdminRole)) {
+  const ownerLen = (item: NavItem) =>
+    Math.max(
+      -1,
+      ...[item.href, ...(item.match ?? [])]
+        .filter((p) => (p === '/admin' ? pathname === p : pathname === p || pathname.startsWith(p + '/')))
+        .map((p) => p.length),
+    )
+  // The most specific nav item decides the role gate (e.g. /admin/gas/free-gas is super-admin only
+  // even though its parent /admin/gas is open to admins). Items hidden from the sidebar still count.
+  const currentNavItem = allNavItems.reduce<NavItem | undefined>(
+    (best, item) => (ownerLen(item) > (best ? ownerLen(best) : -1) ? item : best),
+    undefined,
+  )
+  // Pages folded under a shared nav item that are still stricter than the item itself.
+  const stricter = Object.entries(ROUTE_ROLE_OVERRIDES).find(([p]) => pathname === p || pathname.startsWith(p + '/'))
+  const blockedByOverride = !!stricter && !stricter[1].includes(user.role as AdminRole)
+  if (blockedByOverride || (currentNavItem && !currentNavItem.roles.includes(user.role as AdminRole))) {
     router.replace('/admin')
     return (
       <div className="flex h-screen items-center justify-center bg-surface">
@@ -911,15 +928,17 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     }
   }
 
-  const isActive = (item: NavItem) => {
-    if (!navItemOwnsPath(item, pathname)) return false
-    if (item.href === '/admin') return true
-    // A more specific sibling (e.g. /admin/gas/merchants vs /admin/gas) wins.
-    const longer = allVisibleItems.find(
-      (other) => other.href !== item.href && other.href.startsWith(item.href + '/') && navItemOwnsPath(other, pathname),
+  // The item with the longest matching prefix wins, so a more specific route
+  // (e.g. /admin/gas/orders → Payment Orders, /admin/gas/merchants) beats its parent.
+  const matchLen = (item: NavItem) =>
+    Math.max(
+      -1,
+      ...[item.href, ...(item.match ?? [])]
+        .filter((p) => (p === '/admin' ? pathname === p : pathname === p || pathname.startsWith(p + '/')))
+        .map((p) => p.length),
     )
-    return !longer
-  }
+  const bestMatchLen = Math.max(-1, ...allVisibleItems.map(matchLen))
+  const isActive = (item: NavItem) => navItemOwnsPath(item, pathname) && matchLen(item) === bestMatchLen
 
   const isGroupOpen = (groupId: string) => openGroups[groupId] ?? true
 
@@ -941,7 +960,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       </div>
 
       <div className="flex-1 overflow-y-auto py-3 px-2 space-y-0.5">
-        {visibleGroups.map((group) => {
+        {visibleGroups.map((group, gi) => {
+          const sectionIdx = SECTION_OF[group.id] ?? 99
+          const showSection = gi === 0 || sectionIdx !== (SECTION_OF[visibleGroups[gi - 1]!.id] ?? 99)
           const groupOpen = isGroupOpen(group.id)
           const groupHasActive = group.items.some((it) => isActive(it))
           const groupBadge = group.items.reduce(
@@ -950,6 +971,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           )
           return (
           <div key={group.id}>
+            {showSection && NAV_SECTIONS[sectionIdx] && (
+              <p className={cn('px-3 pb-1 text-[10px] font-bold uppercase tracking-[0.14em] text-gray-500', gi === 0 ? 'pt-1' : 'pt-4')}>
+                {NAV_SECTIONS[sectionIdx]!.label}
+              </p>
+            )}
             <button
               type="button"
               onClick={() => toggleGroup(group.id)}
@@ -1132,6 +1158,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                       <button onClick={markAllRead} className="text-xs text-primary hover:underline font-medium">Mark all read</button>
                     )}
                     <Link href="/admin/notifications" onClick={() => setBellOpen(false)} className="text-xs text-text-muted hover:text-primary">View all</Link>
+                    <Link href="/admin/notifications?view=preferences" onClick={() => setBellOpen(false)} className="text-xs text-text-muted hover:text-primary" title="Choose which alerts reach you">Preferences</Link>
                   </div>
                 </div>
 
@@ -1153,8 +1180,8 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                         className={cn('px-4 py-3 hover:bg-surface transition-colors', !n.isRead && 'bg-blue-500/10')}
                       >
                         <div className="flex items-start gap-3">
-                          <span className={cn('mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide', CATEGORY_COLORS[n.category])}>
-                            {n.category}
+                          <span className={cn('mt-0.5 shrink-0 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wide', GROUP_COLOR[groupOf(n)])}>
+                            {GROUP_LABEL[groupOf(n)]}
                           </span>
                           <div className="flex-1 min-w-0">
                             <p className="text-xs font-semibold text-text-primary truncate">{n.title}</p>
@@ -1162,9 +1189,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                             <p className="text-[10px] text-text-muted mt-1">{new Date(n.createdAt).toLocaleString()}</p>
                           </div>
                           <div className="flex items-center gap-1 shrink-0">
-                            {n.href && (
+                            {resolveNotifHref(n) && (
                               <Link
-                                href={n.href}
+                                href={resolveNotifHref(n)!}
                                 onClick={() => { void markRead(n.id); setBellOpen(false) }}
                                 className="p-1 rounded hover:bg-primary/10 text-primary transition-colors"
                                 title="Go to page"

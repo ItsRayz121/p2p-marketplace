@@ -22,6 +22,8 @@ const updateSchema = z.object({
   autoShareListings: z.boolean().optional(),
 })
 const postSchema = z.object({
+  // Quote-reply to an earlier broadcast in this channel.
+  replyToId: z.string().min(1).max(64).optional(),
   body: z.string().max(4000).optional().default(''),
   clientId: z.string().min(1).max(64).optional(),
   sharedAdMarket: z.enum(['usdt', 'ctm']).optional(),
@@ -85,7 +87,7 @@ export async function channelRoutes(app: FastifyInstance) {
     const sharedAd = parsed.data.sharedAdMarket && parsed.data.sharedAdId
       ? { market: parsed.data.sharedAdMarket, id: parsed.data.sharedAdId }
       : undefined
-    const message = await postChannelMessage(req.user!.id, channelId, parsed.data.body, parsed.data.clientId, sharedAd, parsed.data.attachmentUrl, parsed.data.sharedGasChainSlug)
+    const message = await postChannelMessage(req.user!.id, channelId, parsed.data.body, parsed.data.clientId, sharedAd, parsed.data.attachmentUrl, parsed.data.sharedGasChainSlug, undefined, parsed.data.replyToId)
     return reply.code(201).send({ success: true, data: message })
   })
 

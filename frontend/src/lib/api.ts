@@ -709,7 +709,14 @@ export interface AdminNotif {
   isRead: boolean
   metadata: Record<string, unknown>
   createdAt: string
+  /** Preference bucket (see AdminNotifGroup); null only for very old rows. */
+  prefGroup?: AdminNotifGroup | null
 }
+
+export type AdminNotifGroup = 'usdt_trades' | 'ctm_trades' | 'gas_orders' | 'payment_review' | 'disputes' | 'support' | 'promotions' | 'affiliates' | 'kyc' | 'system'
+export interface AdminNotifChannelPrefs { inApp: boolean; push: boolean; telegram: boolean; sound: boolean }
+export type AdminNotifPrefs = Record<AdminNotifGroup, AdminNotifChannelPrefs>
+export interface AdminNotifGroupMeta { key: AdminNotifGroup; label: string; description: string; mandatoryInApp: boolean; defaultTelegram: boolean; priority: 'routine' | 'action' | 'critical' }
 
 export interface Trade {
   id: string
@@ -1138,11 +1145,19 @@ export interface MarketActivity {
   recentTrades: MarketTrade[]
 }
 
+// Global REFERENCE price (provider data, 7 days, USD) — never RupChain trade data.
+export type ReferenceItem =
+  | { slug: string; status: 'ok'; provider: 'CoinGecko'; currency: 'USD'; period: '7d'; stale: boolean; verifiedBy: 'provider_id' | 'contract'; providerId: string; price: number; change7dPct: number | null; points: number[]; lastUpdated: string; fetchedAt: string }
+  | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' }
+  | { slug: string; status: 'unavailable'; reason: 'provider_error' | 'rate_limited' }
+
 // Activity (order-book + recent trades) for a token's detail page is fetched
 // server-side only (see frontend/src/lib/marketsFetch.ts) — there is no
 // client-side poll for it, so no getActivity() belongs here.
 export const marketsApi = {
   getOverview: () => apiRequest<MarketsOverview>('/markets/overview'),
+  getReference: (slugs: string[]) =>
+    apiRequest<{ items: ReferenceItem[]; source: string; generatedAt: string }>(`/markets/reference?slugs=${encodeURIComponent(slugs.join(','))}`),
 }
 
 export const favoritesApi = {
@@ -2344,7 +2359,87 @@ export interface AdminGasToken {
   chain?: { name: string; slug: string; backendChainId?: string | null }
 }
 
+/* ── Marketplace disputes overview (read-only view over both dispute workflows) ── */
+export type DisputeMarket = 'usdt' | 'ctm'
+export type DisputeFilter = 'all' | 'open' | 'escalated' | 'resolved' | 'closed'
+export interface DisputeParticipantStats { total: number; open: number; won: number; lost: number; split: number; closedNoFault: number; resolvedOther: number }
+export interface DisputeOverviewRow {
+  id: string; market: DisputeMarket; tradeId: string; tradeRef: string
+  disputeStatus: string; resolutionType: string | null; winner: string | null; tradeStatus: string; reason: string
+  buyer: { id: string; username: string | null; stats: DisputeParticipantStats }
+  seller: { id: string; username: string | null; stats: DisputeParticipantStats }
+  openedById: string; createdAt: string; escalatedAt: string | null; resolvedAt: string | null
+  reviewer: string | null; resolution: string | null; evidenceCount: number
+}
+export interface DisputeOverview {
+  market: DisputeMarket; filter: DisputeFilter; counts: Record<DisputeFilter, number>
+  rows: DisputeOverviewRow[]; pagination: { page: number; limit: number; total: number; pages: number }
+}
+export interface DisputeTimelineEvent { at: string; kind: 'opened' | 'escalated' | 'message' | 'resolved' | 'audit'; actor: string | null; text: string; evidenceUrl?: string | null }
+export interface DisputeInsights {
+  market: DisputeMarket; disputeStatus: string; tradeStatus: string; resolutionType: string | null; winner: string | null
+  participants: Array<{ role: 'buyer' | 'seller'; id: string; username: string | null; stats: DisputeParticipantStats }>
+  timeline: DisputeTimelineEvent[]
+}
+
+export type PromoProgramKey = 'promo_code' | 'free_code' | 'giveaway' | 'community_giveaway' | 'direct_free_gas' | 'share_reward'
+export interface PromoCampaignRow {
+  program: PromoProgramKey; id: string; name: string; label: string | null
+  status: 'active' | 'expired' | 'disabled' | 'exhausted' | 'open' | 'closed' | 'drawn'
+  createdAt: string; redemptions: number; uniqueRedeemers: number; completedOrders: number; refundedOrders: number
+  grossMarginUsdt: number | null; rewardCostUsdt: number | null; commissionUsdt: number | null; netContributionUsdt: number | null
+  budgetUsdt: number | null; spentUsdt: number | null; insufficientData: boolean
+}
+export interface PromoProgramSummary {
+  key: PromoProgramKey; label: string; funding: string; total: number; active: number; expired: number; disabled: number
+  redemptions: number; uniqueRedeemers: number | null; completedOrders: number; refundedOrders: number
+  grossMarginUsdt: number | null; rewardCostUsdt: number | null; commissionUsdt: number | null; netContributionUsdt: number | null
+  budgetUsdt: number | null; spentUsdt: number | null
+}
+export interface PromotionsOverview {
+  generatedAt: string; range: { days: number | null; since: string | null }; minSample: number
+  totals: { campaigns: number; redemptions: number; completedOrders: number; refundedOrders: number; rewardCostUsdt: number; grossMarginUsdt: number; commissionUsdt: number; freeProgramCostUsdt: number; netTrackedContributionUsdt: number; netAfterFreeProgramsUsdt: number }
+  programs: Record<PromoProgramKey, PromoProgramSummary>
+  trend: Array<{ date: string; promo: number; free: number; shareReward: number; freeGrants: number }>
+  campaigns: PromoCampaignRow[]
+}
+
+export interface AffiliatePerf {
+  userId: string; username: string | null; email: string | null; referralCode: string | null; status: string
+  socials: Record<string, string> | null; applicantNote: string | null; rejectionReason: string | null
+  tier: string | null; tierPct: number | null; maxMarginPct: number; minUserDiscountPct: number; maxLinks: number; linkCount: number
+  clicks: number; signups: number; buyers: number; verifiedOrders: number; signupRate: number | null; conversionRate: number | null
+  attributableMarginUsdt: number; commissionEarnedUsdt: number; commissionPendingUsdt: number; commissionWithdrawableUsdt: number
+  commissionPaidUsdt: number; commissionReversedUsdt: number; unpaidUsdt: number
+  lastActivityAt: string | null; appliedAt: string; reviewedAt: string | null; isNew: boolean; isActive: boolean
+}
+export interface AffiliateOverview {
+  generatedAt: string
+  definitions: { activeWindowDays: number; holdHours: number; newAffiliateMinOrders: number; newAffiliateMinClicks: number }
+  counts: { applications: number; pending: number; approved: number; rejected: number; suspended: number | null; active: number }
+  totals: { clicks: number; signups: number; verifiedOrders: number; attributableMarginUsdt: number; commissionEarnedUsdt: number; commissionPendingUsdt: number; commissionWithdrawableUsdt: number; commissionPaidUsdt: number; commissionReversedUsdt: number; payoutLiabilityUsdt: number }
+  tiers: Array<{ key: string; name: string; minOrders: number; pct: number }>
+  affiliates: AffiliatePerf[]
+}
+export interface AffiliateDetail {
+  user: { id: string; email: string | null; username: string | null }; status: string
+  links: Array<{ id: string; code: string; label: string | null; referralPct: number; userDiscountPct: number; isActive: boolean; deletedAt: string | null; clickCount: number; lastClickAt: string | null; createdAt: string; signups: number }>
+  signups: number
+  recentAccruals: Array<{ id: string; level: number; marginUsdt: number; amountUsdt: number; pct: number; status: string; createdAt: string; order: { orderRef: string; status: string } | null }>
+  auditHistory: Array<{ id: string; action: string; metadata: unknown; createdAt: string; actor: string | null }>
+  payouts: Array<{ id: string; amountUsdt: number; createdAt: string; source: string | null }>
+}
+
 export const adminApi = {
+  getAffiliateOverview: () => apiRequest<AffiliateOverview>('/admin/affiliates/overview'),
+  getAffiliateDetail: (userId: string) => apiRequest<AffiliateDetail>(`/admin/affiliates/${encodeURIComponent(userId)}/detail`),
+  getPromotionsOverview: (days: 7 | 30 | 90 | 'all') =>
+    apiRequest<PromotionsOverview>(`/admin/promotions/overview?days=${days}`),
+  getDisputeOverview: (params: { market: DisputeMarket; filter?: DisputeFilter; page?: number; limit?: number; search?: string }) =>
+    apiRequest<DisputeOverview>('/admin/disputes/overview' + buildQs(params)),
+  getDisputeInsights: (market: DisputeMarket, id: string) =>
+    apiRequest<DisputeInsights>(`/admin/disputes/overview/${market}/${encodeURIComponent(id)}`),
+
   // Dashboard
   getStats: (range?: 'today' | '7d' | '30d' | '1y' | 'all') =>
     apiRequest<{
@@ -3216,16 +3311,25 @@ export const adminApi = {
     apiRequest<{ entries: Array<{ id: string; userId: string; action: string; details: unknown; ip?: string; userAgent?: string; createdAt: string }>; total: number }>('/admin/audit-log' + buildQs(params)),
 
   // Admin Notifications
-  getAdminNotifications: (params?: { category?: string; unreadOnly?: boolean; page?: number; limit?: number }) =>
+  getAdminNotifications: (params?: { category?: string; group?: string; unreadOnly?: boolean; page?: number; limit?: number }) =>
     apiRequest<{
       notifications: AdminNotif[]
       unreadCount: number
       pagination: { page: number; limit: number; total: number; pages: number }
     }>('/admin/notifications' + buildQs(params as Record<string, string | number | undefined>)),
+  getAdminNotificationPreferences: () =>
+    apiRequest<{ prefs: AdminNotifPrefs; groups: AdminNotifGroupMeta[]; rules: { mandatory: AdminNotifGroup[]; emailIsSharedInbox: boolean; externalDedupeSeconds: number } }>('/admin/notification-preferences'),
+  saveAdminNotificationPreferences: (groups: Partial<Record<AdminNotifGroup, Partial<AdminNotifChannelPrefs>>>) =>
+    apiRequest<{ prefs: AdminNotifPrefs }>('/admin/notification-preferences', { method: 'PUT', body: JSON.stringify({ groups }) }),
+  resetAdminNotificationPreferences: () =>
+    apiRequest<{ prefs: AdminNotifPrefs }>('/admin/notification-preferences', { method: 'DELETE' }),
+  previewAdminNotification: (group: AdminNotifGroup) =>
+    apiRequest<{ group: AdminNotifGroup; title: string; body: string; channels: AdminNotifChannelPrefs; sent: { push: boolean; telegram: boolean } }>('/admin/notification-preferences/preview', { method: 'POST', body: JSON.stringify({ group }) }),
   getAdminUnreadCount: (category?: string) =>
     apiRequest<{ count: number }>('/admin/notifications/unread-count' + (category ? `?category=${category}` : '')),
   getAdminNavCounts: () =>
     apiRequest<{
+      paymentProofs: number
       kyc: number
       appeals: number
       disputes: number
@@ -3237,8 +3341,8 @@ export const adminApi = {
     }>('/admin/nav-counts'),
   markAdminNotifRead: (id: string) =>
     apiRequest<void>(`/admin/notifications/${id}/read`, { method: 'PATCH' }),
-  markAllAdminNotifsRead: (category?: string) =>
-    apiRequest<void>('/admin/notifications/read-all' + (category ? `?category=${category}` : ''), { method: 'PATCH' }),
+  markAllAdminNotifsRead: (opts?: { category?: string; group?: string }) =>
+    apiRequest<void>('/admin/notifications/read-all' + buildQs(opts as Record<string, string | undefined>), { method: 'PATCH' }),
   deleteOldAdminNotifs: () =>
     apiRequest<{ deleted: number }>('/admin/notifications/old', { method: 'DELETE' }),
 

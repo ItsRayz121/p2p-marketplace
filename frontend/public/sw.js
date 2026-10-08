@@ -23,9 +23,9 @@
  * together across a deploy. Losing the browser's offline screen is a far
  * smaller cost than serving a stale shell that cannot navigate.
  *
- * So: no fetch listener at all. That is load-bearing, not an omission — a
- * worker with no fetch handler is skipped entirely for network requests, which
- * is exactly what we want. Do not add one back without solving the
+ * So: no DOCUMENT caching. The fetch listener at the bottom of this file only falls back to a
+ * static, build-independent /offline.html when a navigation fails outright; it never serves a
+ * stored application document. Do not add document or chunk caching without solving the
  * document/chunk pairing problem above first.
  *
  * The registration itself stays (see ensureServiceWorker in lib/installApp.ts)
@@ -33,10 +33,28 @@
  * lets this file reach devices still running the caching revision.
  */
 
+/* ── Offline fallback (added later; deliberately NOT the old design) ─────────
+ *
+ * The only thing cached is /offline.html and its icon: a static page that references no build
+ * chunks, so it can never pair with the wrong deploy. Application documents, JS chunks, API
+ * responses and payment evidence are NEVER cached or replayed. A navigation always goes to the
+ * network first with no timeout race; this page is shown only when that request actually FAILS
+ * (connection reset, DNS, offline) — i.e. when the browser would otherwise show its error screen.
+ * It only helps returning visitors: a first-ever failed load happens before any worker exists.
+ */
+const OFFLINE_CACHE = 'rc-offline-v1'
+const OFFLINE_ASSETS = ['/offline.html', '/brand/icon-192.png']
+
 // ─── Install / activate ──────────────────────────────────────────────────────
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(self.skipWaiting())
+  event.waitUntil((async () => {
+    try {
+      const cache = await caches.open(OFFLINE_CACHE)
+      await cache.addAll(OFFLINE_ASSETS)
+    } catch (e) { /* offline page is best-effort; never block activation */ }
+    await self.skipWaiting()
+  })())
 })
 
 self.addEventListener('activate', (event) => {
@@ -47,7 +65,7 @@ self.addEventListener('activate', (event) => {
     // until the browser evicts it.
     try {
       const names = await caches.keys()
-      await Promise.all(names.map((n) => caches.delete(n)))
+      await Promise.all(names.filter((n) => n !== OFFLINE_CACHE).map((n) => caches.delete(n)))
     } catch (e) { /* storage unavailable; nothing to clean */ }
 
     // The old worker enabled this to overlap the network with SW startup. With
@@ -71,6 +89,17 @@ self.addEventListener('activate', (event) => {
       }
     } catch (e) { /* best-effort */ }
   })())
+})
+
+// ─── Navigation fallback ─────────────────────────────────────────────────────
+
+self.addEventListener('fetch', (event) => {
+  const req = event.request
+  // Top-level page loads only. Never intercept API calls, POSTs, uploads or sub-resources.
+  if (req.mode !== 'navigate' || req.method !== 'GET') return
+  event.respondWith(
+    fetch(req).catch(async () => (await caches.match('/offline.html')) || Response.error()),
+  )
 })
 
 // ─── Web push ────────────────────────────────────────────────────────────────

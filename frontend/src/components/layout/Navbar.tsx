@@ -59,14 +59,18 @@ const DROPDOWN_ITEMS: { href: string; Icon: React.ElementType; label: string; ic
   // is revealed and `airdrop_enabled` is flipped ON.
   { href: '/referral',    Icon: Gift,              label: 'Referral',         iconCls: 'text-pink-500',    bgCls: 'bg-pink-500/10',   group: 'social'  },
   { href: '/leaderboard', Icon: Trophy,            label: 'Leaderboard',      iconCls: 'text-yellow-500',  bgCls: 'bg-yellow-500/10', group: 'social'  },
-  { href: '/favorites',   Icon: Heart,             label: 'Favorites',        iconCls: 'text-red-500',     bgCls: 'bg-red-500/10',    group: 'social'  },
-  { href: '/community',   Icon: Users,             label: 'Community',        iconCls: 'text-teal-500',    bgCls: 'bg-teal-500/10',   group: 'social'  },
   { href: '/markets',     Icon: LineChart,         label: 'Markets',          iconCls: 'text-indigo-500',  bgCls: 'bg-indigo-500/10', group: 'social'  },
   // Account — set-and-forget
   { href: '/kyc',         Icon: ShieldCheck,       label: 'KYC Verification', iconCls: 'text-amber-500',   bgCls: 'bg-amber-500/10',  group: 'account' },
   { href: '/settings',    Icon: Settings,          label: 'Settings',         iconCls: 'text-slate-500',   bgCls: 'bg-slate-400/10',  group: 'account' },
-  // Support
-  { href: '/help',        Icon: HelpCircle,        label: 'Help Center',      iconCls: 'text-sky-500',     bgCls: 'bg-sky-500/10',    group: 'support' },
+]
+
+// Low-frequency destinations shown as one compact row at the foot of the dropdown (instead of
+// three full-width rows) — still one tap away, but the menu stays short.
+const QUICK_LINKS: { href: string; Icon: React.ElementType; label: string; iconCls: string }[] = [
+  { href: '/favorites', Icon: Heart,      label: 'Favorites', iconCls: 'text-red-500' },
+  { href: '/help',      Icon: HelpCircle, label: 'Help',      iconCls: 'text-sky-500' },
+  { href: '/community', Icon: Users,      label: 'Community', iconCls: 'text-teal-500' },
 ]
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -277,6 +281,19 @@ export default function Navbar() {
                           </DropdownMenu.Item>
                         </Fragment>
                       ))}
+
+                      <DropdownMenu.Separator className="my-0.5 h-px bg-border" />
+
+                      <div className="grid grid-cols-3 gap-0.5 px-1 py-0.5" role="group" aria-label="Quick links">
+                        {QUICK_LINKS.map(({ href, Icon, label, iconCls }) => (
+                          <DropdownMenu.Item key={href} asChild>
+                            <Link href={href} className="flex flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-medium text-text-secondary hover:bg-surface-alt hover:text-text-primary cursor-pointer outline-none focus:bg-surface-alt transition-colors">
+                              <Icon className={cn('w-4 h-4', iconCls)} aria-hidden />
+                              {label}
+                            </Link>
+                          </DropdownMenu.Item>
+                        ))}
+                      </div>
 
                       <DropdownMenu.Separator className="my-0.5 h-px bg-border" />
 

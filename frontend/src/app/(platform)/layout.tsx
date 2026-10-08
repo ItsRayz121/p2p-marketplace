@@ -11,6 +11,7 @@ import { prefetchCommonScreens } from '@/lib/prefetch'
 import { PushOptInBanner } from '@/components/ui/PushOptInBanner'
 import { InstallAppBanner } from '@/components/ui/InstallAppBanner'
 import { AnnouncementBanner } from '@/components/ui/AnnouncementBanner'
+import { StartupLoader } from '@/components/ui/StartupLoader'
 
 interface SiteConfig {
   site_notice?: string
@@ -136,11 +137,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           is never hidden behind the nav on notched phones or in Telegram.
           individual pages no longer need to add it themselves. */}
       <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
-        {authLoading ? (
-          <div className="flex items-center justify-center min-h-[60vh]">
-            <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-          </div>
-        ) : children}
+        {authLoading ? <StartupLoader /> : children}
       </main>
 
       <div className={isHomeTab ? '' : 'hidden lg:block'}>

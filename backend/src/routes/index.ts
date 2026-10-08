@@ -36,6 +36,9 @@ import { pushRoutes } from './push.routes'
 import { sseRoutes } from './sse.routes'
 import { makerRoutes } from './maker.routes'
 import { adminNotificationRoutes } from './adminNotification.routes'
+import { adminDisputeRoutes } from './adminDisputes.routes'
+import { adminPromotionRoutes } from './adminPromotions.routes'
+import { adminAffiliateRoutes } from './adminAffiliates.routes'
 import { logosRoutes } from './logos.routes'
 import { supportRoutes } from './support.routes'
 import { messagingRoutes } from './messaging.routes'
@@ -88,6 +91,9 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(sseRoutes, { prefix: '/api/v1' })
   await app.register(makerRoutes, { prefix: '/api/v1' })
   await app.register(adminNotificationRoutes, { prefix: '/api/v1' })
+  await app.register(adminDisputeRoutes, { prefix: '/api/v1' })
+  await app.register(adminPromotionRoutes, { prefix: '/api/v1' })
+  await app.register(adminAffiliateRoutes, { prefix: '/api/v1' })
   await app.register(logosRoutes, { prefix: '/api/v1' })
   await app.register(supportRoutes, { prefix: '/api/v1' })
   await app.register(messagingRoutes, { prefix: '/api/v1' })
