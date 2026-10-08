@@ -16,8 +16,8 @@ export function getReplyRef(metadata: Record<string, unknown> | null | undefined
   return r && typeof r.id === 'string' ? r : null
 }
 
-/** The quick-reaction set (must match REACTION_EMOJIS on the backend). */
-export const QUICK_REACTIONS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏']
+/** The quick-reaction set offered in the picker (a subset of REACTION_EMOJIS on the backend, which still accepts older 😮 / 🙏 reactions). */
+export const QUICK_REACTIONS = ['👍', '👎', '❤️', '😂', '😢']
 
 /** Copy + Reply (+ optional React) hover actions that sit beside a bubble. */
 export function MessageActions({
