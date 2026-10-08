@@ -10,6 +10,7 @@ export interface UserPlatformTask {
   title: string
   description: string | null
   url: string | null
+  logoUrl?: string | null
   verifyMode: VerifyMode
   rewardType: RewardType
   rewardPoints: number | null
@@ -32,6 +33,7 @@ export interface AdminPlatformTask {
   title: string
   description: string | null
   url: string | null
+  logoUrl?: string | null
   telegramChat: string | null
   verifyMode: VerifyMode
   rewardType: RewardType
@@ -73,6 +75,7 @@ export interface NewTaskInput {
   title: string
   description?: string | null
   url?: string | null
+  logoUrl?: string | null
   telegramChat?: string | null
   verifyMode: VerifyMode
   rewardType: RewardType

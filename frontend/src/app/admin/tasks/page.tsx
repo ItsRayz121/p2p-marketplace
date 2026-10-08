@@ -6,6 +6,7 @@ import { toast } from '@/lib/toast'
 import { copyText } from '@/components/chat/richText'
 import { PromotionsNav } from '@/components/admin/promotions/PromotionsNav'
 import { CommunityTaskStarter } from '@/components/admin/promotions/CommunityTaskStarter'
+import { TaskLogoField } from '@/components/admin/promotions/TaskLogoField'
 
 const inputCls = 'w-full rounded-lg border border-border bg-canvas px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary'
 const labelCls = 'block text-xs font-semibold text-text-muted mb-1'
@@ -18,7 +19,7 @@ const STATUS_CLS: Record<string, string> = {
 }
 
 const emptyForm = {
-  title: '', description: '', url: '', telegramChat: '',
+  title: '', description: '', url: '', logoUrl: '' as string, telegramChat: '',
   verifyMode: 'telegram_auto' as VerifyMode,
   rewardType: 'points' as RewardType,
   rewardPoints: '', rewardUsdt: '',
@@ -58,6 +59,7 @@ export default function AdminTasksPage() {
       title: form.title,
       description: form.description || null,
       url: form.url || null,
+      logoUrl: form.logoUrl || null,
       telegramChat: form.verifyMode === 'telegram_auto' ? form.telegramChat : null,
       verifyMode: form.verifyMode,
       rewardType: form.rewardType,
@@ -122,6 +124,7 @@ export default function AdminTasksPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="sm:col-span-2"><label className={labelCls}>Title</label><input className={inputCls} value={form.title} onChange={(e) => set('title', e.target.value)} placeholder="Follow our official Telegram" maxLength={120} /></div>
             <div className="sm:col-span-2"><label className={labelCls}>Description (optional)</label><input className={inputCls} value={form.description} onChange={(e) => set('description', e.target.value)} maxLength={500} /></div>
+            <div className="sm:col-span-2"><TaskLogoField value={form.logoUrl} onChange={(u) => set('logoUrl', u ?? '')} /></div>
             <div><label className={labelCls}>Task link (https)</label><input className={inputCls} value={form.url} onChange={(e) => set('url', e.target.value)} placeholder="https://t.me/YourChannel" /></div>
             <div>
               <label className={labelCls}>Verification</label>
@@ -240,7 +243,8 @@ export default function AdminTasksPage() {
             return (
               <div key={t.id} className="rounded-xl border border-border bg-surface p-4 space-y-2">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
+                  <TaskLogoField compact value={t.logoUrl} onChange={async (u) => { try { await adminPlatformTaskApi.update(t.id, { logoUrl: u }); toast.success(u ? 'Logo saved' : 'Logo removed'); await load() } catch (e) { toast.error('Could not save logo', e instanceof Error ? e.message : undefined) } }} />
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-text-primary">{t.title}</p>
                     <p className="text-xs text-text-muted">
                       {t.rewardType === 'points' ? `${t.rewardPoints} points` : `$${t.rewardUsdt} USDT (${t.payoutMode})`} · {t.verifyMode.replace('_', ' ')}

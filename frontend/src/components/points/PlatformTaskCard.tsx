@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { ExternalLink, Send, Clock } from 'lucide-react'
 import { platformTaskApi, PAYOUT_NETWORKS, type UserPlatformTask, type ClaimStatus } from '@/lib/platformTasks'
 import { toast } from '@/lib/toast'
+import { isTrustedImageUrl } from '@/lib/utils'
 
 const CLAIM_BADGE: Record<ClaimStatus, { text: string; cls: string }> = {
   pending_review: { text: 'In review', cls: 'text-warning bg-warning/10' },
@@ -65,7 +66,11 @@ export function PlatformTaskCard({
   return (
     <div className="rounded-xl border border-border p-4 space-y-2">
       <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+        {isTrustedImageUrl(task.logoUrl ?? null) && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={task.logoUrl!} alt="" loading="lazy" decoding="async" className="h-10 w-10 flex-shrink-0 rounded-lg border border-border object-cover" />
+        )}
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-text-primary">{task.title}</p>
           <p className="text-xs text-emerald-500 font-medium mt-0.5">Reward: {rewardLabel(task)}</p>
         </div>

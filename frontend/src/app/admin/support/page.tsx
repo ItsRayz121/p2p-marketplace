@@ -17,7 +17,7 @@ import { adminApi } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
-import { Send, UserPlus, Search, X, ImagePlus, Trash2 } from 'lucide-react'
+import { Send, UserPlus, Search, X, Trash2 } from 'lucide-react'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
 import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { ComposerPlusMenu } from '@/components/chat/ComposerPlusMenu'
@@ -486,17 +486,9 @@ export default function AdminSupportPage() {
                     onChange={onPickImage}
                     className="hidden"
                   />
-                  <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading || sending}
-                    aria-label="Attach image"
-                    className="p-2 rounded-full text-text-muted hover:text-primary hover:bg-canvas transition-colors disabled:opacity-50 flex-shrink-0"
-                  >
-                    <ImagePlus className="w-5 h-5" />
-                  </button>
                   <ComposerPlusMenu
-                    disabled={sending}
+                    disabled={sending || uploading}
+                    onPickImage={() => fileInputRef.current?.click()}
                     onInsert={(text) => { setDraft((d) => (d.trim() ? `${d.trimEnd()}
 
 ${text}` : text)); requestAnimationFrame(() => draftRef.current?.focus()) }}

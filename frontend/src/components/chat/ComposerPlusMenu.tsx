@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
-import { Plus, Star } from 'lucide-react'
+import { ImagePlus, Plus, Star } from 'lucide-react'
 import { trustpilotRequestDraft } from '@/lib/trustpilot'
 
 /**
@@ -9,10 +9,13 @@ import { trustpilotRequestDraft } from '@/lib/trustpilot'
  */
 export function ComposerPlusMenu({
   onInsert,
+  onPickImage,
   disabled,
 }: {
   /** Replace-or-append the draft text (caller decides how to merge with existing text). */
   onInsert: (text: string) => void
+  /** When provided, adds a "Send an image" option (opens the file picker). */
+  onPickImage?: () => void
   disabled?: boolean
 }) {
   const [open, setOpen] = useState(false)
@@ -52,6 +55,20 @@ export function ComposerPlusMenu({
       </button>
       {open && (
         <div role="menu" className="absolute bottom-full left-0 mb-2 z-50 w-64 rounded-xl border border-border bg-surface shadow-xl p-1">
+          {onPickImage && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => { onPickImage(); setOpen(false) }}
+              className="w-full flex items-start gap-2.5 rounded-lg px-3 py-2 text-left hover:bg-canvas"
+            >
+              <ImagePlus className="w-4 h-4 mt-0.5 text-primary flex-shrink-0" aria-hidden />
+              <span>
+                <span className="block text-sm font-medium text-text-primary">Send an image</span>
+                <span className="block text-xs text-text-muted">JPG, PNG or WebP — added to your next message.</span>
+              </span>
+            </button>
+          )}
           <button
             type="button"
             role="menuitem"

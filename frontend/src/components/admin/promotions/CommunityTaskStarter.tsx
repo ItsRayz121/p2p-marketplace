@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { adminPlatformTaskApi, type AdminPlatformTask, type NewTaskInput, type VerifyMode } from '@/lib/platformTasks'
 import { COMMUNITY_CHANNELS, type CommunityChannel } from '@/lib/contact'
 import { toast } from '@/lib/toast'
+import { TaskLogoField } from '@/components/admin/promotions/TaskLogoField'
 
 /**
  * One-click creation of "join our official channel" tasks from the SAME configured links the
@@ -31,7 +32,7 @@ const VERIFY_HELP: Record<VerifyMode, string> = {
 }
 
 export function CommunityTaskStarter({ tasks, onCreated }: { tasks: AdminPlatformTask[]; onCreated: () => void | Promise<void> }) {
-  const [draft, setDraft] = useState<Record<string, { points: string; mode: VerifyMode }>>({})
+  const [draft, setDraft] = useState<Record<string, { points: string; mode: VerifyMode; logoUrl?: string | null }>>({})
   const [busy, setBusy] = useState<string | null>(null)
 
   async function create(c: CommunityChannel) {
@@ -45,6 +46,7 @@ export function CommunityTaskStarter({ tasks, onCreated }: { tasks: AdminPlatfor
       title: c.brand === 'whatsapp' ? `Follow RupChain on WhatsApp` : c.id === 'telegram-community' ? 'Join the RupChain Telegram community' : 'Follow RupChain Telegram announcements',
       description: c.purpose,
       url: c.href,
+      logoUrl: d?.logoUrl ?? null,
       telegramChat: mode === 'telegram_auto' ? handle : null,
       verifyMode: mode,
       rewardType: 'points',
@@ -97,6 +99,7 @@ export function CommunityTaskStarter({ tasks, onCreated }: { tasks: AdminPlatfor
                     </select>
                   </label>
                   <p className="text-[11px] leading-snug text-text-muted">{VERIFY_HELP[d.mode]}</p>
+                  <TaskLogoField label="Logo (optional)" value={d.logoUrl} onChange={(u) => setDraft((p) => ({ ...p, [c.id]: { ...d, logoUrl: u } }))} />
                   <label className="block text-[11px] font-semibold text-text-muted">
                     Points reward
                     <input
