@@ -24,7 +24,7 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { MessageActions, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageMenu, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
@@ -32,7 +32,7 @@ import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
 import { SharedGasCard } from '@/components/chat/SharedGasCard'
 import { GasSharePicker } from '@/components/channels/GasSharePicker'
 import type { GasChain } from '@/lib/api'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, Trash2, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -96,6 +96,7 @@ export default function MessageThreadPage() {
   // the draft text sitting in the input with no visible feedback.
   const [pendingMessages, setPendingMessages] = useState<DisplayMessage[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [menu, setMenu] = useState<MessageMenuAnchor | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Composer "+" menu — collapses the photo/listing attach options behind one tap.
@@ -606,7 +607,7 @@ export default function MessageThreadPage() {
       )}
 
       {/* Timeline */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div ref={scrollRef} onScroll={() => menu && setMenu(null)} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
         {timeline.map((item) => {
           if (item.kind === 'episode') {
             const ep = item.ep
@@ -654,30 +655,17 @@ export default function MessageThreadPage() {
             Date.now() - new Date(m.createdAt).getTime() < 15 * 60 * 1000
           return (
             <div key={m.id} className={`group flex items-center gap-1.5 ${mine ? 'justify-end' : 'justify-start'}`}>
-              {deletable && (
-                <button
-                  onClick={() => deleteMessage(m.id)}
-                  aria-label="Delete message"
-                  className="order-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity p-1 rounded-full text-text-muted hover:text-danger hover:bg-muted flex-shrink-0"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
-              {!m.pending && !m.failed && m.body && (
-                <MessageActions
-                  body={m.body}
-                  className={mine ? 'order-1' : 'order-3'}
-                  onReact={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : (e) => void reactTo(m.id, e)}
-                  onReply={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : () => {
-                    setReplyTo({ id: m.id, sender: m.senderId, name: mine ? 'yourself' : name, preview: m.body.slice(0, 120), hasImage: hasImage })
-                    requestAnimationFrame(() => draftRef.current?.focus())
-                  }}
-                />
-              )}
-              <div className="order-2 flex max-w-[75%] flex-col gap-1">
+              <div className="order-2 flex max-w-[85%] flex-col gap-1">
               <div
-                onClick={() => m.failed && retryPending(m)}
-                className={`rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
+                onClick={(ev) => {
+                  if (m.failed) { retryPending(m); return }
+                  if (m.pending || !m.body) return
+                  // Links / images / shared cards keep their own tap behaviour.
+                  if ((ev.target as HTMLElement).closest('a,button')) return
+                  const r = ev.currentTarget.getBoundingClientRect()
+                  setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine })
+                }}
+                className={`cursor-pointer rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
               >
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
@@ -704,6 +692,19 @@ export default function MessageThreadPage() {
               </div>
               <ReactionChips reactions={m.reactions ?? []} mine={mine} onToggle={(e) => void reactTo(m.id, e)} />
               </div>
+              {menu?.id === m.id && (
+                <MessageMenu
+                  anchor={menu}
+                  body={m.body}
+                  onClose={() => setMenu(null)}
+                  onReact={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : (e) => void reactTo(m.id, e)}
+                  onReply={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : () => {
+                    setReplyTo({ id: m.id, sender: m.senderId, name: mine ? 'yourself' : name, preview: m.body.slice(0, 120), hasImage: hasImage })
+                    requestAnimationFrame(() => draftRef.current?.focus())
+                  }}
+                  onDelete={deletable ? () => void deleteMessage(m.id) : undefined}
+                />
+              )}
             </div>
           )
         })}

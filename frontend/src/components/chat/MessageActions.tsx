@@ -1,6 +1,6 @@
 'use client'
 import { useState } from 'react'
-import { Copy, Check, Reply, SmilePlus, X } from 'lucide-react'
+import { Copy, Check, Reply, SmilePlus, Trash2, X } from 'lucide-react'
 import { copyText, plainText } from '@/components/chat/richText'
 
 export interface ReplyRef {
@@ -84,6 +84,91 @@ export function MessageActions({
         </button>
       )}
     </div>
+  )
+}
+
+/** Where the tap-opened action bar sits (viewport coordinates of the tapped bubble). */
+export interface MessageMenuAnchor {
+  id: string
+  top: number
+  bottom: number
+  mine: boolean
+}
+
+/**
+ * Tap-to-open action bar for one message: quick reactions + Reply / Copy / Delete.
+ * Fixed-position and inset from both screen edges, so it can never be clipped.
+ */
+export function MessageMenu({
+  anchor,
+  body,
+  onReact,
+  onReply,
+  onDelete,
+  onClose,
+}: {
+  anchor: MessageMenuAnchor
+  body: string
+  onReact?: (emoji: string) => void
+  onReply?: () => void
+  onDelete?: () => void
+  onClose: () => void
+}) {
+  const [copied, setCopied] = useState(false)
+  const BAR_H = 48
+  // Prefer above the bubble; drop below it when there's no room under the header.
+  const top = anchor.top - BAR_H - 6 > 70 ? anchor.top - BAR_H - 6 : anchor.bottom + 6
+  const btn = 'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-muted hover:text-primary'
+  return (
+    <>
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
+      <div className="pointer-events-none fixed inset-x-2 z-50 flex" style={{ top, justifyContent: anchor.mine ? 'flex-end' : 'flex-start' }}>
+        <div role="menu" aria-label="Message actions" className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-surface p-1 shadow-lg">
+          {onReact && QUICK_REACTIONS.map((e) => (
+            <button
+              key={e}
+              type="button"
+              role="menuitem"
+              onClick={() => { onClose(); onReact(e) }}
+              aria-label={`React ${e}`}
+              className="h-9 w-9 flex-shrink-0 rounded-full text-xl leading-none transition-transform hover:scale-110 hover:bg-muted"
+            >
+              {e}
+            </button>
+          ))}
+          {onReact && <span className="mx-0.5 h-5 w-px flex-shrink-0 bg-border" aria-hidden />}
+          {onReply && (
+            <button type="button" role="menuitem" onClick={() => { onClose(); onReply() }} aria-label="Reply" title="Reply" className={btn}>
+              <Reply className="h-4 w-4" />
+            </button>
+          )}
+          {body && (
+            <button
+              type="button"
+              role="menuitem"
+              aria-label="Copy message"
+              title="Copy"
+              className={btn}
+              onClick={async () => {
+                if (await copyText(plainText(body))) {
+                  setCopied(true)
+                  setTimeout(onClose, 600)
+                } else {
+                  onClose()
+                }
+              }}
+            >
+              {copied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
+            </button>
+          )}
+          {onDelete && (
+            <button type="button" role="menuitem" onClick={() => { onClose(); onDelete() }} aria-label="Delete message" title="Delete" className={`${btn} hover:!text-danger`}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   )
 }
 
