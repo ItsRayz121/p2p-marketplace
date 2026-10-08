@@ -664,6 +664,11 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
     ? (snap.selectedIdx !== undefined ? (snap.accounts[snap.selectedIdx]?.label ?? snap.accounts.map(a => a.label).join(' / ')) : snap.accounts.map(a => a.label).join(' / '))
     : (snap?.label ?? prettyMethod(trade.paymentMethod))
 
+  // Logo for the order's payment method (skipped for USDT trades and opaque ids).
+  const payIcon = !isUsdtTrade && trade.paymentMethod && !isOpaqueId(trade.paymentMethod)
+    ? <EntityLogo type="payment_method" slug={trade.paymentMethod} size="xs" className="flex-shrink-0" />
+    : null
+
   const renderSingleAccount = (acc: SellerPaymentAccount) => (
     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
       {/* Method row carries a logo (I3) so the payer can eyeball the rail. */}
@@ -885,7 +890,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Token</p>
-          <p className="font-semibold text-text-primary">{trade.tokenAmount} {trade.token.symbol}</p>
+          <p className="font-semibold text-text-primary inline-flex items-center gap-1.5"><EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />{trade.tokenAmount} {trade.token.symbol}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">{isUsdtTrade ? 'Total USDT' : 'Total PKR'}</p>
@@ -893,7 +898,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">Payment Method</p>
-          <p className="font-semibold text-text-primary">{paymentMethodLabel}</p>
+          <p className="font-semibold text-text-primary inline-flex items-center gap-1.5">{payIcon}{paymentMethodLabel}</p>
         </div>
         <div className="bg-surface rounded-lg border border-border p-3">
           <p className="text-text-muted text-xs mb-0.5">{isBuyer ? 'Seller' : 'Buyer'}</p>
@@ -988,7 +993,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             trade-ref line each get their OWN full-width row below — that stops the
             ref from wrapping across four lines when the status squeezes the column. */}
         <div className="flex items-start justify-between gap-2">
-          <h1 className="font-bold text-text-primary text-lg sm:text-xl leading-tight min-w-0">{trade.tokenAmount} {trade.token.symbol}</h1>
+          <h1 className="font-bold text-text-primary text-lg sm:text-xl leading-tight min-w-0 inline-flex items-center gap-2"><EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="md" />{trade.tokenAmount} {trade.token.symbol}</h1>
           <span className={`text-xs px-2.5 py-1 rounded-full font-medium flex-shrink-0 text-right ${trade.status === 'completed' ? 'bg-green-500/15 text-green-700 dark:text-green-300' : trade.status === 'disputed' ? 'bg-red-500/15 text-red-700 dark:text-red-300' : 'bg-yellow-500/15 text-yellow-800 dark:text-yellow-300'}`}>
             {statusLabelForRole(trade.status, isBuyer ? 'buyer' : isSeller ? 'seller' : 'admin')}
           </span>
@@ -1138,7 +1143,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
                   {/* No "Payment method" row here — the full account details sit in
                       the Seller Receiving / Your Sending blocks right below. */}
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label="Total payable" value={payAmountLabel} highlight />
                   </div>
@@ -1261,7 +1266,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
                     <Row label="Your receiving address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
                   )}
-                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
+                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                   <Row label="Method" value={settlementLabel(trade.settlementType)} />
                 </div>
                 {trade.settlementNote && (
@@ -1298,7 +1303,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                       <p className="text-xs text-green-700 dark:text-green-300">Check your wallet / account for the incoming tokens, then confirm below.</p>
                       <div className="bg-surface rounded-lg border border-green-500/30 p-3 space-y-1.5 text-sm">
                         <p className="text-xs font-semibold text-text-muted mb-2">Delivery Summary</p>
-                        <Row label="Token" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
+                        <Row label="Token" value={`${trade.tokenAmount} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                         <Row label="Method" value={settlementLabel(trade.settlementType)} />
                         {(trade.buyerSettlementId || trade.settlementMethod) && (
                           <Row label="Your address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll />
@@ -1370,7 +1375,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                     the PKR they will receive (mirrors the buyer's Send-Payment card). */}
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label="Total to receive" value={payAmountLabel} highlight />
                   </div>
@@ -1421,7 +1426,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                         confirming receipt of (and for how many tokens) before tapping. */}
                     <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                       <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                      <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
+                      <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                       <div className="border-t border-border pt-1.5 mt-1">
                         <Row label="Amount to confirm" value={payAmountLabel} />
                       </div>
@@ -1495,7 +1500,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
                     <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
                   )}
-                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
+                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                 </div>
                 {trade.settlementNote && (
                   <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 text-sm">
@@ -1594,8 +1599,8 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                 <h2 className="font-semibold text-text-primary mb-3">Order Summary</h2>
                 <div className="bg-surface rounded-xl p-3 space-y-1.5 text-sm">
                   <Row label="Token price" value={`PKR ${Number(trade.pricePerUnit).toLocaleString()}`} />
-                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} />
-                  <Row label="Payment method" value={paymentMethodLabel} />
+                  <Row label="Token quantity" value={`${Number(trade.tokenAmount).toLocaleString(undefined, { maximumFractionDigits: 3 })} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
+                  <Row label="Payment method" value={paymentMethodLabel} icon={payIcon} />
                   <div className="border-t border-border pt-1.5 mt-1">
                     <Row label="Total" value={payAmountLabel} highlight />
                   </div>
@@ -1618,7 +1623,7 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
                   {(trade.buyerSettlementId || trade.settlementMethod) && (
                     <Row label="Buyer address" value={trade.buyerSettlementId ?? trade.settlementMethod} mono breakAll copyable />
                   )}
-                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} />
+                  <Row label="Amount" value={`${trade.tokenAmount} ${trade.token.symbol}`} icon={<EntityLogo type="token" slug={trade.token.symbol} logoUrl={trade.token.logoUrl} size="xs" />} />
                 </div>
                 {renderTokenProofsList()}
               </div>
