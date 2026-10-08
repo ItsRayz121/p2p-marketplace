@@ -16,7 +16,6 @@ import { isOpaqueId } from '@/lib/pkPaymentMethods'
 import { supportMailto } from '@/lib/contact'
 import { TrustpilotPrompt } from '@/components/providers/TrustpilotPrompt'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { MessageActions } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
@@ -1673,7 +1672,6 @@ function CtmTradeRoomPageInner({ params }: { params: Promise<{ ref: string }> })
             <div ref={chatEndRef} />
           </div>
           <div className="p-3 border-t border-border flex gap-2">
-            <EmojiPicker disabled={sendingMsg} onPick={(e) => insertAtCursor(msgInputRef, msgText, setMsgText, e)} />
             <input ref={msgInputRef} type="text" value={msgText} onChange={(e) => setMsgText(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSendMessage() } }}
               onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}

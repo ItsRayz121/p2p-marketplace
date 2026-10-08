@@ -88,7 +88,11 @@ export interface ThreadMessage {
   /** Quote-reply: id of the message this answers, and a short preview of it (`deleted` if gone). */
   replyToId?: string | null
   replyTo?: { id: string; senderId: string; preview: string; hasImage: boolean; deleted: boolean } | null
+  /** Emoji reactions grouped by emoji; `mine` = the viewer reacted with it. */
+  reactions?: MessageReaction[]
 }
+
+export interface MessageReaction { emoji: string; count: number; mine: boolean }
 
 export interface TradeEpisode {
   id: string
@@ -172,6 +176,9 @@ export const messagingApi = {
         ...(replyToId ? { replyToId } : {}),
       }),
     }),
+  /** Set / toggle (same emoji again) / clear (null) your reaction on a message. */
+  reactMessage: (threadId: string, messageId: string, emoji: string | null) =>
+    apiRequest<{ reactions: MessageReaction[] }>(`/messages/${threadId}/${messageId}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   deleteMessage: (threadId: string, messageId: string) =>
     apiRequest<unknown>(`/messages/${threadId}/${messageId}/delete`, { method: 'POST' }),
   /** Find people by username to start a new conversation (no shared trade needed). */

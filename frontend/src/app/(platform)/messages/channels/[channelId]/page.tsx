@@ -23,7 +23,6 @@ import type { GasChain } from '@/lib/api'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
-import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { MessageActions, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
@@ -517,7 +516,6 @@ export default function ChannelPage() {
                     </button>
                   </div>
                 </AnchoredMenu>
-                <EmojiPicker disabled={sending} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
                 <textarea
                   ref={draftRef}
                   value={draft}

@@ -19,7 +19,6 @@ import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
 import { Send, UserPlus, Search, X, Trash2 } from 'lucide-react'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
-import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { ComposerPlusMenu } from '@/components/chat/ComposerPlusMenu'
 import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
 
@@ -493,7 +492,6 @@ export default function AdminSupportPage() {
 
 ${text}` : text)); requestAnimationFrame(() => draftRef.current?.focus()) }}
                   />
-                  <EmojiPicker disabled={sending} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
                   <textarea
                     ref={draftRef}
                     value={draft}

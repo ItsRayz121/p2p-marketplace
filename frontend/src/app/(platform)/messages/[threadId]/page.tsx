@@ -6,7 +6,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { ApiError } from '@/lib/api'
 import {
   messagingApi, episodeTradeHref, episodeProgress, OUTCOME_LABEL,
-  type ThreadView, type ThreadMessage, type TradeEpisode, type SharedAdPreview,
+  type ThreadView, type ThreadMessage, type TradeEpisode, type MessageReaction, type SharedAdPreview,
 } from '@/lib/messaging'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -24,8 +24,7 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
-import { MessageActions, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageActions, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
@@ -425,6 +424,27 @@ export default function MessageThreadPage() {
     }
   }
 
+  // Optimistic reaction: apply locally, then reconcile with the server's authoritative summary.
+  const reactTo = async (id: string, emoji: string) => {
+    if (id.startsWith('tm_') || id.startsWith('cm_')) return
+    const apply = (list: MessageReaction[], e: string): MessageReaction[] => {
+      const mineNow = list.find((r) => r.mine)
+      let next = list.map((r) => (r.mine ? { ...r, count: r.count - 1, mine: false } : r)).filter((r) => r.count > 0)
+      if (mineNow?.emoji !== e) {
+        const hit = next.find((r) => r.emoji === e)
+        next = hit ? next.map((r) => (r.emoji === e ? { ...r, count: r.count + 1, mine: true } : r)) : [...next, { emoji: e, count: 1, mine: true }]
+      }
+      return next
+    }
+    setData((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === id ? { ...m, reactions: apply(m.reactions ?? [], emoji) } : m)) })
+    try {
+      const r = await messagingApi.reactMessage(threadId, id, emoji)
+      setData((prev) => prev && { ...prev, messages: prev.messages.map((m) => (m.id === id ? { ...m, reactions: r.reactions } : m)) })
+    } catch {
+      await load()
+    }
+  }
+
   if (error) return <ErrorState description={error} onRetry={load} />
   if (!data) return <LoadingState />
 
@@ -647,15 +667,17 @@ export default function MessageThreadPage() {
                 <MessageActions
                   body={m.body}
                   className={mine ? 'order-1' : 'order-3'}
+                  onReact={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : (e) => void reactTo(m.id, e)}
                   onReply={m.id.startsWith('tm_') || m.id.startsWith('cm_') || blocked ? undefined : () => {
                     setReplyTo({ id: m.id, sender: m.senderId, name: mine ? 'yourself' : name, preview: m.body.slice(0, 120), hasImage: hasImage })
                     requestAnimationFrame(() => draftRef.current?.focus())
                   }}
                 />
               )}
+              <div className="order-2 flex max-w-[75%] flex-col gap-1">
               <div
                 onClick={() => m.failed && retryPending(m)}
-                className={`order-2 max-w-[75%] rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
+                className={`rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
               >
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
@@ -679,6 +701,8 @@ export default function MessageThreadPage() {
                   <p className={`text-[10px] ${mine ? 'text-white/70' : 'text-text-muted'}`}>{fmtTime(m.createdAt)}</p>
                   {mine && <MessageTicks status={m.status ?? null} pending={m.pending} failed={m.failed} />}
                 </div>
+              </div>
+              <ReactionChips reactions={m.reactions ?? []} mine={mine} onToggle={(e) => void reactTo(m.id, e)} />
               </div>
             </div>
           )
@@ -763,7 +787,6 @@ export default function MessageThreadPage() {
               </button>
             </div>
           </AnchoredMenu>
-          <EmojiPicker disabled={blocked} onPick={(e) => insertAtCursor(draftRef, draft, setDraft, e)} />
           <input
             ref={draftRef}
             value={draft}

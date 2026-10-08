@@ -392,7 +392,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       id: true, userAId: true, userBId: true,
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true } } } },
-      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true, replyToId: true } },
+      messages: { orderBy: { createdAt: 'asc' }, take: 500, select: { id: true, senderId: true, body: true, attachmentUrl: true, deletedAt: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, clientId: true, sharedAdMarket: true, sharedAdId: true, sharedGasChainSlug: true, replyToId: true, reactions: true } },
       episodes: { orderBy: { startedAt: 'asc' }, select: { id: true, market: true, tradeId: true, tradeRef: true, outcome: true, fiatAmount: true, startedAt: true, endedAt: true } },
     },
   })
@@ -460,7 +460,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
       : Promise.resolve([]),
   ])
 
-  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null; sharedGasChainSlug: string | null; replyToId: string | null }
+  type Msg = { id: string; senderId: string; body: string; attachmentUrl: string | null; deletedAt: Date | null; isSystem: boolean; createdAt: Date; status: 'sent' | 'delivered' | 'read' | null; clientId: string | null; sharedAdMarket: string | null; sharedAdId: string | null; sharedGasChainSlug: string | null; replyToId: string | null; reactions?: unknown }
   // Prefix trade-message ids so they can never collide with thread-message ids.
   // Only the thread's own messages support soft delete + shared-ad references —
   // folded trade-room lines never carry a deletedAt, but DO carry their own real
@@ -469,7 +469,7 @@ export async function getThread(userId: string, threadId: string, markRead = tru
   const receiptStatus = (senderId: string, deliveredAt: Date | null, readAt: Date | null): Msg['status'] =>
     senderId !== userId ? null : readAt ? 'read' : deliveredAt ? 'delivered' : 'sent'
   const messages: Msg[] = [
-    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug, replyToId: m.replyToId })),
+    ...thread.messages.map((m) => ({ id: m.id, senderId: m.senderId, body: m.body, attachmentUrl: m.attachmentUrl, deletedAt: m.deletedAt, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: m.clientId, sharedAdMarket: m.sharedAdMarket, sharedAdId: m.sharedAdId, sharedGasChainSlug: m.sharedGasChainSlug, replyToId: m.replyToId, reactions: m.reactions })),
     ...usdtMsgs.map((m) => ({ id: `tm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null, replyToId: null })),
     ...ctmMsgs.map((m) => ({ id: `cm_${m.id}`, senderId: m.senderId, body: m.message, attachmentUrl: m.attachmentUrl, deletedAt: null, isSystem: m.isSystem, createdAt: m.createdAt, status: receiptStatus(m.senderId, m.deliveredAt, m.readAt), clientId: null, sharedAdMarket: null, sharedAdId: null, sharedGasChainSlug: null, replyToId: null })),
   ].sort((a, b) => (a.createdAt.getTime() - b.createdAt.getTime()) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)) // id tie-break keeps same-millisecond lifecycle lines in a stable order across polls
@@ -494,8 +494,9 @@ export async function getThread(userId: string, threadId: string, markRead = tru
     resolveSharedGasPreviews(sharedGasSlugs),
   ])
   const byId = new Map(messages.map((x) => [x.id, x]))
-  const messagesWithSharedAd = messages.map((m) => ({
+  const messagesWithSharedAd = messages.map(({ reactions: rawReactions, ...m }) => ({
     ...m,
+    reactions: m.deletedAt ? [] : summarizeReactions(rawReactions, userId),
     replyTo: m.replyToId
       ? (() => {
           const o = byId.get(m.replyToId!)
@@ -679,6 +680,41 @@ const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
  * prefixed tm_/cm_) and the counterparty's messages are not. The row is retained
  * for dispute review; the inbox renders a tombstone in its place.
  */
+/** The quick-reaction set offered in the chat UI; the server rejects anything else. */
+export const REACTION_EMOJIS = ['👍', '👎', '❤️', '😂', '😮', '😢', '🙏'] as const
+
+/** Collapse the stored { userId: emoji } map into per-emoji counts for the viewer. */
+function summarizeReactions(raw: unknown, viewerId: string): Array<{ emoji: string; count: number; mine: boolean }> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return []
+  const byEmoji = new Map<string, { count: number; mine: boolean }>()
+  for (const [uid, emoji] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof emoji !== 'string') continue
+    const cur = byEmoji.get(emoji) ?? { count: 0, mine: false }
+    cur.count += 1
+    if (uid === viewerId) cur.mine = true
+    byEmoji.set(emoji, cur)
+  }
+  return [...byEmoji.entries()].map(([emoji, v]) => ({ emoji, ...v }))
+}
+
+/** Set (or, with null / the same emoji again, clear) the viewer's reaction on a thread message. */
+export async function reactToThreadMessage(userId: string, threadId: string, messageId: string, emoji: string | null) {
+  if (messageId.startsWith('tm_') || messageId.startsWith('cm_')) throw new AppError('NOT_FOUND', 'Message not found', 404)
+  if (emoji !== null && !(REACTION_EMOJIS as readonly string[]).includes(emoji)) throw new AppError('VALIDATION_ERROR', 'Unsupported reaction', 400)
+  const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
+  if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)
+  assertParticipant(thread, userId)
+  const otherId = thread.userAId === userId ? thread.userBId : thread.userAId
+  if (await isBlockedEitherWay(userId, otherId)) throw new AppError('FORBIDDEN', 'You can no longer interact with this person', 403)
+  const message = await db.chatThreadMessage.findUnique({ where: { id: messageId }, select: { threadId: true, isSystem: true, deletedAt: true, reactions: true } })
+  if (!message || message.threadId !== threadId || message.isSystem || message.deletedAt) throw new AppError('NOT_FOUND', 'Message not found', 404)
+  const current = message.reactions && typeof message.reactions === 'object' && !Array.isArray(message.reactions) ? { ...(message.reactions as Record<string, string>) } : {}
+  if (emoji === null || current[userId] === emoji) delete current[userId]
+  else current[userId] = emoji
+  await db.chatThreadMessage.update({ where: { id: messageId }, data: { reactions: Object.keys(current).length ? current : Prisma.DbNull } })
+  return { reactions: summarizeReactions(current, userId) }
+}
+
 export async function deleteThreadMessage(userId: string, threadId: string, messageId: string) {
   // Folded trade-room messages carry a prefix and live in another table — never
   // retractable from the inbox.

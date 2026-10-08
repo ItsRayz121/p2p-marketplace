@@ -6,7 +6,7 @@ import { db } from '../lib/prisma'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { createAdminNotif } from '../services/adminNotification.service'
 import {
-  getInbox, getInboxSummary, getThread, postThreadMessage, deleteThreadMessage,
+  getInbox, getInboxSummary, getThread, postThreadMessage, deleteThreadMessage, reactToThreadMessage,
   searchUsers, startThread, getOrCreateSelfThread, blockThreadUser, unblockThreadUser,
 } from '../services/chatThread.service'
 
@@ -79,6 +79,16 @@ export async function messagingRoutes(app: FastifyInstance) {
       : undefined
     const message = await postThreadMessage(req.user!.id, threadId, parsed.data.body, parsed.data.attachmentUrl, parsed.data.clientId, sharedAd, parsed.data.sharedGasChainSlug, parsed.data.replyToId)
     return reply.code(201).send({ success: true, data: message })
+  })
+
+  // POST /api/v1/messages/:threadId/:messageId/react — set/toggle/clear your emoji reaction
+  app.post('/messages/:threadId/:messageId/react', { preHandler: [authenticate] }, async (req, reply) => {
+    await assertEnabled()
+    const { threadId, messageId } = req.params as { threadId: string; messageId: string }
+    const parsed = z.object({ emoji: z.string().max(16).nullable() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Invalid reaction', 400)
+    const data = await reactToThreadMessage(req.user!.id, threadId, messageId, parsed.data.emoji)
+    return reply.send({ success: true, data })
   })
 
   // POST /api/v1/messages/:threadId/:messageId/delete — retract your own message

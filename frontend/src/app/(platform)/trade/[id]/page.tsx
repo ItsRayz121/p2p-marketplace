@@ -34,7 +34,6 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { explorerTxUrl, explorerName } from '@/lib/explorers'
 import { supportMailto } from '@/lib/contact'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { EmojiPicker, insertAtCursor } from '@/components/chat/EmojiPicker'
 import { MessageActions } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
@@ -1667,7 +1666,6 @@ export default function TradePage() {
                 </svg>
               )}
             </button>
-            <EmojiPicker disabled={sendingMsg} onPick={(e) => insertAtCursor(messageInputRef, messageInput, setMessageInput, e)} />
             <input
               ref={messageInputRef}
               type="text"

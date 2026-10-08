@@ -1666,6 +1666,8 @@ model ChatThreadMessage {
   // no FK, so a retracted/removed original never blocks anything; the reader resolves
   // it against the loaded timeline and shows "original unavailable" if missing.
   replyToId     String?
+  // Emoji reactions: { [userId]: emoji } — at most one per participant (tap again to remove).
+  reactions     Json?
   // One-tap "share my listing" into the chat: references the sender's OWN
   // active Ad (usdt) or CtmListing (ctm) at send time. No FK — the referenced
   // row can later be edited/deleted/expire, so the current state is resolved
