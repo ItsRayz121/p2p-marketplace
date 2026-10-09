@@ -309,7 +309,7 @@ export default function ChannelPage() {
   const isOwner = channel.myRole === 'owner'
 
   return (
-    <div className="max-w-2xl mx-auto flex flex-col h-full">
+    <div className="max-w-2xl w-full mx-auto flex flex-col flex-1 min-h-0">
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
         <Link href="/messages?tab=channels" className="p-1 -ml-1 rounded hover:bg-muted" aria-label="Back">
           <ArrowLeft className="w-5 h-5 text-text-muted" />

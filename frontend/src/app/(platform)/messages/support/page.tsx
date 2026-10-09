@@ -16,7 +16,7 @@ export default function SupportThreadPage() {
   return (
     // Mirror the trader-thread layout: fill the viewport below the navbar and, on
     // mobile, clear the fixed BottomNav so the composer sits just above it.
-    <div className="max-w-2xl mx-auto flex flex-col h-full">
+    <div className="max-w-2xl w-full mx-auto flex flex-col flex-1 min-h-0">
       {/* Header — sticky so the "RupChain Official" identity stays visible even
           while scrolling the thread or when the mobile keyboard reflows the layout. */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-border bg-surface flex-shrink-0">

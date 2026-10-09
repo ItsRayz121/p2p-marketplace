@@ -45,6 +45,18 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   // navbar on top, composer glued to the bottom nav, only the message list scrolls.
   const isChatRoom = !!pathname && pathname.startsWith('/messages/')
 
+  // Chat rooms only: have Android Chrome shrink the layout viewport (and so h-dvh)
+  // when the keyboard opens, so the composer rides above it. Scoped here (not in
+  // the global viewport export) so forms and pages elsewhere keep default behaviour.
+  useEffect(() => {
+    if (!isChatRoom) return
+    const meta = document.querySelector<HTMLMetaElement>('meta[name="viewport"]')
+    if (!meta) return
+    const original = meta.content
+    if (!/interactive-widget/.test(original)) meta.content = `${original}, interactive-widget=resizes-content`
+    return () => { meta.content = original }
+  }, [isChatRoom])
+
   const fetchConfig = useCallback(async () => {
     try {
       const data = await marketplaceApi.getConfig()
@@ -139,7 +151,10 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           is never hidden behind the nav on notched phones or in Telegram.
           individual pages no longer need to add it themselves. */}
       <main className={isChatRoom
-        ? 'flex-1 min-h-0 overflow-hidden pb-[calc(4rem+max(1rem,env(safe-area-inset-bottom)))] lg:pb-0'
+        // Chat rooms: <main> is itself a flex column so the page below fills it with
+        // flex-1 (no percentage-height lookups). pb = BottomNav's exact height:
+        // h-16 (4rem) + 1px top border + its max(1rem, safe-area) bottom padding.
+        ? 'flex flex-col flex-1 min-h-0 overflow-hidden pb-[calc(4rem+1px+max(1rem,env(safe-area-inset-bottom)))] lg:pb-0'
         : 'flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0'}>
         {authLoading ? <StartupLoader /> : children}
       </main>

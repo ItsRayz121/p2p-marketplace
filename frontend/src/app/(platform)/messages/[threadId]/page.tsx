@@ -465,7 +465,7 @@ export default function MessageThreadPage() {
     // bottom padding (-mb) and reserve our own (pb) so the composer sits just
     // ABOVE the fixed BottomNav instead of being hidden behind it — the input is
     // visible the instant the thread opens, no scrolling required.
-    <div className="max-w-2xl mx-auto flex flex-col h-full">
+    <div className="max-w-2xl w-full mx-auto flex flex-col flex-1 min-h-0">
       {/* Header — sticky so the counterparty's name is always visible, even while
           scrolling the thread or when the mobile keyboard reflows the layout. */}
       <div className="sticky top-0 z-10 flex items-center gap-3 px-4 py-3 border-b border-border bg-surface">
@@ -607,7 +607,7 @@ export default function MessageThreadPage() {
       )}
 
       {/* Timeline */}
-      <div ref={scrollRef} onScroll={() => menu && setMenu(null)} className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+      <div ref={scrollRef} onScroll={() => menu && setMenu(null)} className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-2">
         {timeline.map((item) => {
           if (item.kind === 'episode') {
             const ep = item.ep
@@ -712,7 +712,7 @@ export default function MessageThreadPage() {
 
       {/* Composer — always pinned at the bottom of the thread container, which
           already clears the mobile BottomNav via the container's padding. */}
-      <div className="border-t border-border bg-surface">
+      <div className="flex-shrink-0 border-t border-border bg-surface">
         {/* Pending-image preview — sits above the input until sent. */}
         {(pendingImage || uploading) && (
           <div className="px-3 pt-3">
@@ -793,7 +793,6 @@ export default function MessageThreadPage() {
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send() } }}
-            onFocus={(e) => { const el = e.currentTarget; setTimeout(() => el.scrollIntoView({ block: 'center', behavior: 'smooth' }), 250) }}
             placeholder={blocked ? "You can't message here" : isSelf ? 'Write a note to yourself…' : 'Type a message…'}
             maxLength={2000}
             disabled={blocked}
