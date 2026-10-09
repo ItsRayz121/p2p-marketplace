@@ -30,6 +30,9 @@ interface KycSubmission {
   backUrl?: string
   selfieUrl?: string
   videoUrl?: string | null
+  whatsappNumber?: string | null
+  communityLinks?: Array<{ url: string }>
+  referenceUrl?: string | null
   socialLinks?: Array<{ platform: string; url: string }>
   rejectionReason?: string | null
   createdAt: string
@@ -384,6 +387,29 @@ export default function KycQueuePage() {
                     <p className="text-sm text-text-muted col-span-3">No documents uploaded</p>
                   )}
                 </div>
+                {selected.tier === 'enhanced' && (
+                  <div className="mt-3 rounded-lg border border-border bg-surface p-3 space-y-2">
+                    <p className="text-xs font-semibold text-text-primary">Ad posting answers (Level 2)</p>
+                    <p className="text-sm"><span className="text-text-muted">WhatsApp:</span> {selected.whatsappNumber ?? 'Not provided'}</p>
+                    <div>
+                      <p className="text-xs text-text-muted mb-0.5">Community (open it and check it is real and active)</p>
+                      {(selected.communityLinks ?? []).length > 0 ? (
+                        <ul className="space-y-0.5">
+                          {(selected.communityLinks ?? []).map((l, i) => (
+                            <li key={i} className="text-sm"><a href={l.url} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{l.url}</a></li>
+                          ))}
+                        </ul>
+                      ) : <p className="text-sm text-text-muted">None provided</p>}
+                    </div>
+                    <p className="text-sm">
+                      <span className="text-text-muted">Trusted reference:</span>{' '}
+                      {selected.referenceUrl
+                        ? <a href={selected.referenceUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline break-all">{selected.referenceUrl}</a>
+                        : <span className="text-text-muted">None</span>}
+                    </p>
+                    <p className="text-[11px] text-text-muted">Approving this also approves the user as a maker.</p>
+                  </div>
+                )}
                 {selected.socialLinks && selected.socialLinks.length > 0 && (
                   <div className="mt-3">
                     <p className="text-xs text-text-muted mb-1">Social Profiles</p>

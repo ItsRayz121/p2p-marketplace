@@ -11,6 +11,7 @@ import { hashCnic } from '../lib/hash'
 import { sendKycEmail } from './email.service'
 import { assertCloudinaryUrl } from '../lib/upload'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
+import { normalizeWhatsapp, normalizeCommunityUrl } from '../lib/makerGate'
 
 export async function getKycStatus(userId: string) {
   const [user, submission] = await Promise.all([
@@ -38,6 +39,10 @@ export async function submitKyc(
     selfieUrl?: string
     videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
+    // Level 2 (ad posting)
+    whatsappNumber?: string
+    communityLinks?: Array<{ url: string }>
+    referenceUrl?: string
   },
 ) {
   const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
@@ -49,14 +54,44 @@ export async function submitKyc(
   let idType: 'national_id' | 'passport' = data.idType ?? 'national_id'
   let cnicHash: string
 
+  // Level 2 normally reuses an approved Level 1. A new person may also do both in
+  // one go: with no approved Level 1 yet, the ID documents are collected here too.
+  const approvedBasic = data.tier === 'enhanced'
+    ? await db.kycSubmission.findFirst({ where: { userId, status: 'approved' }, orderBy: { createdAt: 'desc' } })
+    : null
+  const reuseIdentity = !!approvedBasic
+
+  let whatsappNumber: string | null = null
+  let communityLinks: Array<{ url: string }> = []
+  let referenceUrl: string | null = null
   if (data.tier === 'enhanced') {
-    const approvedBasic = await db.kycSubmission.findFirst({
-      where: { userId, status: 'approved' },
-      orderBy: { createdAt: 'desc' },
-    })
-    if (!approvedBasic) {
-      throw new AppError('KYC_LEVEL1_REQUIRED', 'Complete Level 1 verification before upgrading to Level 2', 400)
+    const u = await db.user.findUnique({ where: { id: userId }, select: { telegramId: true } })
+    if (!u?.telegramId) {
+      throw new AppError('TELEGRAM_REQUIRED', 'Link your Telegram account in Settings first, then submit.', 400)
     }
+    whatsappNumber = normalizeWhatsapp(data.whatsappNumber ?? '')
+    if (!whatsappNumber) {
+      throw new AppError('VALIDATION_ERROR', 'Enter your WhatsApp number with country code, e.g. +923001234567', 400)
+    }
+    communityLinks = (data.communityLinks ?? [])
+      .map((l) => normalizeCommunityUrl(l.url))
+      .filter((x): x is string => !!x)
+      .map((url) => ({ url }))
+    if (communityLinks.length < 1) {
+      throw new AppError('VALIDATION_ERROR', 'Add the link to your WhatsApp or Telegram group or channel (https://chat.whatsapp.com/..., https://t.me/...)', 400)
+    }
+    const ref = data.referenceUrl?.trim()
+    if (ref) {
+      try {
+        if (new URL(ref).protocol !== 'https:') throw new Error('x')
+      } catch {
+        throw new AppError('VALIDATION_ERROR', 'The trusted reference must be a link starting with https://', 400)
+      }
+      referenceUrl = ref.slice(0, 500)
+    }
+  }
+
+  if (approvedBasic) {
     // Reuse approved Level 1 documents and CNIC hash.
     frontUrl = approvedBasic.frontUrl
     backUrl = approvedBasic.backUrl ?? undefined
@@ -97,7 +132,7 @@ export async function submitKyc(
 
   // Prevent CNIC reuse across approved users (basic only — enhanced reuses the
   // user's own already-validated CNIC hash).
-  if (data.tier === 'basic') {
+  if (!reuseIdentity) {
     const existingApproved = await db.kycSubmission.findFirst({
       where: { cnicNumberHash: cnicHash, status: 'approved', userId: { not: userId } },
     })
@@ -125,8 +160,12 @@ export async function submitKyc(
       cnicNumberHash: cnicHash,
       legalName: legalName ?? null,
       socialLinks: data.socialLinks ?? [],
+      whatsappNumber,
+      communityLinks,
+      referenceUrl,
     },
   })
+  if (whatsappNumber) await db.user.update({ where: { id: userId }, data: { whatsappNumber } })
 
   // Update user kycStatus to pending. Also revoke the public-profile opt-in
   // (see PATCH /users/me/social-profile) — it requires KYC-approved status,

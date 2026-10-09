@@ -81,7 +81,10 @@ export function MakerChecklist({ status, onChange }: { status: MakerStatusView; 
               : <Circle className="w-5 h-5 text-text-muted flex-shrink-0 mt-0.5" />}
           <div>
             <p className="text-sm text-text-secondary">Approved by RupChain</p>
-            <p className="text-xs text-text-muted">We may contact you on Telegram or WhatsApp before approving.</p>
+            <p className="text-xs text-text-muted">
+              You are approved automatically when your Level 2 verification is approved.
+              {status.contactTelegram ? <> Message us on Telegram at <span className="font-medium text-text-primary">{status.contactTelegram}</span> to speed it up.</> : ' We may contact you on Telegram or WhatsApp.'}
+            </p>
           </div>
         </li>
       </ul>

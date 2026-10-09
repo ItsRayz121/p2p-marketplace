@@ -80,8 +80,8 @@ function TierCard({
         ) : (
           <>
             <li className="flex gap-2"><span className="text-success">✓</span> Everything in Basic</li>
-            <li className="flex gap-2"><span className="text-success">✓</span> 2+ social media profiles</li>
-            <li className="flex gap-2"><span className="text-success">✓</span> Short video verification</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> WhatsApp number + your trading community link</li>
+            <li className="flex gap-2"><span className="text-success">✓</span> Optional: video, social profiles, trusted reference</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Daily limit: PKR 200,000</li>
             <li className="flex gap-2"><span className="text-success">✓</span> Higher trust score + faster badge progression</li>
           </>
@@ -238,6 +238,13 @@ export default function KycPage() {
   const [backUrl, setBackUrl] = useState('')
   const [selfieUrl, setSelfieUrl] = useState('')
   const [videoUrl, setVideoUrl] = useState('')
+  // Level 2 (ad posting) answers. `wantsAds` is the "I also want to post ads" switch on
+  // the Level 1 form: when ON the single submission also carries these answers.
+  const [wantsAds, setWantsAds] = useState(false)
+  const [whatsapp, setWhatsapp] = useState('')
+  const [communityUrl, setCommunityUrl] = useState('')
+  const [referenceUrl, setReferenceUrl] = useState('')
+  const [makerContact, setMakerContact] = useState('')
   // Show three social-profile fields by default for Enhanced KYC (min 2 required).
   const [socialLinks, setSocialLinks] = useState<SocialLink[]>([
     { platform: 'Facebook', url: '' },
@@ -256,6 +263,7 @@ export default function KycPage() {
       setKycStatus(res.status ?? 'none')
       setKycLevel(res.level ?? 'none')
       setLatestSubmission(res.latestSubmission)
+      setMakerContact(res.makerContactTelegram ?? '')
 
       const s = res.status ?? 'none'
       if (!s || s === 'none' || s === '') setUiState('none')
@@ -293,6 +301,7 @@ export default function KycPage() {
 
   const handleSelectTier = (tier: KycTier) => {
     setSelectedTier(tier)
+    setWantsAds(false)
     setUiState('submitting')
     setSubmitError(null)
   }
@@ -321,6 +330,9 @@ export default function KycPage() {
       setSubmitError('Please select a KYC tier.')
       return
     }
+    // Ad-posting answers are collected for Level 2, or on the Level 1 form when the
+    // user switched on "I also want to post ads" (then it is one combined submission).
+    const adsFields = selectedTier === 'enhanced' || wantsAds
     if (selectedTier === 'basic') {
       // Level 1 collects CNIC details + document photos.
       if (!frontUrl || (idType === 'national_id' && !backUrl) || !selfieUrl || !cnicNumber) {
@@ -341,16 +353,22 @@ export default function KycPage() {
         setSubmitError('Add at least one social profile (Facebook or Instagram preferred).')
         return
       }
-    } else {
-      // Level 2 reuses approved Level 1 identity docs — only video + socials.
-      // Already-verified socials count toward the minimum (we don't re-ask them).
-      const validLinks = socialLinks.filter((l) => l.url.trim())
-      if (validLinks.length + verifiedSocials.length < 2) {
-        setSubmitError('Enhanced KYC requires at least 2 social media profiles.')
+    }
+    if (adsFields) {
+      if (!user?.telegramLinked) {
+        setSubmitError('Link your Telegram account in Settings first, then come back to submit.')
         return
       }
-      if (!videoUrl) {
-        setSubmitError('Enhanced KYC requires a short verification video.')
+      if (whatsapp.replace(/\D/g, '').length < 7) {
+        setSubmitError('Enter your WhatsApp number with country code, e.g. +923001234567.')
+        return
+      }
+      if (!/^https:\/\/(chat\.whatsapp\.com|whatsapp\.com|www\.whatsapp\.com|t\.me|telegram\.me|telegram\.dog)\/\S+/i.test(communityUrl.trim())) {
+        setSubmitError('Add the link to your WhatsApp or Telegram group or channel, e.g. https://chat.whatsapp.com/... or https://t.me/...')
+        return
+      }
+      if (referenceUrl.trim() && !/^https:\/\/\S+/i.test(referenceUrl.trim())) {
+        setSubmitError('The trusted reference must be a link starting with https://')
         return
       }
     }
@@ -363,12 +381,19 @@ export default function KycPage() {
       const newLinks = socialLinks.filter((l) => l.url.trim() && !verifiedKeys.has(socialKey(l.platform)))
       const validLinks = [...verifiedSocials, ...newLinks]
       await kycApi.submit({
-        tier: selectedTier,
+        tier: adsFields ? 'enhanced' : selectedTier,
         // Level 1 only — Level 2 reuses the already-approved identity documents.
         ...(selectedTier === 'basic'
           ? { idType, idNumber: cnicNumber.trim(), ...(legalName.trim() ? { legalName: legalName.trim() } : {}), frontUrl, ...(idType === 'national_id' ? { backUrl } : {}), selfieUrl }
           : {}),
-        ...(selectedTier === 'enhanced' && videoUrl ? { videoUrl } : {}),
+        ...(adsFields && videoUrl ? { videoUrl } : {}),
+        ...(adsFields
+          ? {
+              whatsappNumber: whatsapp.trim(),
+              communityLinks: [{ url: communityUrl.trim() }],
+              ...(referenceUrl.trim() ? { referenceUrl: referenceUrl.trim() } : {}),
+            }
+          : {}),
         ...(validLinks.length > 0 ? { socialLinks: validLinks } : {}),
       })
       analytics.kycSubmitted({ level: selectedTier })
@@ -425,8 +450,8 @@ export default function KycPage() {
             <div className="bg-surface shadow-card border-2 border-primary/30 rounded-xl p-5 space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-base font-bold text-text-primary">Upgrade to Level 2</p>
-                  <p className="text-sm text-text-muted">Enhanced KYC — higher limits + better trust score</p>
+                  <p className="text-base font-bold text-text-primary">Want to post ads? Upgrade to Level 2</p>
+                  <p className="text-sm text-text-muted">Required to become a maker. Higher limits + better trust score too.</p>
                 </div>
                 <Badge variant="gold" size="sm">Optional</Badge>
               </div>
@@ -445,7 +470,7 @@ export default function KycPage() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-text-muted">Requires: 2+ social media profile links</p>
+              <p className="text-xs text-text-muted">Requires: your WhatsApp number and your trading community link. Video, social profiles and a trusted reference are optional.</p>
               <Button fullWidth onClick={() => handleSelectTier('enhanced')}>
                 Upgrade Verification →
               </Button>
@@ -556,7 +581,7 @@ export default function KycPage() {
                   Enhanced KYC (Level 2)
                 </p>
                 <ul className="space-y-1.5">
-                  {['Everything in Basic', '2 or more social media profile links', 'Short video verification upload'].map((item, i) => (
+                  {['Everything in Basic', 'WhatsApp number + link to your WhatsApp / Telegram group or channel', 'Optional: short video, social profiles, trusted reference'].map((item, i) => (
                     <li key={i} className="flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold flex items-center justify-center flex-shrink-0">+</span>
                       <span>{item}</span>
@@ -582,11 +607,11 @@ export default function KycPage() {
               </div>
               <h3 className="text-base font-bold text-text-primary mb-3">Enhanced KYC</h3>
               <ul className="text-sm text-text-secondary space-y-2 mb-4 flex-1">
-                <li className="flex gap-2"><span className="text-text-muted">+</span> Short video verification</li>
-                <li className="flex gap-2"><span className="text-text-muted">+</span> 2+ social media profiles</li>
+                <li className="flex gap-2"><span className="text-text-muted">+</span> WhatsApp number + your community link</li>
+                <li className="flex gap-2"><span className="text-text-muted">+</span> Optional: video, socials, trusted reference</li>
                 <li className="flex gap-2"><span className="text-text-muted">+</span> Daily limit: PKR 200,000</li>
               </ul>
-              <p className="text-xs text-text-muted">Unlocks after your Level 1 verification is approved — your ID and selfie are reused automatically.</p>
+              <p className="text-xs text-text-muted">Needed only to post ads. Tick &ldquo;I also want to post ads&rdquo; while doing Level 1, or come back and do it later: your ID and selfie are reused.</p>
             </div>
           </div>
         </div>
@@ -710,24 +735,68 @@ export default function KycPage() {
               <div className="bg-success/5 border border-success/20 rounded-lg px-4 py-3 flex items-start gap-2">
                 <span className="text-success mt-0.5">✓</span>
                 <p className="text-xs text-text-secondary">
-                  Your ID and selfie from Level 1 are already verified and reused automatically. Level 2 only needs a short video and your social profiles.
+                  Your ID and selfie from Level 1 are already verified and reused automatically. Level 2 only needs the details below.
                 </p>
               </div>
-              <FileUploadField
-                label="Video Verification"
-                hint="A short video of yourself (e.g. say your name and today's date)"
-                uploadType="kyc-video"
-                onUploaded={setVideoUrl}
-              />
             </>
           )}
 
+          {/* Basic form: switch to also apply for ad posting in the same submission */}
+          {selectedTier === 'basic' && (
+            <label className="flex items-start gap-3 rounded-xl border-2 border-primary/30 bg-primary/5 p-4 cursor-pointer">
+              <input type="checkbox" checked={wantsAds} onChange={(e) => setWantsAds(e.target.checked)} className="mt-1 w-4 h-4 accent-primary" />
+              <span>
+                <span className="block text-sm font-semibold text-text-primary">I also want to post ads on the platform</span>
+                <span className="block text-xs text-text-muted mt-0.5">A few extra questions, reviewed together with your ID. You can skip this now and do it later.</span>
+              </span>
+            </label>
+          )}
+
+          {/* Ad posting (Level 2) answers */}
+          {(selectedTier === 'enhanced' || wantsAds) && (
+            <div className="space-y-4 rounded-xl border border-border p-4">
+              <p className="text-sm font-semibold text-text-primary">To post ads</p>
+              {!user?.telegramLinked && (
+                <p className="text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-2">
+                  Link your Telegram account in <Link href="/settings" className="underline font-medium">Settings</Link> first. You need it to submit.
+                </p>
+              )}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">Your WhatsApp number</label>
+                <input type="tel" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+92 300 1234567" maxLength={32}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">Your WhatsApp or Telegram group / channel</label>
+                <input type="url" inputMode="url" autoCapitalize="none" value={communityUrl} onChange={(e) => setCommunityUrl(e.target.value)} placeholder="https://chat.whatsapp.com/... or https://t.me/..." maxLength={300}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+                <p className="text-xs text-text-muted mt-1">Real traders have their own community. We open this link to check it is real and active.</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">Trusted reference <span className="font-normal text-text-muted">(optional)</span></label>
+                <input type="url" inputMode="url" autoCapitalize="none" value={referenceUrl} onChange={(e) => setReferenceUrl(e.target.value)} placeholder="https://... profile of a known admin, YouTuber or influencer who can vouch for you" maxLength={500}
+                  className="w-full px-4 py-3 border border-border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
+              </div>
+              <FileUploadField
+                label="Verification video (optional)"
+                hint="A short video of yourself (e.g. say your name and today's date). It helps your review go smoothly."
+                uploadType="kyc-video"
+                onUploaded={setVideoUrl}
+              />
+              {makerContact && (
+                <div className="rounded-lg bg-surface-alt px-3 py-2.5 text-xs text-text-secondary">
+                  After you submit, message us on Telegram at <span className="font-semibold text-text-primary">{makerContact}</span> so we can confirm you quickly.
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Social links — Enhanced always; Basic only in non-custodial mode (min 1) */}
-          {(selectedTier === 'enhanced' || (selectedTier === 'basic' && nonCustodial)) && (
+          {((selectedTier === 'enhanced' || wantsAds) || (selectedTier === 'basic' && nonCustodial)) && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-sm font-medium text-text-primary">
-                  Social Media Profiles ({selectedTier === 'enhanced' ? 'min 2' : 'min 1 — Facebook or Instagram preferred'})
+                  Social Media Profiles ({selectedTier === 'basic' && nonCustodial ? 'min 1 — Facebook or Instagram preferred' : 'optional'})
                 </label>
                 {socialLinks.length < 3 && (
                   <Button size="sm" variant="ghost" onClick={addSocialLink}>+ Add</Button>
@@ -786,17 +855,21 @@ export default function KycPage() {
           <div className="bg-surface rounded-lg p-4">
             <p className="text-xs font-medium text-text-muted mb-3">Submission Checklist</p>
             <div className="space-y-2">
-              {(selectedTier === 'enhanced' ? [
-                { label: 'At least 2 social links', done: socialLinks.filter((l) => l.url.trim()).length >= 2 },
-                { label: 'Verification video uploaded', done: !!videoUrl },
-              ] : [
+              {[
+                ...(selectedTier === 'enhanced' || wantsAds ? [
+                  { label: 'Telegram account linked', done: !!user?.telegramLinked },
+                  { label: 'WhatsApp number entered', done: whatsapp.replace(/\D/g, '').length >= 7 },
+                  { label: 'Community link added', done: communityUrl.trim().length > 8 },
+                ] : []),
+                ...(selectedTier === 'enhanced' ? [] : [
                 ...(nonCustodial ? [{ label: 'Full name (as on your ID or passport) entered', done: legalName.trim().length >= 3 }] : []),
                 { label: idType === 'passport' ? 'Passport number entered' : 'ID number entered', done: !!cnicNumber },
                 { label: idType === 'passport' ? 'Passport photo page uploaded' : 'ID front uploaded', done: !!frontUrl },
                 ...(idType === 'national_id' ? [{ label: 'ID back uploaded', done: !!backUrl }] : []),
                 { label: 'Selfie uploaded', done: !!selfieUrl },
                 ...(nonCustodial ? [{ label: 'At least 1 social profile', done: socialLinks.filter((l) => l.url.trim()).length >= 1 }] : []),
-              ]).map((item, i) => (
+              ]),
+              ].map((item, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <div className={`w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0 ${item.done ? 'bg-success text-white' : 'border border-border'}`}>
                     {item.done && (

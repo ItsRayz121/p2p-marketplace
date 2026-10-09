@@ -1,6 +1,6 @@
 import { db } from './prisma'
 import { AppError } from './errors'
-import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags.service'
+import { FLAGS, isFlagEnabled, getNumberConfig, getStringConfig } from '../services/platformFlags.service'
 
 /**
  * Maker gate (stage 2).
@@ -33,9 +33,28 @@ export interface MakerStatusView {
   /** All prerequisites except admin approval are met, so the user can apply. */
   canApply: boolean
   reviewFirstN: number
+  /** Telegram contact (e.g. @RupChainSupport) the applicant should message. Admin-editable. */
+  contactTelegram: string
 }
 
 const DEFAULT_REVIEW_FIRST_N = 3
+export const MAKER_CONTACT_KEY = 'maker_contact_telegram'
+
+const COMMUNITY_HOSTS = ['chat.whatsapp.com', 'whatsapp.com', 'www.whatsapp.com', 't.me', 'telegram.me', 'telegram.dog']
+
+/**
+ * A community link must be a public https WhatsApp / Telegram group or channel
+ * invite, so the reviewer can open it and check it is a real, active community.
+ * Returns the cleaned URL or null.
+ */
+export function normalizeCommunityUrl(raw: string): string | null {
+  let u: URL
+  try { u = new URL(raw.trim()) } catch { return null }
+  if (u.protocol !== 'https:') return null
+  if (!COMMUNITY_HOSTS.includes(u.hostname.toLowerCase())) return null
+  if (u.pathname.replace(/\//g, '').length < 2) return null
+  return u.toString()
+}
 
 export async function isMakerGateOn(): Promise<boolean> {
   return isFlagEnabled(FLAGS.MAKER_GATE, false)
@@ -80,6 +99,7 @@ export async function getMakerStatus(userId: string): Promise<MakerStatusView> {
     requirements,
     canApply: prerequisitesMet && (makerStatus === 'none' || makerStatus === 'rejected'),
     reviewFirstN,
+    contactTelegram: await getStringConfig(MAKER_CONTACT_KEY, ''),
   }
 }
 

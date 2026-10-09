@@ -20,6 +20,7 @@ import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
 import { FLAGS, isFlagEnabled, clearFlagCache } from '../services/platformFlags.service'
+import { approveMakerFromKyc } from '../services/maker.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { previewAccountMerge, adminMergeAccounts, adminEraseIdentity } from '../services/accountLink.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
@@ -1697,6 +1698,11 @@ export async function adminRoutes(app: FastifyInstance) {
         : []
       await mergeVerifiedFromKyc(submission.userId, submitted)
     } catch { /* best-effort — social sync must not fail approval */ }
+
+    // Level 2 doubles as the maker review: approving it approves the user as a maker.
+    if (kycLevel === 'enhanced') {
+      try { await approveMakerFromKyc(req.user!.id, submission.userId) } catch { /* best-effort — never blocks KYC approval */ }
+    }
 
     await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel }, clientIp(req), req.headers['user-agent'] as string | undefined)
     await sendKycEmail('approved', submission.user.email, { level: kycLevel })

@@ -19,6 +19,7 @@ export interface MakerStatusView {
   requirements: MakerRequirement[]
   canApply: boolean
   reviewFirstN: number
+  contactTelegram: string
 }
 
 export const makerApi = {
@@ -67,6 +68,8 @@ export interface MakerReviewSettings {
   reviewFirstN: number
   /** Also review any USDT ad whose max order exceeds this many USDT. 0 = off. */
   reviewAboveUsdt: number
+  /** Telegram handle or link applicants are told to contact. */
+  contactTelegram: string
 }
 
 export const adminMakerApi = {

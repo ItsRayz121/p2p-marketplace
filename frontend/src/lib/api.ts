@@ -918,6 +918,9 @@ export interface KycDocument {
   backUrl?: string
   selfieUrl?: string
   videoUrl?: string | null
+  whatsappNumber?: string | null
+  communityLinks?: Array<{ url: string }>
+  referenceUrl?: string | null
   rejectionReason?: string | null
   notes?: string | null
   createdAt: string
@@ -1539,7 +1542,7 @@ export interface SavedDeliveryAddress {
 
 export const kycApi = {
   getStatus: () =>
-    apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null }>('/kyc/status'),
+    apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null; makerContactTelegram?: string }>('/kyc/status'),
   submit: (data: {
     tier: 'basic' | 'enhanced'
     // CNIC + document photos are required for Basic only; Enhanced reuses the
@@ -1553,6 +1556,10 @@ export const kycApi = {
     selfieUrl?: string
     videoUrl?: string
     socialLinks?: Array<{ platform: string; url: string }>
+    // Level 2 (ad posting)
+    whatsappNumber?: string
+    communityLinks?: Array<{ url: string }>
+    referenceUrl?: string
   }) =>
     apiRequest<KycDocument>('/kyc/submit', { method: 'POST', body: JSON.stringify(data) }),
   getSubmissions: () =>

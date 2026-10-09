@@ -276,6 +276,13 @@ export async function getNumberConfig(key: string, fallback: number): Promise<nu
   return Number.isFinite(n) ? n : fallback
 }
 
+/** Read a text PlatformConfig value, falling back when missing or blank. */
+export async function getStringConfig(key: string, fallback: string): Promise<string> {
+  const row = await db.platformConfig.findUnique({ where: { key } })
+  const v = row?.value?.trim()
+  return v ? v : fallback
+}
+
 /**
  * Read a boolean PlatformConfig value by ARBITRARY key (not one of the typed
  * FLAGS), falling back when the key is missing. Uncached — use for cold-path

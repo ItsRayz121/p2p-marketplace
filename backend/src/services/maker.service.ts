@@ -4,8 +4,8 @@ import { notify } from '../lib/notify'
 import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from './adminNotification.service'
 import { autoShareToOwnerChannels } from './channel.service'
-import { getMakerStatus, normalizeWhatsapp } from '../lib/makerGate'
-import { getNumberConfig } from './platformFlags.service'
+import { getMakerStatus, normalizeWhatsapp, MAKER_CONTACT_KEY } from '../lib/makerGate'
+import { getNumberConfig, getStringConfig } from './platformFlags.service'
 
 /** Maker applications + the new-ad review queue (stage 2). */
 
@@ -38,6 +38,34 @@ export async function applyForMaker(userId: string) {
     href: '/admin/makers',
   })
   return getMakerStatus(userId)
+}
+
+/**
+ * Level 2 KYC is the maker review: when an admin approves a Level 2 submission the
+ * user becomes an approved maker too, so there is no separate application to wait
+ * for. Restricted accounts are left alone. Returns whether the user was approved.
+ */
+export async function approveMakerFromKyc(adminId: string, userId: string): Promise<boolean> {
+  const u = await db.user.findUnique({
+    where: { id: userId },
+    select: { makerStatus: true, tradingHold: true, isBanned: true, isSuspended: true },
+  })
+  if (!u || u.makerStatus === 'approved' || u.tradingHold || u.isBanned || u.isSuspended) return false
+  await db.user.update({
+    where: { id: userId },
+    data: { makerStatus: 'approved', makerApprovedAt: new Date(), makerApprovedBy: adminId, makerReviewNote: null },
+  })
+  await recordAuditLog(adminId, 'MAKER_APPROVED', 'User', userId, { via: 'level2_kyc' })
+  notify(
+    userId,
+    'maker_review',
+    'You are now an approved maker',
+    'Your Level 2 verification was approved. You can post ads and CTM listings. Your first few ads are reviewed before they go live.',
+    { approved: true },
+    undefined,
+    '/maker',
+  )
+  return true
 }
 
 // ─── Maker applications (admin) ──────────────────────────────────────────────
@@ -211,6 +239,8 @@ export async function reviewPendingAd(adminId: string, kind: 'usdt' | 'ctm', id:
 // ─── Review rules (admin) ────────────────────────────────────────────────────
 
 export interface MakerReviewSettings {
+  /** Telegram handle or link applicants are told to contact (e.g. @RupChainSupport). */
+  contactTelegram: string
   /** A maker's first N ads/listings wait for approval. 0 = never review by count. */
   reviewFirstN: number
   /** Also review any USDT ad whose max order exceeds this many USDT. 0 = off. */
@@ -222,7 +252,7 @@ export async function getMakerReviewSettings(): Promise<MakerReviewSettings> {
     getNumberConfig('maker_review_first_n', 3),
     getNumberConfig('maker_review_above_usdt', 0),
   ])
-  return { reviewFirstN, reviewAboveUsdt }
+  return { reviewFirstN, reviewAboveUsdt, contactTelegram: await getStringConfig(MAKER_CONTACT_KEY, '') }
 }
 
 export async function saveMakerReviewSettings(adminId: string, input: MakerReviewSettings): Promise<MakerReviewSettings> {
@@ -230,6 +260,11 @@ export async function saveMakerReviewSettings(adminId: string, input: MakerRevie
     ['maker_review_first_n', Math.round(input.reviewFirstN)],
     ['maker_review_above_usdt', input.reviewAboveUsdt],
   ]
+  await db.platformConfig.upsert({
+    where: { key: MAKER_CONTACT_KEY },
+    create: { key: MAKER_CONTACT_KEY, value: input.contactTelegram.trim() },
+    update: { value: input.contactTelegram.trim() },
+  })
   for (const [key, value] of rows) {
     await db.platformConfig.upsert({
       where: { key },

@@ -55,6 +55,7 @@ export async function makerRoutes(app: FastifyInstance) {
     const parsed = z.object({
       reviewFirstN: z.number().int().min(0).max(50),
       reviewAboveUsdt: z.number().min(0).max(1_000_000),
+      contactTelegram: z.string().trim().max(100).default(''),
     }).safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Ads to review must be 0-50 and the size threshold 0-1,000,000', 400)
     return reply.send({ success: true, data: await saveMakerReviewSettings(req.user!.id, parsed.data) })

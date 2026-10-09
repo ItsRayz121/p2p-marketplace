@@ -8,25 +8,26 @@ export function MakerReviewSettingsCard() {
   const [saved, setSaved] = useState<MakerReviewSettings | null>(null)
   const [firstN, setFirstN] = useState('3')
   const [above, setAbove] = useState('0')
+  const [contact, setContact] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   useEffect(() => {
     adminMakerApi.getSettings()
-      .then((s) => { setSaved(s); setFirstN(String(s.reviewFirstN)); setAbove(String(s.reviewAboveUsdt)) })
+      .then((s) => { setSaved(s); setFirstN(String(s.reviewFirstN)); setAbove(String(s.reviewAboveUsdt)); setContact(s.contactTelegram) })
       .catch(() => setMsg({ ok: false, text: 'Could not load the review settings.' }))
   }, [])
 
   const n = Number(firstN)
   const usdt = Number(above)
   const valid = Number.isInteger(n) && n >= 0 && n <= 50 && Number.isFinite(usdt) && usdt >= 0 && usdt <= 1_000_000
-  const dirty = !!saved && (n !== saved.reviewFirstN || usdt !== saved.reviewAboveUsdt)
+  const dirty = !!saved && (n !== saved.reviewFirstN || usdt !== saved.reviewAboveUsdt || contact.trim() !== saved.contactTelegram)
 
   async function save() {
     setBusy(true)
     setMsg(null)
     try {
-      const s = await adminMakerApi.saveSettings({ reviewFirstN: n, reviewAboveUsdt: usdt })
+      const s = await adminMakerApi.saveSettings({ reviewFirstN: n, reviewAboveUsdt: usdt, contactTelegram: contact.trim() })
       setSaved(s)
       setMsg({ ok: true, text: 'Saved. Applies to the next ad that is posted.' })
     } catch (e) {
@@ -63,6 +64,19 @@ export function MakerReviewSettingsCard() {
           <span className="text-[11px] text-text-muted">0 = no size limit. Uses the ad&apos;s largest single order.</span>
         </label>
       </div>
+
+      <label className="block mt-4">
+        <span className="text-xs text-text-muted">Telegram contact shown to people applying to post ads</span>
+        <input
+          value={contact}
+          onChange={(e) => setContact(e.target.value)}
+          placeholder="@YourSupportHandle"
+          autoCapitalize="none"
+          maxLength={100}
+          className="mt-1 w-full sm:w-80 px-3 py-2 border border-border rounded-lg text-sm bg-surface text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+        <span className="text-[11px] text-text-muted">Applicants are asked to message this account on Telegram. Leave blank to hide it.</span>
+      </label>
 
       <div className="mt-3 flex items-center gap-3">
         <Button size="sm" loading={busy} disabled={!valid || !dirty} onClick={save}>Save</Button>

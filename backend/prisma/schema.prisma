@@ -982,6 +982,11 @@ model KycSubmission {
   // user's canonical, locked name (User.legalNameLockedAt). Non-custodial P2P.
   legalName       String?
   socialLinks     Json              @default("[]")
+  // Level 2 (ad posting) answers: WhatsApp number, the applicant's community
+  // (WhatsApp / Telegram group or channel) and an optional trusted reference.
+  whatsappNumber  String?
+  communityLinks  Json              @default("[]")
+  referenceUrl    String?
   rejectionReason String?           @db.VarChar(500)
   reviewedAt      DateTime?
   reviewedBy      String?

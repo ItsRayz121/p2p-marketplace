@@ -4,6 +4,8 @@ import { authenticate } from '../middleware/auth.middleware'
 import { getKycStatus, submitKyc, getUserSubmissions } from '../services/kyc.service'
 import { AppError } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { getStringConfig } from '../services/platformFlags.service'
+import { MAKER_CONTACT_KEY } from '../lib/makerGate'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
@@ -31,19 +33,15 @@ const submitKycSchema = z.object({
       }),
     )
     .optional(),
+  // Level 2 (ad posting): validated in submitKyc.
+  whatsappNumber: z.string().trim().max(32).optional(),
+  communityLinks: z.array(z.object({ url: z.string().trim().max(300) })).max(5).optional(),
+  referenceUrl: z.string().trim().max(500).optional(),
 })
   // Basic KYC still requires CNIC number + front/back/selfie photos.
   .refine((d) => d.tier !== 'basic' || (!!(d.idNumber ?? d.cnicNumber) && !!d.frontUrl && !!d.selfieUrl && (d.idType === 'passport' || !!d.backUrl)), {
     message: 'Basic KYC requires your ID number, a photo of your ID (front and back) or passport page, and a selfie',
     path: ['frontUrl'],
-  })
-  .refine((d) => d.tier !== 'enhanced' || (d.socialLinks?.filter((l) => l.url.trim()).length ?? 0) >= 2, {
-    message: 'Enhanced KYC requires at least 2 social media profiles',
-    path: ['socialLinks'],
-  })
-  .refine((d) => d.tier !== 'enhanced' || !!d.videoUrl, {
-    message: 'Enhanced KYC requires a short verification video',
-    path: ['videoUrl'],
   })
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
@@ -52,7 +50,8 @@ export async function kycRoutes(app: FastifyInstance) {
   // GET /api/kyc/status
   app.get('/kyc/status', { preHandler: [authenticate] }, async (req, reply) => {
     const result = await getKycStatus(req.user!.id)
-    return reply.send({ success: true, data: result })
+    const makerContactTelegram = await getStringConfig(MAKER_CONTACT_KEY, '')
+    return reply.send({ success: true, data: { ...result, makerContactTelegram } })
   })
 
   // POST /api/kyc/submit
@@ -62,7 +61,7 @@ export async function kycRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
     }
-    const { tier, idType, legalName, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks } = parsed.data
+    const { tier, idType, legalName, frontUrl, backUrl, selfieUrl, videoUrl, socialLinks, whatsappNumber, communityLinks, referenceUrl } = parsed.data
     const cnicNumber = parsed.data.idNumber ?? parsed.data.cnicNumber
     // Build the payload with only defined fields (exactOptionalPropertyTypes).
     const submission = await submitKyc(userId, {
@@ -75,6 +74,9 @@ export async function kycRoutes(app: FastifyInstance) {
       ...(selfieUrl ? { selfieUrl } : {}),
       ...(videoUrl ? { videoUrl } : {}),
       ...(socialLinks ? { socialLinks } : {}),
+      ...(whatsappNumber ? { whatsappNumber } : {}),
+      ...(communityLinks ? { communityLinks } : {}),
+      ...(referenceUrl ? { referenceUrl } : {}),
     })
     void createAdminNotif({
       category: 'KYC',
