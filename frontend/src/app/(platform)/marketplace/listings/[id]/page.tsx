@@ -704,9 +704,9 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'crypto_released' ? 'bg-green-500/15 text-green-700 dark:text-green-300' :
                           t.status === 'cancelled'       ? 'bg-surface-alt text-text-secondary' :
-                          t.status === 'disputed'        ? 'bg-red-500/15 text-red-700 dark:text-red-300'    :
+                          t.status === 'disputed'        ? 'bg-surface-alt text-text-secondary'    :
                           'bg-blue-500/15 text-blue-700 dark:text-blue-300'
-                        }`}>{t.status.replace(/_/g, ' ')}</span>
+                        }`}>{t.status === 'disputed' ? 'under review' : t.status.replace(/_/g, ' ')}</span>
                         <p className="text-xs text-text-muted mt-1">
                           <a href={`/trade/${t.id}`} className="text-primary hover:underline">View →</a>
                         </p>
@@ -778,8 +778,8 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'crypto_released'
                             ? 'bg-green-500/15 text-green-700 dark:text-green-300'
-                            : 'bg-red-500/15 text-red-700 dark:text-red-300'
-                        }`}>{t.status === 'crypto_released' ? 'completed' : 'disputed'}</span>
+                            : 'bg-surface-alt text-text-secondary'
+                        }`}>{t.status === 'crypto_released' ? 'completed' : 'under review'}</span>
                       </div>
                     </div>
                   ))}

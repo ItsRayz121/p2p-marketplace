@@ -794,9 +794,9 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'completed'  ? 'bg-green-500/15 text-green-700 dark:text-green-300' :
                           t.status === 'cancelled'  ? 'bg-surface-alt text-text-secondary' :
-                          t.status === 'disputed'   ? 'bg-red-500/15 text-red-700 dark:text-red-300' :
+                          t.status === 'disputed'   ? 'bg-surface-alt text-text-secondary' :
                           'bg-blue-500/15 text-blue-700 dark:text-blue-300'
-                        }`}>{t.status.replace(/_/g, ' ')}</span>
+                        }`}>{t.status === 'disputed' ? 'under review' : t.status.replace(/_/g, ' ')}</span>
                         <p className="text-xs text-text-muted mt-1">
                           <a href={`/ctm/trade/${t.tradeRef}`} className="text-primary hover:underline">View →</a>
                         </p>
@@ -865,8 +865,8 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
                         <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
                           t.status === 'completed'
                             ? 'bg-green-500/15 text-green-700 dark:text-green-300'
-                            : 'bg-red-500/15 text-red-700 dark:text-red-300'
-                        }`}>{t.status === 'completed' ? 'completed' : 'disputed'}</span>
+                            : 'bg-surface-alt text-text-secondary'
+                        }`}>{t.status === 'completed' ? 'completed' : 'under review'}</span>
                       </div>
                     </div>
                   ))}
