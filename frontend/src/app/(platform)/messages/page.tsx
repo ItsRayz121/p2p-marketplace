@@ -278,7 +278,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
         <ul className="space-y-2">
           {visibleItems.map((t) => {
             const name = t.other.fullName || t.other.username || 'Trader'
-            const activity = activeLabel(t.other.lastSeenAt ?? null)
+            const activity = activeLabel(t.other.lastSeenAt ?? null, true)
             return (
               <li key={t.threadId}>
                 <Link

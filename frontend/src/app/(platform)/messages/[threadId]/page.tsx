@@ -454,7 +454,7 @@ export default function MessageThreadPage() {
   // yourself, so the header menu is suppressed entirely for it below.
   const isSelf = data.other.id === user?.id
   const name = isSelf ? 'My Notes' : data.other.fullName || data.other.username || 'Trader'
-  const activity = isSelf ? null : activeLabel(data.other.lastSeenAt ?? null)
+  const activity = isSelf ? null : activeLabel(data.other.lastSeenAt ?? null, true)
   // senderId → name for the two real traders, so trade lifecycle lines can be placed on the actor's side.
   const participants: Record<string, string> = { [data.other.id]: name, ...(user ? { [user.id]: 'You' } : {}) }
   const s = data.stats
