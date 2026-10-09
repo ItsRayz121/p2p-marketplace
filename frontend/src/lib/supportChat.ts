@@ -27,6 +27,8 @@ export interface SupportMessage {
   // Plain chat omits kind ('text').
   kind?: 'text' | 'refund_request' | 'refund_response' | 'review_nudge' | 'review_ack'
   metadata?: Record<string, unknown> | null
+  /** Emoji reactions grouped by emoji; `mine` = the viewer reacted with it. */
+  reactions?: { emoji: string; count: number; mine: boolean }[]
   createdAt: string
   /** Receipts, set by the recipient's own requests (delivered on first fetch, read on open). */
   deliveredAt?: string | null
@@ -146,6 +148,9 @@ export const supportChatApi = {
     }),
   deleteMessage: (id: string) =>
     apiRequest<unknown>(`/support/chat/messages/${id}/delete`, { method: 'POST' }),
+  /** Set / toggle (same emoji again) / clear (null) your reaction on a message. */
+  reactMessage: (id: string, emoji: string | null) =>
+    apiRequest<{ reactions: { emoji: string; count: number; mine: boolean }[] }>(`/support/chat/messages/${id}/react`, { method: 'POST', body: JSON.stringify({ emoji }) }),
   markRead: () => apiRequest<unknown>('/support/chat/read', { method: 'POST' }),
   rate: (score: number) =>
     apiRequest<unknown>('/support/chat/rate', {

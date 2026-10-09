@@ -37,11 +37,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
   const pathname = usePathname()
-  // On mobile the marketing footer only belongs on the Home tab (where the page
-  // is meant to scroll to the very bottom). On every other app surface — USDT
-  // marketplace, CTM, Messages, trade rooms, etc. — the content is the end of
-  // the page, so the footer is hidden on small screens and kept on desktop only.
+  // The marketing footer only belongs on the Home tab. On every other app surface
+  // (USDT, Gas, CTM, Messages, trade rooms, ...) the content is the end of the
+  // page, on mobile AND desktop.
   const isHomeTab = pathname === '/dashboard' || pathname === '/'
+  // Open chat rooms (trader thread, channel, support) are a fixed-height app screen:
+  // navbar on top, composer glued to the bottom nav, only the message list scrolls.
+  const isChatRoom = !!pathname && pathname.startsWith('/messages/')
 
   const fetchConfig = useCallback(async () => {
     try {
@@ -103,7 +105,7 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
   const showNotice = notice && !dismissed
 
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className={isChatRoom ? 'flex flex-col h-dvh overflow-hidden' : 'flex flex-col min-h-screen'}>
       <Navbar />
 
       {showNotice && (
@@ -136,13 +138,13 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
           the device safe-area inset (home indicator / gesture bar), so content
           is never hidden behind the nav on notched phones or in Telegram.
           individual pages no longer need to add it themselves. */}
-      <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
+      <main className={isChatRoom
+        ? 'flex-1 min-h-0 overflow-hidden pb-[calc(4rem+max(1rem,env(safe-area-inset-bottom)))] lg:pb-0'
+        : 'flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0'}>
         {authLoading ? <StartupLoader /> : children}
       </main>
 
-      <div className={isHomeTab ? '' : 'hidden lg:block'}>
-        <Footer />
-      </div>
+      {isHomeTab && <Footer />}
       <BottomNav />
       {user && <PushOptInBanner />}
       <InstallAppBanner />

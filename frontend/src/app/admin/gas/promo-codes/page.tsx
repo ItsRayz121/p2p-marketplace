@@ -16,6 +16,70 @@ import { BudgetBar } from '@/components/admin/charts/BudgetBar'
 type PromoCode = Awaited<ReturnType<typeof adminApi.getGasPromoCodes>>[number]
 type Tier = { maxRedemptions: number; discountPct: number }
 
+type PickedUser = { id: string; email: string; username?: string | null; fullName?: string | null }
+
+/** Searchable single-user picker; stores the chosen user's ID (the API also accepts email / username). */
+function UserPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [q, setQ] = useState('')
+  const [results, setResults] = useState<PickedUser[]>([])
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [picked, setPicked] = useState<PickedUser | null>(null)
+
+  useEffect(() => {
+    const term = q.trim()
+    if (term.length < 2) { setResults([]); return }
+    setLoading(true)
+    const t = setTimeout(async () => {
+      try {
+        const r = await adminApi.getUsers({ search: term, limit: 8 })
+        setResults(r.users as unknown as PickedUser[])
+      } catch { setResults([]) } finally { setLoading(false) }
+    }, 300)
+    return () => clearTimeout(t)
+  }, [q])
+
+  if (value && picked) {
+    return (
+      <div className="mt-1 flex w-full sm:w-80 items-center justify-between gap-2 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm font-normal">
+        <span className="min-w-0 truncate">{picked.fullName || picked.username || picked.email}<span className="ml-1 text-xs text-text-muted">{picked.email}</span></span>
+        <button type="button" onClick={() => { setPicked(null); onChange(''); setQ('') }} aria-label="Clear user" className="text-text-muted hover:text-danger text-xs font-semibold">Clear</button>
+      </div>
+    )
+  }
+  return (
+    <div className="relative mt-1 w-full sm:w-80">
+      <input
+        value={q}
+        onChange={(e) => { setQ(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Search name, email, username or ID"
+        autoCapitalize="none" autoCorrect="off"
+        className="w-full rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm font-normal"
+      />
+      {open && q.trim().length >= 2 && (
+        <div className="absolute z-20 mt-1 max-h-60 w-full overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+          {loading && <p className="px-3 py-2 text-xs font-normal text-text-muted">Searching…</p>}
+          {!loading && results.length === 0 && <p className="px-3 py-2 text-xs font-normal text-text-muted">No users found</p>}
+          {results.map((u) => (
+            <button
+              key={u.id}
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => { setPicked(u); onChange(u.id); setOpen(false) }}
+              className="block w-full px-3 py-2 text-left text-sm font-normal hover:bg-muted"
+            >
+              <span className="block truncate">{u.fullName || u.username || u.email}</span>
+              <span className="block truncate text-xs text-text-muted">{u.email}{u.username ? ` · @${u.username}` : ''}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const blankForm = () => ({
   code: '',
   ownerLabel: '',
@@ -259,11 +323,11 @@ export default function GasPromoCodesPage() {
             <input type="datetime-local" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} className="mt-1 w-full sm:w-64 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
           </label>
 
-          <label className="text-xs font-semibold text-text-primary block">Restrict to one user (optional)
-            <input value={form.allowedUser} onChange={(e) => setForm({ ...form, allowedUser: e.target.value })} placeholder="Email, username or user ID" autoCapitalize="none" autoCorrect="off"
-              className="mt-1 w-full sm:w-80 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
-            <span className="mt-1 block font-normal text-text-muted">Only this user can redeem the code. Use per-user limit for 1 or 2 uses, and Expires for the deadline.</span>
-          </label>
+          <div className="text-xs font-semibold text-text-primary">
+            Restrict to one user (optional)
+            <UserPicker value={form.allowedUser} onChange={(v) => setForm({ ...form, allowedUser: v })} />
+            <span className="mt-1 block font-normal text-text-muted">Search by name, email, username or ID, then pick the user. Only they can redeem the code. Use per-user limit for 1 or 2 uses, and Expires for the deadline.</span>
+          </div>
 
           <div className="flex gap-2">
             <Button size="sm" variant="primary" onClick={create} disabled={saving}>{saving ? 'Creating…' : 'Create Code'}</Button>

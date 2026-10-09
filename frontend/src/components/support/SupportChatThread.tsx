@@ -14,7 +14,7 @@ import { isTrustedImageUrl } from '@/lib/utils'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
-import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageActions, MessageMenu, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
 
 // Messages can only be retracted within this window of sending (mirrors backend).
 const MESSAGE_DELETE_WINDOW_MS = 15 * 60 * 1000
@@ -44,6 +44,7 @@ export function SupportChatThread() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
+  const [menu, setMenu] = useState<MessageMenuAnchor | null>(null)
 
   // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
   // sent with the next message (optionally with a caption).
@@ -161,6 +162,26 @@ export function SupportChatThread() {
     }
   }
 
+  // Optimistic reaction: apply locally, then reconcile with the server's summary.
+  async function reactTo(id: string, emoji: string) {
+    const apply = (list: { emoji: string; count: number; mine: boolean }[], e: string) => {
+      const mineNow = list.find((r) => r.mine)
+      let next = list.map((r) => (r.mine ? { ...r, count: r.count - 1, mine: false } : r)).filter((r) => r.count > 0)
+      if (mineNow?.emoji !== e) {
+        const hit = next.find((r) => r.emoji === e)
+        next = hit ? next.map((r) => (r.emoji === e ? { ...r, count: r.count + 1, mine: true } : r)) : [...next, { emoji: e, count: 1, mine: true }]
+      }
+      return next
+    }
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, reactions: apply(m.reactions ?? [], emoji) } : m)))
+    try {
+      const r = await supportChatApi.reactMessage(id, emoji)
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, reactions: r.reactions } : m)))
+    } catch {
+      await refresh()
+    }
+  }
+
   // Retract one of the user's own messages (soft delete → tombstone).
   async function handleDelete(id: string) {
     if (!window.confirm('Delete this message? It will be removed for the support team too.')) return
@@ -266,8 +287,16 @@ export function SupportChatThread() {
                     })}
                   />
                 )}
+                <div className={`order-2 max-w-[80%] flex flex-col gap-1 ${item.msg.sender === 'user' ? 'items-end' : 'items-start'}`}>
                 <div
-                  className={`order-2 max-w-[80%] px-3 py-2 rounded-2xl text-sm break-words ${
+                  onClick={(ev) => {
+                    const m = item.msg
+                    if (m.id.startsWith('tmp-') || (m.kind && m.kind !== 'text') || !m.body) return
+                    if ((ev.target as HTMLElement).closest('a,button')) return
+                    const r = ev.currentTarget.getBoundingClientRect()
+                    setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine: m.sender === 'user' })
+                  }}
+                  className={`${item.msg.body ? 'cursor-pointer ' : ''}px-3 py-2 rounded-2xl text-sm break-words ${
                     item.msg.sender === 'user'
                       ? 'bg-primary text-white rounded-br-sm'
                       : 'bg-surface border border-border text-text-primary rounded-bl-sm'
@@ -291,6 +320,17 @@ export function SupportChatThread() {
                     {item.msg.sender === 'user' && !item.msg.deletedAt && <MessageTicks status={receiptStatus(item.msg)} pending={item.msg.id.startsWith('tmp-')} />}
                   </span>
                 </div>
+                <ReactionChips reactions={item.msg.reactions ?? []} mine={item.msg.sender === 'user'} onToggle={(e) => void reactTo(item.msg.id, e)} />
+                </div>
+                {menu?.id === item.msg.id && (
+                  <MessageMenu
+                    anchor={menu}
+                    body={item.msg.body}
+                    onClose={() => setMenu(null)}
+                    onReact={(e) => void reactTo(item.msg.id, e)}
+                    onReply={() => { setReplyTo({ id: item.msg.id, sender: item.msg.sender, name: item.msg.sender === 'user' ? 'You' : 'Support', preview: item.msg.body.slice(0, 120), hasImage: !!item.msg.attachmentUrl }); requestAnimationFrame(() => draftRef.current?.focus()) }}
+                  />
+                )}
               </div>
             ),
           )

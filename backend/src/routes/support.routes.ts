@@ -8,6 +8,8 @@ import { sseEmit } from '../lib/sse'
 import { notify } from '../lib/notify'
 import { recordAuditLog } from '../lib/audit'
 import { mergeDuplicateSupportConversations } from '../services/supportMaintenance.service'
+import { REACTION_EMOJIS, summarizeReactions } from '../services/chatThread.service'
+import { Prisma } from '@prisma/client'
 
 // Push a support-chat SSE event to every connected admin / super-admin so the
 // admin inbox updates instantly when a user sends a message.
@@ -125,10 +127,16 @@ function serializeMessage(
   // Admins/dispute resolution always see the original content of a deleted
   // message (with a `deletedAt` marker). Regular users get it redacted to a
   // tombstone so a retracted message/image cannot be read by the other party.
-  opts?: { viewerIsAdmin?: boolean },
+  opts?: { viewerIsAdmin?: boolean; viewerId?: string },
 ) {
   const redacted = !!m.deletedAt && !opts?.viewerIsAdmin
+  // Emoji reactions live in metadata.reactions as { userId: emoji }. Never ship the raw
+  // map (it holds user ids); expose per-emoji counts for the viewer instead.
+  const rawMeta = m.metadata && typeof m.metadata === 'object' && !Array.isArray(m.metadata) ? (m.metadata as Record<string, unknown>) : null
+  const { reactions: rawReactions, ...restMeta } = rawMeta ?? {}
+  const cleanMeta = rawMeta ? (Object.keys(restMeta).length ? restMeta : null) : (m.metadata ?? null)
   return {
+    reactions: redacted ? [] : summarizeReactions(rawReactions, opts?.viewerId ?? ''),
     id: m.id,
     sender: m.sender,
     body: redacted ? '' : m.body,
@@ -136,7 +144,7 @@ function serializeMessage(
     deletedAt: m.deletedAt ?? null,
     rating: m.rating,
     kind: redacted ? 'text' : m.kind,
-    metadata: redacted ? null : (m.metadata ?? null),
+    metadata: redacted ? null : cleanMeta,
     createdAt: m.createdAt,
     deliveredAt: m.deliveredAt ?? null,
     readAt: m.readAt ?? null,
@@ -194,7 +202,7 @@ export async function supportRoutes(app: FastifyInstance) {
           unreadByUser: conversation.unreadByUser,
           lastMessageAt: conversation.lastMessageAt,
         },
-        messages: [...conversation.messages].reverse().map((m) => serializeMessage(m)),
+        messages: [...conversation.messages].reverse().map((m) => serializeMessage(m, { viewerId: userId })),
       },
     })
   })
@@ -298,6 +306,30 @@ export async function supportRoutes(app: FastifyInstance) {
     })
 
     return reply.send({ success: true })
+  })
+
+  // POST /support/chat/messages/:id/react — set / toggle (same emoji again) / clear (null)
+  // the user's emoji reaction on a message in their own support conversation.
+  app.post('/support/chat/messages/:id/react', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id } = req.params as { id: string }
+    const { emoji } = z.object({ emoji: z.string().max(16).nullable() }).parse(req.body)
+    if (emoji !== null && !(REACTION_EMOJIS as readonly string[]).includes(emoji)) throw Errors.VALIDATION_ERROR('Unsupported reaction')
+    const message = await db.supportMessage.findUnique({
+      where: { id },
+      include: { conversation: { select: { userId: true } } },
+    })
+    if (!message || message.conversation.userId !== userId || message.deletedAt || message.sender === 'system' || message.kind !== 'text') {
+      throw Errors.NOT_FOUND('Message')
+    }
+    const meta = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata) ? { ...(message.metadata as Record<string, unknown>) } : {}
+    const current = meta.reactions && typeof meta.reactions === 'object' && !Array.isArray(meta.reactions) ? { ...(meta.reactions as Record<string, string>) } : {}
+    if (emoji === null || current[userId] === emoji) delete current[userId]
+    else current[userId] = emoji
+    if (Object.keys(current).length) meta.reactions = current
+    else delete meta.reactions
+    await db.supportMessage.update({ where: { id }, data: { metadata: Object.keys(meta).length ? (meta as Prisma.InputJsonValue) : Prisma.DbNull } })
+    return reply.send({ success: true, data: { reactions: summarizeReactions(current, userId) } })
   })
 
   // POST /support/chat/read — user marks admin replies as read
