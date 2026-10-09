@@ -97,6 +97,7 @@ interface Listing {
   usdtPaymentMethods?: string[]
   usdtSettlementDestinations?: { method: string; address: string; label?: string }[]
   token: { id: string; name: string; symbol: string; logoUrl?: string; riskTier: string; settlementType: string; description: string; addressExample?: string }
+  underReview?: boolean
   merchantProfile: { id: string; tier: string; totalCtmTrades: number; completedCtmTrades: number; ctmAvgRating: string; user: { id: string; username: string; fullName: string | null; avatarUrl: string | null } }
 }
 
@@ -892,6 +893,12 @@ export default function ListingDetailPage({ params }: { params: Promise<{ id: st
               Complete Trade Details
             </button>
           </div>
+      )}
+
+      {!isMine && listing.underReview && (
+        <div className="bg-surface-alt border border-border rounded-xl p-3 text-sm text-text-secondary">
+          This user's account is under review, so trades may take longer than usual.
+        </div>
       )}
 
       {/* CTA — also shown when an accepted bid's window has lapsed (E1): a dead

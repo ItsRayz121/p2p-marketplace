@@ -394,7 +394,9 @@ export async function getListingById(id: string) {
   })
   if (!listing) throw new AppError('NOT_FOUND', 'Listing not found', 404)
   const resolvedPaymentMethods = await resolvePaymentMethods(listing.paymentMethods)
-  return { ...listing, resolvedPaymentMethods }
+  // Not shown publicly as a badge — only surfaced as a neutral notice at trade start.
+  const underReview = (await getDisputedUserIds([listing.merchantProfile.user.id])).has(listing.merchantProfile.user.id)
+  return { ...listing, resolvedPaymentMethods, underReview }
 }
 
 export async function updateListing(userId: string, listingId: string, data: {

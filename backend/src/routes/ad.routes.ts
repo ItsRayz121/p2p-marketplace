@@ -13,6 +13,7 @@ import {
 import { AppError } from '../lib/errors'
 import { db } from '../lib/prisma'
 import { getUserAvailability } from '../lib/activeHours'
+import { getDisputedUserIds } from '../lib/tradingHold'
 
 const PM_LABELS: Record<string, string> = {
   jazzcash: 'JazzCash',
@@ -128,7 +129,9 @@ export async function adRoutes(app: FastifyInstance) {
     )
 
     const availability = await getUserAvailability(ad.userId)
-    return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods, availability } })
+    // Not shown publicly as a badge — only surfaced as a neutral notice at trade start.
+    const underReview = (await getDisputedUserIds([ad.userId])).has(ad.userId)
+    return reply.send({ success: true, data: { ...ad, resolvedPaymentMethods, availability, underReview } })
   })
 
   // GET /api/ads — user's own ads (also exposed at /ads/me for frontend convenience)

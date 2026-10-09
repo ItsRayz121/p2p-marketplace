@@ -67,6 +67,7 @@ interface AdDetail {
   terms: string
   status: string
   availability?: { online: boolean; opensAt: string | null }
+  underReview?: boolean
   user: { id: string; username: string; fullName?: string | null; avatarUrl?: string | null; tradeStats?: { totalTrades: number; completedTrades: number; completionRate: string } | null }
 }
 
@@ -810,6 +811,12 @@ export default function AdListingDetailPage({ params }: { params: Promise<{ id: 
       {!isMine && myActiveBid?.status === 'pending' && (
         <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4 text-sm text-blue-800 dark:text-blue-300">
           You have a pending bid on this listing. Waiting for the owner to respond.
+        </div>
+      )}
+
+      {!isMine && ad.underReview && (
+        <div className="bg-surface-alt border border-border rounded-xl p-3 text-sm text-text-secondary">
+          This user's account is under review, so trades may take longer than usual.
         </div>
       )}
 
