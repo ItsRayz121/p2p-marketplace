@@ -5487,6 +5487,8 @@ export async function adminRoutes(app: FastifyInstance) {
     perUserLimit:       z.number().int().min(1).max(1000).default(1),
     minOrderUsd:        z.number().min(0).default(0),
     expiresAt:          z.string().datetime().optional(),
+    // Optional one-to-one restriction: user ID, email or username of the only allowed redeemer.
+    allowedUser:        z.string().trim().min(1).max(120).optional(),
   })
   const promoUpdateSchema = z.object({
     ownerLabel:         z.string().trim().min(1).max(120).optional(),
@@ -5497,7 +5499,18 @@ export async function adminRoutes(app: FastifyInstance) {
     minOrderUsd:        z.number().min(0).optional(),
     expiresAt:          z.string().datetime().nullable().optional(),
     isActive:           z.boolean().optional(),
+    allowedUser:        z.string().trim().max(120).nullable().optional(), // null/'' clears the restriction
   })
+
+  // Resolve a user by ID, email or username (admin convenience for one-to-one codes).
+  async function resolvePromoUser(ref: string): Promise<{ id: string; username: string; email: string }> {
+    const u = await db.user.findFirst({
+      where: { OR: [{ id: ref }, { email: ref.toLowerCase() }, { username: ref }] },
+      select: { id: true, username: true, email: true },
+    })
+    if (!u) throw new AppError('NOT_FOUND', `No user found for '${ref}'`, 404)
+    return u
+  }
 
   // GET /admin/gas/promo-codes — list with live redemption counts + margin spent
   app.get('/admin/gas/promo-codes', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
@@ -5505,7 +5518,14 @@ export async function adminRoutes(app: FastifyInstance) {
       orderBy: { createdAt: 'desc' },
       include: { _count: { select: { redemptions: true } } },
     })
+    const restrictedIds = codes.map((c) => c.allowedUserId).filter((x): x is string => !!x)
+    const restrictedUsers = restrictedIds.length
+      ? await db.user.findMany({ where: { id: { in: restrictedIds } }, select: { id: true, username: true, email: true } })
+      : []
+    const userById = new Map(restrictedUsers.map((u) => [u.id, u]))
     const data = codes.map((c) => ({
+      allowedUserId: c.allowedUserId,
+      allowedUserLabel: c.allowedUserId ? (userById.get(c.allowedUserId)?.username ?? c.allowedUserId) : null,
       id: c.id,
       code: c.code,
       ownerLabel: c.ownerLabel,
@@ -5546,10 +5566,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const existing = await db.gasPromoCode.findUnique({ where: { code } })
     if (existing) throw new AppError('CONFLICT', `Promo code '${code}' already exists`, 409)
+    const allowed = p.allowedUser ? await resolvePromoUser(p.allowedUser) : null
 
     const created = await db.gasPromoCode.create({
       data: {
         code,
+        ...(allowed ? { allowedUserId: allowed.id } : {}),
         ownerLabel: p.ownerLabel,
         tiers: p.tiers,
         defaultDiscountPct: p.defaultDiscountPct,
@@ -5559,7 +5581,7 @@ export async function adminRoutes(app: FastifyInstance) {
         ...(p.expiresAt ? { expiresAt: new Date(p.expiresAt) } : {}),
       },
     })
-    await createAuditLog(req.user!.id, 'GAS_PROMO_CREATE', 'GasPromoCode', created.id, { code, marginBudgetUsdt: p.marginBudgetUsdt }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    await createAuditLog(req.user!.id, 'GAS_PROMO_CREATE', 'GasPromoCode', created.id, { code, marginBudgetUsdt: p.marginBudgetUsdt, allowedUserId: allowed?.id ?? null }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.code(201).send({ success: true, data: created })
   })
 
@@ -5573,10 +5595,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const existing = await db.gasPromoCode.findUnique({ where: { id } })
     if (!existing) throw Errors.NOT_FOUND('Promo code')
+    const allowed = p.allowedUser ? await resolvePromoUser(p.allowedUser) : null
 
     const updated = await db.gasPromoCode.update({
       where: { id },
       data: {
+        ...(p.allowedUser !== undefined ? { allowedUserId: allowed?.id ?? null } : {}),
         ...(p.ownerLabel !== undefined ? { ownerLabel: p.ownerLabel } : {}),
         ...(p.tiers !== undefined ? { tiers: p.tiers } : {}),
         ...(p.defaultDiscountPct !== undefined ? { defaultDiscountPct: p.defaultDiscountPct } : {}),

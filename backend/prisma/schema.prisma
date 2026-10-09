@@ -2032,6 +2032,8 @@ model GasPromoCode {
   totalRedemptions   Int      @default(0)        // also the next slot index (optimistic-lock key)
   perUserLimit       Int      @default(1)        // max redemptions per identity (user or IP)
   minOrderUsd        Float    @default(0)        // min order value (pre-discount) to qualify
+  // When set, ONLY this user may redeem the code (one-to-one reward). Plain ref, no FK.
+  allowedUserId      String?
   expiresAt          DateTime?
   isActive           Boolean  @default(true)     // admin kill switch
   createdAt          DateTime @default(now())

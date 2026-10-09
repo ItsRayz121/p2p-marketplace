@@ -107,6 +107,7 @@ type PromoCodeRow = {
   minOrderUsd: number
   expiresAt: Date | null
   isActive: boolean
+  allowedUserId: string | null
 }
 
 /** Compute the discount for a code in its current state, without reserving anything. */
@@ -124,8 +125,12 @@ function computeDiscount(
 }
 
 /** Reasons a code can't be applied — mapped to user-facing messages. */
-function validateApplicable(row: PromoCodeRow | null, orderUsd: number): asserts row is PromoCodeRow {
+function validateApplicable(row: PromoCodeRow | null, orderUsd: number, identity: string): asserts row is PromoCodeRow {
   if (!row || !row.isActive) {
+    throw new AppError('PROMO_INVALID', 'This promo code is not valid.', 400)
+  }
+  // One-to-one codes: same generic message as an unknown code so it can't be probed.
+  if (row.allowedUserId && identity !== `user:${row.allowedUserId}`) {
     throw new AppError('PROMO_INVALID', 'This promo code is not valid.', 400)
   }
   if (row.expiresAt && row.expiresAt.getTime() < Date.now()) {
@@ -159,7 +164,7 @@ export async function previewPromo(args: {
   }
   const code = normalizeCode(args.code)
   const row = await db.gasPromoCode.findUnique({ where: { code } })
-  validateApplicable(row, args.orderUsd)
+  validateApplicable(row, args.orderUsd, args.identity)
 
   const used = await countUserRedemptions(row.id, args.identity)
   if (used >= row.perUserLimit) {
@@ -200,7 +205,7 @@ export async function reservePromo(args: {
 
   for (let attempt = 0; attempt < MAX_RESERVE_ATTEMPTS; attempt++) {
     const row = await db.gasPromoCode.findUnique({ where: { code } })
-    validateApplicable(row, args.orderUsd)
+    validateApplicable(row, args.orderUsd, args.identity)
 
     const used = await countUserRedemptions(row.id, args.identity)
     if (used >= row.perUserLimit) {

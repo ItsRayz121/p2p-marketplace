@@ -3092,6 +3092,7 @@ export const adminApi = {
       defaultDiscountPct: number; marginBudgetUsdt: number; marginSpentUsdt: number; budgetRemainingUsdt: number
       totalRedemptions: number; redemptionRows: number; perUserLimit: number; minOrderUsd: number
       expiresAt: string | null; isActive: boolean; createdAt: string
+      allowedUserId: string | null; allowedUserLabel: string | null
     }>>('/admin/gas/promo-codes'),
   getGasPromoRedemptions: (id: string) =>
     apiRequest<Array<{ id: string; identity: string; discountUsdt: string; marginUsdt: string; tierIndex: number; createdAt: string; order: { orderRef: string; paymentAmount: string; status: string } | null }>>(`/admin/gas/promo-codes/${id}/redemptions`),
@@ -3099,6 +3100,7 @@ export const adminApi = {
     code: string; ownerLabel: string
     tiers: Array<{ maxRedemptions: number; discountPct: number }>
     defaultDiscountPct: number; marginBudgetUsdt: number; perUserLimit: number; minOrderUsd: number; expiresAt?: string
+    allowedUser?: string
   }) => apiRequest<unknown>('/admin/gas/promo-codes', { method: 'POST', body: JSON.stringify(data) }),
   updateGasPromoCode: (id: string, data: Record<string, unknown>) =>
     apiRequest<unknown>(`/admin/gas/promo-codes/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),

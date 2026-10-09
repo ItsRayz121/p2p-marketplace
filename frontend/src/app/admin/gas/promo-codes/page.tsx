@@ -25,6 +25,7 @@ const blankForm = () => ({
   perUserLimit: 1,
   minOrderUsd: 0,
   expiresAt: '',
+  allowedUser: '',
 })
 
 function fmt(n: number): string { return `$${n.toFixed(2)}` }
@@ -83,17 +84,28 @@ export default function GasPromoCodesPage() {
 
   async function create() {
     if (!form.code.trim() || !form.ownerLabel.trim()) { toast.error('Code and owner are required'); return }
+    if (form.code.trim().length < 2) { toast.error('Code must be at least 2 characters'); return }
+    // Number inputs can be blank / fractional on mobile keyboards — validate before the API does.
+    const tiers = form.tiers.filter((t) => Number(t.maxRedemptions) > 0)
+    if (tiers.some((t) => !Number.isInteger(Number(t.maxRedemptions)) || !(Number(t.discountPct) >= 0 && Number(t.discountPct) <= 100))) {
+      toast.error('Tier users must be a whole number and discount between 0 and 100'); return
+    }
+    if (!(Number(form.marginBudgetUsdt) > 0)) { toast.error('Margin budget must be greater than 0'); return }
+    if (!Number.isInteger(Number(form.perUserLimit)) || Number(form.perUserLimit) < 1) { toast.error('Per-user limit must be a whole number, 1 or more'); return }
+    const expires = form.expiresAt ? new Date(form.expiresAt) : null
+    if (expires && Number.isNaN(expires.getTime())) { toast.error('Pick a complete expiry date and time, or clear it'); return }
     setSaving(true)
     try {
       await adminApi.createGasPromoCode({
         code: form.code.trim().toUpperCase(),
         ownerLabel: form.ownerLabel.trim(),
-        tiers: form.tiers.filter((t) => t.maxRedemptions > 0),
-        defaultDiscountPct: form.defaultDiscountPct,
-        marginBudgetUsdt: form.marginBudgetUsdt,
-        perUserLimit: form.perUserLimit,
-        minOrderUsd: form.minOrderUsd,
-        ...(form.expiresAt ? { expiresAt: new Date(form.expiresAt).toISOString() } : {}),
+        tiers: tiers.map((t) => ({ maxRedemptions: Number(t.maxRedemptions), discountPct: Number(t.discountPct) })),
+        defaultDiscountPct: Number(form.defaultDiscountPct) || 0,
+        marginBudgetUsdt: Number(form.marginBudgetUsdt),
+        perUserLimit: Number(form.perUserLimit),
+        minOrderUsd: Number(form.minOrderUsd) || 0,
+        ...(expires ? { expiresAt: expires.toISOString() } : {}),
+        ...(form.allowedUser.trim() ? { allowedUser: form.allowedUser.trim() } : {}),
       })
       toast.success(`Promo code ${form.code.toUpperCase()} created`)
       setForm(blankForm()); setShowCreate(false)
@@ -216,8 +228,8 @@ export default function GasPromoCodesPage() {
             <p className="text-xs font-semibold text-text-primary mb-1">Discount tiers (consumed first-come)</p>
             <div className="space-y-2">
               {form.tiers.map((t, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <span className="text-xs text-text-muted w-12">First</span>
+                <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
+                  <span className="text-xs text-text-muted">First</span>
                   <input type="number" min={1} value={t.maxRedemptions} onChange={(e) => setTier(i, { maxRedemptions: Number(e.target.value) })} className="w-20 rounded-lg border border-border bg-surface-alt px-2 py-1.5" />
                   <span className="text-xs text-text-muted">users get</span>
                   <input type="number" min={0} max={100} value={t.discountPct} onChange={(e) => setTier(i, { discountPct: Number(e.target.value) })} className="w-20 rounded-lg border border-border bg-surface-alt px-2 py-1.5" />
@@ -245,6 +257,12 @@ export default function GasPromoCodesPage() {
           </div>
           <label className="text-xs font-semibold text-text-primary block">Expires (optional)
             <input type="datetime-local" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} className="mt-1 w-full sm:w-64 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
+          </label>
+
+          <label className="text-xs font-semibold text-text-primary block">Restrict to one user (optional)
+            <input value={form.allowedUser} onChange={(e) => setForm({ ...form, allowedUser: e.target.value })} placeholder="Email, username or user ID" autoCapitalize="none" autoCorrect="off"
+              className="mt-1 w-full sm:w-80 rounded-lg border border-border bg-surface-alt px-3 py-2 text-sm" />
+            <span className="mt-1 block font-normal text-text-muted">Only this user can redeem the code. Use per-user limit for 1 or 2 uses, and Expires for the deadline.</span>
           </label>
 
           <div className="flex gap-2">
@@ -299,6 +317,7 @@ export default function GasPromoCodesPage() {
                       <Badge variant={!c.isActive ? 'default' : expired ? 'warning' : 'success'}>
                         {!c.isActive ? 'Disabled' : expired ? 'Expired' : 'Active'}
                       </Badge>
+                      {c.allowedUserId && <Badge variant="default">Only: {c.allowedUserLabel}</Badge>}
                       {st?.insufficientData && <span className="text-[10px] text-text-muted" title="Fewer redemptions than needed to rank this code">low data</span>}
                     </div>
                     <p className="text-xs text-text-muted mt-0.5">{c.ownerLabel}</p>
