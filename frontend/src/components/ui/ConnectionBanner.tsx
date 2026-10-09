@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { API_BASE } from '@/lib/api'
 import {
-  beginRetry, endRetry, getConnectionState, reportConnectionFailure, reportConnectionSuccess,
+  beginRetry, classifyReadiness, endRetry, getConnectionState, reportConnectionFailure, reportConnectionSuccess,
   subscribeConnection, type ConnectionState,
 } from '@/lib/connectionStatus'
 
@@ -15,8 +15,11 @@ import {
  *    after a short delay, so the routine instant retry of a dead socket after the
  *    phone wakes up does not flash a banner).
  *  - A connection failure and a server failure get different wording.
- *  - Recovery is checked with an uncached request to the API's health ping, on a
- *    bounded backoff, never with navigator.onLine alone.
+ *  - Recovery is checked with an uncached request to the API's readiness check
+ *    (/health/ready: server AND database), on a bounded backoff — never with
+ *    navigator.onLine alone, and never with /health/ping, which touches no
+ *    database and so cannot show that the app's data is reachable again. On
+ *    recovery, screens showing an error refetch their own (safe, GET) reads.
  */
 const SHOW_RETRY_AFTER_MS = 1_500
 const PROBE_TIMEOUT_MS = 6_000
@@ -47,9 +50,14 @@ export function ConnectionBanner() {
     const controller = new AbortController()
     const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS)
     try {
-      const res = await fetch(`${API_BASE}/health/ping`, { cache: 'no-store', signal: controller.signal })
-      if (res.ok) { probeAttempt.current = 0; reportConnectionSuccess() }
-      else reportConnectionFailure('server')
+      const res = await fetch(`${API_BASE}/health/ready`, { cache: 'no-store', signal: controller.signal })
+      // 404 = reachable, readiness unknown: clears only a connection problem.
+      const result = classifyReadiness(res.status)
+      if (result === 'server') reportConnectionFailure('server')
+      else {
+        if (result === 'ready') probeAttempt.current = 0
+        reportConnectionSuccess(result)
+      }
     } catch {
       reportConnectionFailure('offline')
     } finally {

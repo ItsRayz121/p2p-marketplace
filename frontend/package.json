@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "check:bundle": "node scripts/check-bundle-size.mjs"
+    "check:bundle": "node scripts/check-bundle-size.mjs",
+    "test": "node --test tests/connection-recovery.test.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

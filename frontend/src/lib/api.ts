@@ -137,7 +137,8 @@ async function classifyGatewayAnswer(res: Response): Promise<void> {
   try {
     const body = (await res.json()) as { success?: unknown; error?: unknown }
     if (typeof body?.success === 'boolean' && body.error !== 'DATABASE_UNAVAILABLE') {
-      reportConnectionSuccess()
+      // The API answered, but a feature-level 503 says nothing about the database.
+      reportConnectionSuccess('reachable')
       return
     }
   } catch { /* not our JSON: a gateway or proxy page */ }
@@ -196,7 +197,8 @@ async function resilientFetch(
           signal: controller.signal,
         })
         if (GATEWAY_STATUSES.has(res.status)) void classifyGatewayAnswer(res.clone())
-        else reportConnectionSuccess()
+        // Only a 2xx shows data is being served; a 4xx just shows the API is reachable.
+        else reportConnectionSuccess(res.ok ? 'ready' : 'reachable')
         return res
       } catch (err) {
         lastErr = err

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { makerApi, type MakerStatusView } from '@/lib/makerApi'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
@@ -9,11 +9,17 @@ export default function MakerPage() {
   const [status, setStatus] = useState<MakerStatusView | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    makerApi.getStatus().then(setStatus).catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
+  // Re-run the read itself (a safe GET), never a page reload: ErrorState also retries
+  // automatically on reconnect, and a reload there would loop.
+  const load = useCallback(() => {
+    makerApi.getStatus()
+      .then((s) => { setStatus(s); setError(null) })
+      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
   }, [])
 
-  if (error) return <ErrorState title={error} onRetry={() => location.reload()} />
+  useEffect(() => { load() }, [load])
+
+  if (error) return <ErrorState title={error} onRetry={load} />
   if (!status) return <LoadingState message="Loading..." />
 
   return (

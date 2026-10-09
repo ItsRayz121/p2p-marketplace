@@ -9,7 +9,12 @@
 //   server   — the server (or its gateway) answered 502/503/504.
 //
 // A later successful response clears the problem and fires RECONNECTED_EVENT so
-// screens showing an error can refetch on their own. Nothing here reloads the page
+// screens showing an error can refetch on their own. What counts as recovery
+// depends on the problem: any answer from the API proves the connection is back
+// ('reachable'), but a server problem — a gateway error or the database being
+// unavailable — is only cleared by evidence that data is served again ('ready':
+// a 2xx from a real API read, or the /health/ready check). The liveness ping
+// touches no database and is never used as that evidence. Nothing here reloads the page
 // or replays a request: what the user is looking at and typing stays put.
 
 export type ConnectionState = 'ok' | 'retrying' | 'offline' | 'server'
@@ -51,8 +56,30 @@ export function reportConnectionFailure(kind: 'offline' | 'server'): void {
   emit()
 }
 
-export function reportConnectionSuccess(): void {
-  if (!problem) return
+export type RecoveryEvidence = 'reachable' | 'ready'
+
+/** Which problems a piece of evidence clears. Pure, so it can be tested. */
+export function clearsProblem(p: 'offline' | 'server' | null, evidence: RecoveryEvidence): boolean {
+  if (!p) return false
+  return evidence === 'ready' || p === 'offline'
+}
+
+/**
+ * What an answer from GET /health/ready proves.
+ *   2xx  -> 'ready'     : the API and its database answer.
+ *   404  -> 'reachable' : the API answered but has no readiness route (an older build,
+ *                         e.g. the frontend went live first). Readiness is UNKNOWN, so
+ *                         this clears only a connection problem, never a server one.
+ *   else -> 'server'    : 503 DATABASE_UNAVAILABLE, a gateway error, etc.
+ */
+export function classifyReadiness(status: number): RecoveryEvidence | 'server' {
+  if (status >= 200 && status < 300) return 'ready'
+  if (status === 404) return 'reachable'
+  return 'server'
+}
+
+export function reportConnectionSuccess(evidence: RecoveryEvidence = 'ready'): void {
+  if (!clearsProblem(problem, evidence)) return
   problem = null
   emit()
   if (typeof window !== 'undefined') window.dispatchEvent(new Event(RECONNECTED_EVENT))

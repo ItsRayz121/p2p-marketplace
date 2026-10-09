@@ -8,6 +8,58 @@ import { EMAIL_FROM, isEmailConfigured } from '../lib/resend'
 let cachedHealth: { result: object; status: number; cachedAt: number } | null = null
 const CACHE_TTL_MS = 10_000 // 10 seconds
 
+const READY_TTL_MS = 2_000
+const READY_QUERY_TIMEOUT_MS = 4_000
+let readyCache: { ready: boolean; at: number } | null = null
+let readyInFlight: Promise<{ ready: boolean }> | null = null
+// The DB query itself. A query that outlived its timeout is still holding a pool
+// connection, so later checks wait on it instead of stacking up more hung queries.
+// A probe that has been stuck longer than DB_PROBE_MAX_AGE_MS is given up on, so a
+// query that never settles cannot keep readiness at "not ready" after the DB is back.
+const DB_PROBE_MAX_AGE_MS = 30_000
+let dbProbe: { q: Promise<unknown>; startedAt: number } | null = null
+
+// Deadline for each dependency check in GET /health (also Railway's healthcheck).
+const HEALTH_CHECK_TIMEOUT_MS = 5_000
+
+/** Reject after `ms` if `p` has not settled; the timer never outlives the race. */
+function withDeadline<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error(`${label} timeout`)), ms) }),
+  ]).finally(() => clearTimeout(timer))
+}
+
+/** Bounded DB round-trip; concurrent callers share one query. Exported for tests. */
+export function checkReadiness(): Promise<{ ready: boolean }> {
+  if (readyCache && Date.now() - readyCache.at < READY_TTL_MS) return Promise.resolve({ ready: readyCache.ready })
+  if (readyInFlight) return readyInFlight
+  readyInFlight = (async () => {
+    let ready = false
+    try {
+      if (!dbProbe || Date.now() - dbProbe.startedAt > DB_PROBE_MAX_AGE_MS) {
+        // Promise.resolve: a PrismaPromise is lazy; this runs it exactly once.
+        const q: Promise<unknown> = Promise.resolve(db.$queryRaw`SELECT 1`)
+        const probe = { q, startedAt: Date.now() }
+        dbProbe = probe
+        const clear = () => { if (dbProbe === probe) dbProbe = null }
+        q.then(clear, clear)
+      }
+      await withDeadline(dbProbe.q, READY_QUERY_TIMEOUT_MS, 'readiness')
+      ready = true
+    } catch {
+      ready = false
+    }
+    readyCache = { ready, at: Date.now() }
+    return { ready }
+  })().finally(() => { readyInFlight = null })
+  return readyInFlight
+}
+
+/** Test hook: forget the shared readiness result. */
+export function resetReadinessCache(): void { readyCache = null; readyInFlight = null; dbProbe = null; cachedHealth = null }
+
 export async function healthRoutes(app: FastifyInstance) {
   app.get('/health', async (_req, reply) => {
     if (cachedHealth && Date.now() - cachedHealth.cachedAt < CACHE_TTL_MS) {
@@ -21,17 +73,21 @@ export async function healthRoutes(app: FastifyInstance) {
     let dbLatencyMs: number | undefined
     let redisLatencyMs: number | undefined
 
-    try {
+    // Both checks are bounded: a stuck database or Redis makes this answer 503 in
+    // seconds instead of hanging. The DB part shares the readiness probe, so a hung
+    // query is never stacked on.
+    {
       const dbStart = Date.now()
-      await db.$queryRaw`SELECT 1`
-      if (env.NODE_ENV !== 'production') dbLatencyMs = Date.now() - dbStart
-    } catch {
-      dbStatus = 'error'
+      if ((await checkReadiness()).ready) {
+        if (env.NODE_ENV !== 'production') dbLatencyMs = Date.now() - dbStart
+      } else {
+        dbStatus = 'error'
+      }
     }
 
     try {
       const redisStart = Date.now()
-      await redis.ping()
+      await withDeadline(Promise.resolve(redis.ping()), HEALTH_CHECK_TIMEOUT_MS, 'redis')
       if (env.NODE_ENV !== 'production') redisLatencyMs = Date.now() - redisStart
     } catch {
       redisStatus = 'error'
@@ -67,8 +123,22 @@ export async function healthRoutes(app: FastifyInstance) {
     return reply.status(httpStatus).send(result)
   })
 
+  // Liveness only: proves this process answers. It touches no DB, so it must NOT be
+  // read as "the app's data is reachable again" — use /health/ready for that.
   app.get('/health/ping', async (_req, reply) => {
     return reply.send({ pong: true })
+  })
+
+  // GET /health/ready — readiness for database-backed features. The client's
+  // recovery checks (connection banner, offline page) use this before declaring
+  // the app usable again. One bounded SELECT 1, its result shared for a couple of
+  // seconds so many recovering clients cost the database one query.
+  app.get('/health/ready', async (_req, reply) => {
+    const { ready } = await checkReadiness()
+    reply.header('Cache-Control', 'no-store')
+    return ready
+      ? reply.send({ success: true, ready: true })
+      : reply.status(503).send({ success: false, ready: false, error: 'DATABASE_UNAVAILABLE', message: 'Database is temporarily unavailable' })
   })
 
   // GET /health/email — Resend sender diagnostic.

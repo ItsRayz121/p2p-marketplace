@@ -15,22 +15,81 @@ export interface SharedContacts {
   community: Array<SharedAccount & { url: string }>
 }
 
-const HOST_ALIASES: Record<string, string> = {
-  'telegram.me': 't.me', 'telegram.dog': 't.me', 'www.t.me': 't.me',
-  'www.whatsapp.com': 'whatsapp.com',
+const TELEGRAM_HOSTS = new Set(['t.me', 'telegram.me', 'telegram.dog'])
+const WHATSAPP_HOSTS = new Set(['whatsapp.com', 'chat.whatsapp.com', 'wa.me'])
+// Public Telegram usernames: 5–32 of [A-Za-z0-9_], case-insensitive.
+const TG_USERNAME = /^[a-z][a-z0-9_]{3,31}$/i
+// Opaque invite tokens: case-sensitive base64url-ish strings.
+const TOKEN = /^[A-Za-z0-9_-]{6,}$/
+// t.me paths that are not a username.
+const TG_RESERVED = new Set(['joinchat', 's', 'c', 'addstickers', 'addemoji', 'share', 'proxy', 'socks', 'iv', 'login', 'setlanguage', 'addlist', 'boost'])
+
+function decodeSegment(seg: string): string {
+  try { return decodeURIComponent(seg) } catch { return seg }
 }
 
 /**
  * Comparison key for a community link: same group/channel → same key, whatever
- * the host alias, letter case, trailing slash, query string or fragment.
+ * the host alias, trailing slash, query string or fragment.
+ *
+ *  - Telegram public usernames are case-insensitive → lower-cased:
+ *      t.me/Name, telegram.me/name, t.me/s/name, t.me/name/123  → "t.me/name"
+ *  - Telegram invite tokens are opaque and case-SENSITIVE → kept as written, and
+ *    both invite spellings share one key, distinct from any username:
+ *      t.me/+AbC, t.me/%2BAbC, t.me/joinchat/AbC, tg://join?invite=AbC → "t.me/+AbC"
+ *  - WhatsApp group invites and channel ids are opaque → case kept;
+ *    wa.me numbers → digits only.
+ *  - Anything else: host and path lower-cased (an informational match only).
  */
 export function communityKey(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (!trimmed) return null
   let u: URL
-  try { u = new URL(raw.trim()) } catch { return null }
-  const host = u.hostname.toLowerCase()
-  const path = u.pathname.replace(/\/+$/, '').toLowerCase()
+  try {
+    u = new URL(/^[a-z][a-z0-9+.-]*:/i.test(trimmed) ? trimmed : `https://${trimmed}`)
+  } catch { return null }
+
+  // tg:// deep links.
+  if (u.protocol === 'tg:') {
+    const invite = u.searchParams.get('invite')
+    if (invite && TOKEN.test(invite)) return `t.me/+${invite}`
+    const domain = u.searchParams.get('domain')
+    if (domain && TG_USERNAME.test(domain)) return `t.me/${domain.toLowerCase()}`
+    return null
+  }
+  if (u.protocol !== 'https:' && u.protocol !== 'http:') return null
+
+  const host = u.hostname.toLowerCase().replace(/^(www\.|m\.)/, '')
+  const segs = u.pathname.split('/').filter(Boolean).map(decodeSegment)
+
+  if (TELEGRAM_HOSTS.has(host)) {
+    const [first = '', second = ''] = segs
+    if (first.startsWith('+') || first.startsWith(' ')) {
+      // "+TOKEN"; a literal "+" in a URL path is sometimes decoded to a space.
+      const token = first.slice(1)
+      return TOKEN.test(token) ? `t.me/+${token}` : null
+    }
+    const lower = first.toLowerCase()
+    if (lower === 'joinchat') return TOKEN.test(second) ? `t.me/+${second}` : null
+    if (lower === 'c') return /^\d+$/.test(second) ? `t.me/c/${second}` : null
+    if (lower === 's') return TG_USERNAME.test(second) ? `t.me/${second.toLowerCase()}` : null
+    if (TG_RESERVED.has(lower)) return null
+    const name = first.replace(/^@/, '')
+    return TG_USERNAME.test(name) ? `t.me/${name.toLowerCase()}` : null
+  }
+
+  if (WHATSAPP_HOSTS.has(host)) {
+    if (host === 'chat.whatsapp.com') return segs[0] && TOKEN.test(segs[0]) ? `chat.whatsapp.com/${segs[0]}` : null
+    if (host === 'wa.me') {
+      const digits = (segs[0] ?? '').replace(/\D/g, '')
+      return digits.length >= 7 ? `wa.me/${digits}` : null
+    }
+    if (segs[0]?.toLowerCase() === 'channel' && segs[1] && TOKEN.test(segs[1])) return `whatsapp.com/channel/${segs[1]}`
+  }
+
+  const path = segs.join('/').toLowerCase()
   if (path.replace(/\//g, '').length < 2) return null
-  return `${HOST_ALIASES[host] ?? host}${path}`
+  return `${host}/${path}`
 }
 
 function lastSegment(key: string): string {

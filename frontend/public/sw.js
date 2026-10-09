@@ -49,8 +49,32 @@
  *   - POST navigations (form submissions) — deliberately not intercepted;
  *   - in-app WebViews that do not run service workers.
  */
-const SW_VERSION = '2026-10-09.1'
+const SW_VERSION = '2026-10-09.2'
 const OFFLINE_CACHE = 'rc-offline-v3'
+
+// Every cache name a RupChain worker has ever created on this origin (see git history of this
+// file). Activation deletes ONLY these — never a cache it does not recognise, which may belong
+// to something else on the origin — and only the document-caching names below mean "this tab
+// may be a stale shell that needs re-fetching".
+const LEGACY_DOCUMENT_CACHES = ['rupchain-pages', 'rupchain-static', 'rupchain-precache-v1']
+const OLD_OFFLINE_CACHES = ['rc-offline-v1', 'rc-offline-v2']
+
+// Time bounds. Nothing the worker waits on may hang forever: a navigation that never settles
+// leaves a blank screen, and an install/activate that never settles blocks the next update.
+const NAV_ATTEMPT_TIMEOUT_MS = 12000 // one network attempt for a page load
+const NAV_TOTAL_BUDGET_MS = 30000    // all attempts together, before the recovery page
+const PRECACHE_FETCH_TIMEOUT_MS = 10000
+const PRECACHE_TOTAL_TIMEOUT_MS = 25000
+const CACHE_OP_TIMEOUT_MS = 3000     // a single Cache Storage call on the fallback path
+
+/** Settle with `promise`, or reject after `ms`. The timer never outlives the race. */
+function withTimeout(promise, ms, label) {
+  let t
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { t = setTimeout(() => reject(new Error((label || 'operation') + ' timed out')), ms) }),
+  ]).finally(() => clearTimeout(t))
+}
 const OFFLINE_URL = '/offline.html'
 const ICON_URL = '/brand/icon-192.png'
 // Page-supplied settings (currently the API origin, for the recovery check). Stored as a tiny
@@ -63,13 +87,24 @@ let lastCacheError = null
 /** Fetch the offline page fresh (bypassing HTTP caches) and store it. Throws on failure. */
 async function cacheOfflinePage() {
   const cache = await caches.open(OFFLINE_CACHE)
-  const res = await fetch(new Request(OFFLINE_URL, { cache: 'reload' }))
+  // Our own request, so it can be aborted (unlike the browser's navigation request).
+  const ctl = typeof AbortController === 'function' ? new AbortController() : null
+  const res = await withTimeout(
+    fetch(new Request(OFFLINE_URL, ctl ? { cache: 'reload', signal: ctl.signal } : { cache: 'reload' })),
+    PRECACHE_FETCH_TIMEOUT_MS, 'offline page fetch',
+  ).catch((e) => { if (ctl) ctl.abort(); throw e })
   if (!res.ok) throw new Error('offline page HTTP ' + res.status)
   await cache.put(OFFLINE_URL, res)
 }
 
-/** The essential page first, retried once; the icon separately and best-effort. */
-async function precache() {
+/** The essential page first, retried once; the icon separately and best-effort. Bounded as a
+ *  whole, so install/activate can never be held open by a stalled network or storage layer. */
+function precache() {
+  return withTimeout(precacheUnbounded(), PRECACHE_TOTAL_TIMEOUT_MS, 'precache')
+    .catch((e) => { lastCacheError = String((e && e.message) || e); return false })
+}
+
+async function precacheUnbounded() {
   let ok = false
   for (let i = 0; i < 2 && !ok; i++) {
     try { await cacheOfflinePage(); ok = true; lastCacheError = null }
@@ -77,13 +112,13 @@ async function precache() {
   }
   try {
     const cache = await caches.open(OFFLINE_CACHE)
-    await cache.add(new Request(ICON_URL, { cache: 'reload' }))
+    await withTimeout(cache.add(new Request(ICON_URL, { cache: 'reload' })), PRECACHE_FETCH_TIMEOUT_MS, 'icon fetch')
   } catch (e) { /* the page inlines its logo; the icon is only for push notifications */ }
   return ok
 }
 
 async function hasOfflinePage() {
-  try { return !!(await caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE })) } catch (e) { return false }
+  try { return !!(await withTimeout(caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE }), CACHE_OP_TIMEOUT_MS, 'cache read')) } catch (e) { return false }
 }
 
 // ─── Install / activate ──────────────────────────────────────────────────────
@@ -99,14 +134,13 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    // Drop every cache the previous revisions created. Only the very old document-caching
-    // revision left non-"rc-offline-" caches behind; remember whether we found one.
+    // Drop the caches earlier RupChain revisions created — by exact name only. Anything else on
+    // the origin is left alone and is not taken as a sign of the old document-caching worker.
     let hadLegacyPageCache = false
     try {
-      const names = await caches.keys()
-      const stale = names.filter((n) => n !== OFFLINE_CACHE)
-      hadLegacyPageCache = stale.some((n) => !/^rc-offline-/.test(n))
-      await Promise.all(stale.map((n) => caches.delete(n)))
+      const plan = planCacheCleanup(await withTimeout(caches.keys(), CACHE_OP_TIMEOUT_MS, 'cache keys'))
+      hadLegacyPageCache = plan.hadLegacyPageCache
+      await withTimeout(Promise.all(plan.remove.map((n) => caches.delete(n))), CACHE_OP_TIMEOUT_MS, 'cache delete')
     } catch (e) { /* storage unavailable; nothing to clean */ }
 
     // Install may have run while the connection was down. Try once more now.
@@ -134,6 +168,13 @@ self.addEventListener('activate', (event) => {
   })())
 })
 
+/** Which of `names` to delete, and whether any is a document-caching leftover. Pure, so it can be tested. */
+function planCacheCleanup(names) {
+  const known = new Set(LEGACY_DOCUMENT_CACHES.concat(OLD_OFFLINE_CACHES))
+  const remove = (names || []).filter((n) => known.has(n))
+  return { remove, hadLegacyPageCache: remove.some((n) => LEGACY_DOCUMENT_CACHES.indexOf(n) !== -1) }
+}
+
 async function broadcast(msg) {
   try {
     const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
@@ -145,8 +186,8 @@ async function broadcast(msg) {
 
 async function readConfig() {
   try {
-    const r = await caches.match(CONFIG_URL, { cacheName: OFFLINE_CACHE })
-    return r ? await r.json() : {}
+    const r = await withTimeout(caches.match(CONFIG_URL, { cacheName: OFFLINE_CACHE }), CACHE_OP_TIMEOUT_MS, 'config read')
+    return r ? await withTimeout(r.json(), CACHE_OP_TIMEOUT_MS, 'config parse') : {}
   } catch (e) { return {} }
 }
 
@@ -203,20 +244,57 @@ const GATEWAY_STATUSES = new Set([502, 503, 504])
 // wake-up, often while the network is still reconnecting — and a Wi-Fi/mobile switch aborts an
 // in-flight load with ERR_NETWORK_CHANGED. Retry the SAME GET a few times with backoff before
 // concluding the network is down. Still network-only: nothing is cached or replayed.
+//
+// Each attempt and the whole sequence are time-bounded: after a network switch a request can
+// stall without ever failing, and an unbounded wait is a blank screen. When an attempt is slow,
+// the next one starts but the slow one is NOT dropped: on a slow-but-working connection its
+// answer may still arrive first, and whichever attempt answers first is used. (Attempts are not
+// aborted: that would mean rebuilding the browser's navigation request, which changes its mode.)
+// Only when the whole budget runs out, or every attempt has failed, is the recovery page shown.
+// Late answers after that are discarded, never stored.
 async function navigateWithRetry(req, event) {
   const delays = [0, 600, 1500, 3000]
+  const deadline = Date.now() + NAV_TOTAL_BUDGET_MS
   let lastStatus = 0
-  for (let i = 0; i < delays.length; i++) {
-    if (delays[i]) await new Promise((r) => setTimeout(r, delays[i]))
-    try {
-      const res = await fetch(req)
-      if (!GATEWAY_STATUSES.has(res.status)) {
-        // The network works right now: make sure the fallback page is in place for next time.
-        event.waitUntil(hasOfflinePage().then((ok) => (ok ? null : precache())).catch(() => {}))
-        return res
-      }
-      lastStatus = res.status
-    } catch (e) { lastStatus = 0 /* connection failure: retry */ }
+  let good = null       // first non-gateway response from any attempt
+  let inFlight = 0
+  const waiters = new Set()
+  const poke = () => { waiters.forEach((w) => w()) }
+
+  // Resolve when cond() holds or after ms, whichever comes first.
+  const waitUntil = (cond, ms) => new Promise((resolve) => {
+    if (cond() || ms <= 0) return resolve()
+    const done = () => { clearTimeout(t); waiters.delete(check); resolve() }
+    const check = () => { if (cond()) done() }
+    const t = setTimeout(done, ms)
+    waiters.add(check)
+  })
+
+  const start = () => {
+    const attempt = { settled: false }
+    inFlight++
+    fetch(req).then((res) => {
+      if (!GATEWAY_STATUSES.has(res.status)) { if (!good) good = res }
+      else lastStatus = res.status
+    }, () => { lastStatus = 0 /* connection failure */ }).then(() => { attempt.settled = true; inFlight--; poke() })
+    return attempt
+  }
+
+  for (let i = 0; i < delays.length && !good; i++) {
+    if (delays[i]) await waitUntil(() => !!good, Math.min(delays[i], deadline - Date.now()))
+    const remaining = deadline - Date.now()
+    if (good || remaining <= 0) break
+    const attempt = start()
+    // Move on when this attempt fails, any attempt succeeds, or this one is too slow.
+    await waitUntil(() => !!good || attempt.settled, Math.min(NAV_ATTEMPT_TIMEOUT_MS, remaining))
+  }
+  // Out of retries: give attempts still running the rest of the budget.
+  if (!good) await waitUntil(() => !!good || inFlight === 0, deadline - Date.now())
+
+  if (good) {
+    // The network works right now: make sure the fallback page is in place for next time.
+    event.waitUntil(hasOfflinePage().then((ok) => (ok ? null : precache())).catch(() => {}))
+    return good
   }
   return fallbackResponse(lastStatus ? 'server' : 'network')
 }
@@ -229,10 +307,11 @@ async function fallbackResponse(reason) {
   )
   const headers = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-RupChain-Fallback': 'inline' }
   try {
-    const cached = await caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE })
+    const cached = await withTimeout(caches.match(OFFLINE_URL, { cacheName: OFFLINE_CACHE }), CACHE_OP_TIMEOUT_MS, 'cache read')
     if (cached) {
+      const html = await withTimeout(cached.text(), CACHE_OP_TIMEOUT_MS, 'cache body')
       headers['X-RupChain-Fallback'] = 'cached'
-      return new Response(fill(await cached.text()), { status: 503, statusText: 'Service Unavailable', headers })
+      return new Response(fill(html), { status: 503, statusText: 'Service Unavailable', headers })
     }
   } catch (e) { /* Cache Storage failed: fall through to the built-in page */ }
   return new Response(fill(INLINE_FALLBACK), { status: 503, statusText: 'Service Unavailable', headers })
@@ -244,7 +323,9 @@ function escapeAttr(s) {
 
 // Minimal self-contained page for when /offline.html was never cached or has been evicted.
 // Same wording as offline.html; a lettermark instead of the logo image; manual retry only, so it
-// can never reload in a loop.
+// can never reload in a loop. The retry check is bounded (abort plus a hard timer, for browsers
+// without AbortController), so "Try again" always becomes tappable again.
+const INLINE_RETRY_TIMEOUT_MS = 10000
 const INLINE_FALLBACK = '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
   '<meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">' +
   '<title>RupChain — connection problem</title><style>' +
@@ -261,9 +342,13 @@ const INLINE_FALLBACK = '<!doctype html><html lang="en"><head><meta charset="utf
   '<button type="button" id="b">Try again</button><p id="s" role="status" aria-live="polite"></p></main><script>' +
   '(function(){var B=document.body,b=document.getElementById("b"),s=document.getElementById("s"),run=false;' +
   'if(B.getAttribute("data-reason")==="server")document.getElementById("t").textContent="RupChain is having trouble right now.";' +
-  'function go(){if(run)return;run=true;b.disabled=true;s.textContent="Reconnecting…";' +
-  'fetch(location.href,{cache:"no-store",credentials:"same-origin"}).then(function(r){if(r.status<500){location.reload();return}throw 0})' +
-  '.catch(function(){run=false;b.disabled=false;s.textContent="Still can’t connect. Please try again in a moment."})}' +
+  'function done(){run=false;b.disabled=false;s.textContent="Still can’t connect. Please try again in a moment."}' +
+  'function go(){if(run)return;run=true;b.disabled=true;s.textContent="Reconnecting…";var fin=false,' +
+  'c=typeof AbortController==="function"?new AbortController():null,' +
+  't=setTimeout(function(){if(fin)return;fin=true;if(c)c.abort();done()},' + INLINE_RETRY_TIMEOUT_MS + ');' +
+  'var o={cache:"no-store",credentials:"same-origin"};if(c)o.signal=c.signal;' +
+  'fetch(location.href,o).then(function(r){if(fin)return;fin=true;clearTimeout(t);if(r.status<500){location.reload();return}done()},' +
+  'function(){if(fin)return;fin=true;clearTimeout(t);done()})}' +
   'b.addEventListener("click",go)})();' +
   '</' + 'script></body></html>'
 

@@ -33,17 +33,19 @@ export default function ConnectionCheckPage() {
   const [sw, setSw] = useState<ServiceWorkerDiagnostics | null>(null)
   const [site, setSite] = useState<ProbeResult | null>(null)
   const [api, setApi] = useState<ProbeResult | null>(null)
+  const [ready, setReady] = useState<ProbeResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [copied, setCopied] = useState(false)
 
   const run = useCallback(async (repair = false) => {
     setBusy(true)
-    const [d, s, a] = await Promise.all([
+    const [d, s, a, r] = await Promise.all([
       getServiceWorkerDiagnostics({ repair }),
       probe(`/connection-check?probe=${Date.now()}`, { credentials: 'same-origin' }),
       probe(`${API_BASE}/health/ping`),
+      probe(`${API_BASE}/health/ready`),
     ])
-    setSw(d); setSite(s); setApi(a)
+    setSw(d); setSite(s); setApi(a); setReady(r)
     setBusy(false)
   }, [])
 
@@ -56,6 +58,7 @@ export default function ConnectionCheckPage() {
     serviceWorker: sw,
     website: site,
     api,
+    apiReady: ready,
   }
 
   const copy = async () => {
@@ -93,6 +96,7 @@ export default function ConnectionCheckPage() {
         <dl className="space-y-1.5 text-sm">
           <div className="flex justify-between gap-4"><dt className="text-text-muted">Website</dt><dd className="text-right">{probeText(site)}</dd></div>
           <div className="flex justify-between gap-4"><dt className="text-text-muted">RupChain API</dt><dd className="text-right">{probeText(api)}</dd></div>
+          <div className="flex justify-between gap-4"><dt className="text-text-muted">Account data (database)</dt><dd className="text-right">{probeText(ready)}</dd></div>
         </dl>
       </section>
 

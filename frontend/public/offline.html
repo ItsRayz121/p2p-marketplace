@@ -55,36 +55,78 @@
   // ── Reload-loop guard ─────────────────────────────────────────────────────
   // Every automatic reload is recorded. If the page keeps coming back here, stop
   // reloading on our own and wait for the user to tap "Try again".
+  //
+  // The guard only works if the record survives the reload. When sessionStorage
+  // is missing, throws (blocked storage, some private modes and WebViews), or does
+  // not read back what was written, there is no guard — so there are no automatic
+  // reloads at all. Checks still run and say when RupChain is back; the user taps.
   var KEY = 'rc-offline-auto-reloads', WINDOW_MS = 2 * 60 * 1000, MAX_AUTO = 3;
-  function recentAutoReloads() {
+  var guardOk = (function () {
     try {
-      var now = Date.now();
-      return (JSON.parse(sessionStorage.getItem(KEY) || '[]') || []).filter(function (t) { return now - t < WINDOW_MS; });
-    } catch (e) { return []; }
+      var probe = 'rc-offline-probe', v = String(Date.now());
+      sessionStorage.setItem(probe, v);
+      var ok = sessionStorage.getItem(probe) === v;
+      sessionStorage.removeItem(probe);
+      return ok;
+    } catch (e) { return false; }
+  })();
+  // Recent automatic reloads, or null when the record cannot be trusted.
+  function recentAutoReloads() {
+    if (!guardOk) return null;
+    try {
+      var now = Date.now(), l = JSON.parse(sessionStorage.getItem(KEY) || '[]');
+      if (!Array.isArray(l)) return null;
+      return l.filter(function (t) { return typeof t === 'number' && now - t < WINDOW_MS; });
+    } catch (e) { return null; }
   }
+  // Record one automatic reload. True only when the record was written and reads back.
   function noteAutoReload() {
-    try { var l = recentAutoReloads(); l.push(Date.now()); sessionStorage.setItem(KEY, JSON.stringify(l)); } catch (e) {}
+    var l = recentAutoReloads();
+    if (!l) return false;
+    try {
+      l.push(Date.now());
+      var v = JSON.stringify(l);
+      sessionStorage.setItem(KEY, v);
+      return sessionStorage.getItem(KEY) === v;
+    } catch (e) { return false; }
+  }
+  function autoReloadAllowed() {
+    var l = recentAutoReloads();
+    return !!l && l.length < MAX_AUTO;
   }
 
   // ── Recovery check ────────────────────────────────────────────────────────
   // Uncached requests to the real service, not navigator.onLine and not a static
   // file: the page the user wanted (proves the website answers) and, when known,
-  // the API's health ping (proves the backend answers). Nothing is submitted.
+  // the API's readiness check (proves the backend AND its database answer — the
+  // plain ping does not touch the database, so it cannot show that the app's data
+  // is reachable again). Nothing is submitted.
   function timed(url, ms, init) {
     var ctl = typeof AbortController === 'function' ? new AbortController() : null;
-    var t = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
+    var t;
     var opts = init || {};
     opts.cache = 'no-store';
     if (ctl) opts.signal = ctl.signal;
-    return fetch(url, opts).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+    // The hard timer also covers browsers without AbortController, where the fetch
+    // itself cannot be stopped: the check settles either way.
+    return Promise.race([
+      fetch(url, opts),
+      new Promise(function (_, reject) { t = setTimeout(function () { if (ctl) ctl.abort(); reject(new Error('timeout')); }, ms); }),
+    ]).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
   }
   function check() {
     return timed(location.href, 10000, { credentials: 'same-origin', redirect: 'follow' })
       .then(function (r) {
         if (r.status >= 500) return { page: false, api: false, server: true };
         if (!api) return { page: true, api: true };
-        return timed(api.replace(/\/$/, '') + '/health/ping', 8000, { mode: 'cors' })
-          .then(function (a) { return { page: true, api: a.ok, server: !a.ok }; }, function () { return { page: true, api: false, server: false }; });
+        return timed(api.replace(/\/$/, '') + '/health/ready', 8000, { mode: 'cors' })
+          // 404: an API build without the readiness route yet (frontend deployed first).
+          // The API is reachable but readiness is unknown: not proof of recovery, so no
+          // automatic reload; the person decides with "Try again".
+          .then(function (a) {
+            if (a.status === 404) return { page: true, api: false, reachable: true, server: false };
+            return { page: true, api: a.ok, server: !a.ok };
+          }, function () { return { page: true, api: false, server: false }; });
       }, function () { return { page: false, api: false, server: false }; });
   }
 
@@ -100,7 +142,7 @@
   function run(manual) {
     if (running) return;
     var auto = !manual;
-    if (auto && recentAutoReloads().length >= MAX_AUTO) {
+    if (auto && guardOk && !autoReloadAllowed()) {
       statusEl.textContent = 'Tap "Try again" when your connection is back.';
       return;
     }
@@ -111,15 +153,25 @@
       running = false;
       btn.disabled = false;
       // A manual tap reloads as soon as the website answers. An automatic check
-      // also waits for the API, so we don't bounce the user into a broken app.
+      // also waits for the API, so we don't bounce the user into a broken app —
+      // and only reloads when the loop guard could record it.
       if (res.page && (manual || res.api)) {
-        if (auto) noteAutoReload();
-        location.reload();
+        if (manual || noteAutoReload()) { location.reload(); return; }
+        guardOk = false;
+        statusEl.textContent = 'RupChain is back. Tap "Try again" to continue.';
         return;
       }
       if (res.server) setReason('server');
       attempt++;
-      statusEl.textContent = res.page ? 'The website is back, but RupChain is still not responding.' : "Still can't connect. We'll keep trying.";
+      statusEl.textContent = res.reachable
+        ? 'RupChain is reachable. Tap "Try again" to continue.'
+        : res.page ? 'The website is back, but RupChain is still not responding.' : "Still can't connect. We'll keep trying.";
+      schedule();
+    }, function () {
+      running = false;
+      btn.disabled = false;
+      attempt++;
+      statusEl.textContent = "Still can't connect. We'll keep trying.";
       schedule();
     });
   }
