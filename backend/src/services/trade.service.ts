@@ -11,6 +11,7 @@ import { generateOrderRef } from '../lib/hash'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from './adminNotification.service'
 import { FLAGS, isFlagEnabled, getNumberConfig } from './platformFlags.service'
+import { alertOnCancellation, alertOnDisputeOpened } from './riskAlerts.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from './tradeConcurrency.service'
 import { assertNoKycTakerAllowed } from './nokycTaker.service'
 import { isTakerFirstForMarket } from './settlementMode.service'
@@ -1479,6 +1480,7 @@ export async function cancelTrade(tradeId: string, actorId: string, role: string
   notify(otherPartyId, 'trade', 'Trade Cancelled', `A trade you were part of has been cancelled. Reason: ${reason}`, { tradeId }, tradeId)
 
   void closeEpisode({ market: 'usdt', tradeId, outcome: 'cancelled' })
+  if (role !== 'admin' && role !== 'super_admin') void alertOnCancellation(actorId)
 
   return db.trade.findUnique({ where: { id: tradeId } })
 }
@@ -1571,6 +1573,7 @@ export async function openDispute(
   createAdminNotif({ category: 'DISPUTE', title: 'New Dispute Opened', body: `Dispute on Trade #${trade.orderRef}: ${reason}`, href: `/admin/disputes` })
 
   void closeEpisode({ market: 'usdt', tradeId, outcome: 'disputed' })
+  void alertOnDisputeOpened('usdt', tradeId)
 
   return dispute
 }

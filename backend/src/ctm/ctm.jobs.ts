@@ -3,6 +3,7 @@ import { logger } from '../lib/logger'
 import https from 'node:https'
 import { notify as centralNotify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { alertOnDisputeOpened } from '../services/riskAlerts.service'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { incrementTradeStreak, ordinal } from '../services/tradeStreak.service'
 import { awardTradePointsTx } from '../services/airdrop.service'
@@ -191,6 +192,7 @@ export async function runCtmProofDeadline() {
       if (!escalated) continue
 
       void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
+      void alertOnDisputeOpened('ctm', trade.id)
 
       notify(openerId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: the ${step.actor} missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })
       notify(missedActorId, 'CTM_AUTO_DISPUTE', 'Dispute auto-opened', `Trade ${lbl(trade)}: you missed the deadline to ${actionText}. Admin will review.`, { tradeRef: trade.tradeRef, displayRef: trade.displayRef, dispute: true })

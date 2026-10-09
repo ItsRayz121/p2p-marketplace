@@ -10,10 +10,11 @@ export const GROUP_LABEL: Record<AdminNotifGroup, string> = {
   promotions: 'Promotions',
   affiliates: 'Affiliates',
   kyc: 'KYC',
+  risk: 'Risk',
   system: 'System',
 }
 
-export const GROUP_ORDER: AdminNotifGroup[] = ['disputes', 'gas_orders', 'payment_review', 'support', 'kyc', 'usdt_trades', 'ctm_trades', 'promotions', 'affiliates', 'system']
+export const GROUP_ORDER: AdminNotifGroup[] = ['disputes', 'gas_orders', 'payment_review', 'support', 'kyc', 'risk', 'usdt_trades', 'ctm_trades', 'promotions', 'affiliates', 'system']
 
 export const GROUP_COLOR: Record<AdminNotifGroup, string> = {
   usdt_trades: 'bg-purple-500/15 text-purple-700 dark:text-purple-300',
@@ -25,6 +26,7 @@ export const GROUP_COLOR: Record<AdminNotifGroup, string> = {
   promotions: 'bg-pink-500/15 text-pink-700 dark:text-pink-300',
   affiliates: 'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300',
   kyc: 'bg-blue-500/15 text-blue-700 dark:text-blue-300',
+  risk: 'bg-rose-500/15 text-rose-700 dark:text-rose-300',
   system: 'bg-surface-alt text-text-secondary',
 }
 

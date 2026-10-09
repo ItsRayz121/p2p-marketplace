@@ -38,6 +38,8 @@ interface KycSubmission {
   createdAt: string
   reviewedAt?: string
   cnicDuplicates?: Array<{ userId: string; username: string | null; email: string | null; status: KycStatus }>
+  whatsappDuplicates?: Array<{ userId: string; username: string | null; email: string | null }>
+  communityDuplicates?: Array<{ userId: string; username: string | null; email: string | null; url: string }>
 }
 
 interface KycQueueResponse {
@@ -324,6 +326,34 @@ export default function KycQueuePage() {
                   <p className="mt-1.5 text-xs text-text-muted">
                     The same CNIC number was submitted by these accounts. Approving a CNIC that is already
                     verified on another account is blocked — reject this one unless it is the genuine owner.
+                  </p>
+                </div>
+              )}
+
+              {((selected.whatsappDuplicates?.length ?? 0) > 0 || (selected.communityDuplicates?.length ?? 0) > 0) && (
+                <div className="px-3 py-2.5 bg-warning/10 border border-warning/30 rounded-lg text-sm">
+                  <div className="flex items-center gap-2 font-semibold text-warning">
+                    <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                    Contact details shared with another account
+                  </div>
+                  <ul className="mt-1.5 space-y-1 text-text-secondary">
+                    {(selected.whatsappDuplicates ?? []).map((d) => (
+                      <li key={`wa-${d.userId}`} className="flex flex-wrap items-center gap-x-2">
+                        <span className="text-text-muted">Same WhatsApp number:</span>
+                        <Link href={`/admin/users/${d.userId}`} className="text-primary hover:underline font-medium">{d.username || d.email || d.userId}</Link>
+                      </li>
+                    ))}
+                    {(selected.communityDuplicates ?? []).map((d) => (
+                      <li key={`cm-${d.userId}-${d.url}`} className="flex flex-wrap items-center gap-x-2">
+                        <span className="text-text-muted">Same community link:</span>
+                        <Link href={`/admin/users/${d.userId}`} className="text-primary hover:underline font-medium">{d.username || d.email || d.userId}</Link>
+                        <span className="text-xs text-text-muted break-all">{d.url}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1.5 text-xs text-text-muted">
+                    This can mean one person runs several accounts. It can also be innocent (a shared business number,
+                    or a big public group). Check before approving.
                   </p>
                 </div>
               )}

@@ -4,41 +4,131 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>RupChain — you're offline</title>
+<meta name="theme-color" content="#0D1B2A">
+<title>RupChain — connection problem</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin:0; min-height:100dvh; display:flex; align-items:center; justify-content:center; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:#f8fafc; color:#0f172a; }
-  @media (prefers-color-scheme: dark) { body { background:#0f172a; color:#f1f5f9; } .card p { color:#94a3b8 !important; } }
-  .card { max-width:22rem; padding:2rem 1.5rem; text-align:center; }
-  svg { display:block; margin:0 auto; }
-  h1 { font-size:1.25rem; margin:1rem 0 .5rem; }
-  p { margin:.25rem 0 1.25rem; font-size:.9rem; line-height:1.5; color:#475569; }
-  button { font:inherit; font-weight:600; background:#2563eb; color:#fff; border:0; border-radius:.6rem; padding:.65rem 1.4rem; cursor:pointer; }
-  button:focus-visible { outline:3px solid #93c5fd; outline-offset:2px; }
-  small { display:block; margin-top:1rem; color:#64748b; font-size:.75rem; }
+  :root { color-scheme: light dark; --bg:#f8fafc; --fg:#0f172a; --muted:#475569; --soft:#64748b; --primary:#2563eb; --ring:#93c5fd; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0D1B2A; --fg:#f1f5f9; --muted:#cbd5e1; --soft:#94a3b8; --primary:#3b82f6; } }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  main { width:100%; max-width:22rem; text-align:center; }
+  img { display:block; width:56px; height:56px; margin:0 auto; border-radius:22%; }
+  h1 { font-size:1.15rem; line-height:1.4; margin:1.1rem 0 .4rem; }
+  p { margin:0 0 1.25rem; font-size:.9rem; line-height:1.5; color:var(--muted); }
+  button { font:inherit; font-weight:600; background:var(--primary); color:#fff; border:0; border-radius:.6rem; padding:.7rem 1.6rem; min-width:9rem; min-height:44px; cursor:pointer; }
+  button[disabled] { opacity:.7; cursor:default; }
+  button:focus-visible { outline:3px solid var(--ring); outline-offset:2px; }
+  #status { min-height:1.25rem; margin:.9rem 0 0; font-size:.8rem; color:var(--soft); }
+  small { display:block; margin-top:1.25rem; color:var(--soft); font-size:.72rem; line-height:1.5; }
+  code { font-size:.7rem; }
 </style>
 </head>
-<body>
-<main class="card" role="main">
-  <svg width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="RupChain"><rect width="64" height="64" rx="14" fill="#0f172a"/><text x="32" y="43" text-anchor="middle" font-family="system-ui,Arial,sans-serif" font-size="30" font-weight="700" fill="#38bdf8">R</text></svg>
-  <h1>You're offline</h1>
-  <p>RupChain couldn't be reached. Check your connection and try again. Nothing was submitted or changed, and no payment is ever sent from this page.</p>
+<!-- data-reason / data-sw / data-api are filled in by sw.js when it serves this page. -->
+<body data-reason="network" data-sw="" data-api="">
+<main role="main">
+  <img alt="RupChain" src="data:image/png;base64,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">
+  <h1 id="title">We couldn't connect to RupChain just now.</h1>
+  <p id="body">Please try again in a moment.</p>
   <button type="button" id="retry">Try again</button>
-  <small>If this keeps happening on a good connection, contact support@rupchain.com.</small>
+  <p id="status" role="status" aria-live="polite"></p>
+  <small>If this keeps happening, contact support@rupchain.com.<br><code id="diag"></code></small>
 </main>
 <script>
-  document.getElementById('retry').addEventListener('click', function () { location.reload(); });
-  window.addEventListener('online', function () { location.reload(); });
-  // Auto-recover: probe the server every few seconds and return to the app as soon as it answers,
-  // so nobody has to press anything after a connection blip.
-  function probe() {
-    if (document.hidden) return;
-    fetch('/manifest.json?_=' + Date.now(), { cache: 'no-store' })
-      .then(function (r) { if (r.ok) location.reload(); })
-      .catch(function () {});
+(function () {
+  'use strict';
+  var body = document.body;
+  var reason = body.getAttribute('data-reason') || 'network';
+  var api = body.getAttribute('data-api') || '';
+  var statusEl = document.getElementById('status');
+  var btn = document.getElementById('retry');
+
+  function setReason(r) {
+    reason = r;
+    document.getElementById('title').textContent = r === 'server'
+      ? 'RupChain is having trouble right now.'
+      : "We couldn't connect to RupChain just now.";
   }
-  setInterval(probe, 4000);
-  document.addEventListener('visibilitychange', probe);
+  setReason(reason);
+  document.getElementById('diag').textContent =
+    (reason === 'server' ? 'server' : 'network') + (body.getAttribute('data-sw') ? ' · sw ' + body.getAttribute('data-sw') : '');
+
+  // ── Reload-loop guard ─────────────────────────────────────────────────────
+  // Every automatic reload is recorded. If the page keeps coming back here, stop
+  // reloading on our own and wait for the user to tap "Try again".
+  var KEY = 'rc-offline-auto-reloads', WINDOW_MS = 2 * 60 * 1000, MAX_AUTO = 3;
+  function recentAutoReloads() {
+    try {
+      var now = Date.now();
+      return (JSON.parse(sessionStorage.getItem(KEY) || '[]') || []).filter(function (t) { return now - t < WINDOW_MS; });
+    } catch (e) { return []; }
+  }
+  function noteAutoReload() {
+    try { var l = recentAutoReloads(); l.push(Date.now()); sessionStorage.setItem(KEY, JSON.stringify(l)); } catch (e) {}
+  }
+
+  // ── Recovery check ────────────────────────────────────────────────────────
+  // Uncached requests to the real service, not navigator.onLine and not a static
+  // file: the page the user wanted (proves the website answers) and, when known,
+  // the API's health ping (proves the backend answers). Nothing is submitted.
+  function timed(url, ms, init) {
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null;
+    var t = setTimeout(function () { if (ctl) ctl.abort(); }, ms);
+    var opts = init || {};
+    opts.cache = 'no-store';
+    if (ctl) opts.signal = ctl.signal;
+    return fetch(url, opts).then(function (r) { clearTimeout(t); return r; }, function (e) { clearTimeout(t); throw e; });
+  }
+  function check() {
+    return timed(location.href, 10000, { credentials: 'same-origin', redirect: 'follow' })
+      .then(function (r) {
+        if (r.status >= 500) return { page: false, api: false, server: true };
+        if (!api) return { page: true, api: true };
+        return timed(api.replace(/\/$/, '') + '/health/ping', 8000, { mode: 'cors' })
+          .then(function (a) { return { page: true, api: a.ok, server: !a.ok }; }, function () { return { page: true, api: false, server: false }; });
+      }, function () { return { page: false, api: false, server: false }; });
+  }
+
+  var running = false, timer = null, attempt = 0;
+  var DELAYS = [3000, 6000, 12000, 20000, 30000];
+
+  function schedule() {
+    clearTimeout(timer);
+    if (document.hidden) return; // resume on visibilitychange
+    timer = setTimeout(function () { run(false); }, DELAYS[Math.min(attempt, DELAYS.length - 1)]);
+  }
+
+  function run(manual) {
+    if (running) return;
+    var auto = !manual;
+    if (auto && recentAutoReloads().length >= MAX_AUTO) {
+      statusEl.textContent = 'Tap "Try again" when your connection is back.';
+      return;
+    }
+    running = true;
+    btn.disabled = true;
+    statusEl.textContent = 'Reconnecting…';
+    check().then(function (res) {
+      running = false;
+      btn.disabled = false;
+      // A manual tap reloads as soon as the website answers. An automatic check
+      // also waits for the API, so we don't bounce the user into a broken app.
+      if (res.page && (manual || res.api)) {
+        if (auto) noteAutoReload();
+        location.reload();
+        return;
+      }
+      if (res.server) setReason('server');
+      attempt++;
+      statusEl.textContent = res.page ? 'The website is back, but RupChain is still not responding.' : "Still can't connect. We'll keep trying.";
+      schedule();
+    });
+  }
+
+  btn.addEventListener('click', function () { attempt = 0; clearTimeout(timer); run(true); });
+  window.addEventListener('online', function () { attempt = 0; clearTimeout(timer); run(false); });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { attempt = 0; clearTimeout(timer); run(false); } });
+  schedule();
+})();
 </script>
 </body>
 </html>

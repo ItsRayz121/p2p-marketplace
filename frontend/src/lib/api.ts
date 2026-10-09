@@ -19,6 +19,7 @@ export const API_BASE = resolveApiBase()
 import { useAuthStore } from '../store/auth.store'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
+import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
 import { isTelegramMiniApp, getInitData } from './telegram'
 
 export class ApiError extends Error {
@@ -59,7 +60,9 @@ const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
 // So we retry transport failures here, in the one place every call passes
 // through, instead of letting a dead socket become a full-page error.
 
-const NETWORK_MESSAGE = 'Can’t reach RupChain. Check your connection and try again.'
+const NETWORK_MESSAGE = 'We couldn’t connect to RupChain just now. Please try again in a moment.'
+// Gateway answers: the API (or the proxy in front of it) is up but not serving.
+const GATEWAY_STATUSES = new Set([502, 503, 504])
 
 // A stalled request is expensive, so the first attempt gets a tighter deadline
 // and later ones get the headroom a cold Railway container + slow 4G needs.
@@ -123,6 +126,24 @@ async function waitForOnline(maxWaitMs = 8_000): Promise<void> {
   })
 }
 
+/**
+ * A 502/503/504 is a server problem only when it did not come from our API's own
+ * handlers. The API also answers 503 on purpose for one feature at a time ("Gas is
+ * temporarily unavailable", "rate unavailable") with its JSON envelope — that is a
+ * working server and must not raise the connection banner. A gateway page (Railway,
+ * Cloudflare, Vercel) or the API's own DATABASE_UNAVAILABLE answer is.
+ */
+async function classifyGatewayAnswer(res: Response): Promise<void> {
+  try {
+    const body = (await res.json()) as { success?: unknown; error?: unknown }
+    if (typeof body?.success === 'boolean' && body.error !== 'DATABASE_UNAVAILABLE') {
+      reportConnectionSuccess()
+      return
+    }
+  } catch { /* not our JSON: a gateway or proxy page */ }
+  reportConnectionFailure('server')
+}
+
 const jitteredBackoff = (attempt: number) => 400 * attempt + Math.random() * 250
 
 /**
@@ -152,43 +173,54 @@ async function resilientFetch(
 
   let timedOutAttempts = 0
   let lastErr: unknown
+  let retryShown = false
 
-  for (let attempt = 1; attempt <= attempts; attempt++) {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutFor(attempt))
+  try {
+    for (let attempt = 1; attempt <= attempts; attempt++) {
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), timeoutFor(attempt))
 
-    // A caller-supplied signal must still be able to cancel us mid-flight.
-    const onExternalAbort = () => controller.abort()
-    if (external) {
-      if (external.aborted) controller.abort()
-      else external.addEventListener('abort', onExternalAbort, { once: true })
+      // A caller-supplied signal must still be able to cancel us mid-flight.
+      const onExternalAbort = () => controller.abort()
+      if (external) {
+        if (external.aborted) controller.abort()
+        else external.addEventListener('abort', onExternalAbort, { once: true })
+      }
+
+      try {
+        const res = await fetch(url, {
+          ...init,
+          method,
+          headers,
+          credentials: 'include',
+          signal: controller.signal,
+        })
+        if (GATEWAY_STATUSES.has(res.status)) void classifyGatewayAnswer(res.clone())
+        else reportConnectionSuccess()
+        return res
+      } catch (err) {
+        lastErr = err
+        // A caller cancelled deliberately — honour it, never retry.
+        if (external?.aborted) throw err
+
+        if (controller.signal.aborted) timedOutAttempts += 1
+        if (attempt === attempts) break
+        if (timedOutAttempts >= MAX_TIMED_OUT_ATTEMPTS) break
+
+        if (!retryShown) { retryShown = true; beginRetry() }
+        await waitForOnline()
+        await new Promise((r) => setTimeout(r, jitteredBackoff(attempt)))
+      } finally {
+        clearTimeout(timer)
+        external?.removeEventListener('abort', onExternalAbort)
+      }
     }
-
-    try {
-      return await fetch(url, {
-        ...init,
-        method,
-        headers,
-        credentials: 'include',
-        signal: controller.signal,
-      })
-    } catch (err) {
-      lastErr = err
-      // A caller cancelled deliberately — honour it, never retry.
-      if (external?.aborted) throw err
-
-      if (controller.signal.aborted) timedOutAttempts += 1
-      if (attempt === attempts) break
-      if (timedOutAttempts >= MAX_TIMED_OUT_ATTEMPTS) break
-
-      await waitForOnline()
-      await new Promise((r) => setTimeout(r, jitteredBackoff(attempt)))
-    } finally {
-      clearTimeout(timer)
-      external?.removeEventListener('abort', onExternalAbort)
-    }
+  } finally {
+    if (retryShown) endRetry()
   }
 
+  // A caller's deliberate abort is not a connection problem; anything else is.
+  if (!external?.aborted) reportConnectionFailure('offline')
   // eslint-disable-next-line no-console
   console.warn('[RupChain] request failed after retries:', method, path, lastErr)
   throw networkError()
@@ -713,7 +745,7 @@ export interface AdminNotif {
   prefGroup?: AdminNotifGroup | null
 }
 
-export type AdminNotifGroup = 'usdt_trades' | 'ctm_trades' | 'gas_orders' | 'payment_review' | 'disputes' | 'support' | 'promotions' | 'affiliates' | 'kyc' | 'system'
+export type AdminNotifGroup = 'usdt_trades' | 'ctm_trades' | 'gas_orders' | 'payment_review' | 'disputes' | 'support' | 'promotions' | 'affiliates' | 'kyc' | 'risk' | 'system'
 export interface AdminNotifChannelPrefs { inApp: boolean; push: boolean; telegram: boolean; sound: boolean }
 export type AdminNotifPrefs = Record<AdminNotifGroup, AdminNotifChannelPrefs>
 export interface AdminNotifGroupMeta { key: AdminNotifGroup; label: string; description: string; mandatoryInApp: boolean; defaultTelegram: boolean; priority: 'routine' | 'action' | 'critical' }

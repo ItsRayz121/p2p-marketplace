@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import { Button } from './Button'
+import { RECONNECTED_EVENT } from '@/lib/connectionStatus'
 
 interface ErrorStateProps {
   title?: string
@@ -31,6 +32,8 @@ export function ErrorState({
     const onOnline = () => fire()
     const onVisible = () => { if (!document.hidden) fire() }
     window.addEventListener('online', onOnline)
+    // Another request (or the connection banner's check) just got through.
+    window.addEventListener(RECONNECTED_EVENT, onOnline)
     document.addEventListener('visibilitychange', onVisible)
     // 'online'/'visibilitychange' only fire on a hard offline→online transition or a tab
     // refocus — a mobile radio that's merely slow (weak signal, not fully disconnected)
@@ -40,6 +43,7 @@ export function ErrorState({
     const poll = setInterval(fire, 8000)
     return () => {
       window.removeEventListener('online', onOnline)
+      window.removeEventListener(RECONNECTED_EVENT, onOnline)
       document.removeEventListener('visibilitychange', onVisible)
       clearInterval(poll)
     }

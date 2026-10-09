@@ -9,6 +9,7 @@ import { validateAddressForNetwork } from '../lib/addressValidation'
 import { checkPriceMargin, marginRejectionMessage } from '../lib/priceGuardrail'
 import { getUsdtMarketInsight } from './marketplace.service'
 import { autoShareToOwnerChannels } from './channel.service'
+import { alertOnLargeAdByNewMaker } from './riskAlerts.service'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -229,6 +230,7 @@ export async function createAd(userId: string, data: CreateAdInput) {
 
   // Pending ads stay private until an admin approves them (see adReview.service).
   if (initialStatus === 'active') void autoShareToOwnerChannels(userId, { market: 'usdt', id: ad.id })
+  if (ad.coin.toUpperCase() === 'USDT') void alertOnLargeAdByNewMaker(userId, ad.id, Math.max(Number(data.maxOrder), totalAmount))
 
   return ad
 }

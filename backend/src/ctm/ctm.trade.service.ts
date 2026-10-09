@@ -15,6 +15,7 @@ import { FLAGS, isFlagEnabled, getNumberConfig } from '../services/platformFlags
 import { getBondConfig, lockMakerBondTx, releaseMakerBond, resolveBondOnDispute } from '../services/makerBond.service'
 import { recordAuditLog } from '../lib/audit'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { alertOnCancellation, alertOnDisputeOpened } from '../services/riskAlerts.service'
 import { TRUSTPILOT_CHAT_NUDGE, TRUSTPILOT_CHAT_NUDGE_ENABLED } from '../lib/tradeMessages'
 import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
 import { assertCanOpenTrade, isTradeLimitBypassed } from '../services/tradeConcurrency.service'
@@ -750,6 +751,7 @@ export async function openDispute(tradeRef: string, userId: string, reason: stri
   notify(otherId, 'CTM_DISPUTE_OPENED', 'Dispute opened on trade', `A dispute has been opened on trade ${refLabel(trade.displayRef)}. An admin will review.`, { tradeRef, displayRef: trade.displayRef, dispute: true })
 
   void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'disputed' })
+  void alertOnDisputeOpened('ctm', trade.id)
 }
 
 export async function cancelTrade(tradeRef: string, userId: string, reason: string, role = 'user') {
@@ -802,6 +804,7 @@ export async function cancelTrade(tradeRef: string, userId: string, reason: stri
   notify(otherId, 'CTM_TRADE_CANCELLED', 'Trade cancelled', `Trade ${refLabel(trade.displayRef)} has been cancelled.`, { tradeRef, displayRef: trade.displayRef, reason })
 
   void closeEpisode({ market: 'ctm', tradeId: trade.id, outcome: 'cancelled' })
+  if (!isAdmin) void alertOnCancellation(userId)
 }
 
 /**

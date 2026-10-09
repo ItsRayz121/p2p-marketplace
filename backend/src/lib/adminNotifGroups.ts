@@ -6,7 +6,7 @@
  * regardless of anyone's preferences. Preferences only decide who SEES/HEARS it.
  */
 export const NOTIF_GROUPS = [
-  'usdt_trades', 'ctm_trades', 'gas_orders', 'payment_review', 'disputes', 'support', 'promotions', 'affiliates', 'kyc', 'system',
+  'usdt_trades', 'ctm_trades', 'gas_orders', 'payment_review', 'disputes', 'support', 'promotions', 'affiliates', 'kyc', 'risk', 'system',
 ] as const
 export type NotifGroup = (typeof NOTIF_GROUPS)[number]
 
@@ -35,6 +35,7 @@ export const GROUP_META: Record<NotifGroup, GroupMeta> = {
   promotions:     { key: 'promotions',     label: 'Promotions',                   description: 'Giveaways, Share & Earn posts to review and other campaign events.', mandatoryInApp: false, defaultTelegram: false, priority: 'routine' },
   affiliates:     { key: 'affiliates',     label: 'Affiliate applications & payouts', description: 'New affiliate applications and affiliate-related events.', mandatoryInApp: false, defaultTelegram: false, priority: 'routine' },
   kyc:            { key: 'kyc',            label: 'KYC & maker reviews',          description: 'New KYC submissions and maker applications waiting for review.', mandatoryInApp: false, defaultTelegram: true, priority: 'action' },
+  risk:           { key: 'risk',           label: 'Risk warning signs',           description: "Possible abuse to look at: shared contact details across accounts, a maker's first dispute, many cancellations in a day, a new maker posting a large ad.", mandatoryInApp: false, defaultTelegram: true, priority: 'action' },
   system:         { key: 'system',         label: 'System & security events',     description: 'Background-job failures, rate-updater problems, infrastructure and security alerts.', mandatoryInApp: true, defaultTelegram: false, priority: 'critical' },
 }
 
@@ -67,6 +68,8 @@ export function normalizePrefs(raw: unknown): GroupPrefs {
 export function classifyNotification(n: { category: string; title: string; href?: string | null }): NotifGroup {
   const t = n.title.toLowerCase()
   const h = n.href ?? ''
+  // Risk signals are raised by riskAlerts.service with a fixed "Risk:" title prefix.
+  if (/^risk:/.test(t)) return 'risk'
   if (/new support message|refund address submitted|user report/.test(t) || h.startsWith('/admin/support')) return 'support'
   if (/affiliate/.test(t) || h.startsWith('/admin/gas/affiliates')) return 'affiliates'
   if (

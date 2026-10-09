@@ -9,6 +9,7 @@ import { isTelegramMiniApp } from '@/lib/telegram'
 import { initConnectionWarmup } from '@/lib/connectionWarmup'
 import { ensureServiceWorker } from '@/lib/installApp'
 import { TotpPrompt } from '@/components/providers/TotpPrompt'
+import { ConnectionBanner } from '@/components/ui/ConnectionBanner'
 
 interface ProvidersProps {
   children: React.ReactNode
@@ -59,10 +60,10 @@ export default function Providers({ children }: ProvidersProps) {
   // page's real reads go out — see lib/connectionWarmup.
   useEffect(() => initConnectionWarmup(), [])
 
-  // Register the service worker on EVERY route, public ones included — not
-  // because navigations need it (see public/sw.js for why that was tried and
-  // reverted), but so push subscriptions stay registered everywhere push can
-  // be opted into, not just the signed-in shell.
+  // Register the service worker on EVERY route, public ones included: push
+  // subscriptions are bound to it, and it is what replaces the browser's
+  // connection-error screen with our static recovery page (see public/sw.js —
+  // it never caches application documents).
   useEffect(() => { void ensureServiceWorker() }, [])
 
   useEffect(() => {
@@ -141,6 +142,7 @@ export default function Providers({ children }: ProvidersProps) {
     <ToastPrimitive.Provider swipeDirection="right">
       {children}
       <TotpPrompt />
+      <ConnectionBanner />
     </ToastPrimitive.Provider>
   )
 }

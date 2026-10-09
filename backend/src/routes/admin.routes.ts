@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
+import { findSharedContacts } from '../lib/sharedContacts'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl, fetchCloudinaryAsset } from '../lib/cloudinary'
@@ -1539,6 +1540,9 @@ export async function adminRoutes(app: FastifyInstance) {
         .map((r) => ({ userId: r.userId, username: r.user?.username ?? null, email: r.user?.email ?? null, status: r.status }))
     }
 
+    // Same WhatsApp number / community link on another account (one person, many accounts).
+    const shared = await findSharedContacts(submissions)
+
     // KYC documents are stored as authenticated Cloudinary assets — sign the
     // delivery URLs so the reviewer's browser can actually load them.
     const signed = submissions.map((s) => ({
@@ -1548,6 +1552,8 @@ export async function adminRoutes(app: FastifyInstance) {
       selfieUrl: signCloudinaryDeliveryUrl(s.selfieUrl),
       videoUrl: signCloudinaryDeliveryUrl(s.videoUrl),
       cnicDuplicates: collectDuplicates(s.cnicNumberHash, s.userId),
+      whatsappDuplicates: shared.get(s.id)?.whatsapp ?? [],
+      communityDuplicates: shared.get(s.id)?.community ?? [],
     }))
 
     return reply.send({
@@ -1575,6 +1581,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const cnicDuplicates = dupRows
       .filter((r) => { if (seenDup.has(r.userId)) return false; seenDup.add(r.userId); return true })
       .map((r) => ({ userId: r.userId, username: r.user?.username ?? null, email: r.user?.email ?? null, status: r.status }))
+    const shared = (await findSharedContacts([submission])).get(submission.id)
 
     return reply.send({
       success: true,
@@ -1585,6 +1592,8 @@ export async function adminRoutes(app: FastifyInstance) {
         selfieUrl: signCloudinaryDeliveryUrl(submission.selfieUrl),
         videoUrl: signCloudinaryDeliveryUrl(submission.videoUrl),
         cnicDuplicates,
+        whatsappDuplicates: shared?.whatsapp ?? [],
+        communityDuplicates: shared?.community ?? [],
       },
     })
   })

@@ -5,6 +5,7 @@ import { db } from '../lib/prisma'
 import { logger } from '../lib/logger'
 import { notify } from '../lib/notify'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { alertOnDisputeOpened } from '../services/riskAlerts.service'
 import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { releaseMakerBond } from '../services/makerBond.service'
 import { closeEpisode } from '../services/chatThread.service'
@@ -165,6 +166,8 @@ export async function runTradeEscalation(): Promise<void> {
         })
         if (!escalated) continue
         void closeEpisode({ market: 'usdt', tradeId: trade.id, outcome: 'disputed' })
+      void alertOnDisputeOpened('usdt', trade.id)
+        void alertOnDisputeOpened('usdt', trade.id)
         notify(openerId, 'dispute', 'Trade Escalated', `The ${step.actor} did not ${actionText} in time, so your trade was escalated to a dispute for admin review.`, { tradeId: trade.id }, trade.id)
         notify(missedActorId, 'dispute', 'Trade Escalated', `You did not ${actionText} in time, so the trade was escalated to a dispute.`, { tradeId: trade.id }, trade.id)
         void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (release timeout)', body: `Trade #${trade.orderRef} — ${step.actor} did not ${actionText} in time.`, href: '/admin/disputes' })
@@ -253,6 +256,7 @@ export async function runTradeEscalation(): Promise<void> {
       })
       if (!escalated) continue
       void closeEpisode({ market: 'usdt', tradeId: trade.id, outcome: 'disputed' })
+      void alertOnDisputeOpened('usdt', trade.id)
       notify(openerId, 'dispute', 'Trade Escalated', `The ${step.actor} did not respond in time, so your trade was escalated to a dispute for admin review.`, { tradeId: trade.id }, trade.id)
       notify(missedActorId, 'dispute', 'Trade Escalated', 'You did not respond in time after payment proof was uploaded, so the trade was escalated to a dispute.', { tradeId: trade.id }, trade.id)
       void createAdminNotif({ category: 'DISPUTE', title: 'Auto-escalated (no response after upload)', body: `Trade #${trade.orderRef} — the ${step.actor} went dark >24h at payment_uploaded.`, href: '/admin/disputes' })

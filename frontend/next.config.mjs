@@ -101,6 +101,26 @@ const nextConfig = {
           { key: 'Permissions-Policy', value: 'camera=(self), microphone=(self), geolocation=(), payment=()' },
         ],
       },
+      // The service worker and its fallback page must never be served stale by an edge or
+      // browser cache: production showed sw.js leaving Cloudflare with max-age=14400, so a new
+      // worker could take hours to reach phones. Browsers already skip their HTTP cache for
+      // the worker script itself; these headers stop the CDN layers from holding it.
+      {
+        source: '/sw.js',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Cloudflare-CDN-Cache-Control', value: 'no-store' },
+        ],
+      },
+      {
+        source: '/offline.html',
+        headers: [
+          { key: 'Cache-Control', value: 'no-cache, must-revalidate' },
+          { key: 'CDN-Cache-Control', value: 'no-store' },
+          { key: 'Cloudflare-CDN-Cache-Control', value: 'no-store' },
+        ],
+      },
     ]
   },
 

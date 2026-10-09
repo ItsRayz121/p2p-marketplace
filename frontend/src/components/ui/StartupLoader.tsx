@@ -34,7 +34,7 @@ export function StartupLoader({ fullScreen = false, label = 'Loading RupChain' }
   const stalled = elapsed >= GIVE_UP_MS
   const slow = elapsed >= SLOW_MS
   const message = !online
-    ? "You're offline. We'll reconnect automatically when your connection returns."
+    ? "We couldn't connect to RupChain just now. Please try again in a moment."
     : stalled
       ? "We couldn't finish loading. Your connection may be unstable."
       : slow
@@ -60,7 +60,7 @@ export function StartupLoader({ fullScreen = false, label = 'Loading RupChain' }
           onClick={() => window.location.reload()}
           className="rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-white hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
         >
-          Retry
+          Try again
         </button>
       )}
       <style>{`@keyframes startup-slide{0%{transform:translateX(-100%)}100%{transform:translateX(200%)}}`}</style>

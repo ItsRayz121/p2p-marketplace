@@ -4,6 +4,8 @@ import { authenticate } from '../middleware/auth.middleware'
 import { getKycStatus, submitKyc, getUserSubmissions } from '../services/kyc.service'
 import { AppError } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { alertOnSharedContacts } from '../services/riskAlerts.service'
+import { findSharedContacts } from '../lib/sharedContacts'
 import { getStringConfig } from '../services/platformFlags.service'
 import { MAKER_CONTACT_KEY } from '../lib/makerGate'
 
@@ -78,6 +80,11 @@ export async function kycRoutes(app: FastifyInstance) {
       ...(communityLinks ? { communityLinks } : {}),
       ...(referenceUrl ? { referenceUrl } : {}),
     })
+    if (submission.whatsappNumber || (Array.isArray(submission.communityLinks) && submission.communityLinks.length > 0)) {
+      void findSharedContacts([submission])
+        .then((m) => alertOnSharedContacts(userId, submission.id, m.get(submission.id) ?? { whatsapp: [], community: [] }))
+        .catch(() => { /* best-effort warning */ })
+    }
     void createAdminNotif({
       category: 'KYC',
       title:    'New KYC Submission',
