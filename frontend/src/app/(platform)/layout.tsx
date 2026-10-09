@@ -144,7 +144,8 @@ export default function PlatformLayout({ children }: { children: React.ReactNode
         {authLoading ? <StartupLoader /> : children}
       </main>
 
-      {isHomeTab && <Footer />}
+      {/* Dashboard is the mobile Home tab; on desktop only the landing page has a footer. */}
+      {isHomeTab && <div className="lg:hidden"><Footer /></div>}
       <BottomNav />
       {user && <PushOptInBanner />}
       <InstallAppBanner />

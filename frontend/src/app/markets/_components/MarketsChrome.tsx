@@ -1,6 +1,5 @@
 'use client'
 import Navbar from '@/components/layout/Navbar'
-import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
 
 // Wraps /markets with the same unified Navbar/Footer/BottomNav used across the
@@ -15,9 +14,6 @@ export default function MarketsChrome({ children }: { children: React.ReactNode 
       <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
         {children}
       </main>
-      <div className="hidden lg:block">
-        <Footer />
-      </div>
       <BottomNav />
     </div>
   )

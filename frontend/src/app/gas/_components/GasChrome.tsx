@@ -1,6 +1,5 @@
 'use client'
 import Navbar from '@/components/layout/Navbar'
-import Footer from '@/components/layout/Footer'
 import BottomNav from '@/components/layout/BottomNav'
 import Link from 'next/link'
 import { Headphones } from 'lucide-react'
@@ -18,11 +17,6 @@ export default function GasChrome({ children }: { children: React.ReactNode }) {
       <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
         {children}
       </main>
-      {/* Gas is never the Home tab, so the marketing footer stays off mobile
-          (content is the end of the page) and shows on desktop only. */}
-      <div className="hidden lg:block">
-        <Footer />
-      </div>
       {/* Small support shortcut: opens the RupChain Official support thread in Messages. */}
       <Link
         href="/messages/support"
