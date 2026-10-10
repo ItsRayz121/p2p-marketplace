@@ -114,7 +114,7 @@ export function ReferralNetwork() {
         </p>
         <div className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
           {refreshError && <span className="text-danger">Refresh failed: {refreshError}</span>}
-          {updatedAt && <span>Updated {updatedAt.toLocaleTimeString()} · refreshes every {NETWORK_REFRESH_MS / 1000}s</span>}
+          {updatedAt && <span>Updated {updatedAt.toLocaleTimeString()} · refreshes every {NETWORK_REFRESH_MS / 60_000} min</span>}
           <button type="button" onClick={() => void load(false)} disabled={refreshing} aria-label="Refresh now" className="rounded-md border border-border bg-surface p-1.5 text-text-secondary hover:bg-surface-alt disabled:opacity-50">
             <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
           </button>

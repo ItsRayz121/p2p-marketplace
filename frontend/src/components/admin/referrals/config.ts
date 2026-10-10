@@ -21,4 +21,4 @@ export function enabledViews(): NetworkView[] {
 }
 
 /** How often the network is re-fetched while the tab is visible (not a live push). */
-export const NETWORK_REFRESH_MS = 30_000
+export const NETWORK_REFRESH_MS = 5 * 60_000

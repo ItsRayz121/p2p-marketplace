@@ -35,6 +35,7 @@ export function RewardsTab({ state, type, q, setFilter, onChanged }: {
   }, [state, type, q, page])
   useEffect(() => { void load() }, [load])
   useEffect(() => { setPage(1) }, [state, type, q])
+  useEffect(() => { setSearch(q) }, [q])
   useEffect(() => {
     if (search === q) return
     const t = setTimeout(() => setFilter({ rq: search }), 350)

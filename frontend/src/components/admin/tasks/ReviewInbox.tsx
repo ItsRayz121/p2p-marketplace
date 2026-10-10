@@ -61,6 +61,9 @@ export function ReviewInbox({
 
   useEffect(() => { void load() }, [load])
 
+  // Keep the box in step when the filter is changed from elsewhere (e.g. a summary card clears it).
+  useEffect(() => { setSearch(filters.q) }, [filters.q])
+
   // Debounce the search box into the URL filter.
   useEffect(() => {
     if (search === filters.q) return
@@ -68,12 +71,11 @@ export function ReviewInbox({
     return () => clearTimeout(t)
   }, [search, filters.q, setFilters])
 
-  // Default selection: first queue item when nothing (valid) is selected.
+  // Desktop only: open the first queue item automatically. On a phone the panel replaces the
+  // queue, so auto-selecting would make "Back to queue" impossible.
   useEffect(() => {
-    if (!list || list.items.length === 0) return
-    if (!selectedId || !list.items.some((i) => i.id === selectedId)) {
-      if (!selectedId) setSelected(list.items[0]!.id)
-    }
+    if (!list || list.items.length === 0 || selectedId) return
+    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) setSelected(list.items[0]!.id)
   }, [list, selectedId, setSelected])
 
   const afterDecision = useCallback(async (decidedId: string) => {
