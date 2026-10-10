@@ -1,4 +1,5 @@
 import { getEarnedBadges } from '../services/earnedBadges.service'
+import { getRankPerks, getRankPerksForBadge } from '../services/rankPerks.service'
 import { getDisputedUserIds } from '../lib/tradingHold'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -559,6 +560,12 @@ export async function userRoutes(app: FastifyInstance) {
 
   // ─── User Rank ─────────────────────────────────────────────────────────────
 
+  // GET /api/users/rank-perks — public: what each trader rank earns (live admin-tuned values)
+  app.get('/users/rank-perks', async (_req, reply) => {
+    const ladder = await Promise.all((['new', 'active', 'trusted', 'top', 'elite'] as const).map((b) => getRankPerksForBadge(b)))
+    return reply.send({ success: true, data: { ladder } })
+  })
+
   // GET /api/users/me/rank — authenticated
   app.get('/users/me/rank', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
@@ -583,10 +590,17 @@ export async function userRoutes(app: FastifyInstance) {
     }, 0)
     const nextTier = tiers[currentTierIndex + 1]
 
+    const [perks, ladder] = await Promise.all([
+      getRankPerks(userId),
+      Promise.all((['new', 'active', 'trusted', 'top', 'elite'] as const).map((b) => getRankPerksForBadge(b))),
+    ])
+
     return reply.send({
       success: true,
       data: {
         stats,
+        perks,
+        perksLadder: ladder,
         badge: stats?.badge ?? 'new',
         equippedBadge: stats?.equippedBadge ?? null,
         badgeLabel: stats?.badgeLabel ?? 'New Trader',

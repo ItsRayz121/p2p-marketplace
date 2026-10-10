@@ -4,6 +4,7 @@ import { redis } from '../lib/redis'
 import { Errors } from '../lib/errors'
 import { Prisma, AdStatus } from '@prisma/client'
 import { isPubliclyVisible, type ChainReadinessState } from '../lib/gas/chainMeta'
+import { isEliteListingPriorityOn } from './rankPerks.service'
 import { getBondConfig, computeBondUsdt } from './makerBond.service'
 import { resolvePaymentMethodIdsByLabel } from '../lib/paymentMethods'
 import { AVAILABILITY_SELECT, computeAvailability, getPlatformTimezone, isActiveHoursFeatureOn, type Availability } from '../lib/activeHours'
@@ -636,22 +637,31 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   const now = new Date()
   const boostedWhere: Prisma.AdWhereInput = { AND: [where, { boostedUntil: { gt: now } }] }
   const restWhere: Prisma.AdWhereInput = { AND: [where, { OR: [{ boostedUntil: null }, { boostedUntil: { lte: now } }] }] }
-  const boosted = await db.ad.findMany({ where: boostedWhere, orderBy: { createdAt: 'desc' }, include: { user: sellerInclude } })
-  const boostedSlice = boosted.slice(skip, skip + limit)
-  const [restItems, restTotal] = await Promise.all([
-    limit - boostedSlice.length > 0
-      ? db.ad.findMany({
-          where: restWhere,
-          skip: Math.max(0, skip - boosted.length),
-          take: limit - boostedSlice.length,
-          orderBy: { createdAt: 'desc' },
-          include: { user: sellerInclude },
-        })
-      : Promise.resolve([] as typeof boosted),
-    db.ad.count({ where: restWhere }),
-  ])
-  const rawItems = [...boostedSlice, ...restItems]
-  const total = boosted.length + restTotal
+  // Order: Points-boosted ads, then (when rank priority is on) ads from Elite-rank sellers, then the rest.
+  const elitePriority = await isEliteListingPriorityOn()
+  const eliteUser: Prisma.AdWhereInput = { user: { tradeStats: { badge: 'elite' } } }
+  const segments: Prisma.AdWhereInput[] = elitePriority
+    ? [boostedWhere, { AND: [restWhere, eliteUser] }, { AND: [restWhere, { NOT: eliteUser }] }]
+    : [boostedWhere, restWhere]
+  const counts = await Promise.all(segments.map((w) => db.ad.count({ where: w })))
+  const total = counts.reduce((a, b) => a + b, 0)
+  type AdRow = Awaited<ReturnType<typeof db.ad.findMany<{ include: { user: typeof sellerInclude } }>>>[number]
+  const rawItems: AdRow[] = []
+  let segStart = 0
+  for (let i = 0; i < segments.length && rawItems.length < limit; i++) {
+    const segCount = counts[i]!
+    const segSkip = Math.max(0, skip - segStart)
+    segStart += segCount
+    if (segSkip >= segCount) continue
+    const rows = await db.ad.findMany({
+      where: segments[i]!,
+      skip: segSkip,
+      take: limit - rawItems.length,
+      orderBy: { createdAt: 'desc' },
+      include: { user: sellerInclude },
+    })
+    rawItems.push(...rows)
+  }
 
   // Resolve payment method IDs to their type strings for display
   const allPmIds = [...new Set(rawItems.flatMap((ad) => ad.paymentMethods))]

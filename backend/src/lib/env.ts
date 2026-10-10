@@ -217,6 +217,7 @@ const envSchema = z.object({
   // Gas Fee System — shared
   GAS_GUEST_DAILY_LIMIT_USD: z.coerce.number().default(10),
   COINGECKO_API_KEY: z.string().optional(),
+  COINGECKO_API_PLAN: z.enum(['demo', 'pro']).default('demo'),
   FREECRYPTOAPI_KEY: z.string().optional(),
   COINSTATS_API_KEY: z.string().optional(),
   CMC_API_KEY: z.string().optional(),

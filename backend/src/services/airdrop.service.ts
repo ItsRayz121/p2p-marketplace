@@ -25,6 +25,7 @@ import { isFlagEnabled, FLAGS, getNumberConfig, getBoolConfig } from './platform
 import { logger } from '../lib/logger'
 import { AppError } from '../lib/errors'
 import { notify } from '../lib/notify'
+import { getRankPointsMultiplier } from './rankPerks.service'
 import type { GasFeeOrder, AirdropSource } from '@prisma/client'
 
 type Tx = Prisma.TransactionClient
@@ -580,13 +581,16 @@ export async function awardTradePointsTx(
 
   for (const [userId, role] of roles) {
     if (cfg.requireKyc && !(await isKycOk(tx, userId))) continue
-    const mult = await applyStreakTouch(tx, userId, seasonId, cfg)
+    const streakMult = await applyStreakTouch(tx, userId, seasonId, cfg)
+    // Rank bonus (Gold+) is additive-on-top and still subject to the daily cap below.
+    const rankMult = await getRankPointsMultiplier(userId)
+    const mult = streakMult * rankMult
     const base = pkr / cfg.pkrPerPoint
     const decayed = base * (await counterpartyDecay(tx, userId, seasonId, pairKey, cfg)) * mult
     const pts = await clampDailyTrade(tx, userId, seasonId, decayed, cfg.dailyTradeCap)
     if (pts <= 0) continue
     const eventKey = `${source}:${opts.tradeId}:${role}`
-    await writeLedger(tx, { userId, seasonId, source, points: pts, eventKey, pairKey, metadata: { tradeId: opts.tradeId, role, pkr, streakMult: mult } })
+    await writeLedger(tx, { userId, seasonId, source, points: pts, eventKey, pairKey, metadata: { tradeId: opts.tradeId, role, pkr, streakMult, rankMult } })
     await awardReferralOverride(tx, { earnerUserId: userId, basePoints: pts, seasonId, sourceEventKey: eventKey, cfg })
   }
 }
@@ -611,8 +615,9 @@ export async function awardGasPointsForDelivery(order: GasFeeOrder): Promise<voi
       if (!seasonId) return
       if (cfg.requireKyc && !(await isKycOk(tx, userId))) return
 
-      const mult = await applyStreakTouch(tx, userId, seasonId, cfg)
-      const gasBase = cfg.gasPerOrder * mult
+      const streakMult = await applyStreakTouch(tx, userId, seasonId, cfg)
+      const rankMult = await getRankPointsMultiplier(userId)
+      const gasBase = cfg.gasPerOrder * streakMult * rankMult
       // Daily cap on gas points.
       const agg = await tx.airdropLedger.aggregate({
         where: { userId, seasonId, source: 'gas_order', createdAt: { gte: startOfUtcDay() } },
@@ -623,7 +628,7 @@ export async function awardGasPointsForDelivery(order: GasFeeOrder): Promise<voi
       if (pts <= 0) return
 
       const eventKey = `gas_order:${order.id}`
-      await writeLedger(tx, { userId, seasonId, source: 'gas_order', points: pts, eventKey, metadata: { orderRef: order.orderRef, usd, streakMult: mult } })
+      await writeLedger(tx, { userId, seasonId, source: 'gas_order', points: pts, eventKey, metadata: { orderRef: order.orderRef, usd, streakMult, rankMult } })
       await awardReferralOverride(tx, { earnerUserId: userId, basePoints: pts, seasonId, sourceEventKey: eventKey, cfg })
     })
   } catch (e) {

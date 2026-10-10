@@ -5,6 +5,7 @@ import {
   ShieldCheck, ShieldPlus, TrendingUp, Award, type LucideIcon,
 } from 'lucide-react'
 import { StaticPageNav } from '@/components/ui/StaticPageNav'
+import { RankPerksTable } from '@/components/ui/RankPerksTable'
 
 export const metadata: Metadata = {
   title: 'Trader Levels & Badges — RupChain',
@@ -229,6 +230,8 @@ export default function LevelsPage() {
             </tbody>
           </table>
         </div>
+
+        <RankPerksTable />
 
         <p className="text-xs text-text-muted">
           You must meet <strong>both</strong> the trade count and the completion rate to reach a tier. For example,

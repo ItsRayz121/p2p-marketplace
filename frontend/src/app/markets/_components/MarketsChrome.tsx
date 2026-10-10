@@ -13,6 +13,13 @@ export default function MarketsChrome({ children }: { children: React.ReactNode 
       <Navbar />
       <main className="flex-1 overflow-x-clip pb-[calc(6rem+env(safe-area-inset-bottom))] lg:pb-0">
         {children}
+        <p className="mx-auto max-w-6xl px-4 py-6 text-center text-xs text-text-muted">
+          Global reference prices and 24h/7d changes powered by{' '}
+          <a href="https://www.coingecko.com/?utm_source=rupchain&utm_medium=referral" target="_blank" rel="noopener noreferrer" className="underline hover:text-text-primary">
+            CoinGecko
+          </a>
+          . P2P prices on RupChain are set by traders.
+        </p>
       </main>
       <BottomNav />
     </div>

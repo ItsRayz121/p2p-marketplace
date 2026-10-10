@@ -1,6 +1,6 @@
 import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
-import { env } from '../lib/env'
+import { coingeckoAuth } from '../lib/coingeckoApi'
 import { logger } from '../lib/logger'
 import {
   changeIfFresh, pickGasProviderId, symbolMatches, toReferenceData, type CgMarketRow, type ReferenceData,
@@ -60,11 +60,7 @@ export type ReferenceItem =
   | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' | 'ambiguous_mapping' | 'symbol_mismatch' }
   | { slug: string; status: 'unavailable'; reason: 'provider_error' | 'rate_limited' }
 
-function baseAndHeaders(): { base: string; headers: Record<string, string> } {
-  // Same convention as the rate updater: a configured key means the Pro host.
-  if (env.COINGECKO_API_KEY) return { base: 'https://pro-api.coingecko.com/api/v3', headers: { 'x-cg-pro-api-key': env.COINGECKO_API_KEY } }
-  return { base: 'https://api.coingecko.com/api/v3', headers: {} }
-}
+const baseAndHeaders = coingeckoAuth
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 

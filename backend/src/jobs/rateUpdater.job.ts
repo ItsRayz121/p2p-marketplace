@@ -50,6 +50,7 @@ import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { env } from '../lib/env'
+import { coingeckoAuth } from '../lib/coingeckoApi'
 
 const COINGECKO_IDS: Record<string, string> = {
   BTC:  'bitcoin',
@@ -225,12 +226,7 @@ async function fetchPricesFromCoinMarketCap(): Promise<Record<string, number>> {
 
 async function fetchPricesFromCoinGecko(): Promise<Record<string, number>> {
   const ids = Object.values(COINGECKO_IDS).join(',')
-  const isPro = !!env.COINGECKO_API_KEY
-  const baseUrl = isPro
-    ? 'https://pro-api.coingecko.com/api/v3'
-    : 'https://api.coingecko.com/api/v3'
-  const headers: Record<string, string> = {}
-  if (isPro) headers['x-cg-pro-api-key'] = env.COINGECKO_API_KEY!
+  const { base: baseUrl, headers } = coingeckoAuth()
 
   const res = await fetch(`${baseUrl}/simple/price?ids=${ids}&vs_currencies=usd`, {
     headers,
@@ -332,9 +328,7 @@ async function fetchCoinPaprikaTicker(paprikaId: string): Promise<number> {
 
 // CoinGecko single-coin helper (reused by both fetchers)
 async function fetchCoinGeckoSingle(geckoId: string): Promise<number> {
-  const isPro = !!env.COINGECKO_API_KEY
-  const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
-  const headers: Record<string, string> = isPro ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! } : {}
+  const { base, headers } = coingeckoAuth()
   const res = await fetch(`${base}/simple/price?ids=${geckoId}&vs_currencies=usd`, {
     headers, signal: AbortSignal.timeout(8000),
   })
@@ -465,9 +459,7 @@ async function fetchMissingCoins(
   const geckoIds = missingSymbols.map(s => coinMap[s]).filter(Boolean)
   if (geckoIds.length > 0) {
     try {
-      const isPro = !!env.COINGECKO_API_KEY
-      const base = isPro ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
-      const headers: Record<string, string> = isPro ? { 'x-cg-pro-api-key': env.COINGECKO_API_KEY! } : {}
+      const { base, headers } = coingeckoAuth()
       const res = await fetch(`${base}/simple/price?ids=${geckoIds.join(',')}&vs_currencies=usd`, {
         headers, signal: AbortSignal.timeout(8000),
       })
