@@ -2,7 +2,10 @@
 import { useState, useEffect, useCallback, Suspense } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { adsApi, ctmApi, dashboardApi } from '@/lib/api'
+import { adsApi, ctmApi, dashboardApi, pointsShopApi } from '@/lib/api'
+import type { AdBoostPlan } from '@/lib/api'
+import { Modal } from '@/components/ui/Modal'
+import { toast } from '@/lib/toast'
 import type { TradingAnalytics } from '@/lib/api'
 import type { Ad } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -81,6 +84,60 @@ function StatCard({ label, value, sub, unit, accent, unitInLabel }: { label: str
 
 // ─── Tab: USDT Ads ────────────────────────────────────────────────────────────
 
+function BoostModal({ ad, onClose, onDone }: { ad: Ad; onClose: () => void; onDone: () => void }) {
+  const [plans, setPlans] = useState<AdBoostPlan[] | null>(null)
+  const [balance, setBalance] = useState<number | null>(null)
+  const [busy, setBusy] = useState<string | null>(null)
+
+  useEffect(() => {
+    let off = false
+    adsApi.getBoostPlans().then((p) => { if (!off) setPlans(p) }).catch(() => { if (!off) setPlans([]) })
+    pointsShopApi.get().then((s) => { if (!off) setBalance(s.balance) }).catch(() => { if (!off) setBalance(null) })
+    return () => { off = true }
+  }, [])
+
+  const running = ad.boostedUntil && new Date(ad.boostedUntil) > new Date() ? new Date(ad.boostedUntil) : null
+
+  async function pick(p: AdBoostPlan) {
+    setBusy(p.key)
+    try {
+      const r = await adsApi.boostAd(ad.id, p.key)
+      toast.success(`Boosted until ${new Date(r.boostedUntil).toLocaleString()}`)
+      onDone()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not boost this ad')
+    } finally { setBusy(null) }
+  }
+
+  return (
+    <Modal isOpen onClose={onClose} title="Boost this listing" size="md">
+      <div className="space-y-4">
+        <p className="text-sm text-text-secondary">
+          A boosted ad is listed above regular ads and marked <strong>Featured</strong> for the time you choose. It is paid with RupChain Points and does not change your price, terms or trader rank.
+        </p>
+        {running && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Currently boosted until {running.toLocaleString()}. A new boost adds time on top.</p>}
+        {balance !== null && <p className="text-xs text-text-muted">Your balance: <strong className="text-text-primary">{balance.toLocaleString()} points</strong></p>}
+        {plans === null ? <Spinner size="sm" /> : plans.length === 0 ? (
+          <p className="text-sm text-text-muted">Boosting is not available right now.</p>
+        ) : (
+          <div className="grid gap-2">
+            {plans.map((p) => {
+              const short = balance !== null && balance < p.cost
+              return (
+                <button key={p.key} type="button" onClick={() => pick(p)} disabled={!!busy || short}
+                  className="flex items-center justify-between rounded-xl border border-border bg-surface px-4 py-3 text-left hover:bg-surface-alt disabled:opacity-50">
+                  <span className="text-sm font-semibold text-text-primary">{p.label}</span>
+                  <span className="text-sm font-black tabular-nums text-primary">{busy === p.key ? 'Boosting…' : short ? `${p.cost} pts · not enough` : `${p.cost} pts`}</span>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </Modal>
+  )
+}
+
 function UsdtAdsTab() {
   const router = useRouter()
   const [ads, setAds] = useState<Ad[]>([])
@@ -90,6 +147,7 @@ function UsdtAdsTab() {
   const [deleteTarget, setDeleteTarget] = useState<Ad | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
+  const [boostTarget, setBoostTarget] = useState<Ad | null>(null)
 
   const fetchAds = useCallback(async (archived: boolean) => {
     setLoading(true)
@@ -212,6 +270,11 @@ function UsdtAdsTab() {
                             <Button size="sm" variant="secondary" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
                               {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
                             </Button>
+                            {ad.status === 'active' && (
+                              <Button size="sm" variant="secondary" onClick={() => setBoostTarget(ad)}>
+                                {ad.boostedUntil && new Date(ad.boostedUntil) > new Date() ? '★ Boosted' : 'Boost'}
+                              </Button>
+                            )}
                             <Link href={`/create-ad?edit=${ad.id}`}>
                               <Button size="sm" variant="secondary">Edit</Button>
                             </Link>
@@ -290,6 +353,11 @@ function UsdtAdsTab() {
                       <Button size="sm" variant="secondary" className="flex-1" onClick={() => handleToggle(ad)} disabled={toggling === ad.id}>
                         {toggling === ad.id ? <Spinner size="sm" /> : ad.status === 'active' ? 'Pause' : 'Activate'}
                       </Button>
+                      {ad.status === 'active' && (
+                        <Button size="sm" variant="secondary" onClick={() => setBoostTarget(ad)}>
+                          {ad.boostedUntil && new Date(ad.boostedUntil) > new Date() ? '★' : 'Boost'}
+                        </Button>
+                      )}
                       <Link href={`/create-ad?edit=${ad.id}`}>
                         <Button size="sm" variant="secondary">Edit</Button>
                       </Link>
@@ -303,6 +371,10 @@ function UsdtAdsTab() {
             ))}
           </div>
         </>
+      )}
+
+      {boostTarget && (
+        <BoostModal ad={boostTarget} onClose={() => setBoostTarget(null)} onDone={() => { setBoostTarget(null); void fetchAds(showArchived) }} />
       )}
 
       {deleteTarget && (

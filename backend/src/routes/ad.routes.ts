@@ -11,6 +11,7 @@ import {
   unarchiveAd,
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
+import { boostAd, getBoostPlans } from '../services/adBoost.service'
 import { db } from '../lib/prisma'
 import { getUserAvailability } from '../lib/activeHours'
 import { getDisputedUserIds } from '../lib/tradingHold'
@@ -97,7 +98,22 @@ const toggleStatusSchema = z.object({
   status: z.enum(['active', 'paused']),
 })
 
+const boostSchema = z.object({ plan: z.string().regex(/^[a-z0-9_]{2,20}$/) })
+
 export async function adRoutes(app: FastifyInstance) {
+  // GET /api/ads/boost-plans — available listing-boost options and their Points cost.
+  app.get('/ads/boost-plans', { preHandler: [authenticate] }, async (_req, reply) => {
+    return reply.send({ success: true, data: await getBoostPlans() })
+  })
+
+  // POST /api/ads/:id/boost — spend Points to list your own active ad above the rest.
+  app.post('/ads/:id/boost', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = boostSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Choose a boost option.', 400)
+    return reply.send({ success: true, data: await boostAd(req.user!.id, id, parsed.data.plan) })
+  })
+
   // POST /api/ads — create ad
   app.post('/ads', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id

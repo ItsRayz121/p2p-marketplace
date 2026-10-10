@@ -108,7 +108,10 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
   const buildFilename = useCallback(() => buildOfferFilename(ad.coin, sellerName), [ad.coin, sellerName])
 
   return (
-    <div ref={cardRef} className={`bg-surface shadow-card border border-border rounded-xl p-4 sm:p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls}`}>
+    <div ref={cardRef} className={`relative bg-surface shadow-card border border-border rounded-xl p-4 sm:p-4 hover:shadow-card-md transition-shadow border-l-4 ${accentCls} ${ad.boostedUntil ? 'ring-1 ring-amber-300/70' : ''}`}>
+      {ad.boostedUntil && (
+        <span className="absolute right-3 top-0 -translate-y-1/2 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">★ Featured</span>
+      )}
       {/* ── Desktop / tablet layout (unchanged) ── */}
       <div className="hidden sm:flex sm:flex-row sm:items-center gap-4">
 

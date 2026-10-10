@@ -77,6 +77,8 @@ export interface AdWithSeller {
   terms: string
   status: string
   createdAt: Date
+  /** ISO time while a Points boost is active, else null. */
+  boostedUntil: string | null
   seller: SellerInfo
   /**
    * True when the maker-bond feature is ON and this ad's maker does not have
@@ -408,6 +410,7 @@ export async function getTopAds(): Promise<{
       terms: ad.terms,
       status: ad.status,
       createdAt: ad.createdAt,
+      boostedUntil: ad.boostedUntil && ad.boostedUntil > new Date() ? ad.boostedUntil.toISOString() : null,
       seller: {
         id: ad.user.id,
         username: ad.user.username,
@@ -627,16 +630,28 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
   }
 
   const [platformTz, activeHoursOn] = await Promise.all([getPlatformTimezone(), isActiveHoursFeatureOn()])
-  const [rawItems, total] = await Promise.all([
-    db.ad.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy: { createdAt: 'desc' },
-      include: { user: sellerInclude },
-    }),
-    db.ad.count({ where }),
+  // Boosted ads (boostedUntil in the future) are listed first, newest first, then the
+  // rest by recency. Done as two queries so an expired boost needs no cleanup job:
+  // it simply stops matching the boosted set.
+  const now = new Date()
+  const boostedWhere: Prisma.AdWhereInput = { AND: [where, { boostedUntil: { gt: now } }] }
+  const restWhere: Prisma.AdWhereInput = { AND: [where, { OR: [{ boostedUntil: null }, { boostedUntil: { lte: now } }] }] }
+  const boosted = await db.ad.findMany({ where: boostedWhere, orderBy: { createdAt: 'desc' }, include: { user: sellerInclude } })
+  const boostedSlice = boosted.slice(skip, skip + limit)
+  const [restItems, restTotal] = await Promise.all([
+    limit - boostedSlice.length > 0
+      ? db.ad.findMany({
+          where: restWhere,
+          skip: Math.max(0, skip - boosted.length),
+          take: limit - boostedSlice.length,
+          orderBy: { createdAt: 'desc' },
+          include: { user: sellerInclude },
+        })
+      : Promise.resolve([] as typeof boosted),
+    db.ad.count({ where: restWhere }),
   ])
+  const rawItems = [...boostedSlice, ...restItems]
+  const total = boosted.length + restTotal
 
   // Resolve payment method IDs to their type strings for display
   const allPmIds = [...new Set(rawItems.flatMap((ad) => ad.paymentMethods))]
@@ -672,6 +687,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       terms: ad.terms,
       status: ad.status,
       createdAt: ad.createdAt,
+      boostedUntil: ad.boostedUntil && ad.boostedUntil > now ? ad.boostedUntil.toISOString() : null,
       seller: {
         id: ad.user.id,
         username: ad.user.username,

@@ -817,6 +817,8 @@ export interface Ad {
   reviewNote?: string | null
   archived?: boolean
   archivedAt?: string | null
+  /** Set while a Points listing boost is running. */
+  boostedUntil?: string | null
   createdAt: string
   updatedAt: string
   user?: Partial<AuthUser>
@@ -869,6 +871,8 @@ export interface MarketplaceAd {
   terms: string
   status: string
   createdAt: string
+  /** ISO time while a Points boost is active (shown as Featured), else null. */
+  boostedUntil?: string | null
   /** True when the maker-bond feature is ON and this maker can't cover the bond
    *  for even their min order — the trade would be rejected. Undefined when off. */
   makerBondInsufficient?: boolean
@@ -1385,7 +1389,12 @@ export interface AdActivity {
   trades: { activeCount: number; completedCount: number; lastTradePrice: string | null; lastTradeAt: string | null; items?: Array<{ id: string; orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string; fullName?: string | null }; seller: { username: string; fullName?: string | null } }>; publicItems?: Array<{ orderRef: string; status: string; amount: string; price: string; fiatAmount: string; createdAt: string; buyer: { username: string }; seller: { username: string } }> }
 }
 
+export interface AdBoostPlan { key: string; label: string; hours: number; cost: number }
+
 export const adsApi = {
+  getBoostPlans: () => apiRequest<AdBoostPlan[]>('/ads/boost-plans'),
+  boostAd: (id: string, plan: string) =>
+    apiRequest<{ boostedUntil: string; balance: number }>(`/ads/${id}/boost`, { method: 'POST', body: JSON.stringify({ plan }) }),
   createAd: (data: CreateAdPayload) =>
     apiRequest<Ad>('/ads', { method: 'POST', body: JSON.stringify(data) }),
   updateAd: (id: string, data: UpdateAdPayload) =>

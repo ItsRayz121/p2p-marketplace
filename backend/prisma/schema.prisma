@@ -741,6 +741,8 @@ model Ad {
   archived        Boolean   @default(false)
   archivedAt      DateTime?
   lastPriceUpdate DateTime  @default(now())
+  // Points-purchased boost: while in the future the ad is listed above un-boosted ads.
+  boostedUntil    DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -749,6 +751,7 @@ model Ad {
 
   @@index([side, coin, status])
   @@index([userId])
+  @@index([status, boostedUntil])
 }
 
 model Trade {
