@@ -1,3 +1,4 @@
+import { getEarnedBadges } from '../services/earnedBadges.service'
 import { getDisputedUserIds } from '../lib/tradingHold'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
@@ -214,6 +215,8 @@ export async function userRoutes(app: FastifyInstance) {
 
     const disputedIds = await getDisputedUserIds([user.id])
     ;(profile as Record<string, unknown>).disputed = disputedIds.has(user.id)
+    // Earned achievements are best-effort decoration: never fail the profile over them.
+    ;(profile as Record<string, unknown>).earnedBadges = await getEarnedBadges(user.id).catch(() => [])
 
     return reply.send({ success: true, data: profile })
   })

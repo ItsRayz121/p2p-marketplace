@@ -19,6 +19,8 @@ import { toast } from '@/lib/toast'
 
 interface TraderProfile {
   id: string
+  /** Achievements earned automatically from real activity (never bought). */
+  earnedBadges?: Array<{ key: string; label: string; emoji: string; description: string }>
   username: string
   isFavorited: boolean
   /** Open dispute against this trader, or on a trading hold. */
@@ -332,6 +334,20 @@ export default function TraderProfilePage() {
           </div>
         </div>
       </div>
+
+      {/* Earned achievements — automatic, positive-only */}
+      {(profile.earnedBadges?.length ?? 0) > 0 && (
+        <div className="bg-surface shadow-card rounded-xl border border-border p-4">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-muted">Achievements</p>
+          <div className="flex flex-wrap gap-2">
+            {profile.earnedBadges!.map((b) => (
+              <span key={b.key} title={b.description} className="inline-flex items-center gap-1.5 rounded-full border border-border bg-surface-alt px-3 py-1 text-xs font-semibold text-text-primary">
+                <span aria-hidden>{b.emoji}</span>{b.label}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div id="trades" className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3 scroll-mt-20">

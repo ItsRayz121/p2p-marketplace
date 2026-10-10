@@ -96,6 +96,16 @@ const TRUST_FACTORS = [
   { label: 'Account age',     weight: '5%',  desc: 'Builds gradually over your first 90 days on the platform.' },
 ]
 
+const ACHIEVEMENTS = [
+  { emoji: '✅', label: 'Verified Trader', desc: 'KYC verified with 10 or more completed trades.' },
+  { emoji: '⚡', label: 'Fast Releaser', desc: 'Releases funds in 10 minutes or less on average, across 20+ trades.' },
+  { emoji: '🛡️', label: 'Clean Record', desc: '50 or more completed trades without losing a dispute.' },
+  { emoji: '⛽', label: 'Gas Regular', desc: '5 or more gas-fee orders delivered.' },
+  { emoji: '🔗', label: 'Multi-chain', desc: 'Bought gas on 3 or more different chains.' },
+  { emoji: '🌱', label: 'Early Member', desc: 'One of the first 1,000 members of RupChain.' },
+  { emoji: '🤝', label: 'Affiliate', desc: 'An approved RupChain affiliate.' },
+]
+
 function fmtRate(rate: number) {
   return rate === 0 ? 'Any' : `${Math.round(rate * 100)}%+`
 }
@@ -244,6 +254,27 @@ export default function LevelsPage() {
                 <span className="text-sm font-black text-primary">{f.weight}</span>
               </div>
               <p className="text-xs text-text-secondary leading-relaxed">{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── Achievements ── */}
+      <section className="space-y-5">
+        <div>
+          <h2 className="text-xl font-bold text-text-primary">4. Achievements</h2>
+          <p className="text-sm text-text-muted mt-1">
+            Achievements are awarded automatically from your real activity and shown on your public profile. They can&apos;t be bought.
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {ACHIEVEMENTS.map((a) => (
+            <div key={a.label} className="bg-surface shadow-card rounded-xl border border-border p-4 flex items-start gap-3">
+              <span className="text-2xl leading-none" aria-hidden>{a.emoji}</span>
+              <div>
+                <p className="text-sm font-bold text-text-primary">{a.label}</p>
+                <p className="text-xs text-text-secondary leading-relaxed">{a.desc}</p>
+              </div>
             </div>
           ))}
         </div>
