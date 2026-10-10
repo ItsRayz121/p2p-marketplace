@@ -7,6 +7,7 @@ import { marketsApi, type MarketRow, type MarketsOverview, type ReferenceItem } 
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Sparkline } from '@/components/ui/Sparkline'
 import { fmtMarketPkr as fmtPkr, fmtMarketUsdt as fmtUsdt } from '@/lib/marketsFmt'
+import { globalChange24h, globalChangeLabel, globalChartLabel } from '@/lib/marketsGlobal'
 
 // Live-updating market list. Renders the server-fetched snapshot immediately
 // (so Google and first paint see real prices), then polls the same endpoint
@@ -26,6 +27,19 @@ function ChangeChip({ pct }: { pct: number | null | undefined }) {
       up ? 'bg-emerald-500/10 text-emerald-600' : down ? 'bg-red-500/10 text-red-500' : 'bg-surface-alt text-text-muted'
     }`}>
       {up ? '▲' : down ? '▼' : '—'} {Math.abs(pct).toFixed(2)}%
+    </span>
+  )
+}
+
+/** 24h change cell. Local RupChain change is shown exactly as before; only an externally priced row
+ *  with no local change falls back to the GLOBAL 24h change, labelled as such. */
+function ChangeCell({ row, reference }: { row: MarketRow; reference: ReferenceItem | null }) {
+  const global = globalChange24h(row, reference)
+  if (global === null || reference?.status !== 'ok') return <ChangeChip pct={row.changePercent24h} />
+  return (
+    <span className="inline-flex flex-col items-end gap-0.5" title={globalChangeLabel(reference)}>
+      <ChangeChip pct={global} />
+      <span className="text-[9px] uppercase tracking-wide text-text-muted">Global · 24h</span>
     </span>
   )
 }
@@ -118,11 +132,13 @@ function TrendCell({ row, reference, size }: { row: MarketRow; reference: Refere
   }
   if (reference?.status === 'ok') {
     const pct = reference.change7dPct
+    const label = globalChartLabel(reference)
     return (
-      <span className="flex flex-col items-end gap-0.5" title={`Global 7-day price from ${reference.provider}${reference.stale ? ' (delayed)' : ''}`}>
-        <Sparkline points={reference.points} className={size} />
-        <span className="text-[9px] uppercase tracking-wide text-text-muted">
-          7D global{pct !== null && <span className={pct > 0 ? ' text-emerald-600' : pct < 0 ? ' text-red-500' : ''}> {pct > 0 ? '▲ +' : pct < 0 ? '▼ −' : ''}{Math.abs(pct).toFixed(1)}%</span>}
+      <span className="flex flex-col items-end gap-0.5" title={label}>
+        {/* Draws the provider's real 7-day series; minSpanPct keeps a near-flat series from looking dramatic. */}
+        <Sparkline points={reference.points} className={size} minSpanPct={0.005} />
+        <span className="text-[9px] uppercase tracking-wide text-text-muted" aria-label={label}>
+          Global · 7D{pct !== null && <span className={pct > 0 ? ' text-emerald-600' : pct < 0 ? ' text-red-500' : ''}> {pct > 0 ? '▲ +' : pct < 0 ? '▼ −' : ''}{Math.abs(pct).toFixed(1)}%</span>}
         </span>
       </span>
     )
@@ -156,7 +172,7 @@ function MarketRowCard({ row, reference }: { row: MarketRow; reference: Referenc
           <div className="font-bold text-text-primary tabular-nums">${fmtUsdt(row.lastPriceUsdt)}</div>
           <div className="text-xs text-text-muted tabular-nums">PKR {fmtPkr(row.lastPricePkr)}</div>
         </div>
-        <ChangeChip pct={row.changePercent24h} />
+        <ChangeCell row={row} reference={reference} />
       </div>
       <div className="mt-1.5 flex items-center justify-between text-xs text-text-muted md:hidden">
         <span>Buy {row.buyPricePkr !== null ? fmtPkr(row.buyPricePkr) : '—'} · Sell {row.sellPricePkr !== null ? fmtPkr(row.sellPricePkr) : '—'}</span>
@@ -168,7 +184,7 @@ function MarketRowCard({ row, reference }: { row: MarketRow; reference: Referenc
         <span className="block font-bold text-text-primary">${fmtUsdt(row.lastPriceUsdt)}</span>
         <span className="block text-xs text-text-muted">PKR {fmtPkr(row.lastPricePkr)}</span>
       </span>
-      <span className="hidden md:flex justify-end"><ChangeChip pct={row.changePercent24h} /></span>
+      <span className="hidden md:flex justify-end"><ChangeCell row={row} reference={reference} /></span>
       <span className="hidden md:block text-right text-xs text-text-muted tabular-nums">
         <span className="text-emerald-600">{row.buyPricePkr !== null ? fmtPkr(row.buyPricePkr) : '—'}</span>
         {' / '}

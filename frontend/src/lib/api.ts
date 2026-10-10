@@ -1188,10 +1188,10 @@ export interface MarketActivity {
   recentTrades: MarketTrade[]
 }
 
-// Global REFERENCE price (provider data, 7 days, USD) — never RupChain trade data.
+// Global REFERENCE price (provider data, USD: 24h change + 7-day chart) — never RupChain trade data.
 export type ReferenceItem =
-  | { slug: string; status: 'ok'; provider: 'CoinGecko'; currency: 'USD'; period: '7d'; stale: boolean; verifiedBy: 'provider_id' | 'contract'; providerId: string; price: number; change7dPct: number | null; points: number[]; lastUpdated: string; fetchedAt: string }
-  | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' }
+  | { slug: string; status: 'ok'; provider: 'CoinGecko'; currency: 'USD'; period: '7d'; stale: boolean; verifiedBy: 'provider_id' | 'contract'; providerId: string; price: number; /** Global 24h % (USD); null = not reported or too old, never zero. */ change24hPct: number | null; change7dPct: number | null; points: number[]; lastUpdated: string; fetchedAt: string }
+  | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' | 'ambiguous_mapping' | 'symbol_mismatch' }
   | { slug: string; status: 'unavailable'; reason: 'provider_error' | 'rate_limited' }
 
 // Activity (order-book + recent trades) for a token's detail page is fetched

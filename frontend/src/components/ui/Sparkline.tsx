@@ -1,11 +1,22 @@
 // Tiny inline sparkline (no external lib). Colours by net direction across the
 // series (last vs first). Renders nothing for < 2 points. Shared by the Markets
 // list/detail pages and by MarketInsightWidget.
-export function Sparkline({ points, className }: { points: number[]; className?: string }) {
+export function Sparkline({ points, className, minSpanPct }: {
+  points: number[]
+  className?: string
+  /** Opt-in: treat the vertical range as at least this fraction of the average value (e.g. 0.005 = 0.5%),
+   *  so a near-flat series draws as near-flat instead of being stretched to full height. */
+  minSpanPct?: number
+}) {
   if (points.length < 2) return null
   const w = 120, h = 28, pad = 2
-  const min = Math.min(...points)
-  const max = Math.max(...points)
+  let min = Math.min(...points)
+  let max = Math.max(...points)
+  if (minSpanPct && minSpanPct > 0) {
+    const mean = points.reduce((s, v) => s + v, 0) / points.length
+    const floor = Math.abs(mean) * minSpanPct
+    if (max - min < floor) { const mid = (max + min) / 2; min = mid - floor / 2; max = mid + floor / 2 }
+  }
   const span = max - min || 1
   const step = (w - pad * 2) / (points.length - 1)
   const coords = points.map((p, i) => {

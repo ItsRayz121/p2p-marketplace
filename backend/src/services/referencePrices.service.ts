@@ -2,9 +2,14 @@ import { db } from '../lib/prisma'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { logger } from '../lib/logger'
+import {
+  changeIfFresh, pickGasProviderId, symbolMatches, toReferenceData, type CgMarketRow, type ReferenceData,
+} from './referencePrices.rules'
+
+export type { ReferenceData } from './referencePrices.rules'
 
 /**
- * Global REFERENCE prices (CoinGecko) for the public Markets pages — 7-day price movement in USD.
+ * Global REFERENCE prices (CoinGecko) for the public Markets pages — USD, with a 24h % change and a 7-day sparkline.
  *
  * This is deliberately separate from the platform's own trade history. Local trade prices stay
  * labelled as platform data; nothing here is ever blended into them, and nothing is ever
@@ -50,21 +55,9 @@ const NETWORK_TO_PLATFORM: Record<string, string> = {
   APTOS: 'aptos', SUI: 'sui', TON: 'the-open-network',
 }
 
-export interface ReferenceData {
-  providerId: string
-  price: number
-  /** % change over the last 7 days — the same period the chart shows. */
-  change7dPct: number | null
-  points: number[]
-  /** When the provider says the price was last updated. */
-  lastUpdated: string
-  /** When RupChain last fetched it from the provider. */
-  fetchedAt: string
-}
-
 export type ReferenceItem =
-  | ({ slug: string; status: 'ok'; provider: 'CoinGecko'; currency: 'USD'; period: '7d'; stale: boolean; verifiedBy: 'provider_id' | 'contract' } & ReferenceData)
-  | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' }
+  | ({ slug: string; status: 'ok'; provider: 'CoinGecko'; currency: 'USD'; period: '7d'; stale: boolean; verifiedBy: 'provider_id' | 'contract' } & Omit<ReferenceData, 'change24hPct'> & { change24hPct: number | null })
+  | { slug: string; status: 'unsupported'; reason: 'not_applicable' | 'no_provider_id' | 'contract_not_verified' | 'unknown_asset' | 'ambiguous_mapping' | 'symbol_mismatch' }
   | { slug: string; status: 'unavailable'; reason: 'provider_error' | 'rate_limited' }
 
 function baseAndHeaders(): { base: string; headers: Record<string, string> } {
@@ -102,23 +95,7 @@ async function cgGet<T>(path: string): Promise<T> {
   throw lastErr instanceof Error ? lastErr : new Error('CoinGecko request failed')
 }
 
-function downsample(points: number[]): number[] {
-  if (points.length <= SPARK_POINTS) return points
-  const out: number[] = []
-  const step = (points.length - 1) / (SPARK_POINTS - 1)
-  for (let i = 0; i < SPARK_POINTS; i++) out.push(points[Math.round(i * step)]!)
-  return out
-}
-
-interface CgMarket {
-  id: string
-  current_price: number | null
-  last_updated: string | null
-  price_change_percentage_7d_in_currency?: number | null
-  sparkline_in_7d?: { price: number[] }
-}
-
-const cacheKey = (id: string) => `refprice:v1:${id}`
+const cacheKey = (id: string) => `refprice:v2:${id}`
 
 async function readCache(ids: string[]): Promise<Map<string, ReferenceData>> {
   const out = new Map<string, ReferenceData>()
@@ -139,22 +116,16 @@ const isFresh = (d: ReferenceData) => Date.now() - new Date(d.fetchedAt).getTime
 async function refresh(ids: string[]): Promise<Map<string, ReferenceData>> {
   const fresh = new Map<string, ReferenceData>()
   if (ids.length === 0) return fresh
-  const rows = await cgGet<CgMarket[]>(
-    `/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids.join(','))}&sparkline=true&price_change_percentage=7d&per_page=250&page=1`,
+  const rows = await cgGet<CgMarketRow[]>(
+    `/coins/markets?vs_currency=usd&ids=${encodeURIComponent(ids.join(','))}&sparkline=true&price_change_percentage=24h,7d&per_page=250&page=1`,
   )
   const fetchedAt = new Date().toISOString()
+  const now = Date.now()
   const pipeline = redis.pipeline()
   for (const r of rows) {
-    const points = r.sparkline_in_7d?.price?.filter((n) => Number.isFinite(n)) ?? []
-    if (r.current_price == null || points.length < 2) continue // a flat/empty series is not a chart — treat as unavailable
-    const d: ReferenceData = {
-      providerId: r.id,
-      price: r.current_price,
-      change7dPct: typeof r.price_change_percentage_7d_in_currency === 'number' ? Math.round(r.price_change_percentage_7d_in_currency * 100) / 100 : null,
-      points: downsample(points),
-      lastUpdated: r.last_updated ?? fetchedAt,
-      fetchedAt,
-    }
+    // A flat/empty series, a missing price or a frozen listing is not honest data — treat as unavailable.
+    const d = toReferenceData(r, fetchedAt, now, SPARK_POINTS)
+    if (!d) continue
     fresh.set(r.id, d)
     pipeline.set(cacheKey(r.id), JSON.stringify(d), 'EX', STALE_KEEP_SECONDS)
   }
@@ -190,7 +161,7 @@ async function verifyContract(token: { id: string; network: string | null; contr
   }
 }
 
-interface Resolved { slug: string; providerId: string; verifiedBy: 'provider_id' | 'contract' }
+interface Resolved { slug: string; providerId: string; verifiedBy: 'provider_id' | 'contract'; expectSymbol?: string }
 
 async function resolveSlug(slug: string): Promise<Resolved | ReferenceItem> {
   const lower = slug.toLowerCase()
@@ -206,16 +177,18 @@ async function resolveSlug(slug: string): Promise<Resolved | ReferenceItem> {
     return v ? { slug, providerId: v, verifiedBy: 'contract' } : { slug, status: 'unsupported', reason: 'contract_not_verified' }
   }
 
-  // Gas-fee native assets: admin-set CoinGecko id (token override, then chain) wins; else the static native map.
+  // Gas-fee assets (the explicitly externally priced rows). The provider id comes ONLY from the admin
+  // configuration (token override, then the chain's own id) or the static native map, with superseded
+  // ids replaced. Conflicting configuration is never guessed, and the provider's ticker must match.
   const sym = lower.toUpperCase()
-  const gas = await db.gasTokenConfig.findFirst({
+  const tokens = await db.gasTokenConfig.findMany({
     where: { priceSymbol: sym, isActive: true, isVisibleToUsers: true, isArchived: false },
     select: { coingeckoId: true, tokenType: true, chain: { select: { coingeckoId: true } } },
   })
-  if (!gas) return { slug, status: 'unsupported', reason: 'unknown_asset' }
-  // Non-native tokens identified only by symbol would be ambiguous — require an explicit id for them.
-  const id = gas.coingeckoId ?? (gas.tokenType === 'native' ? gas.chain.coingeckoId ?? NATIVE_IDS[sym] : undefined) ?? undefined
-  return id ? { slug, providerId: id, verifiedBy: 'provider_id' } : { slug, status: 'unsupported', reason: 'no_provider_id' }
+  if (tokens.length === 0) return { slug, status: 'unsupported', reason: 'unknown_asset' }
+  const pick = pickGasProviderId(tokens.map((x) => ({ coingeckoId: x.coingeckoId, tokenType: x.tokenType, chainCoingeckoId: x.chain.coingeckoId })), NATIVE_IDS[sym])
+  if ('reason' in pick) return { slug, status: 'unsupported', reason: pick.reason === 'ambiguous' ? 'ambiguous_mapping' : 'no_provider_id' }
+  return { slug, providerId: pick.id, verifiedBy: 'provider_id', expectSymbol: sym }
 }
 
 const isResolved = (r: Resolved | ReferenceItem): r is Resolved => 'providerId' in r
@@ -242,13 +215,17 @@ export async function getReferencePrices(slugs: string[]): Promise<ReferenceItem
     }
   }
 
+  const now = Date.now()
   return resolved.map((r): ReferenceItem => {
     if (!isResolved(r)) return r
     const fresh = refreshed.get(r.providerId)
     const data = fresh ?? cached.get(r.providerId)
     if (!data) return { slug: r.slug, status: 'unavailable', reason: failure ?? 'provider_error' }
+    // Never show another asset's data: for ticker-mapped assets the provider's own ticker must agree.
+    if (r.expectSymbol && !symbolMatches(r.expectSymbol, data.providerSymbol)) return { slug: r.slug, status: 'unsupported', reason: 'symbol_mismatch' }
     // "stale" = we wanted newer data but could not get it.
     const stale = !fresh && !isFresh(data)
-    return { slug: r.slug, status: 'ok', provider: 'CoinGecko', currency: 'USD', period: '7d', stale, verifiedBy: r.verifiedBy, ...data }
+    // The 24h % expires sooner than the chart: a day-old "24h change" would be misleading.
+    return { slug: r.slug, status: 'ok', provider: 'CoinGecko', currency: 'USD', period: '7d', stale, verifiedBy: r.verifiedBy, ...data, change24hPct: changeIfFresh(data, now) }
   })
 }
