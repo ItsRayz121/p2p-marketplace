@@ -2,7 +2,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { ChevronDown, ChevronRight, Info, RefreshCw, Search } from 'lucide-react'
+import { ChevronDown, ChevronRight, Info, LayoutGrid, List, RefreshCw, Search } from 'lucide-react'
 import { adminApi, type AffiliateDetail, type AffiliateOverview, type AffiliatePerf } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { toast } from '@/lib/toast'
@@ -41,6 +41,48 @@ function statusVariant(s: string): 'success' | 'warning' | 'danger' | 'default' 
   return 'default'
 }
 
+const socialsOf = (a: Pick<AffiliatePerf, 'socials'>) => Object.keys(a.socials ?? {}).length
+const verifiedOf = (a: Pick<AffiliatePerf, 'socials' | 'socialsVerified'>) => Object.keys(a.socials ?? {}).filter((k) => !!(a.socialsVerified as Record<string, unknown> | undefined)?.[k]).length
+
+/** Progress ring (0-100) with the value in the middle. */
+function Ring({ pct, size = 64, stroke = 6, label, small }: { pct: number; size?: number; stroke?: number; label?: string; small?: boolean }) {
+  const p = Math.max(0, Math.min(100, pct))
+  const r = (size - stroke) / 2
+  const circ = 2 * Math.PI * r
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-border" />
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} strokeLinecap="round" className="stroke-primary" strokeDasharray={`${(p / 100) * circ} ${circ}`} />
+      </svg>
+      <span className={cn('absolute font-bold tabular-nums text-text-primary', small ? 'text-[10px]' : 'text-sm')}>{label ?? `${Math.round(p)}%`}</span>
+    </span>
+  )
+}
+
+/** Donut chart of labelled slices. */
+function Donut({ slices, size = 104, centerLabel, centerSub }: { slices: { label: string; value: number; color: string }[]; size?: number; centerLabel: string; centerSub: string }) {
+  const stroke = 14
+  const r = (size - stroke) / 2
+  const circ = 2 * Math.PI * r
+  const total = slices.reduce((s, x) => s + x.value, 0)
+  let offset = 0
+  return (
+    <span className="relative inline-flex shrink-0 items-center justify-center" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90" role="img" aria-label={slices.map((s) => `${s.label} ${s.value}`).join(', ')}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-border" />
+        {total > 0 && slices.filter((s) => s.value > 0).map((s) => {
+          const len = (s.value / total) * circ
+          const el = <circle key={s.label} cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} stroke={s.color} strokeDasharray={`${Math.max(len - 2, 0)} ${circ}`} strokeDashoffset={-offset} />
+          offset += len
+          return el
+        })}
+      </svg>
+      <span className="absolute text-center leading-tight"><span className="block text-lg font-bold tabular-nums text-text-primary">{centerLabel}</span><span className="block text-[8px] uppercase tracking-wide text-text-muted">{centerSub}</span></span>
+    </span>
+  )
+}
+
 function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: string }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-3.5 shadow-card">
@@ -73,6 +115,8 @@ function Inner() {
   const [error, setError] = useState<string | null>(null)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [openApps, setOpenApps] = useState<Set<string>>(new Set())
+  const [appView, setAppView] = useState<'list' | 'grid'>('list')
   const [openOwners, setOpenOwners] = useState<Set<string>>(new Set())
   const [detailFor, setDetailFor] = useState<AffiliatePerf | null>(null)
   const [detail, setDetail] = useState<AffiliateDetail | null>(null)
@@ -265,79 +309,153 @@ function Inner() {
       )}
 
       {/* ───────────── Applications ───────────── */}
-      {tab === 'applications' && (
-        <section className="space-y-3">
-          <div role="group" aria-label="Status" className="flex flex-wrap gap-2">
-            {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => (
-              <button key={s} type="button" aria-pressed={statusFilter === s} onClick={() => setParam('status', s)}
-                className={cn('rounded-lg border px-3 py-1.5 text-sm font-medium capitalize', statusFilter === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary hover:bg-surface-alt')}>
-                {s}{s !== 'all' && <span className="ml-1 text-xs opacity-80">{c[s]}</span>}
-              </button>
-            ))}
-          </div>
-          {rows.filter((a) => statusFilter === 'all' || a.status === statusFilter).length === 0 && (
-            <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">{q ? 'No applications match your search.' : 'No applications in this view.'}</div>
-          )}
-          {rows.filter((a) => statusFilter === 'all' || a.status === statusFilter).sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0)).map((a) => (
-            <div key={a.userId} className="rounded-xl border border-border bg-surface p-4 shadow-card">
-              <div className="flex flex-wrap items-start gap-3">
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button type="button" onClick={() => setDetailFor(a)} className="truncate font-semibold text-text-primary hover:text-primary hover:underline">{nameOf(a)}</button>
-                    <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
-                    <span className="text-xs text-text-muted">Applied {fmtDate(a.appliedAt)}</span>
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-text-muted">
-                    {a.email && <span>{a.email}</span>}
-                    {a.referralCode && <span>Ref code <span className="font-mono text-text-secondary">{a.referralCode}</span></span>}
-                  </div>
-                  <SocialVerifyList socials={a.socials} verified={a.socialsVerified} canVerify onVerify={(k, next) => verifySocial(a, k, next)} />
-                  {a.applicantNote && <p className="mt-1.5 text-xs italic text-text-muted">“{a.applicantNote}”</p>}
-                  {a.status === 'rejected' && a.rejectionReason && <p className="mt-1 text-xs text-danger">Rejected: {a.rejectionReason}</p>}
-                </div>
-                {isSuperAdmin && (
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="primary" onClick={() => startCaps(a)} disabled={busyId === a.userId}>{a.status === 'approved' ? 'Edit caps' : 'Approve'}</Button>
-                    {a.status !== 'rejected' && <Button size="sm" variant="secondary" onClick={() => startReject(a)} disabled={busyId === a.userId}>Reject</Button>}
-                  </div>
-                )}
-              </div>
-              {a.status === 'approved' && !(edit?.userId === a.userId && edit.mode === 'caps') && (
-                <div className="mt-3 grid grid-cols-2 gap-3 text-xs sm:grid-cols-4">
-                  <div><p className="text-text-muted">Margin allowance</p><p className="font-semibold text-text-primary">{a.maxMarginPct}%</p></div>
-                  <div><p className="text-text-muted">Min buyer discount</p><p className="font-semibold text-text-primary">{a.minUserDiscountPct}%</p></div>
-                  <div><p className="text-text-muted">Links</p><p className="font-semibold text-text-primary">{a.linkCount} / {a.maxLinks}</p></div>
-                </div>
-              )}
-              {edit?.userId === a.userId && edit.mode === 'caps' && (
-                <div className="mt-3 space-y-3 rounded-lg border border-border bg-surface-alt p-3">
-                  <p className="text-xs font-bold text-text-primary">{a.status === 'approved' ? 'Edit caps' : 'Approve affiliate'}</p>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <NumberField label="Margin allowance %" hint="Total margin to split (discount + commission)" value={edit.maxMarginPct} onChange={(v) => setEdit({ ...edit, maxMarginPct: v })} />
-                    <NumberField label="Min buyer discount %" hint={`0–${edit.maxMarginPct || 0}`} value={edit.minUserDiscountPct} onChange={(v) => setEdit({ ...edit, minUserDiscountPct: v })} />
-                    <NumberField label="Max links" hint="1–50" value={edit.maxLinks} onChange={(v) => setEdit({ ...edit, maxLinks: v })} />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="primary" onClick={() => saveCaps(a)} disabled={busyId === a.userId}>{a.status === 'approved' ? 'Save' : 'Approve'}</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
-                  </div>
-                </div>
-              )}
-              {edit?.userId === a.userId && edit.mode === 'reject' && (
-                <div className="mt-3 space-y-3 rounded-lg border border-border bg-surface-alt p-3">
-                  <label className="block text-xs font-bold text-text-primary" htmlFor={`rej-${a.userId}`}>Reject application</label>
-                  <textarea id={`rej-${a.userId}`} value={edit.rejectionReason} onChange={(e) => setEdit({ ...edit, rejectionReason: e.target.value })} rows={2}
-                    placeholder="Optional reason shown to the applicant (e.g. not enough audience reach)" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
-                  <div className="flex gap-2">
-                    <Button size="sm" variant="danger" onClick={() => saveReject(a)} disabled={busyId === a.userId}>Reject application</Button>
-                    <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
-                  </div>
-                </div>
-              )}
+      {tab === 'applications' && (() => {
+        const visible = rows
+          .filter((a) => statusFilter === 'all' || a.status === statusFilter)
+          .sort((a, b) => (a.status === 'pending' ? -1 : 0) - (b.status === 'pending' ? -1 : 0))
+        const appr = rows.filter((r) => r.status === 'approved')
+        const avgMargin = appr.length ? appr.reduce((s, r) => s + r.maxMarginPct, 0) / appr.length : 0
+        const linksUsed = appr.reduce((s, r) => s + r.linkCount, 0)
+        const linksCap = appr.reduce((s, r) => s + r.maxLinks, 0)
+        const socialsTotal = rows.reduce((s, r) => s + socialsOf(r), 0)
+        const socialsDone = rows.reduce((s, r) => s + verifiedOf(r), 0)
+        const toggle = (id: string) => setOpenApps((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n })
+
+        const body = (a: AffiliatePerf) => (
+          <div className="space-y-3 border-t border-border bg-surface-alt/30 px-4 py-3">
+            <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-text-muted">
+              {a.email && <span>{a.email}</span>}
+              {a.referralCode && <span>Ref code <span className="font-mono text-text-secondary">{a.referralCode}</span></span>}
+              <button type="button" onClick={() => setDetailFor(a)} className="font-medium text-primary hover:underline">Full profile →</button>
             </div>
-          ))}
-        </section>
-      )}
+            <SocialVerifyList socials={a.socials} verified={a.socialsVerified} canVerify onVerify={(k, next) => verifySocial(a, k, next)} />
+            {a.applicantNote && <p className="text-xs italic text-text-muted">“{a.applicantNote}”</p>}
+            {a.status === 'rejected' && a.rejectionReason && <p className="text-xs text-danger">Rejected: {a.rejectionReason}</p>}
+            {a.status === 'approved' && edit?.userId !== a.userId && (
+              <div className="grid grid-cols-3 gap-3 text-xs">
+                <div><p className="text-text-muted">Margin allowance</p><p className="font-semibold text-text-primary">{a.maxMarginPct}%</p></div>
+                <div><p className="text-text-muted">Min buyer discount</p><p className="font-semibold text-text-primary">{a.minUserDiscountPct}%</p></div>
+                <div><p className="text-text-muted">Links</p><p className="font-semibold text-text-primary">{a.linkCount} / {a.maxLinks}</p></div>
+              </div>
+            )}
+            {edit?.userId === a.userId && edit.mode === 'caps' && (
+              <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+                <p className="text-xs font-bold text-text-primary">{a.status === 'approved' ? 'Edit caps' : 'Approve affiliate'}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <NumberField label="Margin allowance %" hint="Total margin to split (discount + commission)" value={edit.maxMarginPct} onChange={(v) => setEdit({ ...edit, maxMarginPct: v })} />
+                  <NumberField label="Min buyer discount %" hint={`0–${edit.maxMarginPct || 0}`} value={edit.minUserDiscountPct} onChange={(v) => setEdit({ ...edit, minUserDiscountPct: v })} />
+                  <NumberField label="Max links" hint="1–50" value={edit.maxLinks} onChange={(v) => setEdit({ ...edit, maxLinks: v })} />
+                </div>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="primary" onClick={() => saveCaps(a)} disabled={busyId === a.userId}>{a.status === 'approved' ? 'Save' : 'Approve'}</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            {edit?.userId === a.userId && edit.mode === 'reject' && (
+              <div className="space-y-3 rounded-lg border border-border bg-surface p-3">
+                <label className="block text-xs font-bold text-text-primary" htmlFor={`rej-${a.userId}`}>Reject application</label>
+                <textarea id={`rej-${a.userId}`} value={edit.rejectionReason} onChange={(e) => setEdit({ ...edit, rejectionReason: e.target.value })} rows={2}
+                  placeholder="Optional reason shown to the applicant (e.g. not enough audience reach)" className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm" />
+                <div className="flex gap-2">
+                  <Button size="sm" variant="danger" onClick={() => saveReject(a)} disabled={busyId === a.userId}>Reject application</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setEdit(null)} disabled={busyId === a.userId}>Cancel</Button>
+                </div>
+              </div>
+            )}
+            {isSuperAdmin && edit?.userId !== a.userId && (
+              <div className="flex gap-2">
+                <Button size="sm" variant="primary" onClick={() => startCaps(a)} disabled={busyId === a.userId}>{a.status === 'approved' ? 'Edit caps' : 'Approve'}</Button>
+                {a.status !== 'rejected' && <Button size="sm" variant="secondary" onClick={() => startReject(a)} disabled={busyId === a.userId}>Reject</Button>}
+              </div>
+            )}
+          </div>
+        )
+
+        return (
+          <section className="space-y-3">
+            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]">
+              <div className="flex items-center gap-4 rounded-xl border border-border bg-surface p-3 shadow-card">
+                <Donut
+                  size={80}
+                  centerLabel={String(c.applications)}
+                  centerSub="applications"
+                  slices={[
+                    { label: 'Approved', value: c.approved, color: '#10b981' },
+                    { label: 'Pending', value: c.pending, color: '#d97706' },
+                    { label: 'Rejected', value: c.rejected, color: '#ef4444' },
+                  ]}
+                />
+                <ul className="flex-1 space-y-1.5 text-sm">
+                  {([['Approved', c.approved, 'bg-success'], ['Pending', c.pending, 'bg-warning'], ['Rejected', c.rejected, 'bg-danger']] as const).map(([k, v, dot]) => (
+                    <li key={k} className="flex items-center gap-2"><span className={cn('h-2.5 w-2.5 rounded-full', dot)} /><span className="text-text-secondary">{k}</span><span className="ml-auto font-semibold tabular-nums text-text-primary">{v}</span></li>
+                  ))}
+                </ul>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                {([
+                  ['Avg margin allowance', avgMargin, undefined],
+                  ['Links in use', linksCap ? (linksUsed / linksCap) * 100 : 0, `${linksUsed}/${linksCap}`],
+                  ['Socials verified', socialsTotal ? (socialsDone / socialsTotal) * 100 : 0, `${socialsDone}/${socialsTotal}`],
+                ] as const).map(([k, p, label]) => (
+                  <div key={k} className="flex flex-col items-center justify-center gap-1 rounded-xl border border-border bg-surface p-2 text-center shadow-card sm:flex-row sm:gap-3 sm:text-left">
+                    <Ring pct={p} size={56} stroke={5} label={label} small />
+                    <p className="text-[11px] font-medium uppercase tracking-wide text-text-muted">{k}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <div role="group" aria-label="Status" className="flex flex-wrap gap-2">
+                {(['all', 'pending', 'approved', 'rejected'] as const).map((s) => (
+                  <button key={s} type="button" aria-pressed={statusFilter === s} onClick={() => setParam('status', s)}
+                    className={cn('rounded-lg border px-3 py-1.5 text-sm font-medium capitalize', statusFilter === s ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary hover:bg-surface-alt')}>
+                    {s}{s !== 'all' && <span className="ml-1 text-xs opacity-80">{c[s]}</span>}
+                  </button>
+                ))}
+              </div>
+              <div className="ml-auto flex items-center gap-3">
+                <button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => setOpenApps(openApps.size ? new Set() : new Set(visible.map((v) => v.userId)))}>{openApps.size ? 'Collapse all' : 'Expand all'}</button>
+                <div role="group" aria-label="Layout" className="flex overflow-hidden rounded-lg border border-border">
+                  {([['list', List], ['grid', LayoutGrid]] as const).map(([k, Icon]) => (
+                    <button key={k} type="button" aria-pressed={appView === k} aria-label={`${k} view`} onClick={() => setAppView(k)}
+                      className={cn('px-2.5 py-1.5', appView === k ? 'bg-primary text-white' : 'bg-surface text-text-muted hover:bg-surface-alt')}><Icon className="h-4 w-4" /></button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {visible.length === 0 && (
+              <div className="rounded-xl border border-border bg-surface p-8 text-center text-sm text-text-muted">{q ? 'No applications match your search.' : 'No applications in this view.'}</div>
+            )}
+
+            <div className={cn(appView === 'grid' ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-3' : 'space-y-2')}>
+              {visible.map((a) => {
+                const open = openApps.has(a.userId)
+                const n = socialsOf(a)
+                return (
+                  <div key={a.userId} className={cn('overflow-hidden rounded-xl border border-border bg-surface shadow-card', appView === 'grid' && open && 'sm:col-span-2 xl:col-span-3')}>
+                    <button type="button" aria-expanded={open} onClick={() => toggle(a.userId)} className="flex w-full items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt/50">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-muted text-sm font-bold uppercase text-primary">{nameOf(a).charAt(0)}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                          <span className="truncate font-semibold text-text-primary">{nameOf(a)}</span>
+                          <Badge variant={statusVariant(a.status)}>{a.status}</Badge>
+                        </div>
+                        <p className="truncate text-xs text-text-muted">Applied {fmtDate(a.appliedAt)} · {n} social{n === 1 ? '' : 's'} · {verifiedOf(a)}/{n} verified</p>
+                      </div>
+                      {a.status === 'approved' && <Ring pct={a.maxMarginPct} size={38} stroke={4} small />}
+                      {open ? <ChevronDown className="h-4 w-4 shrink-0 text-text-muted" /> : <ChevronRight className="h-4 w-4 shrink-0 text-text-muted" />}
+                    </button>
+                    {open && body(a)}
+                  </div>
+                )
+              })}
+            </div>
+          </section>
+        )
+      })()}
 
       {/* ───────────── Affiliates (approved roster) ───────────── */}
       {tab === 'affiliates' && (
