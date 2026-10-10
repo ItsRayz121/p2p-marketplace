@@ -9,6 +9,7 @@ import { PlatformTaskCard } from '@/components/points/PlatformTaskCard'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { toast } from '@/lib/toast'
+import { BUBBLE_STYLES, FRAME_STYLES, THEME_STYLES } from '@/lib/shopBadges'
 import {
   Sparkles,
   ArrowLeftRight,
@@ -583,6 +584,17 @@ function ShopTab({ onChange }: { onChange: () => void }) {
     } finally { setBusyKey(null) }
   }
 
+  async function equipCosmetic(slot: 'frame' | 'theme' | 'bubble', key: string | null) {
+    setBusyKey(`equip:${slot}:${key ?? 'none'}`)
+    try {
+      await pointsShopApi.equipCosmetic(slot, key)
+      toast.success(key ? 'Equipped. Others will see it on your profile.' : 'Removed')
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update this item')
+    } finally { setBusyKey(null) }
+  }
+
   async function buy(key: string, label: string, cost: number) {
     if (!window.confirm(`Spend ${cost} points on "${label}"?`)) return
     setBusyKey(key)
@@ -686,6 +698,49 @@ function ShopTab({ onChange }: { onChange: () => void }) {
     )
   }
 
+  const cosmetics = shop.items.filter((i) => i.kind === 'cosmetic')
+  const preview = (item: PointsShopView['items'][number]) => {
+    if (item.slot === 'frame') {
+      const f = FRAME_STYLES[item.key]
+      return (
+        <span className={`inline-flex rounded-full p-[3px] ${f?.bg ?? 'bg-primary'}`}>
+          <span className="flex h-12 w-12 items-center justify-center rounded-full bg-surface text-sm font-bold text-text-muted">FE</span>
+        </span>
+      )
+    }
+    if (item.slot === 'theme') return <span className={`block h-12 w-full rounded-lg ${THEME_STYLES[item.key] ?? 'bg-primary'}`} />
+    return <span className={`rounded-2xl rounded-br-sm px-3 py-2 text-xs ${BUBBLE_STYLES[item.key] ?? 'bg-primary text-white'}`}>Payment sent!</span>
+  }
+  const SLOT_TITLES: Record<string, string> = { frame: 'Avatar frames', theme: 'Profile themes', bubble: 'Chat bubble styles' }
+  const renderCosmetic = (item: PointsShopView['items'][number]) => {
+    const slot = item.slot!
+    const canAfford = shop.balance >= item.cost
+    const equipped = shop.equippedCosmetics?.[slot] === item.key
+    return (
+      <div key={item.key} className="flex flex-col gap-2 rounded-xl border border-border bg-surface p-4">
+        <div className="flex h-16 items-center justify-center">{preview(item)}</div>
+        <div>
+          <p className="text-sm font-bold text-text-primary">{item.label}</p>
+          <p className="mt-0.5 text-xs text-text-muted">{item.description}</p>
+        </div>
+        <div className="mt-auto flex items-center justify-between gap-2 pt-1">
+          <span className="text-sm font-black tabular-nums text-primary">{fmtPoints(item.cost)} pts</span>
+          {item.owned ? (
+            equipped ? (
+              <button onClick={() => equipCosmetic(slot, null)} disabled={busyKey === `equip:${slot}:none`} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-surface-alt disabled:opacity-50">Equipped · Remove</button>
+            ) : (
+              <button onClick={() => equipCosmetic(slot, item.key)} disabled={busyKey === `equip:${slot}:${item.key}`} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">Equip</button>
+            )
+          ) : (
+            <button onClick={() => buy(item.key, item.label, item.cost)} disabled={busyKey === item.key || !canAfford} className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50">
+              {busyKey === item.key ? 'Buying…' : !canAfford ? 'Not enough points' : 'Buy'}
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-border bg-gradient-to-br from-fuchsia-500/10 to-primary/5 p-5">
@@ -709,6 +764,17 @@ function ShopTab({ onChange }: { onChange: () => void }) {
         <p className="mb-2 text-xs text-text-muted">Cosmetic only. Equip one and it shows on your avatar, profile, listings and chats. It does not change your trader rank, which is earned from real trading.</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{badges.map(renderBadge)}</div>
       </div>
+
+      {cosmetics.length > 0 && (['frame', 'theme', 'bubble'] as const).map((slot) => {
+        const list = cosmetics.filter((c) => c.slot === slot)
+        return list.length === 0 ? null : (
+          <div key={slot}>
+            <h2 className="mb-2 text-sm font-semibold text-text-primary">{SLOT_TITLES[slot]}</h2>
+            <div className="grid gap-3 sm:grid-cols-3">{list.map(renderCosmetic)}</div>
+          </div>
+        )
+      })}
+      {cosmetics.length > 0 && <p className="-mt-3 text-xs text-text-muted">Cosmetics are decorative only. They never change your trader rank or trust.</p>}
 
       {shop.perks.some((p) => p.kind === 'badge') && (
         <div>

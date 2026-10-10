@@ -125,7 +125,7 @@ export async function leaderboardRoutes(app: FastifyInstance) {
         const pageUserIds = paged.entries.map((e) => e.userId)
         const statsRows = await db.tradeStats.findMany({
           where: { userId: { in: pageUserIds } },
-          select: { userId: true, badge: true, equippedBadge: true, badgeLabel: true, avgRating: true, completionRate: true, trustScore: true },
+          select: { userId: true, badge: true, equippedBadge: true, equippedCosmetics: true, badgeLabel: true, avgRating: true, completionRate: true, trustScore: true },
         })
         const statsById = new Map(statsRows.map((s) => [s.userId, s]))
 
@@ -135,6 +135,7 @@ export async function leaderboardRoutes(app: FastifyInstance) {
             ...e,
             badge: s?.badge ?? null,
             equippedBadge: s?.equippedBadge ?? null,
+            equippedCosmetics: s?.equippedCosmetics ?? null,
             badgeLabel: s?.badgeLabel ?? null,
             avgRating: s?.avgRating ?? null,
             completionRate: s?.completionRate ?? null,

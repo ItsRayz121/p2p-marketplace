@@ -12,9 +12,14 @@ import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { isAirdropEnabledFor } from './airdrop.service'
 
+export type CosmeticSlot = 'frame' | 'theme' | 'bubble'
+export const COSMETIC_SLOTS: readonly CosmeticSlot[] = ['frame', 'theme', 'bubble']
+
 export interface ShopItem {
   key: string
-  kind: 'gas_discount' | 'badge'
+  kind: 'gas_discount' | 'badge' | 'cosmetic'
+  /** Cosmetic slot: which part of the profile this item restyles (one equipped per slot). */
+  slot?: CosmeticSlot
   label: string
   description: string
   cost: number
@@ -36,6 +41,16 @@ export const DEFAULT_ITEMS: ShopItem[] = [
   { key: 'badge_supporter', kind: 'badge', label: 'Supporter', description: 'A Supporter star for your collection.', cost: 30, emoji: '⭐' },
   { key: 'badge_trader', kind: 'badge', label: 'Power Trader', description: 'A Power Trader flame for people who trade often.', cost: 150, emoji: '🔥' },
   { key: 'badge_whale', kind: 'badge', label: 'Whale', description: 'The rare Whale badge.', cost: 500, emoji: '🐋' },
+  // Cosmetics — purely decorative, never a trust signal. One equipped per slot.
+  { key: 'frame_aurora', kind: 'cosmetic', slot: 'frame', label: 'Aurora frame', description: 'A teal-to-violet ring around your avatar.', cost: 150, emoji: '🌌' },
+  { key: 'frame_sunset', kind: 'cosmetic', slot: 'frame', label: 'Sunset frame', description: 'A warm orange-to-pink ring around your avatar.', cost: 150, emoji: '🌇' },
+  { key: 'frame_midnight', kind: 'cosmetic', slot: 'frame', label: 'Midnight frame', description: 'A deep indigo ring with a soft glow.', cost: 200, emoji: '🌙' },
+  { key: 'theme_ocean', kind: 'cosmetic', slot: 'theme', label: 'Ocean profile theme', description: 'A calm blue banner on your public profile.', cost: 120, emoji: '🌊' },
+  { key: 'theme_forest', kind: 'cosmetic', slot: 'theme', label: 'Forest profile theme', description: 'A green banner on your public profile.', cost: 120, emoji: '🌲' },
+  { key: 'theme_royal', kind: 'cosmetic', slot: 'theme', label: 'Royal profile theme', description: 'A purple and gold banner on your public profile.', cost: 200, emoji: '👑' },
+  { key: 'bubble_mint', kind: 'cosmetic', slot: 'bubble', label: 'Mint chat bubbles', description: 'Your messages appear in soft mint green.', cost: 80, emoji: '🍃' },
+  { key: 'bubble_violet', kind: 'cosmetic', slot: 'bubble', label: 'Violet chat bubbles', description: 'Your messages appear in violet.', cost: 80, emoji: '🔮' },
+  { key: 'bubble_sunset', kind: 'cosmetic', slot: 'bubble', label: 'Sunset chat bubbles', description: 'Your messages appear in a warm sunset gradient.', cost: 100, emoji: '🌅' },
 ]
 
 const str = (v: unknown, fallback = ''): string => (typeof v === 'string' ? v : fallback)
@@ -45,7 +60,7 @@ function validItem(o: unknown): ShopItem | null {
   const key = str(r?.key).trim()
   const kind = r?.kind
   const cost = Number(r?.cost)
-  if (!/^[a-z0-9_]{2,40}$/.test(key) || (kind !== 'gas_discount' && kind !== 'badge')) return null
+  if (!/^[a-z0-9_]{2,40}$/.test(key) || (kind !== 'gas_discount' && kind !== 'badge' && kind !== 'cosmetic')) return null
   if (!Number.isFinite(cost) || cost <= 0) return null
   const item: ShopItem = {
     key, kind, cost,
@@ -53,6 +68,10 @@ function validItem(o: unknown): ShopItem | null {
     description: str(r?.description).slice(0, 200),
   }
   if (typeof r?.emoji === 'string' && r.emoji) item.emoji = r.emoji.slice(0, 4)
+  if (kind === 'cosmetic') {
+    if (!COSMETIC_SLOTS.includes(r?.slot as CosmeticSlot)) return null
+    item.slot = r.slot as CosmeticSlot
+  }
   if (kind === 'gas_discount') {
     const pct = Number(r?.discountPct), days = Number(r?.durationDays)
     if (!Number.isFinite(pct) || pct <= 0 || pct > 90 || !Number.isFinite(days) || days <= 0) return null
@@ -69,7 +88,8 @@ export async function getCatalog(): Promise<ShopItem[]> {
       const parsed = JSON.parse(row.value) as unknown
       if (Array.isArray(parsed)) {
         const items = parsed.map(validItem).filter((i): i is ShopItem => !!i)
-        if (items.length > 0) return items
+        // A custom catalog predates cosmetics, so keep the default cosmetics available too.
+        if (items.length > 0) return [...items, ...DEFAULT_ITEMS.filter((d) => d.kind === 'cosmetic' && !items.some((i) => i.key === d.key))]
       }
     } catch { /* fall back to defaults */ }
   }
@@ -86,6 +106,7 @@ async function getBalance(userId: string): Promise<number> {
 export interface ShopView {
   balance: number
   equippedBadge: string | null
+  equippedCosmetics: Partial<Record<CosmeticSlot, string>>
   items: Array<ShopItem & { owned: boolean; activeUntil: string | null }>
   perks: Array<{ id: string; itemKey: string; kind: string; label: string; discountPct: number | null; expiresAt: string | null; createdAt: string }>
 }
@@ -96,11 +117,12 @@ export async function getShop(userId: string): Promise<ShopView> {
     getCatalog(),
     getBalance(userId),
     db.pointsPerk.findMany({ where: { userId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: { createdAt: 'desc' } }),
-    db.tradeStats.findUnique({ where: { userId }, select: { equippedBadge: true } }),
+    db.tradeStats.findUnique({ where: { userId }, select: { equippedBadge: true, equippedCosmetics: true } }),
   ])
   return {
     balance,
     equippedBadge: stats?.equippedBadge ?? null,
+    equippedCosmetics: parseCosmetics(stats?.equippedCosmetics),
     items: catalog.map((i) => {
       const mine = perks.filter((p) => p.itemKey === i.key)
       const until = i.kind === 'gas_discount' ? mine.find((p) => p.expiresAt)?.expiresAt ?? null : null
@@ -120,8 +142,8 @@ export async function buyItem(userId: string, itemKey: string): Promise<{ perkId
 
   const now = new Date()
   const existing = await db.pointsPerk.findMany({ where: { userId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } })
-  if (item.kind === 'badge' && existing.some((p) => p.itemKey === item.key)) {
-    throw new AppError('ALREADY_OWNED', 'You already own this badge.', 409)
+  if (item.kind !== 'gas_discount' && existing.some((p) => p.itemKey === item.key)) {
+    throw new AppError('ALREADY_OWNED', 'You already own this item.', 409)
   }
   const activeDiscount = existing.find((p) => p.kind === 'gas_discount')
   if (item.kind === 'gas_discount' && activeDiscount?.expiresAt) {
@@ -154,6 +176,39 @@ export async function buyItem(userId: string, itemKey: string): Promise<{ perkId
     })
   })
   return { perkId: perk.id, balance: await getBalance(userId) }
+}
+
+/** Defensive parse of the stored JSON: only known slots with string values survive. */
+export function parseCosmetics(v: unknown): Partial<Record<CosmeticSlot, string>> {
+  const out: Partial<Record<CosmeticSlot, string>> = {}
+  if (v && typeof v === 'object' && !Array.isArray(v)) {
+    for (const s of COSMETIC_SLOTS) {
+      const k = (v as Record<string, unknown>)[s]
+      if (typeof k === 'string' && k) out[s] = k
+    }
+  }
+  return out
+}
+
+/**
+ * Equip (or clear, with null) one cosmetic in a slot. The user must own the item and
+ * the item must belong to that slot. Purely decorative: never touches earned rank.
+ */
+export async function equipCosmetic(userId: string, slot: CosmeticSlot, itemKey: string | null): Promise<Partial<Record<CosmeticSlot, string>>> {
+  if (!COSMETIC_SLOTS.includes(slot)) throw new AppError('VALIDATION', 'Unknown slot.', 400)
+  if (itemKey !== null) {
+    const item = (await getCatalog()).find((i) => i.key === itemKey)
+    if (!item || item.kind !== 'cosmetic' || item.slot !== slot) throw new AppError('NOT_FOUND', 'That item does not fit this slot.', 404)
+    const owned = await db.pointsPerk.findFirst({ where: { userId, kind: 'cosmetic', itemKey }, select: { id: true } })
+    if (!owned) throw new AppError('NOT_OWNED', 'You do not own this item.', 403)
+  }
+  const current = await db.tradeStats.findUnique({ where: { userId }, select: { equippedCosmetics: true } })
+  const next = parseCosmetics(current?.equippedCosmetics)
+  if (itemKey === null) delete next[slot]
+  else next[slot] = itemKey
+  const json = next as Prisma.InputJsonValue
+  await db.tradeStats.upsert({ where: { userId }, update: { equippedCosmetics: json }, create: { userId, equippedCosmetics: json } })
+  return next
 }
 
 /**

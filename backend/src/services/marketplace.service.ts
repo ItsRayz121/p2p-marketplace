@@ -40,6 +40,7 @@ export interface SellerInfo {
   avatarUrl: string | null
   badge: string
   equippedBadge: string | null
+  equippedCosmetics: unknown
   lastSeenAt: string | null
   joinedAt: string | null
   isMerchant: boolean
@@ -342,7 +343,7 @@ export async function getTopAds(): Promise<{
       tradeStats: {
         select: {
           badge: true,
-          equippedBadge: true,
+          equippedBadge: true, equippedCosmetics: true,
           completionRate: true,
           totalTrades: true,
           completedTrades: true,
@@ -414,6 +415,7 @@ export async function getTopAds(): Promise<{
         avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
         equippedBadge: stats?.equippedBadge ?? null,
+        equippedCosmetics: stats?.equippedCosmetics ?? null,
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
@@ -602,7 +604,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       tradeStats: {
         select: {
           badge: true,
-          equippedBadge: true,
+          equippedBadge: true, equippedCosmetics: true,
           completionRate: true,
           totalTrades: true,
           completedTrades: true,
@@ -677,6 +679,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
         equippedBadge: stats?.equippedBadge ?? null,
+        equippedCosmetics: stats?.equippedCosmetics ?? null,
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',

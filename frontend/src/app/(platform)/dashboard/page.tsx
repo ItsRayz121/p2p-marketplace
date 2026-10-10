@@ -1,4 +1,5 @@
 'use client'
+import { cosmeticOf } from '@/lib/shopBadges'
 import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
 import { dashboardApi, tradesApi, notificationsApi, gasApi } from '@/lib/api'
@@ -179,7 +180,7 @@ export default function DashboardPage() {
       <div className="bg-surface rounded-xl border border-border shadow-card p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <UserAvatar name={displayName} avatarUrl={user?.avatarUrl} size="lg" className="flex-shrink-0" tier={effectiveBadge} equipped={user?.tradeStats?.equippedBadge} />
+            <UserAvatar name={displayName} avatarUrl={user?.avatarUrl} size="lg" className="flex-shrink-0" tier={effectiveBadge} equipped={user?.tradeStats?.equippedBadge} frame={cosmeticOf(user?.tradeStats?.equippedCosmetics, 'frame')} />
             <div>
             <p className="text-sm text-text-muted">{greeting}</p>
             <h1 className="text-xl font-bold text-text-primary">{displayName}</h1>

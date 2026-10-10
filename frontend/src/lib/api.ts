@@ -881,6 +881,7 @@ export interface MarketplaceAd {
     avatarUrl: string | null
     badge: string
     equippedBadge?: string | null
+    equippedCosmetics?: Record<string, string> | null
     lastSeenAt: string | null
     joinedAt?: string | null
     /** Creator active hours: online=false → ad visible but can't be taken now. */
@@ -1635,6 +1636,7 @@ export const dashboardApi = {
         totalVolumePKR: string | null
         badge: string | null
         equippedBadge?: string | null
+        equippedCosmetics?: Record<string, string> | null
         badgeLabel: string | null
         trustScore: number | null
       } | null
@@ -1836,6 +1838,7 @@ export const leaderboardApi = {
         username: string
         badge?: string | null
         equippedBadge?: string | null
+        equippedCosmetics?: Record<string, string> | null
         badgeLabel?: string | null
         totalTrades?: number | null
         completedTrades?: number | null
@@ -3899,7 +3902,8 @@ export const shareApi = {
 
 export interface PointsShopItem {
   key: string
-  kind: 'gas_discount' | 'badge'
+  kind: 'gas_discount' | 'badge' | 'cosmetic'
+  slot?: 'frame' | 'theme' | 'bubble'
   label: string
   description: string
   cost: number
@@ -3913,6 +3917,7 @@ export interface PointsShopItem {
 export interface PointsShopView {
   balance: number
   equippedBadge: string | null
+  equippedCosmetics: Partial<Record<'frame' | 'theme' | 'bubble', string>>
   items: PointsShopItem[]
   perks: Array<{ id: string; itemKey: string; kind: string; label: string; discountPct: number | null; expiresAt: string | null; createdAt: string }>
 }
@@ -3920,6 +3925,7 @@ export interface PointsShopView {
 export const pointsShopApi = {
   get: () => apiRequest<PointsShopView>('/points/shop'),
   buy: (itemKey: string) => apiRequest<{ perkId: string; balance: number }>(`/points/shop/${encodeURIComponent(itemKey)}/buy`, { method: 'POST' }),
+  equipCosmetic: (slot: 'frame' | 'theme' | 'bubble', itemKey: string | null) => apiRequest<{ equippedCosmetics: Record<string, string> }>('/points/shop/equipped-cosmetic', { method: 'PUT', body: JSON.stringify({ slot, itemKey }) }),
   equip: (itemKey: string | null) => apiRequest<{ equippedBadge: string | null }>('/points/shop/equipped-badge', { method: 'PUT', body: JSON.stringify({ itemKey }) }),
 }
 

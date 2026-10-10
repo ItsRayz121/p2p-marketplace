@@ -1858,13 +1858,13 @@ export async function getTradeById(tradeId: string, userId: string, role: string
       buyer: {
         select: {
           id: true, username: true, fullName: true, kycStatus: true, kycLevel: true, avatarUrl: true,
-          tradeStats: { select: { badge: true, equippedBadge: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
+          tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
         },
       },
       seller: {
         select: {
           id: true, username: true, fullName: true, kycStatus: true, kycLevel: true, avatarUrl: true,
-          tradeStats: { select: { badge: true, equippedBadge: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
+          tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true, badgeLabel: true, trustScore: true, completedTrades: true, completionRate: true } },
         },
       },
       messages: { orderBy: { createdAt: 'asc' } },

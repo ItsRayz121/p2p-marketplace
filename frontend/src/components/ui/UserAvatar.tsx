@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils'
-import { shopBadgeStyle } from '@/lib/shopBadges'
+import { FRAME_STYLES, shopBadgeStyle } from '@/lib/shopBadges'
 import type { TraderBadge } from './TraderLevelCard'
 
 // Rank (Bronze→Elite) is earned from real trading and the avatar gets more polished
@@ -54,6 +54,8 @@ interface Props {
   tier?: TraderBadge | null
   /** Equipped Points-shop badge key — shown as a small corner icon (cosmetic only). */
   equipped?: string | null
+  /** Equipped Points-shop frame key — a decorative outer ring, always outside the earned rank ring. */
+  frame?: string | null
   /** Force the blurred glow on/off. Defaults to on for lg/xl, off for smaller
    *  sizes so dense lists (e.g. Messages) get a plain ring, not visual noise. */
   glow?: boolean
@@ -90,7 +92,7 @@ function optimizedAvatarUrl(url: string, px: number): string {
   return `${m[1]}c_fill,g_auto,w_${d},h_${d},f_auto,q_auto/${m[2]}`
 }
 
-export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, equipped, glow }: Props) {
+export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, equipped, frame, glow }: Props) {
   const initials = name
     .split(/[\s_]+/)
     .slice(0, 2)
@@ -104,7 +106,8 @@ export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, equi
     ? cn(TIER_RING[tier], showGlow && TIER_GLOW[tier])
     : ''
   const shop = size === 'xs' ? null : shopBadgeStyle(equipped)
-  const wrapped = isElite || !!shop
+  const frameStyle = size === 'xs' || !frame ? null : FRAME_STYLES[frame] ?? null
+  const wrapped = isElite || !!shop || !!frameStyle
 
   const inner = avatarUrl ? (
     <img
@@ -131,9 +134,16 @@ export function UserAvatar({ name, avatarUrl, size = 'sm', className, tier, equi
     </span>
   ) : inner
 
+  // Equipped frame: decorative outer ring around everything (rank ring stays inside it).
+  const framed = frameStyle ? (
+    <span className={cn('inline-flex rounded-full p-[3px]', frameStyle.bg, showGlow && frameStyle.glow)}>
+      <span className="inline-flex rounded-full bg-surface p-[1.5px]">{core}</span>
+    </span>
+  ) : core
+
   return (
     <span className={cn('relative inline-flex flex-shrink-0', className)}>
-      {core}
+      {framed}
       {isElite && (size === 'lg' || size === 'xl') && (
         <span aria-hidden className="absolute -top-3 left-1/2 -translate-x-1/2 text-sm leading-none">👑</span>
       )}

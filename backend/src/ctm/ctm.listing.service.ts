@@ -319,7 +319,7 @@ export async function getListings(filters: ListingsFilter = {}) {
                 avatarUrl: true,
                 createdAt: true,
                 lastSeenAt: true,
-                tradeStats: { select: { badge: true, equippedBadge: true, completionRate: true } },
+                tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true, completionRate: true } },
               },
             },
           },

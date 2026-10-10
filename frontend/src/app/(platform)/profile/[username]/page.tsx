@@ -11,7 +11,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
-import { shopBadgeStyle } from '@/lib/shopBadges'
+import { cosmeticOf, shopBadgeStyle, THEME_STYLES } from '@/lib/shopBadges'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Clock, Zap, Heart, Lock } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -41,6 +41,7 @@ interface TraderProfile {
     avgRating: number | string
     badge: string
     equippedBadge?: string | null
+    equippedCosmetics?: Record<string, string> | null
     badgeLabel: string
     trustScore: number
     avgResponseMinutes: number | null
@@ -257,9 +258,12 @@ export default function TraderProfilePage() {
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Header */}
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
+        {THEME_STYLES[cosmeticOf(stats?.equippedCosmetics, 'theme') ?? ''] && (
+          <div aria-hidden className={`-mx-5 -mt-5 mb-4 h-16 rounded-t-xl ${THEME_STYLES[cosmeticOf(stats?.equippedCosmetics, 'theme')!]}`} />
+        )}
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative flex-shrink-0">
-            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" tier={badge} equipped={stats?.equippedBadge} />
+            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" tier={badge} equipped={stats?.equippedBadge} frame={cosmeticOf(stats?.equippedCosmetics, 'frame')} />
             <span className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
           </div>
           <div className="flex-1 min-w-0">

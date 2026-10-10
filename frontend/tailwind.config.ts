@@ -6,6 +6,7 @@ const config: Config = {
     './src/pages/**/*.{ts,tsx}',
     './src/components/**/*.{ts,tsx}',
     './src/app/**/*.{ts,tsx}',
+    './src/lib/shopBadges.ts',
   ],
   theme: {
     extend: {

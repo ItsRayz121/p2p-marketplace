@@ -1,4 +1,5 @@
 'use client'
+import { BUBBLE_STYLES, cosmeticOf } from '@/lib/shopBadges'
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
@@ -45,6 +46,8 @@ type TimelineItem =
 
 /** A one-tap-shared listing rendered inline in a chat bubble — tap it to go
  *  straight to the live listing (USDT ad or CTM listing). */
+const bubbleClass = (key: string | undefined) => (key ? BUBBLE_STYLES[key] : undefined)
+
 function SharedAdCard({ ad, mine }: { ad: SharedAdPreview; mine: boolean }) {
   if (ad.deleted) {
     return (
@@ -473,10 +476,10 @@ export default function MessageThreadPage() {
           <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
         {isSelf || !data.other.username ? (
-          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} />
+          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} frame={cosmeticOf(data.other.equippedCosmetics, 'frame')} />
         ) : (
           <Link href={`/profile/${encodeURIComponent(data.other.username)}`} aria-label={`View ${name}'s profile`}>
-            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} />
+            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} frame={cosmeticOf(data.other.equippedCosmetics, 'frame')} />
           </Link>
         )}
         <div className="min-w-0 flex-1">
@@ -665,7 +668,7 @@ export default function MessageThreadPage() {
                   const r = ev.currentTarget.getBoundingClientRect()
                   setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine })
                 }}
-                className={`cursor-pointer rounded-2xl px-3 py-2 text-sm ${mine ? 'bg-primary text-white rounded-br-sm' : 'bg-muted text-text-primary rounded-bl-sm'} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
+                className={`cursor-pointer rounded-2xl px-3 py-2 text-sm ${mine ? `${bubbleClass(cosmeticOf(user?.tradeStats?.equippedCosmetics, 'bubble')) ?? 'bg-primary text-white'} rounded-br-sm` : `${bubbleClass(cosmeticOf(data.other.equippedCosmetics, 'bubble')) ?? 'bg-muted text-text-primary'} rounded-bl-sm`} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
               >
                 {hasImage && (
                   <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">

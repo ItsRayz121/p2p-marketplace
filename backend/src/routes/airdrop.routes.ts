@@ -1,4 +1,4 @@
-import { buyItem, equipBadge, getShop } from '../services/pointsShop.service'
+import { buyItem, COSMETIC_SLOTS, equipBadge, equipCosmetic, getShop, type CosmeticSlot } from '../services/pointsShop.service'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
@@ -48,7 +48,16 @@ export async function airdropRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: await equipBadge(req.user!.id, itemKey ?? null) })
   })
 
-  // POST /api/v1/airdrop/checkin— daily check-in: advance the streak (+ small
+  // PUT /api/v1/points/shop/equipped-cosmetic — equip/clear one cosmetic in a slot (frame | theme | bubble).
+  app.put('/points/shop/equipped-cosmetic', { preHandler: [authenticate] }, async (req, reply) => {
+    const { slot, itemKey } = (req.body ?? {}) as { slot?: string; itemKey?: string | null }
+    if (!COSMETIC_SLOTS.includes(slot as CosmeticSlot) || (itemKey != null && (typeof itemKey !== 'string' || !/^[a-z0-9_]{2,40}$/.test(itemKey)))) {
+      return reply.code(400).send({ success: false, error: { code: 'VALIDATION', message: 'Invalid cosmetic.' } })
+    }
+    return reply.send({ success: true, data: { equippedCosmetics: await equipCosmetic(req.user!.id, slot as CosmeticSlot, itemKey ?? null) } })
+  })
+
+  // POST /api/v1/airdrop/checkin — daily check-in: advance the streak (+ small
   // point). Idempotent per UTC day.
   app.post('/airdrop/checkin', { preHandler: [authenticate] }, async (req, reply) => {
     const data = await dailyCheckin(req.user!.id)

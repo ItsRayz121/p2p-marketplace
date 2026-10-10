@@ -13,6 +13,7 @@ export interface ChatUser {
   avatarUrl: string | null
   badge?: string | null
   equippedBadge?: string | null
+  equippedCosmetics?: Record<string, string> | null
   lastSeenAt?: string | null
 }
 

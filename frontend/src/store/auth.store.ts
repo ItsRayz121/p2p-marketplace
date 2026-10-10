@@ -30,6 +30,7 @@ export interface AuthUser {
   tradeStats: {
     badge: 'new' | 'active' | 'trusted' | 'top' | 'elite'
     equippedBadge?: string | null
+    equippedCosmetics?: Record<string, string> | null
     badgeLabel: string
     trustScore: number
     completedTrades: number

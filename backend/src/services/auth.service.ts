@@ -115,6 +115,7 @@ export interface SafeUser {
     avgRating: number
     badge: string
     equippedBadge: string | null
+    equippedCosmetics: unknown
     badgeLabel: string
     trustScore: number
   } | null
@@ -193,6 +194,7 @@ function toSafeUser(
       avgRating: { toNumber: () => number } | number | null
       badge: string
       equippedBadge: string | null
+      equippedCosmetics: unknown
       badgeLabel: string
       trustScore: number
     } | null
@@ -229,6 +231,7 @@ function toSafeUser(
           avgRating: dec(user.tradeStats.avgRating),
           badge: user.tradeStats.badge,
           equippedBadge: user.tradeStats.equippedBadge,
+          equippedCosmetics: user.tradeStats.equippedCosmetics,
           badgeLabel: user.tradeStats.badgeLabel,
           trustScore: user.tradeStats.trustScore,
         }
@@ -268,7 +271,7 @@ const USER_SELECT = {
       completionRate: true,
       avgRating: true,
       badge: true,
-      equippedBadge: true,
+      equippedBadge: true, equippedCosmetics: true,
       badgeLabel: true,
       trustScore: true,
     },
