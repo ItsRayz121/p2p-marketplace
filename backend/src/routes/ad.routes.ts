@@ -11,7 +11,7 @@ import {
   unarchiveAd,
 } from '../services/ad.service'
 import { AppError } from '../lib/errors'
-import { boostAd, getBoostPlans } from '../services/adBoost.service'
+import { boostAd, getBoostPlans, isBoostEnabled } from '../services/adBoost.service'
 import { db } from '../lib/prisma'
 import { getUserAvailability } from '../lib/activeHours'
 import { getDisputedUserIds } from '../lib/tradingHold'
@@ -104,6 +104,11 @@ export async function adRoutes(app: FastifyInstance) {
   // GET /api/ads/boost-plans — available listing-boost options and their Points cost.
   app.get('/ads/boost-plans', { preHandler: [authenticate] }, async (_req, reply) => {
     return reply.send({ success: true, data: await getBoostPlans() })
+  })
+
+  // GET /api/ads/boost-status — whether boosting is currently switched on.
+  app.get('/ads/boost-status', { preHandler: [authenticate] }, async (_req, reply) => {
+    return reply.send({ success: true, data: { enabled: await isBoostEnabled() } })
   })
 
   // POST /api/ads/:id/boost — spend Points to list your own active ad above the rest.

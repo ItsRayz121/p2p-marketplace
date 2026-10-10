@@ -1393,6 +1393,7 @@ export interface AdBoostPlan { key: string; label: string; hours: number; cost: 
 
 export const adsApi = {
   getBoostPlans: () => apiRequest<AdBoostPlan[]>('/ads/boost-plans'),
+  getBoostStatus: () => apiRequest<{ enabled: boolean }>('/ads/boost-status'),
   boostAd: (id: string, plan: string) =>
     apiRequest<{ boostedUntil: string; balance: number }>(`/ads/${id}/boost`, { method: 'POST', body: JSON.stringify({ plan }) }),
   createAd: (data: CreateAdPayload) =>

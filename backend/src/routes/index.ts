@@ -49,7 +49,7 @@ import { accountLinkRoutes } from './accountLink.routes'
 import { announcementRoutes } from './announcement.routes'
 import { blogRoutes } from './blog.routes'
 import { airdropRoutes } from './airdrop.routes'
-import { airdropAdminRoutes } from './airdropAdmin.routes'
+import { airdropAdminRoutes, boostAdminRoutes } from './airdropAdmin.routes'
 import { promoGiveawayRoutes } from './promoGiveaway.routes'
 import { platformTaskRoutes } from './platformTask.routes'
 
@@ -105,6 +105,7 @@ export async function registerRoutes(app: FastifyInstance) {
   await app.register(blogRoutes, { prefix: '/api/v1' })
   await app.register(airdropRoutes, { prefix: '/api/v1' })
   await app.register(airdropAdminRoutes, { prefix: '/api/v1' })
+  await app.register(boostAdminRoutes, { prefix: '/api/v1' })
   await app.register(platformTaskRoutes, { prefix: '/api/v1' })
   await app.register(promoGiveawayRoutes, { prefix: '/api/v1' })
 }

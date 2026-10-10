@@ -11,6 +11,8 @@ import {
   exportAllocationsCsv,
 } from '../services/airdropAdmin.service'
 import { clawbackTradePoints } from '../services/airdrop.service'
+import { BOOST_ENABLED_KEY, isBoostEnabled, refundActiveBoosts, setBoostEnabled } from '../services/adBoost.service'
+import { db } from '../lib/prisma'
 
 export async function airdropAdminRoutes(app: FastifyInstance) {
   const superAdmin = requireRole('super_admin')
@@ -78,5 +80,36 @@ export async function airdropAdminRoutes(app: FastifyInstance) {
     await clawbackTradePoints(tradeType, tradeId, reason, onlyUserId)
     await recordAuditLog(req.user!.id, 'AIRDROP_CLAWBACK', 'AirdropLedger', tradeId, { tradeType, reason, onlyUserId })
     return reply.send({ success: true })
+  })
+}
+
+export async function boostAdminRoutes(app: FastifyInstance) {
+  const superAdmin = requireRole('super_admin')
+
+  // GET /api/v1/admin/boost — master switch state and how many boosts are running.
+  app.get('/admin/boost', { preHandler: [authenticate, superAdmin] }, async (_req, reply) => {
+    const now = new Date()
+    const [enabled, ads, listings] = await Promise.all([
+      isBoostEnabled(),
+      db.ad.count({ where: { boostedUntil: { gt: now } } }),
+      db.ctmListing.count({ where: { boostedUntil: { gt: now } } }),
+    ])
+    return reply.send({ success: true, data: { enabled, activeBoosts: ads + listings } })
+  })
+
+  // PUT /api/v1/admin/boost — pause or resume boosting. Pausing never touches running boosts.
+  app.put('/admin/boost', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const parsed = z.object({ enabled: z.boolean() }).safeParse(req.body)
+    if (!parsed.success) return reply.status(400).send({ success: false, error: 'Invalid value' })
+    await setBoostEnabled(parsed.data.enabled)
+    await recordAuditLog(req.user!.id, 'BOOST_TOGGLE', 'PlatformConfig', BOOST_ENABLED_KEY, { enabled: parsed.data.enabled })
+    return reply.send({ success: true, data: { enabled: parsed.data.enabled } })
+  })
+
+  // POST /api/v1/admin/boost/refund — end every running boost and return the unused Points.
+  app.post('/admin/boost/refund', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const result = await refundActiveBoosts()
+    await recordAuditLog(req.user!.id, 'BOOST_REFUND_ALL', 'PlatformConfig', BOOST_ENABLED_KEY, { ...result })
+    return reply.send({ success: true, data: result })
   })
 }

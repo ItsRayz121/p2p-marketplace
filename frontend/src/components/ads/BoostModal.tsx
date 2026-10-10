@@ -16,11 +16,13 @@ export function BoostModal({ kind = 'ad', id, boostedUntil, onClose, onDone }: {
 }) {
   const [plans, setPlans] = useState<AdBoostPlan[] | null>(null)
   const [balance, setBalance] = useState<number | null>(null)
+  const [enabled, setEnabled] = useState(true)
   const [busy, setBusy] = useState<string | null>(null)
 
   useEffect(() => {
     let off = false
     adsApi.getBoostPlans().then((p) => { if (!off) setPlans(p) }).catch(() => { if (!off) setPlans([]) })
+    adsApi.getBoostStatus().then((s) => { if (!off) setEnabled(s.enabled) }).catch(() => { /* server still enforces it */ })
     pointsShopApi.get().then((s) => { if (!off) setBalance(s.balance) }).catch(() => { if (!off) setBalance(null) })
     return () => { off = true }
   }, [])
@@ -47,7 +49,9 @@ export function BoostModal({ kind = 'ad', id, boostedUntil, onClose, onDone }: {
         </p>
         {running && <p className="rounded-lg bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-700 dark:text-amber-300">Currently boosted until {running.toLocaleString()}. A new boost adds time on top.</p>}
         {balance !== null && <p className="text-xs text-text-muted">Your balance: <strong className="text-text-primary">{balance.toLocaleString()} points</strong></p>}
-        {plans === null ? <Spinner size="sm" /> : plans.length === 0 ? (
+        {!enabled ? (
+          <p className="rounded-lg bg-surface-alt px-3 py-2 text-sm text-text-secondary">Boosting is paused for now. Nothing will be charged, and any boost already running is unaffected.</p>
+        ) : plans === null ? <Spinner size="sm" /> : plans.length === 0 ? (
           <p className="text-sm text-text-muted">Boosting is not available right now.</p>
         ) : (
           <div className="grid gap-2">

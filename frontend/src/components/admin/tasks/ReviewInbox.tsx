@@ -71,59 +71,51 @@ export function ReviewInbox({
     return () => clearTimeout(t)
   }, [search, filters.q, setFilters])
 
-  // Desktop only: open the first queue item automatically. On a phone the panel replaces the
-  // queue, so auto-selecting would make "Back to queue" impossible.
-  useEffect(() => {
-    if (!list || list.items.length === 0 || selectedId) return
-    if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches) setSelected(list.items[0]!.id)
-  }, [list, selectedId, setSelected])
-
-  const afterDecision = useCallback(async (decidedId: string) => {
-    const before = list?.items ?? []
-    const idx = before.findIndex((i) => i.id === decidedId)
+  // Nothing opens by itself: a member's submission, proof and details stay hidden until an
+  // admin clicks that row. After a decision the panel closes and the queue refreshes.
+  const afterDecision = useCallback(async () => {
     onChanged()
-    const next = await load()
-    if (!next) return
-    // Same queue position: the item that now sits where the decided one was, else the previous one.
-    const target = next.items[Math.min(Math.max(idx, 0), next.items.length - 1)]
-    setSelected(target ? target.id : '')
-  }, [list, load, onChanged, setSelected])
+    setSelected('')
+    await load()
+  }, [load, onChanged, setSelected])
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-2">
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label="Status">
+      <div className="space-y-3 rounded-xl border border-border bg-surface p-3 sm:p-4">
+        <div className="flex flex-wrap gap-2" role="group" aria-label="Status">
           {STATUS_FILTERS.map((s) => (
             <button key={s.key} type="button" aria-pressed={filters.status === s.key} onClick={() => setFilters({ status: s.key, page: '1' })}
-              className={cn('rounded-lg border px-3 py-1.5 text-sm font-medium', filters.status === s.key ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary hover:bg-surface-alt')}>{s.label}</button>
+              className={cn('rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors', filters.status === s.key ? 'border-primary bg-primary text-white' : 'border-border bg-surface text-text-secondary hover:bg-surface-alt')}>{s.label}</button>
           ))}
         </div>
-        <label className="relative min-w-[200px] flex-1">
+        <div className="grid grid-cols-2 items-end gap-2 sm:grid-cols-3 lg:grid-cols-[minmax(220px,2fr)_repeat(3,minmax(0,1fr))_repeat(2,minmax(0,140px))]">
+        <label className="relative col-span-2 sm:col-span-3 lg:col-span-1">
           <span className="sr-only">Search submissions</span>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" aria-hidden />
           <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Member, submission ID or task…" className={cn(inputCls, 'pl-9')} />
         </label>
-        <select aria-label="Task" value={filters.task} onChange={(e) => setFilters({ task: e.target.value, page: '1' })} className={cn(inputCls, 'w-auto max-w-[200px]')}>
+        <select aria-label="Task" value={filters.task} onChange={(e) => setFilters({ task: e.target.value, page: '1' })} className={cn(inputCls, 'w-full')}>
           <option value="">All tasks</option>
           {tasks.map((t) => <option key={t.id} value={t.id}>{t.title}</option>)}
         </select>
-        <select aria-label="Platform" value={filters.platform} onChange={(e) => setFilters({ platform: e.target.value, page: '1' })} className={cn(inputCls, 'w-auto')}>
+        <select aria-label="Platform" value={filters.platform} onChange={(e) => setFilters({ platform: e.target.value, page: '1' })} className={cn(inputCls, 'w-full')}>
           <option value="">All platforms</option>
           {PLATFORMS.map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
-        <select aria-label="Reward type" value={filters.reward} onChange={(e) => setFilters({ reward: e.target.value, page: '1' })} className={cn(inputCls, 'w-auto')}>
+        <select aria-label="Reward type" value={filters.reward} onChange={(e) => setFilters({ reward: e.target.value, page: '1' })} className={cn(inputCls, 'w-full')}>
           <option value="">Points &amp; USDT</option>
           <option value="points">Points</option>
           <option value="usdt">USDT</option>
         </select>
-        <label className="text-xs text-text-secondary">From<input type="date" value={filters.from} onChange={(e) => setFilters({ from: e.target.value, page: '1' })} className={cn(inputCls, 'ml-1 inline-block w-auto')} /></label>
-        <label className="text-xs text-text-secondary">To<input type="date" value={filters.to} onChange={(e) => setFilters({ to: e.target.value, page: '1' })} className={cn(inputCls, 'ml-1 inline-block w-auto')} /></label>
+        <label className="block text-xs text-text-secondary"><span className="mb-1 block">From</span><input type="date" value={filters.from} onChange={(e) => setFilters({ from: e.target.value, page: '1' })} className={cn(inputCls, 'w-full')} /></label>
+        <label className="block text-xs text-text-secondary"><span className="mb-1 block">To</span><input type="date" value={filters.to} onChange={(e) => setFilters({ to: e.target.value, page: '1' })} className={cn(inputCls, 'w-full')} /></label>
+        </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
         {/* Queue */}
-        <div className={cn('space-y-2', selectedId && 'max-lg:hidden')}>
+        <div className={cn('space-y-2.5 lg:max-h-[calc(100vh-14rem)] lg:overflow-y-auto lg:pr-1', selectedId && 'max-lg:hidden')}>
           {listError && <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger">{listError} <button type="button" className="font-semibold underline" onClick={() => void load()}>Retry</button></p>}
           {!list && !listError && <div className="space-y-2">{[0, 1, 2].map((i) => <div key={i} className="h-[84px] animate-pulse rounded-xl border border-border bg-surface" />)}</div>}
           {list && list.items.length === 0 && (
@@ -138,11 +130,11 @@ export function ReviewInbox({
         </div>
 
         {/* Review panel */}
-        <div className={cn(!selectedId && 'max-lg:hidden')}>
+        <div className={cn('lg:sticky lg:top-4', !selectedId && 'max-lg:hidden')}>
           {selectedId ? (
             <ReviewPanel key={selectedId} id={selectedId} onBack={() => setSelected('')} onDecided={afterDecision} onRefresh={() => { void load(); onChanged() }} />
           ) : list && list.items.length === 0 ? null : (
-            <div className="rounded-xl border border-border bg-surface p-10 text-center text-sm text-text-muted">Select a submission to review it.</div>
+            <div className="rounded-xl border border-dashed border-border bg-surface p-10 text-center text-sm text-text-muted">Select a member from the list to see their submission, proof and details.</div>
           )}
         </div>
       </div>
@@ -181,7 +173,7 @@ function QueueRow({ item, active, targetHours, onClick }: { item: InboxItem; act
 function ReviewPanel({ id, onBack, onDecided, onRefresh }: {
   id: string
   onBack: () => void
-  onDecided: (id: string) => Promise<void>
+  onDecided: () => Promise<void>
   onRefresh: () => void
 }) {
   const [d, setD] = useState<SubmissionDetail | null>(null)
@@ -221,7 +213,7 @@ function ReviewPanel({ id, onBack, onDecided, onRefresh }: {
       })
       toast.success(decision === 'approve' ? 'Approved' : decision === 'reject' ? 'Rejected' : 'Changes requested')
       setFeedback(''); setNote(''); setChecks({})
-      await onDecided(d.id)
+      await onDecided()
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'Could not save your decision'
       // Keep the draft feedback; only reload the record if it changed under us.
@@ -240,7 +232,7 @@ function ReviewPanel({ id, onBack, onDecided, onRefresh }: {
   const money = fmtReward(d.reward.type, d.reward.points, d.reward.usdt)
 
   return (
-    <div className="space-y-3 rounded-xl border border-border bg-surface p-4 shadow-card">
+    <div className="space-y-4 rounded-xl border border-border bg-surface p-4 shadow-card sm:p-5">
       <button type="button" onClick={onBack} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline lg:hidden"><ArrowLeft className="h-3.5 w-3.5" />Back to queue</button>
 
       {conflict && <p className="rounded-lg bg-warning/10 px-3 py-2 text-sm text-warning" role="alert">{conflict} The latest version is shown below; your draft feedback was kept.</p>}
@@ -323,7 +315,7 @@ function ReviewPanel({ id, onBack, onDecided, onRefresh }: {
           </div>
           {formError && <p className="text-sm text-danger" role="alert">{formError}</p>}
           <div className="flex flex-wrap gap-2">
-            {reviewable && <button type="button" disabled={!!busy} onClick={() => void decide('approve')} className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'approve' ? 'Approving…' : 'Approve & next'}</button>}
+            {reviewable && <button type="button" disabled={!!busy} onClick={() => void decide('approve')} className="rounded-lg bg-success px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">{busy === 'approve' ? 'Approving…' : 'Approve'}</button>}
             {reviewable && <button type="button" disabled={!!busy} onClick={() => void decide('request_changes')} className="rounded-lg border border-info px-4 py-2 text-sm font-semibold text-info hover:bg-info/5 disabled:opacity-50">{busy === 'request_changes' ? 'Sending…' : 'Request changes'}</button>}
             <button type="button" disabled={!!busy} onClick={() => void decide('reject')} className="rounded-lg border border-danger px-4 py-2 text-sm font-semibold text-danger hover:bg-danger/5 disabled:opacity-50">{busy === 'reject' ? 'Rejecting…' : withdrawable ? 'Close claim' : 'Reject'}</button>
           </div>

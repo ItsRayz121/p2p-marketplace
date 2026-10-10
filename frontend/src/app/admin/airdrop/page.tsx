@@ -8,6 +8,7 @@ import {
 } from '@/lib/api'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { toast } from '@/lib/toast'
+import { ShopSafetyControls } from '@/components/admin/ShopSafetyControls'
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 4 })
 
@@ -111,6 +112,8 @@ export default function AdminAirdropPage() {
           before the manual on-chain distribution — nothing here deploys a token or moves value.
         </p>
       </div>
+
+      <ShopSafetyControls />
 
       {/* Create season */}
       <div className="rounded-xl border border-border bg-surface p-4 flex flex-wrap items-end gap-3">
