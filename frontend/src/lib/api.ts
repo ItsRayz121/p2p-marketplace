@@ -2639,8 +2639,11 @@ export const adminApi = {
     apiRequest<unknown[]>('/admin/referrals/top-inviters'),
   getReferralGraph: () =>
     apiRequest<{
-      nodes: Array<{ id: string; username: string; kycStatus: string; referrals: number; referredById: string | null }>
+      nodes: Array<{ id: string; username: string; kycStatus: string; referrals: number; referredById: string | null; createdAt?: string | null; active?: boolean | null }>
       edges: Array<{ source: string; target: string }>
+      /** Users in the referral network overall, and whether the list above was cut short. */
+      total?: number
+      truncated?: boolean
     }>('/admin/referrals/graph'),
   getReferralsByCountry: () =>
     apiRequest<{ countries: Array<{ country: string; countryCode: string | null; count: number }>; total: number }>('/admin/referrals/by-country'),

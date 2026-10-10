@@ -1,7 +1,6 @@
 'use client'
 import { useState, useCallback, useEffect } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
 import { LoadingState } from '@/components/ui/LoadingState'
@@ -10,7 +9,7 @@ import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
-import { ReferralBubbleMap, type GraphNode, type GraphEdge } from '@/components/admin/ReferralBubbleMap'
+import { ReferralNetwork } from '@/components/admin/referrals/ReferralNetwork'
 import { Users, AlertTriangle, Download, Share2 } from 'lucide-react'
 
 interface ReferredUser {
@@ -57,23 +56,11 @@ interface SuspiciousGroup {
 
 type Tab = 'referred' | 'inviters' | 'suspicious' | 'network'
 
-// 2-letter ISO country code → flag emoji (regional indicator letters).
-function flagEmoji(cc: string | null): string {
-  if (!cc || cc.length !== 2) return '🏳️'
-  const A = 0x1f1e6
-  return String.fromCodePoint(A + (cc.toUpperCase().charCodeAt(0) - 65), A + (cc.toUpperCase().charCodeAt(1) - 65))
-}
-
 export default function ReferralsPage() {
-  const router = useRouter()
   const [tab, setTab] = useState<Tab>('referred')
   const [referrals, setReferrals] = useState<ReferredUser[]>([])
   const [inviters, setInviters] = useState<TopInviter[]>([])
   const [suspicious, setSuspicious] = useState<SuspiciousGroup[]>([])
-  const [graphNodes, setGraphNodes] = useState<GraphNode[]>([])
-  const [graphEdges, setGraphEdges] = useState<GraphEdge[]>([])
-  const [countries, setCountries] = useState<Array<{ country: string; countryCode: string | null; count: number }>>([])
-  const [countryTotal, setCountryTotal] = useState(0)
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -126,28 +113,11 @@ export default function ReferralsPage() {
     }
   }, [])
 
-  const fetchGraph = useCallback(async () => {
-    setLoading(true)
-    try {
-      const [graph, byCountry] = await Promise.all([adminApi.getReferralGraph(), adminApi.getReferralsByCountry()])
-      setGraphNodes(graph.nodes ?? [])
-      setGraphEdges(graph.edges ?? [])
-      setCountries(byCountry.countries ?? [])
-      setCountryTotal(byCountry.total ?? 0)
-      setError(null)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load referral network')
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
   useEffect(() => {
     if (tab === 'referred') fetchReferrals()
     else if (tab === 'inviters') fetchInviters()
-    else if (tab === 'network') fetchGraph()
     else fetchSuspicious()
-  }, [tab, fetchReferrals, fetchInviters, fetchSuspicious, fetchGraph])
+  }, [tab, fetchReferrals, fetchInviters, fetchSuspicious])
 
   async function viewChain(userId: string) {
     setChainLoading(true)
@@ -228,46 +198,12 @@ export default function ReferralsPage() {
         </div>
       )}
 
-      {loading ? (
+      {tab === 'network' ? (
+        <ReferralNetwork />
+      ) : loading ? (
         <LoadingState message="Loading referrals…" />
       ) : error ? (
         <ErrorState title={error} onRetry={tab === 'referred' ? fetchReferrals : tab === 'inviters' ? fetchInviters : fetchSuspicious} />
-      ) : tab === 'network' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2">
-            <ReferralBubbleMap nodes={graphNodes} edges={graphEdges} onSelect={(id) => router.push(`/admin/users/${id}`)} />
-          </div>
-          {/* Country-wise breakdown (all users, by geo-IP country) */}
-          <div className="bg-surface shadow-card rounded-xl border border-border p-4 h-fit">
-            <div className="flex items-baseline justify-between mb-3">
-              <h3 className="text-sm font-bold text-text-primary">Users by country</h3>
-              <span className="text-xs text-text-muted">{countryTotal} total</span>
-            </div>
-            {countries.length === 0 ? (
-              <p className="text-xs text-text-muted">No country data yet.</p>
-            ) : (
-              <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
-                {countries.map((c) => {
-                  const pct = countryTotal > 0 ? Math.round((c.count / countryTotal) * 100) : 0
-                  return (
-                    <div key={`${c.countryCode}-${c.country}`}>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="flex items-center gap-2 text-text-primary">
-                          <span className="text-base leading-none">{flagEmoji(c.countryCode)}</span>
-                          {c.country}
-                        </span>
-                        <span className="text-text-muted text-xs">{c.count} · {pct}%</span>
-                      </div>
-                      <div className="mt-1 h-1.5 rounded-full bg-surface-alt overflow-hidden">
-                        <div className="h-full bg-primary rounded-full" style={{ width: `${Math.max(2, pct)}%` }} />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        </div>
       ) : tab === 'referred' ? (
         referrals.length === 0 ? (
           <EmptyState icon={Users} title="No referred users" description="No users have signed up via a referral link yet." />

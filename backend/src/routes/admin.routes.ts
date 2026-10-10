@@ -1315,17 +1315,26 @@ export async function adminRoutes(app: FastifyInstance) {
   // bubble-map view). Includes every user involved in a referral relationship (referred
   // someone OR was referred); an edge points from referrer → referred. Capped for safety.
   app.get('/admin/referrals/graph', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
-    const users = await db.user.findMany({
-      where: { OR: [{ referredById: { not: null } }, { referrals: { some: {} } }] },
-      select: {
-        id: true,
-        username: true,
-        kycStatus: true,
-        referredById: true,
-        _count: { select: { referrals: true } },
-      },
-      take: 2000,
-    })
+    const GRAPH_CAP = 3000
+    const where = { OR: [{ referredById: { not: null } }, { referrals: { some: {} } }] }
+    const [users, total] = await Promise.all([
+      db.user.findMany({
+        where,
+        // Oldest first so the cap trims the newest tail and the network doesn't reshuffle between loads.
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          username: true,
+          kycStatus: true,
+          referredById: true,
+          createdAt: true,
+          tradeStats: { select: { completedTrades: true } },
+          _count: { select: { referrals: true } },
+        },
+        take: GRAPH_CAP,
+      }),
+      db.user.count({ where }),
+    ])
     const ids = new Set(users.map((u) => u.id))
     const nodes = users.map((u) => ({
       id: u.id,
@@ -1333,12 +1342,15 @@ export async function adminRoutes(app: FastifyInstance) {
       kycStatus: u.kycStatus,
       referrals: u._count.referrals,
       referredById: u.referredById,
+      createdAt: u.createdAt.toISOString(),
+      // "Active" = at least one completed trade (same definition as the referral status elsewhere).
+      active: (u.tradeStats?.completedTrades ?? 0) > 0,
     }))
-    // Only keep edges whose referrer is also in the node set (it always is, via the OR).
+    // Only keep edges whose referrer is also in the node set.
     const edges = users
       .filter((u) => u.referredById && ids.has(u.referredById))
       .map((u) => ({ source: u.referredById as string, target: u.id }))
-    return reply.send({ success: true, data: { nodes, edges } })
+    return reply.send({ success: true, data: { nodes, edges, total, truncated: total > users.length } })
   })
 
   // GET /admin/referrals/by-country — user distribution by geo-IP country (for the
