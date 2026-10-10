@@ -17,6 +17,7 @@ import {
 import { createTradeFromListing } from './ctm.trade.service'
 import { isCtmUsdtPaymentEnabled } from './ctm.usdtPayment'
 import { db } from '../lib/prisma'
+import { boostAd } from '../services/adBoost.service'
 
 const createListingSchema = z.object({
   tokenId: z.string().min(1),
@@ -118,6 +119,14 @@ export async function ctmListingRoutes(app: FastifyInstance) {
         sellerFullName: t.seller.fullName ?? null,
       })),
     })
+  })
+
+  // POST /ctm/listings/:id/boost — spend Points to list your own active listing above the rest.
+  app.post('/ctm/listings/:id/boost', { preHandler: [authenticate] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ plan: z.string().regex(/^[a-z0-9_]{2,20}$/) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Choose a boost option.', 400)
+    return reply.send({ success: true, data: await boostAd(req.user!.id, id, parsed.data.plan, 'ctm') })
   })
 
   // GET /ctm/listings — browse listings

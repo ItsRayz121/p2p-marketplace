@@ -296,6 +296,9 @@ export async function getRecentTrades(): Promise<RecentTrade[]> {
 
 type OffersMode = 'top' | 'latest' | 'pinned'
 
+/** Most homepage "USDT Marketplace" slots that Points-boosted offers may take. */
+const HOME_BOOST_SLOTS = 2
+
 /** Trust-based score used to rank "top recommended" offers. */
 function offerScore(ad: AdWithSeller): number {
   const s = ad.seller.tradeStats
@@ -369,7 +372,7 @@ export async function getTopAds(): Promise<{
   }
 
   const [platformTz, activeHoursOn] = await Promise.all([getPlatformTimezone(), isActiveHoursFeatureOn()])
-  const [buyAds, sellAds, poolAds] = await Promise.all([
+  const [buyAds, sellAds, poolAds, boostedAds] = await Promise.all([
     db.ad.findMany({
       where: { status: 'active', side: 'buy', coin: 'USDT' },
       orderBy: { price: 'desc' },
@@ -388,6 +391,13 @@ export async function getTopAds(): Promise<{
       where: { status: 'active', coin: 'USDT' },
       orderBy: { createdAt: 'desc' },
       take: 40,
+      include: { user: sellerInclude },
+    }),
+    // Points-boosted USDT ads (any age), longest remaining boost first.
+    db.ad.findMany({
+      where: { status: 'active', coin: 'USDT', boostedUntil: { gt: new Date() } },
+      orderBy: { boostedUntil: 'desc' },
+      take: HOME_BOOST_SLOTS,
       include: { user: sellerInclude },
     }),
   ])
@@ -445,20 +455,29 @@ export async function getTopAds(): Promise<{
 
   // Build the unified USDT list per the admin-selected ranking mode.
   const pool = poolAds.map(mapAd) // already newest-first from the query
+  const boosted = boostedAds.map(mapAd)
   const HOME_LIMIT = 4
+  // Admin-pinned offers keep first place; boosted offers take the next slots (at most
+  // HOME_BOOST_SLOTS so the section stays mostly trust-ranked), then the ranked rest.
+  const withBoost = (head: AdWithSeller[], rest: AdWithSeller[]): AdWithSeller[] => {
+    const seen = new Set(head.map((a) => a.id))
+    const lift = boosted.filter((a) => !seen.has(a.id))
+    const liftIds = new Set(lift.map((a) => a.id))
+    return [...head, ...lift, ...rest.filter((a) => !seen.has(a.id) && !liftIds.has(a.id))].slice(0, HOME_LIMIT)
+  }
   let usdt: AdWithSeller[]
   if (mode === 'latest') {
-    usdt = pool.slice(0, HOME_LIMIT)
+    usdt = withBoost([], pool)
   } else if (mode === 'pinned' && pinnedIds.length > 0) {
     const byId = new Map(pool.map((a) => [a.id, a]))
     const pinned = pinnedIds.map((id) => byId.get(id)).filter((a): a is AdWithSeller => Boolean(a))
     // Fill remaining slots with top-ranked offers not already pinned.
     const pinnedSet = new Set(pinned.map((a) => a.id))
     const filler = [...pool].filter((a) => !pinnedSet.has(a.id)).sort((a, b) => offerScore(b) - offerScore(a))
-    usdt = [...pinned, ...filler].slice(0, HOME_LIMIT)
+    usdt = withBoost(pinned, filler)
   } else {
     // 'top' (default): rank by trust score.
-    usdt = [...pool].sort((a, b) => offerScore(b) - offerScore(a)).slice(0, HOME_LIMIT)
+    usdt = withBoost([], [...pool].sort((a, b) => offerScore(b) - offerScore(a)))
   }
 
   const result = {

@@ -5,7 +5,7 @@ export type RewardType = 'points' | 'usdt'
 export type ClaimStatus = 'pending_review' | 'needs_changes' | 'awaiting_payout' | 'completed' | 'rejected'
 export type TaskLifecycle = 'draft' | 'scheduled' | 'active' | 'paused' | 'ended' | 'archived'
 export type Decision = 'approve' | 'request_changes' | 'reject'
-export type PaymentState = 'credited' | 'awaiting_payment' | 'paid'
+export type PaymentState = 'credited' | 'awaiting_payment' | 'processing' | 'failed' | 'paid'
 export const PAYOUT_NETWORKS = ['BEP20', 'ERC20', 'TRC20', 'APTOS'] as const
 export const PLATFORMS = ['telegram', 'x', 'youtube', 'instagram', 'facebook', 'tiktok', 'discord', 'whatsapp', 'other'] as const
 export type Platform = (typeof PLATFORMS)[number]
@@ -34,6 +34,8 @@ export interface UserPlatformTask {
     status: ClaimStatus
     rejectionReason: string | null
     txHash: string | null
+    /** Manual USDT progress shown to the member: being sent, or delayed and will be retried. */
+    payoutStage?: 'sending' | 'delayed' | null
     createdAt: string
     completedAt: string | null
     revisionNo?: number
@@ -178,6 +180,9 @@ export interface RewardRow {
   payoutAddress: string | null
   txHash: string | null
   paidAt: string | null
+  /** Why the last send failed (admin only). */
+  attemptNote?: string | null
+  attemptAt?: string | null
 }
 export interface RewardsPage {
   total: number; page: number; limit: number
@@ -225,12 +230,16 @@ export const adminPlatformTaskApi = {
   update: (id: string, body: TaskPatchInput) =>
     apiRequest<unknown>(`/admin/platform-tasks/${id}`, { method: 'PATCH', body: JSON.stringify(body) }),
   summary: (p: { from?: string; to?: string }) => apiRequest<Summary>(`/admin/platform-tasks/summary${qs(p)}`),
+  setReviewTarget: (hours: number) =>
+    apiRequest<{ reviewTargetHours: number }>('/admin/platform-tasks/review-target', { method: 'PUT', body: JSON.stringify({ hours }) }),
   inbox: (p: { status?: string; taskId?: string; platform?: string; rewardType?: string; from?: string; to?: string; q?: string; sort?: string; page?: number; limit?: number }) =>
     apiRequest<InboxPage>(`/admin/platform-tasks/inbox${qs(p)}`),
   detail: (id: string) => apiRequest<SubmissionDetail>(`/admin/platform-tasks/submissions/${id}`),
   decide: (id: string, body: { decision: Decision; revisionNo: number; feedback?: string | null; internalNote?: string | null; checks?: Record<string, boolean> | null }) =>
     apiRequest<{ status: ClaimStatus }>(`/admin/platform-tasks/submissions/${id}/decision`, json(body)),
   pay: (id: string, txHash: string) => apiRequest<unknown>(`/admin/platform-tasks/submissions/${id}/pay`, json({ txHash })),
+  startPayout: (id: string) => apiRequest<unknown>(`/admin/platform-tasks/submissions/${id}/start-payout`, { method: 'POST' }),
+  failPayout: (id: string, reason: string) => apiRequest<unknown>(`/admin/platform-tasks/submissions/${id}/fail-payout`, json({ reason })),
   cancelPayout: (id: string, reason: string) => apiRequest<unknown>(`/admin/platform-tasks/submissions/${id}/cancel-payout`, json({ reason })),
   rewards: (p: { state?: string; type?: string; q?: string; page?: number }) => apiRequest<RewardsPage>(`/admin/platform-tasks/rewards${qs(p)}`),
   analytics: (p: { from?: string; to?: string }) => apiRequest<Analytics>(`/admin/platform-tasks/analytics${qs(p)}`),

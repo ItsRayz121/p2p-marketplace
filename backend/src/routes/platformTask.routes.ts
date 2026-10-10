@@ -16,6 +16,8 @@ import {
   decideSubmission,
   cancelPayout,
   markCompletionPaid,
+  startPayout,
+  failPayout,
   type TaskInput,
   type TaskPatch,
 } from '../services/platformTask.service'
@@ -28,6 +30,7 @@ import {
   getSubmissionDetail,
   getSummary,
   parsePeriod,
+  setReviewTargetHours,
 } from '../services/platformTaskWorkspace.service'
 
 const optDate = z.preprocess((v) => (v === '' || v == null ? null : v), z.coerce.date().nullable()).optional()
@@ -155,6 +158,15 @@ export async function platformTaskRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: await getSummary(parsePeriod(q.from, q.to)) })
   })
 
+  // Review target: how long a submission may wait before it is flagged as overdue.
+  app.put('/admin/platform-tasks/review-target', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const parsed = z.object({ hours: z.number().int().min(1).max(720) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Enter a whole number of hours between 1 and 720.', 400)
+    const before = await setReviewTargetHours(parsed.data.hours)
+    await recordAuditLog(req.user!.id, 'PLATFORM_TASK_REVIEW_TARGET_CHANGED', 'PlatformConfig', 'task_review_target_hours', { from: before, to: parsed.data.hours })
+    return reply.send({ success: true, data: { reviewTargetHours: parsed.data.hours } })
+  })
+
   app.get('/admin/platform-tasks/inbox', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
     const q = req.query as Record<string, string | undefined>
     return reply.send({
@@ -212,6 +224,22 @@ export async function platformTaskRoutes(app: FastifyInstance) {
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Transaction hash is required.', 400)
     const data = await markCompletionPaid(req.user!.id, id, parsed.data.txHash)
     await recordAuditLog(req.user!.id, 'PLATFORM_TASK_PAYOUT_RECORDED', 'PlatformTaskCompletion', id, { txHash: parsed.data.txHash })
+    return reply.send({ success: true, data })
+  })
+
+  app.post('/admin/platform-tasks/submissions/:id/start-payout', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const data = await startPayout(req.user!.id, id)
+    await recordAuditLog(req.user!.id, 'PLATFORM_TASK_PAYOUT_STARTED', 'PlatformTaskCompletion', id, {})
+    return reply.send({ success: true, data })
+  })
+
+  app.post('/admin/platform-tasks/submissions/:id/fail-payout', { preHandler: [authenticate, superAdmin] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ reason: z.string().trim().min(5).max(300) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Note what went wrong (5 to 300 characters).', 400)
+    const data = await failPayout(req.user!.id, id, parsed.data.reason)
+    await recordAuditLog(req.user!.id, 'PLATFORM_TASK_PAYOUT_FAILED', 'PlatformTaskCompletion', id, { reason: parsed.data.reason })
     return reply.send({ success: true, data })
   })
 

@@ -11,6 +11,8 @@ import { PaymentPill, Pager, inputCls, memberName } from './shared'
 const STATES = [
   { key: '', label: 'All' },
   { key: 'awaiting_payment', label: 'Awaiting payment' },
+  { key: 'processing', label: 'Processing' },
+  { key: 'failed', label: 'Failed' },
   { key: 'paid', label: 'Paid' },
   { key: 'credited', label: 'Credited' },
 ] as const
@@ -94,14 +96,24 @@ export function RewardsTab({ state, type, q, setFilter, onChanged }: {
                     <td className="px-3 py-3 text-xs text-text-secondary whitespace-nowrap">{fmtDateTime(r.approvedAt)}</td>
                     <td className="px-3 py-3"><PaymentPill state={r.state} /></td>
                     <td className="px-3 py-3 min-w-[240px]">
-                      {r.state === 'awaiting_payment' ? (
+                      {r.state === 'awaiting_payment' || r.state === 'processing' || r.state === 'failed' ? (
                         <div className="space-y-2">
                           <div className="flex items-start gap-2"><p className="break-all font-mono text-[11px] text-text-primary">{r.payoutNetwork}: {r.payoutAddress}</p>
                             <button type="button" onClick={async () => { if (r.payoutAddress && await copyText(r.payoutAddress)) toast.success('Address copied') }} className="flex-shrink-0 text-[11px] font-semibold text-primary">Copy</button></div>
+                          {r.state === 'failed' && r.attemptNote && <p className="rounded-md bg-danger/10 px-2 py-1 text-[11px] text-danger">Last attempt failed{r.attemptAt ? ` (${fmtDateTime(r.attemptAt)})` : ''}: {r.attemptNote}</p>}
+                          {r.state === 'processing' && r.attemptAt && <p className="text-[11px] text-info">Marked as sending {fmtDateTime(r.attemptAt)}. Another admin can&apos;t start it again.</p>}
+                          {r.state !== 'processing' && (
+                            <button type="button" disabled={busy === r.id} onClick={() => void act(r.id, () => adminPlatformTaskApi.startPayout(r.id), 'Marked as processing')} className="rounded-md bg-info px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">{r.state === 'failed' ? 'Retry sending' : 'Start sending'}</button>
+                          )}
                           <div className="flex gap-1.5">
                             <input aria-label="Transaction hash" className={cn(inputCls, 'py-1.5 text-xs')} placeholder="Transaction hash" value={hashes[r.id] ?? ''} onChange={(e) => setHashes((m) => ({ ...m, [r.id]: e.target.value }))} />
                             <button type="button" disabled={busy === r.id || !(hashes[r.id] ?? '').trim()} onClick={() => void act(r.id, () => adminPlatformTaskApi.pay(r.id, hashes[r.id]!.trim()), 'Payment recorded')} className="flex-shrink-0 rounded-md bg-success px-2.5 py-1.5 text-xs font-semibold text-white disabled:opacity-50">Mark paid</button>
-                            <button type="button" disabled={busy === r.id} onClick={() => { const why = window.prompt('Why is this payout being cancelled? (the member will see this)'); if (why && why.trim().length >= 5) void act(r.id, () => adminPlatformTaskApi.cancelPayout(r.id, why.trim()), 'Payout cancelled') }} className="flex-shrink-0 rounded-md border border-danger px-2.5 py-1.5 text-xs font-semibold text-danger disabled:opacity-50">Cancel</button>
+                          </div>
+                          <div className="flex gap-1.5">
+                            {r.state === 'processing' && (
+                              <button type="button" disabled={busy === r.id} onClick={() => { const why = window.prompt('What went wrong with the send? (admin note; the member only sees that it was delayed)'); if (why && why.trim().length >= 5) void act(r.id, () => adminPlatformTaskApi.failPayout(r.id, why.trim()), 'Marked as failed') }} className="rounded-md border border-warning px-2.5 py-1.5 text-xs font-semibold text-warning disabled:opacity-50">Send failed</button>
+                            )}
+                            <button type="button" disabled={busy === r.id} onClick={() => { const why = window.prompt('Why is this payout being cancelled? (the member will see this)'); if (why && why.trim().length >= 5) void act(r.id, () => adminPlatformTaskApi.cancelPayout(r.id, why.trim()), 'Payout cancelled') }} className="rounded-md border border-danger px-2.5 py-1.5 text-xs font-semibold text-danger disabled:opacity-50">Cancel payout</button>
                           </div>
                           <p className="text-[11px] text-text-muted">Send the USDT yourself, then paste the real transaction hash. It can be used only once.</p>
                         </div>

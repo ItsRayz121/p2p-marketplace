@@ -20,6 +20,8 @@ interface Listing {
   paymentMethods: string[]
   resolvedPaymentMethods?: { id: string; type: string; label: string }[]
   makerBondInsufficient?: boolean
+  /** ISO time while a Points boost is active (shown as Featured), else null. */
+  boostedUntil?: string | null
   /** Listing creator has an open dispute against them or is on a trading hold. */
   disputed?: boolean
   token: { id: string; slug: string; name: string; symbol: string; logoUrl?: string; riskTier: string }
@@ -211,7 +213,10 @@ export default function BrowseListingsPage() {
             )
 
             return (
-              <div key={l.id} className="bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow">
+              <div key={l.id} className={`relative bg-surface shadow-card border border-border rounded-xl p-4 hover:shadow-md transition-shadow ${l.boostedUntil ? 'ring-1 ring-amber-300/70' : ''}`}>
+                {l.boostedUntil && (
+                  <span className="absolute right-3 top-0 -translate-y-1/2 rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">★ Featured</span>
+                )}
                 <div className="flex flex-col sm:flex-row sm:items-center gap-4">
                   {/* Token */}
                   <div className="flex items-center gap-3 sm:w-44">

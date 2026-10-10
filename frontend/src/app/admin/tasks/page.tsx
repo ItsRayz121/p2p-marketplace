@@ -10,6 +10,7 @@ import { TaskDirectory } from '@/components/admin/tasks/TaskDirectory'
 import { TaskDrawer } from '@/components/admin/tasks/TaskDrawer'
 import { RewardsTab } from '@/components/admin/tasks/RewardsTab'
 import { AnalyticsTab } from '@/components/admin/tasks/AnalyticsTab'
+import { ReviewTargetControl } from '@/components/admin/tasks/ReviewTargetControl'
 import { ActivityTab } from '@/components/admin/tasks/ActivityTab'
 import { RANGES, rangeOf, useUrlState } from '@/components/admin/tasks/shared'
 
@@ -66,6 +67,7 @@ function Workspace() {
           <h1 className="text-2xl font-bold text-text-primary">Community Tasks</h1>
           <p className="mt-0.5 text-sm text-text-secondary">Create tasks, review member submissions and proof, and track rewards.</p>
         </div>
+        <ReviewTargetControl hours={summary?.reviewTargetHours ?? 24} onSaved={refreshAll} />
         <label className="flex items-center gap-2 text-xs text-text-secondary">
           Period
           <select value={range} onChange={(e) => url.set({ range: e.target.value === '30' ? null : e.target.value })} className="rounded-lg border border-border bg-surface px-2 py-1.5 text-sm text-text-primary">

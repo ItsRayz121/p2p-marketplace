@@ -175,7 +175,13 @@ export function PlatformTaskCard({
       {task.claim?.status === 'completed' && task.claim.txHash && (
         <p className="text-[11px] text-text-muted break-all">Tx: {task.claim.txHash}</p>
       )}
-      {task.claim?.status === 'awaiting_payout' && <p className="text-xs text-text-muted">Approved. Your USDT will be sent to your address; we will notify you with the transaction.</p>}
+      {task.claim?.status === 'awaiting_payout' && (
+        <p className="text-xs text-text-muted">
+          {task.claim.payoutStage === 'sending' ? 'Approved. Your USDT is being sent now; we will notify you with the transaction.'
+            : task.claim.payoutStage === 'delayed' ? 'Approved. Sending hit a problem and will be retried. Your reward is still reserved.'
+            : 'Approved. Your USDT will be sent to your address; we will notify you with the transaction.'}
+        </p>
+      )}
 
       {(!task.claim || resubmitting) && (
         <div className="space-y-2 pt-1">

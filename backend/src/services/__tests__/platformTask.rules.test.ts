@@ -116,6 +116,15 @@ describe('paymentState', () => {
   it('approval of a manual USDT claim is awaiting payment, never paid', () => {
     expect(paymentState({ rewardType: 'usdt', payoutMode: 'manual', status: 'awaiting_payout', txHash: null })).toBe('awaiting_payment')
   })
+  it('an awaiting claim shows processing or failed from the send attempt, and a null attempt stays awaiting', () => {
+    const base = { rewardType: 'usdt', payoutMode: 'manual', status: 'awaiting_payout', txHash: null }
+    expect(paymentState({ ...base, payoutAttempt: 'processing' })).toBe('processing')
+    expect(paymentState({ ...base, payoutAttempt: 'failed' })).toBe('failed')
+    expect(paymentState({ ...base, payoutAttempt: null })).toBe('awaiting_payment')
+  })
+  it('a leftover attempt marker never changes a settled claim', () => {
+    expect(paymentState({ rewardType: 'usdt', payoutMode: 'manual', status: 'completed', txHash: '0xabc', payoutAttempt: 'failed' })).toBe('paid')
+  })
   it('only a recorded tx hash (or automatic wallet credit) counts as settled', () => {
     expect(paymentState({ rewardType: 'usdt', payoutMode: 'manual', status: 'completed', txHash: '0xabc' })).toBe('paid')
     expect(paymentState({ rewardType: 'usdt', payoutMode: 'auto', status: 'completed', txHash: null })).toBe('credited')

@@ -2943,6 +2943,8 @@ model CtmListing {
   requiresProof     Boolean            @default(true)
   proofInstructions String?            @db.VarChar(500)
   expiresAt         DateTime?
+  // Points-purchased boost: while in the future the listing is shown above un-boosted ones.
+  boostedUntil      DateTime?
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
   trades            CtmTrade[]
@@ -2950,6 +2952,7 @@ model CtmListing {
 
   @@index([tokenId, side, status])
   @@index([merchantProfileId])
+  @@index([status, boostedUntil])
 }
 
 model CtmRequest {
@@ -3489,6 +3492,12 @@ model PlatformTaskCompletion {
   payoutNetwork   String?                               // manual USDT: where the user wants it
   payoutAddress   String?
   txHash          String?      @unique                  // manual USDT: admin-recorded transfer hash
+  // Manual USDT send tracking while the claim is `awaiting_payout`: null | processing | failed.
+  // Kept apart from `status` so budgets, counts and member views are unaffected.
+  payoutAttempt     String?                                // processing | failed
+  payoutAttemptNote String?    @db.VarChar(300)            // failure reason (admin only)
+  payoutAttemptAt   DateTime?
+  payoutAttemptById String?
   rejectionReason String?
   reviewedById    String?
   reviewedAt      DateTime?

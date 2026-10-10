@@ -164,11 +164,13 @@ export function parsePeriod(from?: string, to?: string, now = new Date()): Perio
   return { from: start, to: end }
 }
 
-export type PaymentState = 'credited' | 'awaiting_payment' | 'paid'
+export type PaymentState = 'credited' | 'awaiting_payment' | 'processing' | 'failed' | 'paid'
 
-export function paymentState(c: { rewardType: string; payoutMode: string | null; status: string; txHash: string | null }): PaymentState {
+export function paymentState(c: { rewardType: string; payoutMode: string | null; status: string; txHash: string | null; payoutAttempt?: string | null }): PaymentState {
   if (c.rewardType === 'points') return 'credited'
-  if (c.status === 'awaiting_payout') return 'awaiting_payment'
+  if (c.status === 'awaiting_payout') {
+    return c.payoutAttempt === 'processing' ? 'processing' : c.payoutAttempt === 'failed' ? 'failed' : 'awaiting_payment'
+  }
   // Completed USDT: either credited to the internal wallet automatically, or paid on-chain with a recorded hash.
   return c.payoutMode === 'manual' || c.txHash ? 'paid' : 'credited'
 }

@@ -15,6 +15,17 @@ export type { Period, PaymentState } from './platformTask.rules'
 export const REVIEW_TARGET_KEY = 'task_review_target_hours'
 export const DEFAULT_REVIEW_TARGET_HOURS = 24
 
+/** Saves the review target and returns the previous value. */
+export async function setReviewTargetHours(hours: number): Promise<number> {
+  const before = await getNumberConfig(REVIEW_TARGET_KEY, DEFAULT_REVIEW_TARGET_HOURS)
+  await db.platformConfig.upsert({
+    where: { key: REVIEW_TARGET_KEY },
+    update: { value: String(hours) },
+    create: { key: REVIEW_TARGET_KEY, value: String(hours) },
+  })
+  return before
+}
+
 const num = (d: Prisma.Decimal | null | undefined) => (d == null ? null : Number(d))
 
 // ── Summary ─────────────────────────────────────────────────────────────────
@@ -242,7 +253,9 @@ export async function getRewards(q: RewardsQuery) {
   const limit = Math.min(50, Math.max(1, q.limit ?? 20))
   const and: Prisma.PlatformTaskCompletionWhereInput[] = [{ status: { in: ['awaiting_payout', 'completed'] } }]
   if (q.type === 'points' || q.type === 'usdt') and.push({ rewardType: q.type })
+  // "Awaiting payment" is every unpaid claim (so it matches the unpaid total); processing and failed narrow it.
   if (q.state === 'awaiting_payment') and.push({ status: 'awaiting_payout' })
+  else if (q.state === 'processing' || q.state === 'failed') and.push({ status: 'awaiting_payout', payoutAttempt: q.state })
   else if (q.state === 'paid') and.push({ status: 'completed', rewardType: 'usdt', txHash: { not: null } })
   else if (q.state === 'credited') and.push({ status: 'completed', OR: [{ rewardType: 'points' }, { rewardType: 'usdt', txHash: null }] })
   const search = q.q?.trim()
@@ -288,6 +301,8 @@ export async function getRewards(q: RewardsQuery) {
       payoutAddress: r.payoutAddress,
       txHash: r.txHash,
       paidAt: r.status === 'completed' ? r.completedAt : null,
+      attemptNote: r.status === 'awaiting_payout' ? r.payoutAttemptNote : null,
+      attemptAt: r.status === 'awaiting_payout' ? r.payoutAttemptAt : null,
     })),
   }
 }

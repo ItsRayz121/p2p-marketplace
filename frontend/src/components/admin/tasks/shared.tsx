@@ -39,6 +39,8 @@ export function LifecyclePill({ lifecycle }: { lifecycle: TaskLifecycle }) {
 const PAY: Record<PaymentState, { label: string; cls: string }> = {
   credited: { label: 'Credited', cls: 'bg-success/10 text-success' },
   awaiting_payment: { label: 'Awaiting payment', cls: 'bg-warning/10 text-warning' },
+  processing: { label: 'Processing', cls: 'bg-info/10 text-info' },
+  failed: { label: 'Failed', cls: 'bg-danger/10 text-danger' },
   paid: { label: 'Paid', cls: 'bg-success/10 text-success' },
 }
 export function PaymentPill({ state }: { state: PaymentState }) {

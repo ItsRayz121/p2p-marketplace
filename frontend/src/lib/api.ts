@@ -3646,6 +3646,8 @@ export const ctmApi = {
   deleteListing: (id: string) => apiRequest<void>(`/ctm/listings/${id}`, { method: 'DELETE' }),
   archiveListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/archive`, { method: 'POST' }),
   unarchiveListing: (id: string) => apiRequest<unknown>(`/ctm/listings/${id}/unarchive`, { method: 'POST' }),
+  boostListing: (id: string, plan: string) =>
+    apiRequest<{ boostedUntil: string; balance: number }>(`/ctm/listings/${id}/boost`, { method: 'POST', body: JSON.stringify({ plan }) }),
   startListingTrade: (id: string, data: { paymentMethod?: string; paymentMethods?: string[]; buyerSettlementId?: string; buyerPaymentMethodId?: string; acceptedBuyerPaymentMethodIds?: string[]; tokenAmount: number; usdtMethod?: string; usdtAddress?: string; usdtFromAddress?: string }) =>
     apiRequest<{ tradeRef: string }>(`/ctm/listings/${id}/trade`, { method: 'POST', body: JSON.stringify(data) }),
 

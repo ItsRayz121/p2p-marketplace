@@ -5,6 +5,7 @@ import { ctmApi } from '@/lib/api'
 import { usePolling } from '@/hooks/usePolling'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
+import { BoostModal } from '@/components/ads/BoostModal'
 
 interface Listing {
   id: string
@@ -19,6 +20,7 @@ interface Listing {
   maxOrderTokens: string
   paymentMethods: string[]
   createdAt: string
+  boostedUntil?: string | null
   token: { id: string; name: string; symbol: string; logoUrl?: string }
 }
 
@@ -29,6 +31,7 @@ export default function MyListingsPage() {
   const [actionError, setActionError] = useState('')
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
   const [showArchived, setShowArchived] = useState(false)
+  const [boostTarget, setBoostTarget] = useState<Listing | null>(null)
 
   const fetchListings = async () => {
     try {
@@ -108,6 +111,10 @@ export default function MyListingsPage() {
         confirmVariant="danger"
       />
 
+      {boostTarget && (
+        <BoostModal kind="ctm" id={boostTarget.id} boostedUntil={boostTarget.boostedUntil} onClose={() => setBoostTarget(null)} onDone={() => { setBoostTarget(null); void fetchListings() }} />
+      )}
+
       {loading ? (
         <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="bg-surface shadow-card border border-border rounded-xl h-24 animate-pulse" />)}</div>
       ) : listings.length === 0 ? (
@@ -135,6 +142,11 @@ export default function MyListingsPage() {
 
                 <div className="flex items-center gap-2">
                   <Link href={`/ctm/listings/${l.id}`} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface">View</Link>
+                  {l.status === 'active' && (
+                    <button onClick={() => setBoostTarget(l)} className="text-xs border border-amber-500/40 text-amber-700 dark:text-amber-300 px-3 py-1.5 rounded-lg hover:bg-amber-500/10">
+                      {l.boostedUntil && new Date(l.boostedUntil) > new Date() ? '★ Boosted' : 'Boost'}
+                    </button>
+                  )}
                   {l.status === 'active' && (
                     <button onClick={() => handleAction(l.id, 'pause')} disabled={actionLoading === l.id} className="text-xs border border-border px-3 py-1.5 rounded-lg text-text-primary hover:bg-surface disabled:opacity-50">
                       {actionLoading === l.id ? '…' : 'Pause'}

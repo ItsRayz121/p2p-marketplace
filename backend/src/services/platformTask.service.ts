@@ -283,6 +283,8 @@ export async function listTasksForUser(userId: string) {
             status: claim.status,
             rejectionReason: claim.rejectionReason,
             txHash: claim.txHash,
+            // Member-facing payout progress. The internal failure reason is never exposed.
+            payoutStage: claim.status !== 'awaiting_payout' ? null : claim.payoutAttempt === 'processing' ? 'sending' : claim.payoutAttempt === 'failed' ? 'delayed' : null,
             createdAt: claim.createdAt,
             completedAt: claim.completedAt,
             revisionNo: claim.revisionNo,
@@ -634,6 +636,34 @@ export async function cancelPayout(adminId: string, completionId: string, reason
   return { status: 'rejected' as const }
 }
 
+/** Manual USDT: an admin has started sending. Marks the claim so a second admin doesn't pay it too. */
+export async function startPayout(adminId: string, completionId: string) {
+  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
+  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
+  const flip = await db.platformTaskCompletion.updateMany({
+    where: { id: c.id, status: 'awaiting_payout', OR: [{ payoutAttempt: null }, { payoutAttempt: 'failed' }] },
+    data: { payoutAttempt: 'processing', payoutAttemptNote: null, payoutAttemptAt: new Date(), payoutAttemptById: adminId },
+  })
+  if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This payout is already being sent, or is no longer awaiting payment.', 409)
+  notify(c.userId, 'task_reward', 'Your payout is being sent', `We started sending your $${Number(c.rewardUsdt).toFixed(2)} USDT reward for "${c.task.title}".`, {}, undefined, '/points')
+  return { state: 'processing' as const }
+}
+
+/** Manual USDT: the send did not go through. The claim stays payable and can be retried or cancelled. */
+export async function failPayout(adminId: string, completionId: string, reason: string) {
+  const why = reason.trim()
+  if (why.length < 5) throw new AppError('VALIDATION_ERROR', 'Note what went wrong (at least 5 characters).', 400)
+  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
+  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
+  const flip = await db.platformTaskCompletion.updateMany({
+    where: { id: c.id, status: 'awaiting_payout' },
+    data: { payoutAttempt: 'failed', payoutAttemptNote: why.slice(0, 300), payoutAttemptAt: new Date(), payoutAttemptById: adminId },
+  })
+  if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This payout is no longer awaiting payment.', 409)
+  notify(c.userId, 'task_reward', 'Payout delayed', `Sending your reward for "${c.task.title}" hit a problem. We will retry it; your reward is still reserved.`, {}, undefined, '/points')
+  return { state: 'failed' as const }
+}
+
 /** Manual USDT: admin paid off-platform and records the transfer hash. */
 export async function markCompletionPaid(adminId: string, completionId: string, txHash: string) {
   const hash = txHash.trim()
@@ -643,7 +673,7 @@ export async function markCompletionPaid(adminId: string, completionId: string, 
   try {
     const flip = await db.platformTaskCompletion.updateMany({
       where: { id: c.id, status: 'awaiting_payout' },
-      data: { status: 'completed', txHash: hash, completedAt: new Date(), reviewedById: adminId, reviewedAt: new Date() },
+      data: { status: 'completed', txHash: hash, completedAt: new Date(), reviewedById: adminId, reviewedAt: new Date(), payoutAttempt: null, payoutAttemptNote: null },
     })
     if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This payout was already recorded or is not awaiting payment.', 409)
   } catch (e) {

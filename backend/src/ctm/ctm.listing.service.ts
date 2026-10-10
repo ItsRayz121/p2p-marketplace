@@ -295,39 +295,63 @@ export async function getListings(filters: ListingsFilter = {}) {
   }
   const orderBy = ALLOWED_SORT_FIELDS[sortBy ?? 'createdAt'] ?? { createdAt: 'desc' }
 
-  const [listings, total] = await Promise.all([
-    db.ctmListing.findMany({
-      where,
-      skip,
-      take: limit,
-      orderBy,
-      include: {
-        token: { select: { id: true, slug: true, name: true, symbol: true, logoUrl: true, riskTier: true, communityVerified: true, status: true } },
-        merchantProfile: {
+  const include = {
+    token: { select: { id: true, slug: true, name: true, symbol: true, logoUrl: true, riskTier: true, communityVerified: true, status: true } },
+    merchantProfile: {
+      select: {
+        id: true,
+        tier: true,
+        totalCtmTrades: true,
+        completedCtmTrades: true,
+        ctmAvgRating: true,
+        merchant: { select: { id: true, status: true, businessName: true } },
+        user: {
           select: {
             id: true,
-            tier: true,
-            totalCtmTrades: true,
-            completedCtmTrades: true,
-            ctmAvgRating: true,
-            merchant: { select: { id: true, status: true, businessName: true } },
-            user: {
-              select: {
-                id: true,
-                username: true,
-                fullName: true,
-                avatarUrl: true,
-                createdAt: true,
-                lastSeenAt: true,
-                tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true, completionRate: true } },
-              },
-            },
+            username: true,
+            fullName: true,
+            avatarUrl: true,
+            createdAt: true,
+            lastSeenAt: true,
+            tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true, completionRate: true } },
           },
         },
       },
-    }),
-    db.ctmListing.count({ where }),
-  ])
+    },
+  } satisfies Prisma.CtmListingInclude
+
+  // Public browse in default (newest) order lists Points-boosted listings first, then the
+  // rest. Two segments so an expired boost needs no cleanup: it just stops matching.
+  // Explicit sorts (price, rating…), "My Listings" and the admin view keep their own order.
+  const useBoost = !adminView && !merchantProfileId && (!sortBy || sortBy === 'createdAt')
+  let listings: Awaited<ReturnType<typeof db.ctmListing.findMany<{ include: typeof include }>>> = []
+  let total: number
+  if (useBoost) {
+    const now = new Date()
+    const boosted = { AND: [where, { boostedUntil: { gt: now } }] } as Prisma.CtmListingWhereInput
+    const rest = { AND: [where, { OR: [{ boostedUntil: null }, { boostedUntil: { lte: now } }] }] } as Prisma.CtmListingWhereInput
+    const segments = [boosted, rest]
+    const counts = await Promise.all(segments.map((w) => db.ctmListing.count({ where: w })))
+    total = counts[0]! + counts[1]!
+    let segStart = 0
+    for (let i = 0; i < segments.length && listings.length < limit; i++) {
+      const segCount = counts[i]!
+      const segSkip = Math.max(0, skip - segStart)
+      segStart += segCount
+      if (segSkip >= segCount) continue
+      const rows = await db.ctmListing.findMany({
+        where: segments[i]!, skip: segSkip, take: limit - listings.length, orderBy, include,
+      })
+      listings.push(...rows)
+    }
+  } else {
+    const [rows, count] = await Promise.all([
+      db.ctmListing.findMany({ where, skip, take: limit, orderBy, include }),
+      db.ctmListing.count({ where }),
+    ])
+    listings = rows
+    total = count
+  }
 
   // Resolve all payment method IDs across all listings in one query
   const allIds = [...new Set(listings.flatMap((l) => l.paymentMethods))]
@@ -335,8 +359,10 @@ export async function getListings(filters: ListingsFilter = {}) {
     where: { id: { in: allIds } },
     select: { id: true, type: true, accountName: true, bankName: true },
   })
+  const nowTs = Date.now()
   const resolvedListings: Array<Record<string, unknown>> = listings.map((l) => ({
     ...l,
+    boostedUntil: l.boostedUntil && l.boostedUntil.getTime() > nowTs ? l.boostedUntil.toISOString() : null,
     resolvedPaymentMethods: l.paymentMethods.map((id) => {
       const m = allMethods.find((x) => x.id === id)
       if (!m) return { id, type: 'unknown', label: 'Unknown' }
