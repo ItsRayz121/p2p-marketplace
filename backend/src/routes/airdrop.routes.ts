@@ -1,4 +1,4 @@
-import { buyItem, getShop } from '../services/pointsShop.service'
+import { buyItem, equipBadge, getShop } from '../services/pointsShop.service'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
@@ -39,7 +39,16 @@ export async function airdropRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: await buyItem(req.user!.id, itemKey) })
   })
 
-  // POST /api/v1/airdrop/checkin — daily check-in: advance the streak (+ small
+  // PUT /api/v1/points/shop/equipped-badge — choose which owned badge is shown publicly (null hides it).
+  app.put('/points/shop/equipped-badge', { preHandler: [authenticate] }, async (req, reply) => {
+    const { itemKey } = (req.body ?? {}) as { itemKey?: string | null }
+    if (itemKey != null && (typeof itemKey !== 'string' || !/^[a-z0-9_]{2,40}$/.test(itemKey))) {
+      return reply.code(400).send({ success: false, error: { code: 'VALIDATION', message: 'Invalid badge.' } })
+    }
+    return reply.send({ success: true, data: await equipBadge(req.user!.id, itemKey ?? null) })
+  })
+
+  // POST /api/v1/airdrop/checkin— daily check-in: advance the streak (+ small
   // point). Idempotent per UTC day.
   app.post('/airdrop/checkin', { preHandler: [authenticate] }, async (req, reply) => {
     const data = await dailyCheckin(req.user!.id)

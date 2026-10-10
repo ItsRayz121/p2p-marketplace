@@ -285,7 +285,7 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
                   className="flex items-center gap-3 p-3 rounded-lg bg-surface border border-border hover:border-primary/40 transition-colors"
                 >
                   <div className="relative flex-shrink-0">
-                    <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" tier={(t.other.badge ?? 'new') as TraderBadge} />
+                    <UserAvatar name={name} avatarUrl={t.other.avatarUrl} size="md" tier={(t.other.badge ?? 'new') as TraderBadge} equipped={t.other.equippedBadge} />
                     {activity?.text === 'Online now' && (
                       <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-success border-2 border-surface" aria-label="Online now" />
                     )}

@@ -21,6 +21,7 @@ interface LeaderboardEntry {
   fullName?: string | null
   avatarUrl?: string | null
   badge?: string | null
+  equippedBadge?: string | null
   badgeLabel?: string | null
   totalTrades?: number | null
   completedTrades?: number | null
@@ -181,7 +182,7 @@ export default function LeaderboardPage() {
                         <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center text-xs sm:text-sm font-black flex-shrink-0 ${rankBadgeCls}`}>
                           #{rankNum}
                         </div>
-                        <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size={isFirst ? 'lg' : 'md'} tier={(entry.badge ?? 'new') as TraderBadge} />
+                        <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size={isFirst ? 'lg' : 'md'} tier={(entry.badge ?? 'new') as TraderBadge} equipped={entry.equippedBadge} />
                         <div className="w-full min-w-0">
                           <p className={`font-bold text-text-primary truncate ${isFirst ? 'text-sm sm:text-base' : 'text-xs sm:text-sm'}`}>
                             {entry.fullName || entry.username}
@@ -223,7 +224,7 @@ export default function LeaderboardPage() {
                           </td>
                           <td className="px-4 py-3">
                             <div className="flex items-center gap-2">
-                              <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size="sm" tier={(entry.badge ?? 'new') as TraderBadge} />
+                              <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size="sm" tier={(entry.badge ?? 'new') as TraderBadge} equipped={entry.equippedBadge} />
                               <div>
                                 <span className="text-sm font-medium text-text-primary">
                                   {entry.fullName || entry.username}
@@ -266,7 +267,7 @@ export default function LeaderboardPage() {
                       <div className="flex-shrink-0 w-8 text-center">
                         <RankDisplay rank={entry.rank} />
                       </div>
-                      <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size="sm" tier={(entry.badge ?? 'new') as TraderBadge} />
+                      <UserAvatar name={entry.fullName || entry.username || '?'} avatarUrl={entry.avatarUrl} size="sm" tier={(entry.badge ?? 'new') as TraderBadge} equipped={entry.equippedBadge} />
                       <div className="flex-1 min-w-0">
                         {/* name truncates but "(you)" never gets clipped */}
                         <p className="text-sm font-semibold text-text-primary flex items-baseline gap-1 min-w-0">

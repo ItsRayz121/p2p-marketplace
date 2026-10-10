@@ -585,6 +585,7 @@ export async function userRoutes(app: FastifyInstance) {
       data: {
         stats,
         badge: stats?.badge ?? 'new',
+        equippedBadge: stats?.equippedBadge ?? null,
         badgeLabel: stats?.badgeLabel ?? 'New Trader',
         thresholds: BADGE_THRESHOLDS,
         nextBadge: nextTier

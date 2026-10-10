@@ -85,19 +85,22 @@ async function getBalance(userId: string): Promise<number> {
 
 export interface ShopView {
   balance: number
+  equippedBadge: string | null
   items: Array<ShopItem & { owned: boolean; activeUntil: string | null }>
   perks: Array<{ id: string; itemKey: string; kind: string; label: string; discountPct: number | null; expiresAt: string | null; createdAt: string }>
 }
 
 export async function getShop(userId: string): Promise<ShopView> {
   const now = new Date()
-  const [catalog, balance, perks] = await Promise.all([
+  const [catalog, balance, perks, stats] = await Promise.all([
     getCatalog(),
     getBalance(userId),
     db.pointsPerk.findMany({ where: { userId, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] }, orderBy: { createdAt: 'desc' } }),
+    db.tradeStats.findUnique({ where: { userId }, select: { equippedBadge: true } }),
   ])
   return {
     balance,
+    equippedBadge: stats?.equippedBadge ?? null,
     items: catalog.map((i) => {
       const mine = perks.filter((p) => p.itemKey === i.key)
       const until = i.kind === 'gas_discount' ? mine.find((p) => p.expiresAt)?.expiresAt ?? null : null
@@ -151,6 +154,23 @@ export async function buyItem(userId: string, itemKey: string): Promise<{ perkId
     })
   })
   return { perkId: perk.id, balance: await getBalance(userId) }
+}
+
+/**
+ * Choose which owned badge is shown publicly (or null to hide). Purely cosmetic: it
+ * never touches the earned trader tier. The user must actually own the badge.
+ */
+export async function equipBadge(userId: string, itemKey: string | null): Promise<{ equippedBadge: string | null }> {
+  if (itemKey !== null) {
+    const owned = await db.pointsPerk.findFirst({ where: { userId, kind: 'badge', itemKey }, select: { id: true } })
+    if (!owned) throw new AppError('NOT_OWNED', 'You do not own this badge.', 403)
+  }
+  await db.tradeStats.upsert({
+    where: { userId },
+    update: { equippedBadge: itemKey },
+    create: { userId, equippedBadge: itemKey },
+  })
+  return { equippedBadge: itemKey }
 }
 
 /** Highest active gas discount % the user holds (perks never stack with each other). */

@@ -11,6 +11,7 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { Button } from '@/components/ui/Button'
 import { getPaymentMethodColor, isMobileMethod, canonicalPaymentLabel, isOpaqueId } from '@/lib/pkPaymentMethods'
 import { UserAvatar } from '@/components/ui/UserAvatar'
+import { shopBadgeStyle } from '@/lib/shopBadges'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Clock, Zap, Heart, Lock } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -37,6 +38,7 @@ interface TraderProfile {
     completionRate: number
     avgRating: number | string
     badge: string
+    equippedBadge?: string | null
     badgeLabel: string
     trustScore: number
     avgResponseMinutes: number | null
@@ -255,14 +257,19 @@ export default function TraderProfilePage() {
       <div className="bg-surface shadow-card rounded-xl border border-border p-5">
         <div className="flex flex-wrap items-start gap-4">
           <div className="relative flex-shrink-0">
-            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" tier={badge} />
-            <span className={`absolute bottom-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
+            <UserAvatar name={profile.fullName || profile.username} avatarUrl={profile.avatarUrl} size="xl" tier={badge} equipped={stats?.equippedBadge} />
+            <span className={`absolute top-0.5 right-0.5 w-3 h-3 rounded-full border-2 border-surface ${onlineInfo.dot}`} />
           </div>
           <div className="flex-1 min-w-0">
             {/* Name row */}
             <div className="flex flex-wrap items-center gap-2">
               <h1 className="text-xl font-bold text-text-primary">{profile.fullName || profile.username}</h1>
               <BadgeChip badge={badge} />
+              {shopBadgeStyle(stats?.equippedBadge) && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-alt px-2 py-0.5 text-xs font-semibold text-text-secondary" title="Cosmetic badge from the Points shop">
+                  {shopBadgeStyle(stats?.equippedBadge)!.emoji} {shopBadgeStyle(stats?.equippedBadge)!.label}
+                </span>
+              )}
               {profile.merchant?.status === 'approved' && (
                 <Badge variant="success" size="sm">Verified Merchant</Badge>
               )}

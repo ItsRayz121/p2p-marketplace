@@ -572,6 +572,17 @@ function ShopTab({ onChange }: { onChange: () => void }) {
   }, [])
   useEffect(() => { void load() }, [load])
 
+  async function equip(key: string | null) {
+    setBusyKey(`equip:${key ?? 'none'}`)
+    try {
+      await pointsShopApi.equip(key)
+      toast.success(key ? 'Badge equipped. It now shows next to your avatar.' : 'Badge hidden')
+      await load()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not update your badge')
+    } finally { setBusyKey(null) }
+  }
+
   async function buy(key: string, label: string, cost: number) {
     if (!window.confirm(`Spend ${cost} points on "${label}"?`)) return
     setBusyKey(key)
@@ -642,7 +653,26 @@ function ShopTab({ onChange }: { onChange: () => void }) {
         </div>
         <span className="text-sm font-black tabular-nums text-primary">{fmtPoints(item.cost)} pts</span>
         {item.owned ? (
-          <span className="text-xs font-semibold text-success">Owned ✓</span>
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-xs font-semibold text-success">Owned ✓</span>
+            {shop.equippedBadge === item.key ? (
+              <button
+                onClick={() => equip(null)}
+                disabled={busyKey === 'equip:none'}
+                className="rounded-lg border border-border bg-surface px-3 py-1.5 text-xs font-semibold text-text-secondary hover:bg-surface-alt disabled:opacity-50"
+              >
+                Equipped · Unequip
+              </button>
+            ) : (
+              <button
+                onClick={() => equip(item.key)}
+                disabled={busyKey === `equip:${item.key}`}
+                className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                Equip
+              </button>
+            )}
+          </div>
         ) : (
           <button
             onClick={() => buy(item.key, item.label, item.cost)}
@@ -675,7 +705,8 @@ function ShopTab({ onChange }: { onChange: () => void }) {
       </div>
 
       <div>
-        <h2 className="text-sm font-semibold text-text-primary mb-2">Badges</h2>
+        <h2 className="text-sm font-semibold text-text-primary mb-1">Badges</h2>
+        <p className="mb-2 text-xs text-text-muted">Cosmetic only. Equip one and it shows on your avatar, profile, listings and chats. It does not change your trader rank, which is earned from real trading.</p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">{badges.map(renderBadge)}</div>
       </div>
 

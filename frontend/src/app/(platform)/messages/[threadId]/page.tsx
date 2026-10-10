@@ -473,10 +473,10 @@ export default function MessageThreadPage() {
           <ArrowLeft className="w-5 h-5 text-text-muted" />
         </Link>
         {isSelf || !data.other.username ? (
-          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} />
+          <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} />
         ) : (
           <Link href={`/profile/${encodeURIComponent(data.other.username)}`} aria-label={`View ${name}'s profile`}>
-            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} />
+            <UserAvatar name={name} avatarUrl={data.other.avatarUrl} size="md" tier={(data.other.badge ?? 'new') as TraderBadge} equipped={data.other.equippedBadge} />
           </Link>
         )}
         <div className="min-w-0 flex-1">

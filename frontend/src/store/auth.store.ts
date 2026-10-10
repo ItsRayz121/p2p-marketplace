@@ -29,6 +29,7 @@ export interface AuthUser {
   usernameChangedAt: string | null
   tradeStats: {
     badge: 'new' | 'active' | 'trusted' | 'top' | 'elite'
+    equippedBadge?: string | null
     badgeLabel: string
     trustScore: number
     completedTrades: number

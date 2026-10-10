@@ -39,6 +39,7 @@ export interface SellerInfo {
   disputed?: boolean
   avatarUrl: string | null
   badge: string
+  equippedBadge: string | null
   lastSeenAt: string | null
   joinedAt: string | null
   isMerchant: boolean
@@ -341,6 +342,7 @@ export async function getTopAds(): Promise<{
       tradeStats: {
         select: {
           badge: true,
+          equippedBadge: true,
           completionRate: true,
           totalTrades: true,
           completedTrades: true,
@@ -411,6 +413,7 @@ export async function getTopAds(): Promise<{
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
+        equippedBadge: stats?.equippedBadge ?? null,
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',
@@ -599,6 +602,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
       tradeStats: {
         select: {
           badge: true,
+          equippedBadge: true,
           completionRate: true,
           totalTrades: true,
           completedTrades: true,
@@ -672,6 +676,7 @@ export async function getAds(params: GetAdsParams): Promise<AdsResult> {
         fullName: (ad.user as { fullName?: string | null }).fullName ?? null,
         avatarUrl: (ad.user as { avatarUrl?: string | null }).avatarUrl ?? null,
         badge: stats?.badge ?? 'new',
+        equippedBadge: stats?.equippedBadge ?? null,
         lastSeenAt: ad.user.lastSeenAt?.toISOString() ?? null,
         joinedAt: (ad.user as { createdAt?: Date | null }).createdAt?.toISOString() ?? null,
         isMerchant: !!merchant && merchant.status === 'approved',

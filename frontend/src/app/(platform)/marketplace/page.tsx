@@ -116,7 +116,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
           {/* Avatar + name row */}
           <div className="flex items-center gap-2 mb-1.5">
             <Link href={profileHref} onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-              <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" tier={(ad.seller?.badge ?? 'new') as TraderBadge} />
+              <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" tier={(ad.seller?.badge ?? 'new') as TraderBadge} equipped={ad.seller?.equippedBadge} />
             </Link>
             <div className="min-w-0">
               <Link
@@ -305,7 +305,7 @@ function AdRow({ ad }: { ad: MarketplaceAd }) {
         {/* Row 1: identity + action chip */}
         <div className="flex items-start gap-2">
           <Link href={profileHref} onClick={(e) => e.stopPropagation()} className="flex-shrink-0">
-            <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" tier={(ad.seller?.badge ?? 'new') as TraderBadge} />
+            <UserAvatar name={sellerName} avatarUrl={ad.seller?.avatarUrl} size="sm" tier={(ad.seller?.badge ?? 'new') as TraderBadge} equipped={ad.seller?.equippedBadge} />
           </Link>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-1.5 min-w-0">

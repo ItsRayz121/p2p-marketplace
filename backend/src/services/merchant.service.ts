@@ -121,6 +121,7 @@ export async function getMerchantStats(userId: string) {
     avgRating: avgRating._avg.rating ?? 0,
     totalReviews: avgRating._count.rating ?? 0,
     badge: tradeStats?.badge ?? 'new',
+    equippedBadge: tradeStats?.equippedBadge ?? null,
     trustScore: tradeStats?.trustScore ?? 0,
   }
 }
@@ -175,6 +176,7 @@ export async function getPublicMerchant(merchantId: string) {
               avgRating: true,
               totalReviews: true,
               badge: true,
+              equippedBadge: true,
               totalVolumePKR: true,
             },
           },

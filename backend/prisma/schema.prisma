@@ -1575,6 +1575,7 @@ model TradeStats {
   badge              TraderBadge @default(new)
   badgeLabel         String      @default("New Trader")
   badgeOverride      Boolean     @default(false)
+  equippedBadge      String?     // Points-shop badge item key the user chose to show publicly (cosmetic only)
   avgResponseMinutes Int?        // median seller response time in minutes (null = not enough data)
   avgReleaseMinutes  Int?        // median time from payment_confirmed to crypto_released (null = not enough data)
   disputesWon        Int         @default(0)

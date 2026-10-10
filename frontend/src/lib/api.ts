@@ -880,6 +880,7 @@ export interface MarketplaceAd {
     disputed?: boolean
     avatarUrl: string | null
     badge: string
+    equippedBadge?: string | null
     lastSeenAt: string | null
     joinedAt?: string | null
     /** Creator active hours: online=false → ad visible but can't be taken now. */
@@ -1633,6 +1634,7 @@ export const dashboardApi = {
         completionRate: number | null
         totalVolumePKR: string | null
         badge: string | null
+        equippedBadge?: string | null
         badgeLabel: string | null
         trustScore: number | null
       } | null
@@ -1833,6 +1835,7 @@ export const leaderboardApi = {
         userId: string
         username: string
         badge?: string | null
+        equippedBadge?: string | null
         badgeLabel?: string | null
         totalTrades?: number | null
         completedTrades?: number | null
@@ -3909,6 +3912,7 @@ export interface PointsShopItem {
 
 export interface PointsShopView {
   balance: number
+  equippedBadge: string | null
   items: PointsShopItem[]
   perks: Array<{ id: string; itemKey: string; kind: string; label: string; discountPct: number | null; expiresAt: string | null; createdAt: string }>
 }
@@ -3916,6 +3920,7 @@ export interface PointsShopView {
 export const pointsShopApi = {
   get: () => apiRequest<PointsShopView>('/points/shop'),
   buy: (itemKey: string) => apiRequest<{ perkId: string; balance: number }>(`/points/shop/${encodeURIComponent(itemKey)}/buy`, { method: 'POST' }),
+  equip: (itemKey: string | null) => apiRequest<{ equippedBadge: string | null }>('/points/shop/equipped-badge', { method: 'PUT', body: JSON.stringify({ itemKey }) }),
 }
 
 // ─── Affiliate dashboard (real-time referral tracking) ────────────────────────
