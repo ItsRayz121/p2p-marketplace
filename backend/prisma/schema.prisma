@@ -3461,6 +3461,15 @@ model PlatformTask {
   createdById  String?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+  // Workspace additions (all optional / defaulted so existing tasks are unchanged).
+  logoUrl           String?
+  platform          String?                              // telegram | x | youtube | instagram | facebook | tiktok | discord | whatsapp | other
+  instructions      String?   @db.VarChar(2000)          // member-facing steps
+  proofRequirements String?   @db.VarChar(1000)          // what evidence a member must submit (manual review)
+  proofFileRequired Boolean   @default(false)
+  isDraft           Boolean   @default(false)
+  archivedAt        DateTime?                            // archived tasks keep their history; never hard-deleted
+  version           Int       @default(1)                // bumped when requirements change; claims keep their own snapshot
   completions  PlatformTaskCompletion[]
 
   @@index([isActive, endsAt])
@@ -3486,8 +3495,37 @@ model PlatformTaskCompletion {
   completedAt     DateTime?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+  // Review workflow: pending_review | needs_changes | awaiting_payout | completed | rejected.
+  // `revisionNo` is the optimistic-concurrency token: a decision only applies to the exact
+  // revision the reviewer looked at. `snapshot` freezes the task's terms at claim time.
+  revisionNo      Int          @default(1)
+  taskVersion     Int          @default(1)
+  snapshot        Json?
+  revisions       PlatformTaskRevision[]
 
   @@unique([taskId, userId])
   @@index([status, createdAt])
   @@index([userId, createdAt])
+}
+
+// One row per submission attempt of a claim. A "request changes" decision does not create a
+// new claim: the member resubmits as the next revision and the claim returns to the queue.
+model PlatformTaskRevision {
+  id             String                 @id @default(cuid())
+  completionId   String
+  completion     PlatformTaskCompletion @relation(fields: [completionId], references: [id], onDelete: Cascade)
+  number         Int
+  proof          String?                @db.VarChar(500)
+  links          Json?                                   // string[] of https URLs the member submitted
+  attachments    Json?                                   // [{ url, name, size, mime }] (private Cloudinary uploads)
+  submittedAt    DateTime               @default(now())
+  decision       String?                                 // approved | rejected | needs_changes
+  feedback       String?                @db.VarChar(1000) // shown to the member
+  internalNote   String?                @db.VarChar(1000) // admins only
+  checks         Json?                                   // reviewer checklist, e.g. { accountMatches: true, actionVisible: true }
+  reviewedById   String?
+  reviewedAt     DateTime?
+
+  @@unique([completionId, number])
+  @@index([decision, submittedAt])
 }

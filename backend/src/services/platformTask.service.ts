@@ -20,6 +20,10 @@ import { logger } from '../lib/logger'
 import { notify } from '../lib/notify'
 import { telegramRequest } from '../lib/telegram.client'
 import { awardTaskPointsTx } from './airdrop.service'
+import {
+  PLATFORMS, RuleError, acceptsClaims, assertDecision, assertEvidence, buildSnapshot, canResubmit, cleanAttachments,
+  cleanLinks, isReviewable, nextStatus, taskLifecycle, type Attachment, type Decision,
+} from './platformTask.rules'
 
 type Tx = Prisma.TransactionClient
 
@@ -44,6 +48,12 @@ export interface TaskInput {
   maxClaims?: number | null
   budgetUsdt?: number | null
   isActive?: boolean
+  logoUrl?: string | null
+  platform?: (typeof PLATFORMS)[number] | null
+  instructions?: string | null
+  proofRequirements?: string | null
+  proofFileRequired?: boolean
+  isDraft?: boolean
 }
 
 const MAX_POINTS = 100_000
@@ -59,6 +69,14 @@ function validateAddress(network: string, address: string): boolean {
   if (net === 'BEP20' || net === 'ERC20') return /^0x[0-9a-fA-F]{40}$/.test(addr)
   if (net === 'APTOS') return /^0x[0-9a-fA-F]{64}$/.test(addr)
   return false
+}
+
+/** Turn a pure-rule failure into the API's 400 error. */
+function rule<T>(fn: () => T): T {
+  try { return fn() } catch (e) {
+    if (e instanceof RuleError) throw new AppError(e.code, e.message, 400)
+    throw e
+  }
 }
 
 function isUniqueViolation(e: unknown): boolean {
@@ -101,6 +119,7 @@ function outcomeStatus(task: { rewardType: string; payoutMode: string }): 'compl
 
 export async function createTask(adminId: string, t: TaskInput) {
   assertTaskConfig(t)
+  if (t.platform && !(PLATFORMS as readonly string[]).includes(t.platform)) throw new AppError('VALIDATION_ERROR', 'Unknown platform.', 400)
   return db.platformTask.create({
     data: {
       title: t.title.trim(),
@@ -119,13 +138,27 @@ export async function createTask(adminId: string, t: TaskInput) {
       budgetUsdt: t.rewardType === 'usdt' && t.budgetUsdt != null ? dec8(t.budgetUsdt) : null,
       isActive: t.isActive ?? true,
       createdById: adminId,
+      logoUrl: t.logoUrl?.trim() || null,
+      platform: t.platform ?? null,
+      instructions: t.instructions?.trim() || null,
+      proofRequirements: t.proofRequirements?.trim() || null,
+      proofFileRequired: t.proofFileRequired ?? false,
+      isDraft: t.isDraft ?? false,
     },
   })
 }
 
-/** Limited edit: reward + verification are frozen once anyone has claimed, so a task can't be
+/** Requirement-affecting fields: changing any of these bumps the task version. Existing claims keep
+ *  the snapshot they were made under, so an edit can never change an entitlement or review criteria. */
+const REQUIREMENT_FIELDS = ['title', 'description', 'url', 'instructions', 'proofRequirements', 'proofFileRequired', 'platform'] as const
+
+export type TaskPatch = Partial<Pick<TaskInput,
+  'title' | 'description' | 'url' | 'isActive' | 'startsAt' | 'endsAt' | 'maxClaims' | 'budgetUsdt' | 'requireKyc' |
+  'logoUrl' | 'platform' | 'instructions' | 'proofRequirements' | 'proofFileRequired' | 'isDraft'>> & { archived?: boolean }
+
+/** Limited edit: reward + verification method are frozen once anyone has claimed, so a task can't be
  *  re-priced under people who already completed it. Caps can only move to/above current usage. */
-export async function updateTask(id: string, p: Partial<Pick<TaskInput, 'title' | 'description' | 'url' | 'isActive' | 'startsAt' | 'endsAt' | 'maxClaims' | 'budgetUsdt' | 'requireKyc'>>) {
+export async function updateTask(id: string, p: TaskPatch) {
   const task = await db.platformTask.findUnique({ where: { id } })
   if (!task) throw new AppError('NOT_FOUND', 'Task not found', 404)
   if (p.maxClaims != null && p.maxClaims < task.claimedCount) throw new AppError('VALIDATION_ERROR', 'Max claims cannot be below the claims already made.', 400)
@@ -140,6 +173,11 @@ export async function updateTask(id: string, p: Partial<Pick<TaskInput, 'title' 
   const endsAt = p.endsAt !== undefined ? p.endsAt : task.endsAt
   if (startsAt && endsAt && endsAt <= startsAt) throw new AppError('VALIDATION_ERROR', 'End time must be after the start time.', 400)
   if (p.url && !/^https:\/\//i.test(p.url)) throw new AppError('VALIDATION_ERROR', 'Task link must start with https://', 400)
+  if (p.platform && !(PLATFORMS as readonly string[]).includes(p.platform)) throw new AppError('VALIDATION_ERROR', 'Unknown platform.', 400)
+
+  const changed = (k: (typeof REQUIREMENT_FIELDS)[number]) =>
+    p[k] !== undefined && (p[k] ?? null) !== ((task as Record<string, unknown>)[k] ?? null)
+  const bump = REQUIREMENT_FIELDS.some(changed)
 
   return db.platformTask.update({
     where: { id },
@@ -147,19 +185,28 @@ export async function updateTask(id: string, p: Partial<Pick<TaskInput, 'title' 
       ...(p.title !== undefined ? { title: p.title.trim() } : {}),
       ...(p.description !== undefined ? { description: p.description?.trim() || null } : {}),
       ...(p.url !== undefined ? { url: p.url?.trim() || null } : {}),
+      ...(p.logoUrl !== undefined ? { logoUrl: p.logoUrl?.trim() || null } : {}),
+      ...(p.platform !== undefined ? { platform: p.platform } : {}),
+      ...(p.instructions !== undefined ? { instructions: p.instructions?.trim() || null } : {}),
+      ...(p.proofRequirements !== undefined ? { proofRequirements: p.proofRequirements?.trim() || null } : {}),
+      ...(p.proofFileRequired !== undefined ? { proofFileRequired: p.proofFileRequired } : {}),
+      ...(p.isDraft !== undefined ? { isDraft: p.isDraft } : {}),
+      ...(p.archived !== undefined ? { archivedAt: p.archived ? new Date() : null } : {}),
       ...(p.isActive !== undefined ? { isActive: p.isActive } : {}),
       ...(p.requireKyc !== undefined ? { requireKyc: p.requireKyc } : {}),
       ...(p.startsAt !== undefined ? { startsAt: p.startsAt } : {}),
       ...(p.endsAt !== undefined ? { endsAt: p.endsAt } : {}),
       ...(p.maxClaims !== undefined ? { maxClaims: p.maxClaims } : {}),
       ...(p.budgetUsdt !== undefined && task.rewardType === 'usdt' ? { budgetUsdt: p.budgetUsdt == null ? null : dec8(p.budgetUsdt) } : {}),
+      ...(bump ? { version: { increment: 1 } } : {}),
     },
   })
 }
 
 export async function adminListTasks() {
+  const now = new Date()
   const [tasks, counts] = await Promise.all([
-    db.platformTask.findMany({ orderBy: { createdAt: 'desc' }, take: 200 }),
+    db.platformTask.findMany({ orderBy: { createdAt: 'desc' }, take: 300 }),
     db.platformTaskCompletion.groupBy({ by: ['taskId', 'status'], _count: { _all: true } }),
   ])
   const byTask = new Map<string, Record<string, number>>()
@@ -174,39 +221,8 @@ export async function adminListTasks() {
     rewardUsdt: t.rewardUsdt != null ? Number(t.rewardUsdt) : null,
     budgetUsdt: t.budgetUsdt != null ? Number(t.budgetUsdt) : null,
     spentUsdt: Number(t.spentUsdt),
+    lifecycle: taskLifecycle(t, now),
     counts: byTask.get(t.id) ?? {},
-  }))
-}
-
-export async function adminListCompletions(status: string | undefined) {
-  const rows = await db.platformTaskCompletion.findMany({
-    where: status ? { status } : {},
-    orderBy: { createdAt: 'desc' },
-    take: 200,
-    include: { task: { select: { title: true, verifyMode: true } } },
-  })
-  const users = await db.user.findMany({
-    where: { id: { in: [...new Set(rows.map((r) => r.userId))] } },
-    select: { id: true, email: true, username: true, fullName: true, telegramUsername: true },
-  })
-  const uMap = new Map(users.map((u) => [u.id, u]))
-  return rows.map((r) => ({
-    id: r.id,
-    taskId: r.taskId,
-    taskTitle: r.task.title,
-    status: r.status,
-    proof: r.proof,
-    rewardType: r.rewardType,
-    rewardPoints: r.rewardPoints != null ? Number(r.rewardPoints) : null,
-    rewardUsdt: r.rewardUsdt != null ? Number(r.rewardUsdt) : null,
-    payoutMode: r.payoutMode,
-    payoutNetwork: r.payoutNetwork,
-    payoutAddress: r.payoutAddress,
-    txHash: r.txHash,
-    rejectionReason: r.rejectionReason,
-    createdAt: r.createdAt,
-    completedAt: r.completedAt,
-    user: uMap.get(r.userId) ?? { id: r.userId, email: '—', username: null, fullName: null, telegramUsername: null },
   }))
 }
 
@@ -218,6 +234,8 @@ export async function listTasksForUser(userId: string) {
     db.platformTask.findMany({
       where: {
         isActive: true,
+        isDraft: false,
+        archivedAt: null,
         AND: [
           { OR: [{ startsAt: null }, { startsAt: { lte: now } }] },
           { OR: [{ endsAt: null }, { endsAt: { gt: now } }] },
@@ -226,7 +244,12 @@ export async function listTasksForUser(userId: string) {
       orderBy: { createdAt: 'desc' },
       take: 100,
     }),
-    db.platformTaskCompletion.findMany({ where: { userId }, include: { task: true }, orderBy: { createdAt: 'desc' }, take: 200 }),
+    db.platformTaskCompletion.findMany({
+      where: { userId },
+      include: { task: true, revisions: { orderBy: { number: 'desc' }, take: 1 } },
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+    }),
     db.user.findUnique({ where: { id: userId }, select: { telegramId: true, kycLevel: true } }),
   ])
   const mineByTask = new Map(mine.map((m) => [m.taskId, m]))
@@ -234,21 +257,39 @@ export async function listTasksForUser(userId: string) {
   const shape = (t: (typeof open)[number], claim: (typeof mine)[number] | undefined) => {
     const rewardUsdt = t.rewardUsdt != null ? Number(t.rewardUsdt) : null
     const spotsLeft = t.maxClaims != null ? Math.max(0, t.maxClaims - t.claimedCount) : null
+    // An existing claim is judged on the terms it was made under, not the task's current terms.
+    const snap = (claim?.snapshot ?? null) as Record<string, unknown> | null
+    const last = claim?.revisions[0]
     return {
       id: t.id,
-      title: t.title,
+      title: (snap?.title as string | undefined) ?? t.title,
       description: t.description,
+      instructions: (snap?.instructions as string | null | undefined) ?? t.instructions,
+      proofRequirements: (snap?.proofRequirements as string | null | undefined) ?? t.proofRequirements,
+      proofFileRequired: (snap?.proofFileRequired as boolean | undefined) ?? t.proofFileRequired,
+      platform: t.platform,
       url: t.url,
+      logoUrl: t.logoUrl,
       verifyMode: t.verifyMode,
-      rewardType: t.rewardType,
-      rewardPoints: t.rewardPoints != null ? Number(t.rewardPoints) : null,
-      rewardUsdt,
+      rewardType: claim?.rewardType ?? t.rewardType,
+      rewardPoints: claim ? (claim.rewardPoints != null ? Number(claim.rewardPoints) : null) : (t.rewardPoints != null ? Number(t.rewardPoints) : null),
+      rewardUsdt: claim ? (claim.rewardUsdt != null ? Number(claim.rewardUsdt) : null) : rewardUsdt,
       payoutMode: t.payoutMode,
       requireKyc: t.requireKyc,
       endsAt: t.endsAt,
       spotsLeft,
       claim: claim
-        ? { status: claim.status, rejectionReason: claim.rejectionReason, txHash: claim.txHash, createdAt: claim.createdAt, completedAt: claim.completedAt }
+        ? {
+            status: claim.status,
+            rejectionReason: claim.rejectionReason,
+            txHash: claim.txHash,
+            createdAt: claim.createdAt,
+            completedAt: claim.completedAt,
+            revisionNo: claim.revisionNo,
+            // Latest reviewer message addressed to the member (never the internal note).
+            feedback: last?.feedback ?? null,
+            canResubmit: canResubmit(claim.status),
+          }
         : null,
     }
   }
@@ -329,12 +370,34 @@ function notifyReward(userId: string, task: { title: string }, c: { rewardType: 
   }
 }
 
-export async function claimTask(userId: string, taskId: string, input: { proof?: string | undefined; payoutNetwork?: string | undefined; payoutAddress?: string | undefined }) {
+export interface ClaimInput {
+  proof?: string | undefined
+  links?: unknown
+  attachments?: unknown
+  payoutNetwork?: string | undefined
+  payoutAddress?: string | undefined
+}
+
+/** Validate + normalise the evidence a member submits (shared by claim and resubmit). */
+function normaliseEvidence(task: { verifyMode: string; proofFileRequired: boolean }, input: ClaimInput) {
+  return rule(() => {
+    const proof = (input.proof ?? '').trim()
+    const links = cleanLinks(input.links)
+    const attachments = cleanAttachments(input.attachments)
+    assertEvidence(task, { proof, links, attachments })
+    return { proof, links, attachments }
+  })
+}
+
+export async function claimTask(userId: string, taskId: string, input: ClaimInput) {
   const task = await db.platformTask.findUnique({ where: { id: taskId } })
   const now = new Date()
-  if (!task || !task.isActive) throw new AppError('NOT_FOUND', 'This task is not available.', 404)
-  if (task.startsAt && task.startsAt > now) throw new AppError('TASK_NOT_STARTED', 'This task has not started yet.', 400)
-  if (task.endsAt && task.endsAt <= now) throw new AppError('TASK_ENDED', 'This task has ended.', 400)
+  if (!task || !acceptsClaims(taskLifecycle(task, now))) {
+    const live = task && task.isActive && !task.isDraft && !task.archivedAt
+    if (live && task.startsAt && task.startsAt > now) throw new AppError('TASK_NOT_STARTED', 'This task has not started yet.', 400)
+    if (live && task.endsAt && task.endsAt <= now) throw new AppError('TASK_ENDED', 'This task has ended.', 400)
+    throw new AppError('NOT_FOUND', 'This task is not available.', 404)
+  }
 
   const [user, existing] = await Promise.all([
     db.user.findUnique({ where: { id: userId }, select: { kycLevel: true, telegramId: true } }),
@@ -358,10 +421,9 @@ export async function claimTask(userId: string, taskId: string, input: { proof?:
     payoutNetwork = net
     payoutAddress = addr
   }
-  const proof = (input.proof ?? '').trim()
-  if (task.verifyMode === 'manual_proof' && (proof.length < 3 || proof.length > 500)) {
-    throw new AppError('VALIDATION_ERROR', 'Add your proof (username, link or short note).', 400)
-  }
+  const evidence = task.verifyMode === 'manual_proof'
+    ? normaliseEvidence(task, input)
+    : { proof: '', links: [] as string[], attachments: [] as Attachment[] }
   if (task.verifyMode === 'telegram_auto') {
     if (!user.telegramId) throw new AppError('TELEGRAM_NOT_LINKED', 'Link your Telegram account first, then try again.', 400)
     const res = await checkTelegramMembership(task.telegramChat!, user.telegramId)
@@ -402,14 +464,27 @@ export async function claimTask(userId: string, taskId: string, input: { proof?:
           taskId: task.id,
           userId,
           status,
-          proof: proof || null,
+          proof: evidence.proof || null,
           rewardType: task.rewardType,
           rewardPoints: task.rewardPoints,
           rewardUsdt: task.rewardUsdt,
           payoutMode: task.rewardType === 'usdt' ? task.payoutMode : null,
           payoutNetwork,
           payoutAddress,
+          taskVersion: task.version,
+          snapshot: buildSnapshot(task) as Prisma.InputJsonValue,
           ...(status === 'completed' ? { completedAt: new Date() } : {}),
+        },
+      })
+      // Revision 1 of this claim (the evidence the reviewer will look at).
+      await tx.platformTaskRevision.create({
+        data: {
+          completionId: created.id,
+          number: 1,
+          proof: evidence.proof || null,
+          links: evidence.links as Prisma.InputJsonValue,
+          attachments: evidence.attachments as unknown as Prisma.InputJsonValue,
+          ...(instant ? { decision: 'approved', reviewedAt: new Date() } : {}),
         },
       })
       if (instant) await applyGrantTx(tx, created, task, finalStatus)
@@ -424,43 +499,138 @@ export async function claimTask(userId: string, taskId: string, input: { proof?:
   }
 }
 
-// ── Admin: review + payout ──────────────────────────────────────────────────
-
-export async function approveCompletion(adminId: string, completionId: string) {
-  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
-  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
-  const finalStatus = outcomeStatus(c.task)
+/**
+ * The member corrects a claim that needs changes. This is the SAME claim (so the once-per-member
+ * reward rule is untouched): it gains a new revision and goes back to the queue. Earlier evidence,
+ * feedback and timestamps stay on their revisions.
+ */
+export async function resubmitClaim(userId: string, taskId: string, input: ClaimInput) {
+  const c = await db.platformTaskCompletion.findUnique({ where: { taskId_userId: { taskId, userId } }, include: { task: true } })
+  if (!c) throw new AppError('NOT_FOUND', 'You have not submitted this task.', 404)
+  if (!canResubmit(c.status)) throw new AppError('INVALID_STATE', 'This submission is not waiting for changes.', 409)
+  // Judged on the terms the claim was made under.
+  const snap = (c.snapshot ?? {}) as { verifyMode?: string; proofFileRequired?: boolean }
+  const evidence = normaliseEvidence({ verifyMode: snap.verifyMode ?? c.task.verifyMode, proofFileRequired: snap.proofFileRequired ?? c.task.proofFileRequired }, input)
+  const next = c.revisionNo + 1
   await db.$transaction(async (tx) => {
+    // Compare-and-set on status AND revision so a double-tap can't create two revisions.
     const flip = await tx.platformTaskCompletion.updateMany({
-      where: { id: c.id, status: 'pending_review' },
-      data: { status: finalStatus, reviewedById: adminId, reviewedAt: new Date(), ...(finalStatus === 'completed' ? { completedAt: new Date() } : {}) },
+      where: { id: c.id, status: 'needs_changes', revisionNo: c.revisionNo },
+      data: { status: 'pending_review', revisionNo: next, proof: evidence.proof || null },
     })
-    if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This submission was already reviewed.', 409)
-    await applyGrantTx(tx, c, c.task, finalStatus)
-  })
-  notifyReward(c.userId, c.task, c, finalStatus)
-  return { status: finalStatus }
-}
-
-export async function rejectCompletion(adminId: string, completionId: string, reason: string) {
-  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
-  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
-  await db.$transaction(async (tx) => {
-    const flip = await tx.platformTaskCompletion.updateMany({
-      where: { id: c.id, status: { in: ['pending_review', 'awaiting_payout'] } },
-      data: { status: 'rejected', rejectionReason: reason, reviewedById: adminId, reviewedAt: new Date() },
-    })
-    if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This submission can no longer be rejected.', 409)
-    // Release the reservation so the slot / budget is available again.
-    await tx.platformTask.update({
-      where: { id: c.taskId },
+    if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This submission was already updated.', 409)
+    await tx.platformTaskRevision.create({
       data: {
-        claimedCount: { decrement: 1 },
-        ...(c.rewardType === 'usdt' && c.rewardUsdt ? { spentUsdt: { decrement: c.rewardUsdt } } : {}),
+        completionId: c.id,
+        number: next,
+        proof: evidence.proof || null,
+        links: evidence.links as Prisma.InputJsonValue,
+        attachments: evidence.attachments as unknown as Prisma.InputJsonValue,
       },
     })
   })
-  notify(c.userId, 'task_reward', 'Task not approved', `"${c.task.title}" was not approved: ${reason}`, {}, undefined, '/points')
+  return { status: 'pending_review' as const, revisionNo: next }
+}
+
+// ── Admin: review + payout ──────────────────────────────────────────────────
+
+export interface DecisionInput {
+  decision: Decision
+  /** The revision the reviewer actually looked at. A mismatch means the member changed it meanwhile. */
+  revisionNo: number
+  feedback?: string | null | undefined
+  internalNote?: string | null | undefined
+  checks?: Record<string, boolean> | null | undefined
+}
+
+/**
+ * Apply a review decision to the exact revision the admin reviewed.
+ *  - approve: points are credited in the same transaction (unique ledger key = never twice);
+ *    USDT becomes ONE payable claim (awaiting_payout) or is credited to the wallet if the task
+ *    pays automatically. Approval never marks a manual USDT payout as paid.
+ *  - request_changes: the claim keeps its reserved slot/budget and waits for the member.
+ *  - reject: releases the reserved slot/budget.
+ */
+export async function decideSubmission(adminId: string, completionId: string, d: DecisionInput) {
+  rule(() => assertDecision(d))
+  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
+  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
+  // A claim waiting on the member can still be closed by rejecting it, so an unanswered
+  // "changes requested" doesn't hold a reward slot or budget forever.
+  const withdrawing = c.status === 'needs_changes' && d.decision === 'reject'
+  if (!isReviewable(c.status) && !withdrawing) throw new AppError('ALREADY_REVIEWED', 'This submission was already reviewed.', 409)
+  if (c.revisionNo !== d.revisionNo) throw new AppError('REVISION_CONFLICT', 'The member updated this submission after you opened it. Review the latest version.', 409)
+
+  const finalStatus = outcomeStatus(c.task)
+  const status = nextStatus(d.decision, finalStatus)
+  const feedback = d.feedback?.trim() || null
+  const decisionName = d.decision === 'approve' ? 'approved' : d.decision === 'reject' ? 'rejected' : 'needs_changes'
+  const now = new Date()
+
+  await db.$transaction(async (tx) => {
+    const flip = await tx.platformTaskCompletion.updateMany({
+      where: { id: c.id, status: c.status, revisionNo: d.revisionNo },
+      data: {
+        status,
+        reviewedById: adminId,
+        reviewedAt: now,
+        ...(status === 'completed' ? { completedAt: now } : {}),
+        ...(d.decision === 'reject' ? { rejectionReason: feedback } : {}),
+      },
+    })
+    if (flip.count !== 1) throw new AppError('REVISION_CONFLICT', 'This submission changed while you were reviewing. Review the latest version.', 409)
+    // Closing a claim that was waiting for changes keeps that revision's original feedback intact.
+    if (!withdrawing) await tx.platformTaskRevision.update({
+      where: { completionId_number: { completionId: c.id, number: d.revisionNo } },
+      data: {
+        decision: decisionName,
+        feedback: d.decision === 'approve' ? null : feedback,
+        internalNote: d.internalNote?.trim() || null,
+        ...(d.checks ? { checks: d.checks as Prisma.InputJsonValue } : {}),
+        reviewedById: adminId,
+        reviewedAt: now,
+      },
+    })
+    if (d.decision === 'approve') await applyGrantTx(tx, c, c.task, finalStatus)
+    if (d.decision === 'reject') {
+      // Release the reservation so the slot / budget is available again.
+      await tx.platformTask.update({
+        where: { id: c.taskId },
+        data: {
+          claimedCount: { decrement: 1 },
+          ...(c.rewardType === 'usdt' && c.rewardUsdt ? { spentUsdt: { decrement: c.rewardUsdt } } : {}),
+        },
+      })
+    }
+  })
+
+  if (d.decision === 'approve') notifyReward(c.userId, c.task, c, finalStatus)
+  else if (d.decision === 'reject') notify(c.userId, 'task_reward', 'Task not approved', `"${c.task.title}" was not approved: ${feedback}`, {}, undefined, '/points')
+  else notify(c.userId, 'task_reward', 'Changes needed', `"${c.task.title}": ${feedback} Open the task to update your submission.`, {}, undefined, '/points')
+  return { status }
+}
+
+/**
+ * Cancel a manual USDT payout that has not been paid yet (releases the reserved budget and
+ * tells the member why). Used from the Rewards tab; separate from review decisions.
+ */
+export async function cancelPayout(adminId: string, completionId: string, reason: string) {
+  const c = await db.platformTaskCompletion.findUnique({ where: { id: completionId }, include: { task: true } })
+  if (!c) throw new AppError('NOT_FOUND', 'Submission not found', 404)
+  const why = reason.trim()
+  if (why.length < 5) throw new AppError('VALIDATION_ERROR', 'Give the member a reason (at least 5 characters).', 400)
+  await db.$transaction(async (tx) => {
+    const flip = await tx.platformTaskCompletion.updateMany({
+      where: { id: c.id, status: 'awaiting_payout' },
+      data: { status: 'rejected', rejectionReason: why, reviewedById: adminId, reviewedAt: new Date() },
+    })
+    if (flip.count !== 1) throw new AppError('INVALID_STATE', 'This payout can no longer be cancelled.', 409)
+    await tx.platformTask.update({
+      where: { id: c.taskId },
+      data: { claimedCount: { decrement: 1 }, ...(c.rewardType === 'usdt' && c.rewardUsdt ? { spentUsdt: { decrement: c.rewardUsdt } } : {}) },
+    })
+  })
+  notify(c.userId, 'task_reward', 'Payout cancelled', `Your reward for "${c.task.title}" was cancelled: ${why}`, {}, undefined, '/points')
   return { status: 'rejected' as const }
 }
 

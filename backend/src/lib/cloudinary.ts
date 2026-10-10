@@ -28,6 +28,7 @@ export const CLOUDINARY_FOLDERS = {
   APPEAL_EVIDENCE: 'rupchain/appeals/evidence',
   BLOG_IMAGE: 'rupchain/blog',
   GIVEAWAY_IMAGE: 'rupchain/giveaways',
+  TASK_PROOF: 'rupchain/task-proof',
 } as const
 
 // Max file sizes in bytes
@@ -56,7 +57,9 @@ export function signCloudinaryDeliveryUrl(storedUrl: string | null | undefined):
     if (deliveryType !== 'authenticated' || rest.length === 0) return storedUrl
     // Cloudinary's upload-response secure_url includes a version segment —
     // strip it (cloudinary.url adds its own) along with the file extension.
-    const segments = rest[0] && /^v\d+$/.test(rest[0]) ? rest.slice(1) : rest
+    // An upload response for an authenticated asset may also carry a `s--<sig>--` segment; drop it too.
+    const noSig = rest[0] && /^s--.+--$/.test(rest[0]) ? rest.slice(1) : rest
+    const segments = noSig[0] && /^v\d+$/.test(noSig[0]) ? noSig.slice(1) : noSig
     if (segments.length === 0) return storedUrl
     const last = segments[segments.length - 1]!
     const dotIdx = last.lastIndexOf('.')

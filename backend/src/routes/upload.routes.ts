@@ -15,7 +15,7 @@ import '../lib/cloudinary'
 
 const presignSchema = z
   .object({
-    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image']),
+    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image', 'task-proof']),
     mimeType: z.string(),
   })
   .refine(
@@ -37,6 +37,7 @@ const folderMap: Record<string, string> = {
   'channel-image': CLOUDINARY_FOLDERS.CHANNEL_IMAGE,
   'blog-image': CLOUDINARY_FOLDERS.BLOG_IMAGE,
   'giveaway-image': CLOUDINARY_FOLDERS.GIVEAWAY_IMAGE,
+  'task-proof': CLOUDINARY_FOLDERS.TASK_PROOF,
 }
 
 export async function uploadRoutes(app: FastifyInstance) {
@@ -67,7 +68,8 @@ export async function uploadRoutes(app: FastifyInstance) {
     // KYC documents (CNIC, selfie, video) are uploaded as `authenticated`
     // assets: the bare delivery URL 404s without a server-generated signature
     // (see signCloudinaryDeliveryUrl). Everything else stays public `upload`.
-    const isKycDoc = type.startsWith('kyc-')
+    // Task proof screenshots are private too: only admins reviewing the submission get a signed URL.
+    const isKycDoc = type.startsWith('kyc-') || type === 'task-proof'
     const deliveryType = isKycDoc ? 'authenticated' : 'upload'
 
     const paramsToSign = isKycDoc

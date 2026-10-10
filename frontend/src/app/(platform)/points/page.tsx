@@ -450,7 +450,7 @@ function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () =>
     const s = pt.claim?.status
     rows.push({
       id: `platform:${pt.id}`,
-      bucket: !s ? 'available' : s === 'pending_review' || s === 'awaiting_payout' ? 'pending' : 'completed',
+      bucket: !s ? 'available' : s === 'pending_review' || s === 'awaiting_payout' || s === 'needs_changes' ? 'pending' : 'completed',
       title: pt.title,
       platform: pt,
     })
