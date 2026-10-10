@@ -12,6 +12,7 @@ import { NewsletterSignup } from '@/components/blog/NewsletterSignup'
 import { BlogSearchBox } from '@/components/blog/BlogSearchBox'
 import { extractHeadings } from '@/lib/blogHeadings'
 import { fetchBlogPost } from '@/lib/blogFetch'
+import { responsiveCover } from '@/lib/coverImage'
 
 // ISR, not force-dynamic — see lib/blogFetch.ts for why. A cached `notFound()`
 // can now linger for up to 60s after publishing rather than never; that bound
@@ -146,7 +147,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
             {post.coverImageUrl && (
               <figure className="mt-6">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img fetchPriority="high" decoding="async" src={post.coverImageUrl} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
+                <img fetchPriority="high" decoding="async" {...responsiveCover(post.coverImageUrl)} alt={post.coverImageAlt || post.title} className="w-full rounded-xl border border-border" />
                 {post.coverImageCaption && (
                   <figcaption className="mt-2 text-center text-sm italic text-text-muted">{post.coverImageCaption}</figcaption>
                 )}
