@@ -400,7 +400,7 @@ export default function KycQueuePage() {
               {/* Document previews */}
               <div className="space-y-2">
                 <p className="text-sm font-medium text-text-primary">Documents</p>
-                <div className="grid grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {selected.frontUrl && (
                     <KycDocImage submissionId={selected.id} kind="front" label={selected.idType === 'passport' ? 'Passport page' : 'ID Front'} />
                   )}

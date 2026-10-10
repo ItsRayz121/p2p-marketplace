@@ -304,7 +304,7 @@ export default function AdminSupportPage() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100vh-12rem)]">
+      <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100dvh-12rem)]">
         {/* Conversation list */}
         <div className="bg-surface border border-border rounded-xl overflow-y-auto">
           {conversations.length === 0 ? (

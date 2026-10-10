@@ -113,8 +113,8 @@ export default function AdminSubscribersPage() {
         </div>
       ) : (
         <>
-          <div className="overflow-hidden rounded-xl border border-border bg-surface">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-xl border border-border bg-surface">
+            <table className="w-full min-w-[520px] text-sm">
               <thead>
                 <tr className="border-b border-border bg-surface-alt/50 text-left text-xs font-semibold uppercase tracking-wide text-text-muted">
                   <th className="px-4 py-3">Email</th>

@@ -227,7 +227,7 @@ function TradeDetailModal({
           {(trade.proofs?.length ?? 0) > 0 && (
             <div>
               <p className="text-sm font-medium text-text-primary mb-2">Proofs ({trade.proofs!.length})</p>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                 {trade.proofs!.map((p, i) => (
                   p.fileUrl ? (
                     <a key={p.id ?? i} href={p.fileUrl} target="_blank" rel="noopener noreferrer" className="group">
