@@ -608,7 +608,7 @@ export async function decideSubmission(adminId: string, completionId: string, d:
 
   if (d.decision === 'approve') notifyReward(c.userId, c.task, c, finalStatus)
   else if (d.decision === 'reject') notify(c.userId, 'task_reward', 'Task not approved', `"${c.task.title}" was not approved: ${feedback}`, {}, undefined, '/points')
-  else notify(c.userId, 'task_reward', 'Changes needed', `"${c.task.title}": ${feedback} Open the task to update your submission.`, {}, undefined, '/points')
+  else notify(c.userId, 'task_reward', 'Changes needed', `"${c.task.title}": ${feedback} Open the task to update your submission.`, { bucket: 'pending' }, undefined, '/points?tab=tasks&bucket=pending')
   return { status }
 }
 

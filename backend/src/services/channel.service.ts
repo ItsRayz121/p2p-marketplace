@@ -425,17 +425,20 @@ export async function postChannelMessage(
   // after the listing's live price later changes (see the schema comment on
   // ChannelMessage.sharedAdPriceSnapshot).
   let sharedAdPriceSnapshot: string | undefined
+  let sharedAdLabel: { side: string; coin: string; currency: string } | undefined
   if (sharedAd) {
     if (sharedAd.market === 'usdt') {
-      const ad = await db.ad.findUnique({ where: { id: sharedAd.id }, select: { userId: true, status: true, price: true } })
+      const ad = await db.ad.findUnique({ where: { id: sharedAd.id }, select: { userId: true, status: true, price: true, side: true, coin: true } })
       if (!ad || ad.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
       if (ad.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
       sharedAdPriceSnapshot = ad.price.toString()
+      sharedAdLabel = { side: ad.side, coin: ad.coin, currency: 'PKR' }
     } else {
-      const listing = await db.ctmListing.findUnique({ where: { id: sharedAd.id }, select: { status: true, pricePerUnit: true, merchantProfile: { select: { userId: true } } } })
+      const listing = await db.ctmListing.findUnique({ where: { id: sharedAd.id }, select: { status: true, pricePerUnit: true, side: true, paymentCurrency: true, token: { select: { symbol: true } }, merchantProfile: { select: { userId: true } } } })
       if (!listing || listing.merchantProfile.userId !== userId) throw new AppError('FORBIDDEN', 'You can only share your own listings', 403)
       if (listing.status !== 'active') throw new AppError('VALIDATION_ERROR', 'This listing is no longer active', 400)
       sharedAdPriceSnapshot = listing.pricePerUnit.toString()
+      sharedAdLabel = { side: listing.side, coin: listing.token.symbol, currency: listing.paymentCurrency }
     }
   }
   const gasChainSlug = sharedGasChainSlug ? await assertSharedGasChainAvailable(sharedGasChainSlug) : undefined
@@ -462,7 +465,10 @@ export async function postChannelMessage(
     // Broadcast a bell + push to every member (Telegram-style — every post
     // buzzes, since only the owner can post so volume is inherently low).
     // Fire-and-forget: never block the owner's send on a large member fan-out.
-    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text || (gasChainSlug ? '⛽ Shared gas fees' : ''), attachmentUrl)
+    const listingSummary = sharedAdLabel && sharedAdPriceSnapshot !== undefined
+      ? describeSharedListing(sharedAdLabel, sharedAdPriceSnapshot, sharedAdPrevPriceSnapshot)
+      : ''
+    void notifyChannelMembers(channelId, channel.name, channel.slug, userId, text || listingSummary || (gasChainSlug ? '⛽ Shared gas fees' : ''), attachmentUrl)
     return message
   } catch (err) {
     if (clientId && err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -504,6 +510,15 @@ export async function autoShareToOwnerChannels(
   } catch (err) {
     logger.warn({ err, ownerId, sharedAd }, 'Auto-share lookup failed (non-fatal)')
   }
+}
+
+const fmtPrice = (v: string) => Number(v).toLocaleString('en-US', { maximumFractionDigits: 2 })
+
+/** One-line bell text for a shared listing, e.g. "New listing: Sell USDT at 285 PKR" or "Price updated: Sell USDT 280 → 285 PKR". */
+function describeSharedListing(l: { side: string; coin: string; currency: string }, price: string, prevPrice?: string) {
+  const what = `${l.side === 'buy' ? 'Buy' : 'Sell'} ${l.coin}`
+  if (prevPrice !== undefined && prevPrice !== price) return `Price updated: ${what} ${fmtPrice(prevPrice)} → ${fmtPrice(price)} ${l.currency}`
+  return `New listing: ${what} at ${fmtPrice(price)} ${l.currency}`
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))

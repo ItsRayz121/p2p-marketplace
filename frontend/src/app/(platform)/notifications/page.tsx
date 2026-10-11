@@ -109,6 +109,8 @@ function getNavTarget(notif: Notification): string | null {
     'CTM_PAYMENT_UPLOADED', 'CTM_PAYMENT_CONFIRMED', 'CTM_SELLER_TRANSFERRING',
     'CTM_TOKEN_PROOF_SUBMITTED', 'CTM_TRADE_COMPLETED', 'CTM_TRADE_CANCELLED',
     'CTM_AUTO_COMPLETED', 'CTM_ESCROW_CONFIRMED', 'CTM_TRADE_EXPIRED',
+    'CTM_TRADE_READY', 'CTM_PAYMENT_REJECTED', 'CTM_CRYPTO_CONFIRMED',
+    'CTM_CONFIRM_REMINDER', 'CTM_CONFIRM_FINAL_WARNING',
   ])
   if (ctmTradeTypes.has(t) && meta?.tradeRef) return `/ctm/trade/${meta.tradeRef}`
 
@@ -127,6 +129,26 @@ function getNavTarget(notif: Notification): string | null {
   if (t === 'AD_BID_ACCEPTED_PENDING' && meta?.adId) return `/marketplace/listings/${meta.adId}`
   if (t === 'AD_BID_ACCEPTED' && meta?.tradeId) return `/trade/${meta.tradeId}`
   if (t === 'AD_TRADE_READY' && meta?.tradeId) return `/trade/${meta.tradeId}`
+
+  // Bid outcomes that carry no trade — send the user to where the bid lives.
+  if (t === 'CTM_BID_REJECTED' || t === 'CTM_BID_EXPIRED') {
+    return notif.title === 'Accepted bid expired' ? '/ctm/incoming-bids' : '/ctm/my-bids'
+  }
+  if (t === 'CTM_TIER_PROMOTED') return '/ctm/dashboard'
+  if ((t === 'AD_BID_REJECTED' || t === 'AD_BID_EXPIRED') && meta?.adId) return `/marketplace/listings/${meta.adId}`
+  if (t === 'AD_BID_REJECTED' || t === 'AD_BID_EXPIRED') return '/marketplace'
+
+  // Points tasks — open the Tasks tab on the bucket the task now sits in
+  // (so "Changes needed" lands on Pending, where the feedback is shown).
+  if (t === 'task_reward') {
+    const bucket = meta?.bucket ?? (notif.title === 'Changes needed' ? 'pending' : 'completed')
+    return `/points?tab=tasks&bucket=${bucket}`
+  }
+
+  // Gas orders / Share & Earn, account moderation, support inbox
+  if (t === 'gas') return meta?.orderRef ? '/gas/orders' : '/gas'
+  if (t === 'moderation') return '/account/restricted'
+  if (t === 'support') return '/messages/support'
 
   // Listing created confirmation — deep-link to the maker's listings page.
   if (t === 'listing_created') return meta?.listingId ? '/ctm/my-listings' : '/my-ads'

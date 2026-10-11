@@ -403,11 +403,11 @@ interface TaskRow {
   platform?: UserPlatformTask
 }
 
-function TasksTab({ status, onChange }: { status: AirdropStatus; onChange: () => void }) {
+function TasksTab({ status, onChange, initialBucket = 'available' }: { status: AirdropStatus; onChange: () => void; initialBucket?: TaskBucket }) {
   const [open, setOpen] = useState<OpenCommunityTask[] | null>(null)
   const [mine, setMine] = useState<MyTaskEntry[] | null>(null)
   const [platform, setPlatform] = useState<UserTasksView | null>(null)
-  const [bucket, setBucket] = useState<TaskBucket>('available')
+  const [bucket, setBucket] = useState<TaskBucket>(initialBucket)
   const [checkingIn, setCheckingIn] = useState(false)
 
   const load = useCallback(async () => {
@@ -799,7 +799,11 @@ export default function PointsPage() {
   const [ledger, setLedger] = useState<AirdropLedgerEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState<'overview' | 'tasks' | 'shop'>('overview')
+  // Notification deep-links open /points?tab=tasks&bucket=pending
+  const [qs] = useState(() => new URLSearchParams(typeof window !== 'undefined' ? window.location.search : ''))
+  const qTab = qs.get('tab')
+  const qBucket = qs.get('bucket')
+  const [tab, setTab] = useState<'overview' | 'tasks' | 'shop'>(qTab === 'tasks' || qTab === 'shop' ? qTab : 'overview')
 
   const fetchData = useCallback(async () => {
     try {
@@ -862,7 +866,7 @@ export default function PointsPage() {
         ))}
       </div>
 
-      {tab === 'tasks' && <TasksTab status={status} onChange={fetchData} />}
+      {tab === 'tasks' && <TasksTab status={status} onChange={fetchData} initialBucket={qBucket === 'pending' || qBucket === 'completed' ? qBucket : 'available'} />}
       {tab === 'shop' && <ShopTab onChange={fetchData} />}
 
       {tab === 'overview' && (
