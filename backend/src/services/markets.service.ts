@@ -1,4 +1,5 @@
 import { db } from '../lib/prisma'
+import { logger } from '../lib/logger'
 import { redis } from '../lib/redis'
 import { getMarketRatesSummary, getUsdtReferenceRate, getUsdtPriceHistory } from './marketplace.service'
 import { getTokenMarketInsight, getTokenPriceHistory, getTokenBySlug } from '../ctm/ctm.token.service'
@@ -188,18 +189,57 @@ async function isKnownGasSymbol(symbol: string): Promise<boolean> {
   return count > 0
 }
 
-async function getGasTokenActivity(): Promise<MarketActivity> {
-  return {
-    buyOffers: 0,
-    sellOffers: 0,
-    bestBuyPkr: null,
-    bestSellPkr: null,
-    availableBuy: null,
-    availableSell: null,
-    high24hPkr: null,
-    low24hPkr: null,
-    volume24hUnits: null,
-    recentTrades: [],
+const GAS_ACTIVITY_LIMIT = 10
+const GAS_ACTIVITY_TTL_SECONDS = 60
+
+/**
+ * Recent real gas purchases for one market page (grouped by the token's priceSymbol, so a
+ * page like ETH covers every network that sells ETH). DB records only — no provider or
+ * chain calls. Only `delivered` orders count (the terminal success state, stamped with
+ * deliveredAt); admin-issued free grants are not purchases. Buyers are never identified:
+ * just the network, the purchased token and the delivery time.
+ *
+ * A failed query returns status 'unavailable' (not cached) so the page can say so
+ * instead of falsely reporting "no purchases".
+ */
+async function getGasTokenActivity(symbol: string): Promise<MarketActivity> {
+  const sym = symbol.toUpperCase()
+  const empty: MarketActivity = {
+    buyOffers: 0, sellOffers: 0, bestBuyPkr: null, bestSellPkr: null, availableBuy: null, availableSell: null,
+    high24hPkr: null, low24hPkr: null, volume24hUnits: null, recentTrades: [],
+  }
+  const cacheKey = `markets:gas-activity:${sym}`
+  try {
+    const cached = await redis.get(cacheKey)
+    if (cached) return JSON.parse(cached) as MarketActivity
+  } catch { /* cache miss is fine */ }
+
+  try {
+    const orders = await db.gasFeeOrder.findMany({
+      where: {
+        status: 'delivered',
+        isFreeGrant: false,
+        deliveredAt: { not: null },
+        gasTokenConfig: { priceSymbol: sym },
+      },
+      orderBy: { deliveredAt: 'desc' },
+      take: GAS_ACTIVITY_LIMIT,
+      select: { deliveredAt: true, gasTokenConfig: { select: { symbol: true, chain: { select: { networkLabel: true } } } } },
+    })
+    const result: MarketActivity = {
+      ...empty,
+      gasPurchases: {
+        status: 'ok',
+        items: orders.flatMap((o) => o.deliveredAt && o.gasTokenConfig
+          ? [{ network: o.gasTokenConfig.chain.networkLabel, symbol: o.gasTokenConfig.symbol, at: o.deliveredAt.toISOString() }]
+          : []),
+      },
+    }
+    await redis.set(cacheKey, JSON.stringify(result), 'EX', GAS_ACTIVITY_TTL_SECONDS).catch(() => {})
+    return result
+  } catch (err) {
+    logger.warn({ err, symbol: sym }, 'Gas purchase activity query failed')
+    return { ...empty, gasPurchases: { status: 'unavailable', items: [] } }
   }
 }
 
@@ -308,6 +348,8 @@ export interface MarketActivity {
   low24hPkr: number | null
   volume24hUnits: number | null
   recentTrades: MarketTrade[]
+  /** Gas-fee token pages only: recent delivered purchases (DB records). 'unavailable' = the lookup failed. */
+  gasPurchases?: { status: 'ok' | 'unavailable'; items: { network: string; symbol: string; at: string }[] }
 }
 
 const ACTIVITY_TTL_SECONDS = 20
@@ -440,7 +482,7 @@ export async function getMarketActivityBySlug(slug: string): Promise<MarketActiv
   const ctmToken = await db.ctmToken.findUnique({ where: { slug: lower }, select: { id: true } })
   if (ctmToken) return getCtmTokenActivity(ctmToken.id)
 
-  if (await isKnownGasSymbol(slug)) return getGasTokenActivity()
+  if (await isKnownGasSymbol(slug)) return getGasTokenActivity(slug)
 
   const token = await getTokenBySlug(slug)
   return getCtmTokenActivity(token.id)

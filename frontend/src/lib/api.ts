@@ -1186,6 +1186,8 @@ export interface MarketActivity {
   low24hPkr: number | null
   volume24hUnits: number | null
   recentTrades: MarketTrade[]
+  /** Gas-fee token pages only: recent delivered purchases (DB records). 'unavailable' = the lookup failed. */
+  gasPurchases?: { status: 'ok' | 'unavailable'; items: { network: string; symbol: string; at: string }[] }
 }
 
 // Global REFERENCE price (provider data, USD: 24h change + 7-day chart) — never RupChain trade data.

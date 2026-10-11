@@ -4,7 +4,7 @@ import { notFound } from 'next/navigation'
 import { buildMeta } from '@/lib/metadata'
 import { fetchCtmTokenBySlug, fetchMarketsOverview, fetchMarketActivity, fetchReferencePrices, type CtmTokenDetail } from '@/lib/marketsFetch'
 import type { MarketRow, MarketActivity, MarketTrade, ReferenceItem } from '@/lib/api'
-import { ReferencePriceCard, ChangeBadge } from '@/components/markets/ReferencePriceCard'
+import { ReferencePriceCard } from '@/components/markets/ReferencePriceCard'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { Badge } from '@/components/ui/Badge'
 import { CtmPriceChart } from '@/components/ctm/CtmPriceChart'
@@ -69,8 +69,8 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const gasRow = overview?.rows.find((r) => r.kind === 'gas' && r.slug.toLowerCase() === lower)
   if (gasRow) {
     return buildMeta(
-      `${gasRow.symbol} Price in USDT — ${gasRow.name} Live Rate`,
-      `Live ${gasRow.symbol} (${gasRow.name}) market price in USDT and PKR on RupChain, sourced from live exchange rates — used for Gas Fee top-ups.`,
+      `${gasRow.symbol} Price in USDT — ${gasRow.name} Reference Price`,
+      `${gasRow.symbol} (${gasRow.name}) reference market price in USDT and PKR on RupChain, from regularly refreshed exchange rates — used for Gas Fee top-ups.`,
       `/markets/${gasRow.slug}`,
     )
   }
@@ -304,7 +304,8 @@ function CtmDetail({ token, row, activity, otherRows, reference }: {
 
           <CtmPriceChart tokenId={token.id} tokenSymbol={token.symbol} />
 
-          <ReferencePriceCard item={reference} symbol={token.symbol} />
+          {/* Community tokens usually have no global listing — hide the card rather than show an empty "unavailable" box. */}
+          {reference?.status === 'ok' && <ReferencePriceCard item={reference} symbol={token.symbol} />}
           <MarketActivityCard activity={activity} unit={token.symbol} title="RupChain activity" />
           <RecentTradesCard activity={activity} unit={token.symbol} />
 
@@ -400,6 +401,50 @@ function UsdtDetail({ row, activity, otherRows }: { row: MarketRow | null; activ
   )
 }
 
+// ─── Recent gas purchases ─────────────────────────────────────────────────────
+
+/** Accurate relative time under 24h; "Recently bought"-style vague wording is applied by the caller at/after 24h. */
+function relativeAgo(iso: string, nowMs = Date.now()): string | null {
+  const diff = nowMs - new Date(iso).getTime()
+  if (!Number.isFinite(diff)) return null
+  if (diff >= 24 * 3600 * 1000) return null
+  const mins = Math.floor(Math.max(0, diff) / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins} minute${mins === 1 ? '' : 's'} ago`
+  const hrs = Math.floor(mins / 60)
+  return `${hrs} hour${hrs === 1 ? '' : 's'} ago`
+}
+
+function fmtGasPurchaseTime(iso: string): string {
+  return relativeAgo(iso) ?? 'over 24h ago'
+}
+
+function GasPurchasesCard({ activity, symbol }: { activity: MarketActivity | null; symbol: string }) {
+  const gp = activity?.gasPurchases
+  return (
+    <div className="rounded-xl border border-border bg-surface p-5">
+      <div className="flex items-center gap-2 mb-3">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        <h2 className="text-sm font-bold text-text-primary">Recent gas purchases</h2>
+      </div>
+      {!gp || gp.status === 'unavailable' ? (
+        <p className="text-xs text-text-muted">Recent purchases are temporarily unavailable.</p>
+      ) : gp.items.length === 0 ? (
+        <p className="text-xs text-text-muted">No gas purchases yet for {symbol}.</p>
+      ) : (
+        <ul className="divide-y divide-border/60 text-sm">
+          {gp.items.map((it, i) => (
+            <li key={`${it.at}-${i}`} className="flex items-center justify-between gap-3 py-2">
+              <span className="text-text-primary">A buyer bought {it.symbol} <span className="text-text-muted">· {it.network}</span></span>
+              <span className="text-xs text-text-muted tabular-nums shrink-0">{relativeAgo(it.at) ?? 'Recently bought'}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 // ─── Gas-fee token detail ──────────────────────────────────────────────────────
 // Native tokens sold on the Gas Fee product (BNB, TRX, SOL, TON, SUI, APT, ETH, ...).
 // Unlike USDT/CTM these aren't traded P2P here — the price is the same live
@@ -410,6 +455,7 @@ function UsdtDetail({ row, activity, otherRows }: { row: MarketRow | null; activ
 function GasDetail({ row, activity, otherRows, reference }: { row: MarketRow | null; activity: MarketActivity | null; otherRows: MarketRow[]; reference: ReferenceItem | null }) {
   const symbol = row?.symbol ?? ''
   const name = row?.name ?? symbol
+  const updatedLabel = row?.lastTradedAt ? ` · updated ${fmtGasPurchaseTime(row.lastTradedAt)}` : ''
   const url = `${BASE_URL}/markets/${row?.slug ?? symbol.toLowerCase()}`
   const jsonLd = buildJsonLd({
     name, symbol, url, pricePkr: row?.lastPricePkr ?? null,
@@ -428,7 +474,7 @@ function GasDetail({ row, activity, otherRows, reference }: { row: MarketRow | n
               <EntityLogo type="token" slug={symbol} logoUrl={row?.logoUrl ?? null} size="2xl" />
               <div>
                 <h1 className="text-2xl font-bold text-text-primary">{name} <span className="text-text-muted font-medium">({symbol})</span></h1>
-                <p className="text-sm text-text-muted">Live market rate — used to price Gas Fee top-ups on RupChain.</p>
+                <p className="text-sm text-text-muted">Reference price — used to price Gas Fee top-ups on RupChain.</p>
               </div>
             </div>
           </div>
@@ -436,9 +482,8 @@ function GasDetail({ row, activity, otherRows, reference }: { row: MarketRow | n
           <div>
             <div className="flex items-baseline gap-3 flex-wrap">
               <span className="text-3xl font-bold text-text-primary tabular-nums">${fmtUsdt(row?.lastPriceUsdt ?? null)}</span>
-              {reference?.status === 'ok' && <ChangeBadge pct={reference.change7dPct} period="7D" />}
             </div>
-            <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per {symbol} · live rate</p>
+            <p className="text-sm text-text-muted tabular-nums mt-0.5">≈ PKR {fmtPkr(row?.lastPricePkr ?? null)} · per {symbol} · reference price{updatedLabel}</p>
           </div>
 
           <div className="flex gap-3 flex-wrap">
@@ -448,8 +493,7 @@ function GasDetail({ row, activity, otherRows, reference }: { row: MarketRow | n
           </div>
 
           <ReferencePriceCard item={reference} symbol={symbol} />
-          <MarketActivityCard activity={activity} unit={symbol} title="RupChain activity" />
-          <RecentTradesCard activity={activity} unit={symbol} />
+          <GasPurchasesCard activity={activity} symbol={symbol} />
 
           <Link href="/markets" className="inline-block text-sm text-primary hover:underline">← All markets</Link>
         </div>
