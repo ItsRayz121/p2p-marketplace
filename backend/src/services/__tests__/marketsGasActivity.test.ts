@@ -25,8 +25,11 @@ vi.mock('../../ctm/ctm.token.service', () => ({ getTokenMarketInsight: vi.fn(), 
 
 const { getMarketActivityBySlug } = await import('../markets.service')
 
-const order = (iso: string, network: string, symbol = 'ETH') => ({
+const order = (iso: string, network: string, symbol = 'ETH', fullName: string | null = 'Ahmed Bart') => ({
   deliveredAt: new Date(iso),
+  gasAmountNative: { toString: () => '0.01' },
+  gasAmountUSD: 4.25,
+  user: fullName ? { fullName } : null,
   gasTokenConfig: { symbol, chain: { networkLabel: network } },
 })
 
@@ -47,7 +50,7 @@ describe('gas purchase activity', () => {
     expect(args.take).toBe(10)
   })
 
-  it('returns network-labelled entries in the DB order and exposes nothing private', async () => {
+  it('returns buyer-name entries in the DB order and exposes no other private fields', async () => {
     dbMock.gasFeeOrder.findMany.mockResolvedValue([
       order('2026-09-10T02:20:16.717Z', 'ERC20'),
       order('2026-08-30T07:51:49.666Z', 'Base'),
@@ -56,13 +59,14 @@ describe('gas purchase activity', () => {
     expect(a.gasPurchases).toEqual({
       status: 'ok',
       items: [
-        { network: 'ERC20', symbol: 'ETH', at: '2026-09-10T02:20:16.717Z' },
-        { network: 'Base', symbol: 'ETH', at: '2026-08-30T07:51:49.666Z' },
+        { buyer: 'Ahmed Bart', network: 'ERC20', symbol: 'ETH', amount: '0.01', amountUsd: 4.25, at: '2026-09-10T02:20:16.717Z' },
+        { buyer: 'Ahmed Bart', network: 'Base', symbol: 'ETH', amount: '0.01', amountUsd: 4.25, at: '2026-08-30T07:51:49.666Z' },
       ],
     })
     // The select must never reach for user / order / payment / wallet fields.
     const sel = dbMock.gasFeeOrder.findMany.mock.calls[0]![0].select
-    expect(Object.keys(sel).sort()).toEqual(['deliveredAt', 'gasTokenConfig'])
+    expect(Object.keys(sel).sort()).toEqual(['deliveredAt', 'gasAmountNative', 'gasAmountUSD', 'gasTokenConfig', 'user'])
+    expect(sel.user).toEqual({ select: { fullName: true } })
     expect(JSON.stringify(a)).not.toMatch(/orderRef|userId|walletAddress|txHash|email/i)
   })
 

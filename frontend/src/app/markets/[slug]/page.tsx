@@ -419,6 +419,12 @@ function fmtGasPurchaseTime(iso: string): string {
   return relativeAgo(iso) ?? 'over 24h ago'
 }
 
+function fmtGasAmount(amount: string): string {
+  const n = Number(amount)
+  if (!Number.isFinite(n)) return amount
+  return n.toLocaleString('en-US', { maximumFractionDigits: 6 })
+}
+
 function GasPurchasesCard({ activity, symbol }: { activity: MarketActivity | null; symbol: string }) {
   const gp = activity?.gasPurchases
   return (
@@ -435,7 +441,10 @@ function GasPurchasesCard({ activity, symbol }: { activity: MarketActivity | nul
         <ul className="divide-y divide-border/60 text-sm">
           {gp.items.map((it, i) => (
             <li key={`${it.at}-${i}`} className="flex items-center justify-between gap-3 py-2">
-              <span className="text-text-primary">A buyer bought {it.symbol} <span className="text-text-muted">· {it.network}</span></span>
+              <span className="text-text-primary">
+                <span className="font-semibold">{it.buyer ?? 'A buyer'}</span> bought {fmtGasAmount(it.amount)} {it.symbol}
+                <span className="text-text-muted"> (≈ ${it.amountUsd.toFixed(2)}) · {it.network}</span>
+              </span>
               <span className="text-xs text-text-muted tabular-nums shrink-0">{relativeAgo(it.at) ?? 'Recently bought'}</span>
             </li>
           ))}

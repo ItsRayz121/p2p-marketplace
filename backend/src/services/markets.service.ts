@@ -189,6 +189,17 @@ async function isKnownGasSymbol(symbol: string): Promise<boolean> {
   return count > 0
 }
 
+export interface GasPurchaseItem {
+  /** Buyer's display name (same as CTM/USDT market activity); null for guest orders. */
+  buyer: string | null
+  network: string
+  symbol: string
+  /** Native token amount as a decimal string (e.g. "0.01"). */
+  amount: string
+  amountUsd: number
+  at: string
+}
+
 const GAS_ACTIVITY_LIMIT = 10
 const GAS_ACTIVITY_TTL_SECONDS = 60
 
@@ -196,8 +207,8 @@ const GAS_ACTIVITY_TTL_SECONDS = 60
  * Recent real gas purchases for one market page (grouped by the token's priceSymbol, so a
  * page like ETH covers every network that sells ETH). DB records only — no provider or
  * chain calls. Only `delivered` orders count (the terminal success state, stamped with
- * deliveredAt); admin-issued free grants are not purchases. Buyers are never identified:
- * just the network, the purchased token and the delivery time.
+ * deliveredAt); admin-issued free grants are not purchases. Each entry shows the buyer's name
+ * (like the CTM/USDT markets), the amount, network and delivery time.
  *
  * A failed query returns status 'unavailable' (not cached) so the page can say so
  * instead of falsely reporting "no purchases".
@@ -224,14 +235,27 @@ async function getGasTokenActivity(symbol: string): Promise<MarketActivity> {
       },
       orderBy: { deliveredAt: 'desc' },
       take: GAS_ACTIVITY_LIMIT,
-      select: { deliveredAt: true, gasTokenConfig: { select: { symbol: true, chain: { select: { networkLabel: true } } } } },
+      select: {
+        deliveredAt: true,
+        gasAmountNative: true,
+        gasAmountUSD: true,
+        user: { select: { fullName: true } },
+        gasTokenConfig: { select: { symbol: true, chain: { select: { networkLabel: true } } } },
+      },
     })
     const result: MarketActivity = {
       ...empty,
       gasPurchases: {
         status: 'ok',
         items: orders.flatMap((o) => o.deliveredAt && o.gasTokenConfig
-          ? [{ network: o.gasTokenConfig.chain.networkLabel, symbol: o.gasTokenConfig.symbol, at: o.deliveredAt.toISOString() }]
+          ? [{
+              buyer: o.user?.fullName?.trim() || null,
+              network: o.gasTokenConfig.chain.networkLabel,
+              symbol: o.gasTokenConfig.symbol,
+              amount: o.gasAmountNative.toString(),
+              amountUsd: Number(o.gasAmountUSD),
+              at: o.deliveredAt.toISOString(),
+            }]
           : []),
       },
     }
@@ -349,7 +373,7 @@ export interface MarketActivity {
   volume24hUnits: number | null
   recentTrades: MarketTrade[]
   /** Gas-fee token pages only: recent delivered purchases (DB records). 'unavailable' = the lookup failed. */
-  gasPurchases?: { status: 'ok' | 'unavailable'; items: { network: string; symbol: string; at: string }[] }
+  gasPurchases?: { status: 'ok' | 'unavailable'; items: GasPurchaseItem[] }
 }
 
 const ACTIVITY_TTL_SECONDS = 20
