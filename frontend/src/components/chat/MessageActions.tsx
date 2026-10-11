@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Copy, Check, Pencil, Reply, SmilePlus, Trash2, X } from 'lucide-react'
 import { copyText, plainText } from '@/components/chat/richText'
 
@@ -87,17 +87,37 @@ export function MessageActions({
   )
 }
 
-/** Where the tap-opened action bar sits (viewport coordinates of the tapped bubble). */
-export interface MessageMenuAnchor {
+/** Viewport-coordinate rectangle. */
+interface Box { top: number; bottom: number; left: number; right: number }
+
+/** Where the tap-opened action bar sits (viewport coordinates of the tapped bubble + the chat area it must stay inside). */
+export interface MessageMenuAnchor extends Box {
   id: string
-  top: number
-  bottom: number
   mine: boolean
+  /** The scrolling chat column (excludes the fixed header / composer). Falls back to the viewport. */
+  bounds?: Box
 }
+
+/** Build the anchor for a tapped bubble: its rect plus the rect of the nearest vertically-scrolling ancestor. */
+export function makeMenuAnchor(bubble: HTMLElement, id: string, mine: boolean): MessageMenuAnchor {
+  const r = bubble.getBoundingClientRect()
+  let el: HTMLElement | null = bubble.parentElement
+  while (el && !/(auto|scroll)/.test(getComputedStyle(el).overflowY)) el = el.parentElement
+  const c = el?.getBoundingClientRect()
+  return {
+    id, mine, top: r.top, bottom: r.bottom, left: r.left, right: r.right,
+    ...(c ? { bounds: { top: c.top, bottom: c.bottom, left: c.left, right: c.right } } : {}),
+  }
+}
+
+const MENU_MARGIN = 8
+const MENU_GAP = 6
 
 /**
  * Tap-to-open action bar for one message: quick reactions + Reply / Copy / Delete.
- * Fixed-position and inset from both screen edges, so it can never be clipped.
+ * Fixed-position, anchored to the tapped bubble, measured after render and clamped inside the
+ * chat column AND the visual viewport (so it also respects the mobile keyboard). It flips above/
+ * below the bubble, shifts sideways near an edge and wraps to two rows on narrow screens.
  */
 export function MessageMenu({
   anchor,
@@ -117,15 +137,72 @@ export function MessageMenu({
   onClose: () => void
 }) {
   const [copied, setCopied] = useState(false)
-  const BAR_H = 48
-  // Prefer above the bubble; drop below it when there's no room under the header.
-  const top = anchor.top - BAR_H - 6 > 70 ? anchor.top - BAR_H - 6 : anchor.bottom + 6
-  const btn = 'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-muted hover:text-primary'
+  const barRef = useRef<HTMLDivElement>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  const [pos, setPos] = useState<{ top: number; left: number; maxWidth: number } | null>(null)
+
+  useLayoutEffect(() => {
+    const bar = barRef.current
+    if (!bar) return
+    const vv = window.visualViewport
+    const vp: Box = vv
+      ? { top: vv.offsetTop, bottom: vv.offsetTop + vv.height, left: vv.offsetLeft, right: vv.offsetLeft + vv.width }
+      : { top: 0, bottom: window.innerHeight, left: 0, right: window.innerWidth }
+    const b = anchor.bounds
+    const area: Box = {
+      top: Math.max(vp.top, b?.top ?? vp.top) + MENU_MARGIN,
+      bottom: Math.min(vp.bottom, b?.bottom ?? vp.bottom) - MENU_MARGIN,
+      left: Math.max(vp.left, b?.left ?? vp.left) + MENU_MARGIN,
+      right: Math.min(vp.right, b?.right ?? vp.right) - MENU_MARGIN,
+    }
+    // Width is capped to the area first so the bar wraps instead of overflowing; then it is re-measured.
+    const maxWidth = Math.max(160, area.right - area.left)
+    bar.style.maxWidth = `${maxWidth}px`
+    const { width: w, height: h } = bar.getBoundingClientRect()
+
+    let top: number
+    if (anchor.top - h - MENU_GAP >= area.top) top = anchor.top - h - MENU_GAP
+    else if (anchor.bottom + h + MENU_GAP <= area.bottom) top = anchor.bottom + MENU_GAP
+    else top = Math.min(Math.max(anchor.top + MENU_GAP, area.top), area.bottom - h) // tall bubble: sit over its visible part
+    top = Math.max(area.top, Math.min(top, area.bottom - h))
+
+    let left = anchor.mine ? anchor.right - w : anchor.left
+    left = Math.max(area.left, Math.min(left, area.right - w))
+    setPos({ top, left, maxWidth })
+  }, [anchor])
+
+  // Dismiss rather than leave a detached bar behind when layout changes under it.
+  useEffect(() => {
+    const vv = window.visualViewport
+    const close = () => closeRef.current()
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') closeRef.current() }
+    window.addEventListener('resize', close)
+    window.addEventListener('orientationchange', close)
+    window.addEventListener('scroll', close, true)
+    window.addEventListener('keydown', onKey)
+    vv?.addEventListener('resize', close)
+    barRef.current?.querySelector<HTMLElement>('button')?.focus()
+    return () => {
+      window.removeEventListener('resize', close)
+      window.removeEventListener('orientationchange', close)
+      window.removeEventListener('scroll', close, true)
+      window.removeEventListener('keydown', onKey)
+      vv?.removeEventListener('resize', close)
+    }
+  }, [])
+
+  const btn = 'flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-text-secondary hover:bg-muted hover:text-primary'
   return (
     <>
       <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
-      <div className="pointer-events-none fixed inset-x-2 z-50 flex" style={{ top, justifyContent: anchor.mine ? 'flex-end' : 'flex-start' }}>
-        <div role="menu" aria-label="Message actions" className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-border bg-surface p-1 shadow-lg">
+      <div
+        ref={barRef}
+        role="menu"
+        aria-label="Message actions"
+        style={{ top: pos?.top ?? 0, left: pos?.left ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+        className="fixed z-50 flex w-max flex-wrap items-center justify-center gap-0.5 rounded-3xl border border-border bg-surface p-1 shadow-lg"
+      >
           {onReact && QUICK_REACTIONS.map((e) => (
             <button
               key={e}
@@ -133,7 +210,7 @@ export function MessageMenu({
               role="menuitem"
               onClick={() => { onClose(); onReact(e) }}
               aria-label={`React ${e}`}
-              className="h-9 w-9 flex-shrink-0 rounded-full text-xl leading-none transition-transform hover:scale-110 hover:bg-muted"
+              className="h-10 w-10 flex-shrink-0 rounded-full text-xl leading-none transition-transform hover:scale-110 hover:bg-muted"
             >
               {e}
             </button>
@@ -173,7 +250,6 @@ export function MessageMenu({
               <Trash2 className="h-4 w-4" />
             </button>
           )}
-        </div>
       </div>
     </>
   )

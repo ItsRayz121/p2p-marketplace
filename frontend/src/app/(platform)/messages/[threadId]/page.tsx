@@ -25,7 +25,7 @@ import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
-import { MessageMenu, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
 import { presentTradeMessage } from '@/lib/tradeChat'
@@ -665,8 +665,7 @@ export default function MessageThreadPage() {
                   if (m.pending || !m.body) return
                   // Links / images / shared cards keep their own tap behaviour.
                   if ((ev.target as HTMLElement).closest('a,button')) return
-                  const r = ev.currentTarget.getBoundingClientRect()
-                  setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine })
+                  setMenu(menu?.id === m.id ? null : makeMenuAnchor(ev.currentTarget, m.id, mine))
                 }}
                 className={`cursor-pointer rounded-2xl px-3 py-2 text-sm ${mine ? `${bubbleClass(cosmeticOf(user?.tradeStats?.equippedCosmetics, 'bubble')) ?? 'bg-primary text-white'} rounded-br-sm` : `${bubbleClass(cosmeticOf(data.other.equippedCosmetics, 'bubble')) ?? 'bg-muted text-text-primary'} rounded-bl-sm`} ${m.pending ? 'opacity-60' : ''} ${m.failed ? 'opacity-80 cursor-pointer ring-1 ring-red-300' : ''}`}
               >

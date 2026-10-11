@@ -23,7 +23,7 @@ import type { GasChain } from '@/lib/api'
 import { MembersModal } from '@/components/channels/MembersModal'
 import { toast } from '@/lib/toast'
 import { fmtTime } from '@/lib/fmt'
-import { MessageMenu, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
   ExternalLink, Tag, Radio, X, Camera, ImagePlus,
@@ -414,8 +414,7 @@ export default function ChannelPage() {
                           if (!m.body) return
                           // Links / images / shared cards keep their own tap behaviour.
                           if ((ev.target as HTMLElement).closest('a,button')) return
-                          const r = ev.currentTarget.getBoundingClientRect()
-                          setMenu(menu?.id === m.id ? null : { id: m.id, top: r.top, bottom: r.bottom, mine: false })
+                          setMenu(menu?.id === m.id ? null : makeMenuAnchor(ev.currentTarget, m.id, false))
                         }}
                         className={`cursor-pointer rounded-2xl rounded-tl-sm px-3 py-2 text-sm bg-muted text-text-primary max-w-[85%] ${editingId === m.id ? 'ring-2 ring-primary' : ''}`}
                       >
