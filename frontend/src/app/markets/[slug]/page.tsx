@@ -442,8 +442,8 @@ function GasPurchasesCard({ activity, symbol }: { activity: MarketActivity | nul
           {gp.items.map((it, i) => (
             <li key={`${it.at}-${i}`} className="flex items-center justify-between gap-3 py-2">
               <span className="text-text-primary">
-                <span className="font-semibold">{it.buyer ?? 'A buyer'}</span> bought {fmtGasAmount(it.amount)} {it.symbol}
-                <span className="text-text-muted"> (≈ ${it.amountUsd.toFixed(2)}) · {it.network}</span>
+                <span className="font-semibold">{it.buyer ?? 'A buyer'}</span> bought{it.amount != null ? ` ${fmtGasAmount(it.amount)}` : ''} {it.symbol}
+                <span className="text-text-muted">{Number.isFinite(it.amountUsd) ? ` (≈ $${it.amountUsd.toFixed(2)})` : ''} · {it.network}</span>
               </span>
               <span className="text-xs text-text-muted tabular-nums shrink-0">{relativeAgo(it.at) ?? 'Recently bought'}</span>
             </li>
