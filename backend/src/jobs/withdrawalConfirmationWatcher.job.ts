@@ -23,6 +23,7 @@ import { getTransactionReceipt, getBlockNumber, EvmRpcError } from '../lib/evmRp
 import { getChainByNetworkLabel, getRpcUrl } from '../services/chainRegistry.service'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { recordAuditLog } from '../lib/audit'
+import { isWellFormedEvmTxHash } from '../lib/txHash'
 import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
 import { aptosWithdrawalClaimHeld } from '../lib/withdrawal.aptos.sender'
 import { getAptosTxOutcome } from '../lib/gas/aptosTransfer'
@@ -103,6 +104,13 @@ async function checkWithdrawal(
     return
   }
 
+  // A malformed hash can never resolve: the RPC rejects it as invalid params on every poll.
+  // Don't re-ask the node every 2 minutes forever; tell an admin to fix the hash by hand.
+  if (!isWellFormedEvmTxHash(txHash)) {
+    await alertStaleWithdrawal(wd, 'the stored transaction hash is malformed — correct it from the explorer', true)
+    return
+  }
+
   const rpcUrl = getRpcUrl(chain.id)
   if (!rpcUrl) {
     if (wd.updatedAt < staleCutoff) {
@@ -161,6 +169,10 @@ async function checkWithdrawal(
   } catch (err) {
     if (err instanceof EvmRpcError) {
       logger.warn({ err: err.message, withdrawalId: wd.id, chain: chain.id }, 'withdrawalConfirmationWatcher: RPC error')
+      // A node that keeps erroring must not hide a withdrawal that has been stuck for hours.
+      if (wd.updatedAt < staleCutoff) {
+        await alertStaleWithdrawal(wd, `chain RPC keeps returning an error (${err.message.slice(0, 80)})`)
+      }
       return
     }
     throw err
@@ -309,15 +321,26 @@ async function alertStuckAutoApproved(wd: {
   })
 }
 
+// One alert per withdrawal per window. The watcher runs every 2 minutes, so without this a single
+// stuck withdrawal raised a fresh admin notification on every tick.
+const STALE_ALERT_WINDOW_SECONDS = 6 * 3600
+
 async function alertStaleWithdrawal(
   wd: { id: string; orderRef: string; txHash: string | null; network: string; updatedAt: Date },
   reason: string,
+  immediate = false,
 ): Promise<void> {
+  // `immediate` is for conditions that are wrong on arrival (malformed hash), not merely old.
+  if (!immediate && wd.updatedAt >= new Date(Date.now() - 2 * 3_600_000)) return
+  const first = await redis
+    .set(`wd:stale-alert:${wd.id}`, '1', 'EX', STALE_ALERT_WINDOW_SECONDS, 'NX')
+    .catch(() => 'OK') // Redis down: alert rather than stay silent
+  if (first !== 'OK') return
   logger.warn({ withdrawalId: wd.id, reason }, 'withdrawalConfirmationWatcher: stale withdrawal')
   await createAdminNotif({
     category: 'WITHDRAWAL',
     title: `Withdrawal Stuck — ${wd.orderRef}`,
-    body: `Withdrawal ${wd.orderRef} has been in status=sent for 2+ hours. Reason: ${reason}. Tx: ${wd.txHash?.slice(0, 18)}… Network: ${wd.network}`,
+    body: `Withdrawal ${wd.orderRef} is in status=sent and needs attention${immediate ? '' : ' (2+ hours)'}. Reason: ${reason}. Tx: ${wd.txHash?.slice(0, 18)}… Network: ${wd.network}`,
     href: `/admin/withdrawals`,
     metadata: { withdrawalId: wd.id, txHash: wd.txHash, network: wd.network },
   })

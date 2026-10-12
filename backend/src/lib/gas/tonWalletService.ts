@@ -51,15 +51,22 @@ export interface TonEndpoint {
 // Cache it so we don't re-fetch that config on every balance read / delivery.
 let _orbsCache: { url: string; at: number } | null = null
 const ORBS_TTL_MS = 10 * 60_000
+// A failed lookup is remembered briefly: production polls this every ~2 minutes, and every
+// call re-hit the failing service and logged an error line each time.
+const ORBS_FAIL_BACKOFF_MS = 5 * 60_000
+let _orbsFailedAt = 0
 
 async function resolveOrbsEndpoint(): Promise<string | null> {
   if (_orbsCache && Date.now() - _orbsCache.at < ORBS_TTL_MS) return _orbsCache.url
+  if (_orbsFailedAt && Date.now() - _orbsFailedAt < ORBS_FAIL_BACKOFF_MS) return null
   try {
     const { getHttpEndpoint } = await import('@orbs-network/ton-access')
     const url = await getHttpEndpoint() // mainnet toncenter-api-v2 jsonRPC, keyless
     _orbsCache = { url, at: Date.now() }
+    _orbsFailedAt = 0
     return url
   } catch (err) {
+    _orbsFailedAt = Date.now()
     // Surface why the orbs fallback was skipped — otherwise a failed resolution is
     // invisible and TON delivery silently degrades to operator + public toncenter only.
     console.warn('[ton] orbs ton-access endpoint resolution failed; falling back to toncenter:', err instanceof Error ? err.message : String(err))

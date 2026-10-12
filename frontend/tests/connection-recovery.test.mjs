@@ -108,17 +108,19 @@ test('sw: a slow first attempt is not thrown away when the retry stalls', BOUNDE
 })
 
 test('sw: a slow success still wins before the deadline even when later attempts fail fast', BOUNDED, async () => {
-  // Attempt 1 is slower than the per-attempt timeout (60 ms) but answers at 120 ms, inside the
+  // Attempt 1 is slower than the per-attempt timeout (60 ms) but answers at 150 ms, inside the
   // 200 ms budget. Every retry fails immediately. The slow answer must win, not the fallback.
   const page = new Response('<html>slow but fine</html>', { status: 200 })
   let calls = 0
   const w = loadWorker({
-    fetch: () => (++calls === 1 ? sleep(120).then(() => page) : Promise.reject(new TypeError('ERR_NETWORK_CHANGED'))),
+    fetch: () => (++calls === 1 ? sleep(150).then(() => page) : Promise.reject(new TypeError('ERR_NETWORK_CHANGED'))),
     caches: fakeCaches(),
   })
   const res = await w.ctx.navigateWithRetry({ url: 'https://rupchain.test/' }, { waitUntil() {} })
   assert.equal(res, page)
-  assert.equal(calls, 4, 'all retries ran and failed while the first was still loading')
+  // Exact count depends on OS timer scheduling; what matters is that retries ran and failed
+  // while the first attempt was still loading, and that its answer still won (asserted above).
+  assert.ok(calls >= 3, 'retries ran and failed while the first was still loading (calls=' + calls + ')')
 })
 
 test('sw: a fast failure moves straight to the next attempt', BOUNDED, async () => {

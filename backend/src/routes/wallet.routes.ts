@@ -44,9 +44,9 @@ const withdrawSchema = z.object({
     .positive()
     .finite()
     .max(1_000_000_000)
-    .refine((n) => Number.isInteger(Math.round(n * 1e8)) && Math.abs(n * 1e8 - Math.round(n * 1e8)) < 1e-4, {
-      message: 'Amount supports at most 8 decimal places',
-    }),
+    // toFixed(8) round-trips exactly for any value with <= 8 decimals (no tolerance maths,
+    // which breaks down for large amounts).
+    .refine((n) => Number(n.toFixed(8)) === n, { message: 'Amount supports at most 8 decimal places' }),
   toAddress: z.string().min(1).max(128),
 })
 

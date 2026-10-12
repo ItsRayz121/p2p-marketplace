@@ -49,7 +49,7 @@
  *   - POST navigations (form submissions) — deliberately not intercepted;
  *   - in-app WebViews that do not run service workers.
  */
-const SW_VERSION = '2026-10-09.2'
+const SW_VERSION = '2026-10-12.1'
 const OFFLINE_CACHE = 'rc-offline-v3'
 
 // Every cache name a RupChain worker has ever created on this origin (see git history of this
