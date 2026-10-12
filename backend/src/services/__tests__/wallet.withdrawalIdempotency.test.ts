@@ -76,15 +76,25 @@ beforeEach(() => {
 })
 
 describe('requestWithdrawal idempotency and validation', () => {
-  it('two concurrent requests with the same key debit the wallet once', async () => {
-    const results = await Promise.allSettled([
+  it('two concurrent requests with the same key debit the wallet once and both get that withdrawal', async () => {
+    const [a, b] = await Promise.all([
       requestWithdrawal('u1', { ...base, idempotencyKey: 'key-1' }),
       requestWithdrawal('u1', { ...base, idempotencyKey: 'key-1' }),
     ])
     expect(withdrawalCreate).toHaveBeenCalledTimes(1)
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
-    const rejected = results.find((r) => r.status === 'rejected') as PromiseRejectedResult
-    expect((rejected.reason as { statusCode?: number }).statusCode).toBe(409)
+    expect((b as { id: string }).id).toBe((a as { id: string }).id)
+  })
+
+  it('a duplicate whose first request never finishes gets a 409 instead of a second debit', async () => {
+    // Simulate the first request being stuck: its lock is held and no result is ever stored.
+    store.set('idempotency:withdrawal:u1:key-stuck:lock', '1')
+    vi.useFakeTimers()
+    const p = requestWithdrawal('u1', { ...base, idempotencyKey: 'key-stuck' })
+    const assertion = expect(p).rejects.toMatchObject({ statusCode: 409 })
+    await vi.advanceTimersByTimeAsync(9_000)
+    await assertion
+    vi.useRealTimers()
+    expect(withdrawalCreate).not.toHaveBeenCalled()
   })
 
   it('a retry after completion replays the cached result without a second debit', async () => {

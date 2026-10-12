@@ -1,6 +1,7 @@
 ﻿'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi } from '@/lib/api'
+import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi, isNetworkError } from '@/lib/api'
+import { withdrawalIdempotencyKey } from '@/lib/withdrawalKey'
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
 import { usePolling } from '@/hooks/usePolling'
@@ -216,6 +217,10 @@ function WithdrawModal({
         amount: state.amount,
         address: state.address,
         network: state.network,
+        // One key per (modal session, exact payload): pressing Confirm again after a dropped
+        // connection re-sends the SAME key, so the server returns the first withdrawal instead of
+        // creating a second. Editing the amount or address yields a new key (a genuinely new request).
+        idempotencyKey: withdrawalIdempotencyKey(idempotencyKey.current, [coin, state.network, state.amount, state.address]),
         ...(twoFaEnabled ? { totpCode } : {}),
       })
       setShowConfirm(false)
@@ -228,7 +233,12 @@ function WithdrawModal({
         onSuccess?.()
       }
     } catch (err) {
-      setSubmitError(err instanceof Error ? err.message : 'Withdrawal failed')
+      setSubmitError(
+        isNetworkError(err)
+          // The request may have reached the server before the connection dropped.
+          ? "We couldn't confirm whether your withdrawal went through. Check your withdrawal history first. Pressing Confirm again is safe: it won't create a duplicate."
+          : err instanceof Error ? err.message : 'Withdrawal failed',
+      )
     } finally {
       setSubmitting(false)
     }

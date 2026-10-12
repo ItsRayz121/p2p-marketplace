@@ -152,9 +152,31 @@ export async function requestWithdrawal(
   // withdrawal) and held under an atomic in-flight lock, so two concurrent requests
   // with the same key cannot both pass the check and both debit the wallet.
   const key = normalizeIdempotencyKey(data.idempotencyKey)
-  return withInFlightLock(redis, idempotencyKeyFor('withdrawal', userId, key), () =>
-    requestWithdrawalLocked(userId, { ...data, idempotencyKey: key }),
-  )
+  const redisKey = idempotencyKeyFor('withdrawal', userId, key)
+  try {
+    return await withInFlightLock(redis, redisKey, () =>
+      requestWithdrawalLocked(userId, { ...data, idempotencyKey: key }),
+    )
+  } catch (err) {
+    // The client retries a timed-out request with the same key while the first one may still be
+    // running. Give the first request a moment to finish and hand back ITS result, so a flaky
+    // network produces one withdrawal and one success instead of a confusing 409.
+    if (err instanceof AppError && err.code === 'IDEMPOTENCY_IN_PROGRESS') {
+      const deadline = Date.now() + 8_000
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 250))
+        const cached = await redis.get(redisKey)
+        if (cached) {
+          try {
+            return JSON.parse(cached)
+          } catch {
+            break
+          }
+        }
+      }
+    }
+    throw err
+  }
 }
 
 async function requestWithdrawalLocked(

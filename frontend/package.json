@@ -9,7 +9,7 @@
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "check:bundle": "node scripts/check-bundle-size.mjs",
-    "test": "node --test tests/connection-recovery.test.mjs tests/referralNetwork.test.mts"
+    "test": "node --test tests/connection-recovery.test.mjs tests/referralNetwork.test.mts tests/withdrawalKey.test.mts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.0",

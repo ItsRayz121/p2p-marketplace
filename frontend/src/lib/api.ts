@@ -1259,11 +1259,14 @@ export const walletApi = {
       detectedAt: string
       creditedAt: string | null
     }> }>('/wallet/deposits'),
-  requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string; totpCode?: string }) =>
+  // `idempotencyKey` lets the caller keep ONE key across user-driven retries of the same request
+  // (the server de-dupes on it). Without it each call mints a fresh key, so pressing Confirm again
+  // after a dropped connection could create a second withdrawal.
+  requestWithdrawal: (data: { coin: string; amount: string; address: string; network: string; totpCode?: string; idempotencyKey?: string }) =>
     apiRequest<{ id: string; status: WithdrawalStatus; orderRef: string }>('/wallet/withdraw', {
       method: 'POST',
       headers: {
-        'X-Idempotency-Key': cryptoRandomId(),
+        'X-Idempotency-Key': data.idempotencyKey ?? cryptoRandomId(),
         ...(data.totpCode ? { 'X-TOTP-Code': data.totpCode } : {}),
       },
       body: JSON.stringify({
