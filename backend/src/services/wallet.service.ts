@@ -2,6 +2,8 @@ import { db } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { redis } from '../lib/redis'
 import { AppError } from '../lib/errors'
+import { idempotencyKeyFor, normalizeIdempotencyKey, withInFlightLock } from '../lib/idempotency'
+import { addressKindForNetwork, validateAddressForNetwork } from '../lib/addressValidation'
 import { generateOrderRef } from '../lib/hash'
 import { getChainByNetworkLabel, isEvmNetwork } from './chainRegistry.service'
 import { getOrCreateEvmDepositAddress, getOrCreateAptosDepositAddress } from './depositAddress.service'
@@ -146,11 +148,39 @@ export async function requestWithdrawal(
     idempotencyKey: string
   },
 ) {
+  // The key is scoped to the user (one account can never replay another's cached
+  // withdrawal) and held under an atomic in-flight lock, so two concurrent requests
+  // with the same key cannot both pass the check and both debit the wallet.
+  const key = normalizeIdempotencyKey(data.idempotencyKey)
+  return withInFlightLock(redis, idempotencyKeyFor('withdrawal', userId, key), () =>
+    requestWithdrawalLocked(userId, { ...data, idempotencyKey: key }),
+  )
+}
+
+async function requestWithdrawalLocked(
+  userId: string,
+  data: {
+    coin: string
+    network: string
+    amount: number
+    toAddress: string
+    idempotencyKey: string
+  },
+) {
   // Phase 1: hard-block if account is under a security lock
   await assertWithdrawalNotLocked(userId)
 
+  // A real on-chain network needs a well-formed destination. Without this a typo
+  // is only discovered after the balance was debited and the broadcast failed.
+  if (addressKindForNetwork(data.network) !== 'unknown') {
+    const addrCheck = validateAddressForNetwork(data.toAddress, data.network)
+    if (!addrCheck.valid) {
+      throw new AppError('VALIDATION_ERROR', addrCheck.reason ?? 'Invalid withdrawal address', 400)
+    }
+  }
+
   // Idempotency check in Redis (24h TTL)
-  const idempKey = `idempotency:withdrawal:${data.idempotencyKey}`
+  const idempKey = idempotencyKeyFor('withdrawal', userId, data.idempotencyKey)
   const existing = await redis.get(idempKey)
   if (existing) {
     try {
@@ -191,7 +221,12 @@ export async function requestWithdrawal(
   ])
   const gasFee = parseFloat(gasFeeConfig?.value ?? legacyFeeConfig?.value ?? '0')
   const platformFee = parseFloat(platformFeeConfig?.value ?? '0')
-  const fee = gasFee + platformFee
+  if (!Number.isFinite(gasFee) || !Number.isFinite(platformFee) || gasFee < 0 || platformFee < 0) {
+    // A corrupted fee setting must stop the withdrawal, not silently charge NaN or 0.
+    throw new AppError('FEE_UNAVAILABLE', 'Withdrawal fee is temporarily unavailable', 503)
+  }
+  // Add in Decimal space so 0.1 + 0.2 style float artefacts never reach the ledger.
+  const fee = new Prisma.Decimal(gasFee).add(platformFee).toNumber()
 
   // Determine USD value to decide whether to skip email confirmation
   const coinPrice = cfg.coinPricesUsd[data.coin.toUpperCase()] ?? 0
@@ -200,7 +235,7 @@ export async function requestWithdrawal(
 
   // Sub-$100: skip email confirmation and auto-approve immediately
   if (isSmallAmount) {
-    const totalDeduct = data.amount + fee
+    const totalDeduct = new Prisma.Decimal(data.amount).add(fee)
     const result = await db.$transaction(async (tx) => {
       const wallets = await tx.$queryRaw<
         Array<{ id: string; balance: string; lockedBalance: string }>
@@ -352,7 +387,7 @@ export async function requestWithdrawal(
   // Risk assessment (runs outside transaction — read-only queries)
   const risk = await assessWithdrawalRisk(userId, data.amount, data.coin, data.toAddress, db, cfg)
   const initialStatus = deriveInitialStatus(risk)
-  const totalDeduct = data.amount + fee
+  const totalDeduct = new Prisma.Decimal(data.amount).add(fee)
 
   const result = await db.$transaction(async (tx) => {
     const wallets = await tx.$queryRaw<
@@ -482,7 +517,7 @@ export async function confirmWithdrawal(
   const initialStatus = deriveInitialStatus(risk)
   const fee = parseFloat(wd.fee.toString())
   const amount = parseFloat(wd.amount.toString())
-  const totalDeduct = amount + fee
+  const totalDeduct = new Prisma.Decimal(wd.amount).add(wd.fee)
 
   const updated = await db.$transaction(async (tx) => {
     // SELECT FOR UPDATE — deduct balance atomically

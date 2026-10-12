@@ -264,7 +264,7 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     const idempotencyKey =
       (req.headers['idempotency-key'] as string | undefined) ?? parsed.data.idempotencyKey
     if (idempotencyKey) {
-      const idemKey = `idem:merchant-gasfee:${idempotencyKey}`
+      const idemKey = `idem:merchant-gasfee:${merchantKeyId}:${idempotencyKey}`
       const existingId = await redis.get(idemKey)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
@@ -314,7 +314,7 @@ export async function merchantGasRoutes(app: FastifyInstance) {
     )
 
     if (idempotencyKey) {
-      await redis.setex(`idem:merchant-gasfee:${idempotencyKey}`, 86400, order.id)
+      await redis.setex(`idem:merchant-gasfee:${merchantKeyId}:${idempotencyKey}`, 86400, order.id)
     }
 
     logger.info({ orderId: order.id, orderRef, chain, merchantKeyId }, 'Merchant gas order created')

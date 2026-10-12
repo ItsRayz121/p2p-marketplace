@@ -740,7 +740,8 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const existingId = await redis.get(idemRedisKey)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
-        if (existing) {
+        // Only replay the caller's own order — a key must never read back someone else's.
+        if (existing && existing.userId === (req.user?.id ?? null)) {
           return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
         }
       }
@@ -984,7 +985,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const existingId = await redis.get(idemRedisKey)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
-        if (existing) return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
+        if (existing && existing.userId === (req.user?.id ?? null)) return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
       }
     }
 
@@ -1356,7 +1357,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const existingId = await redis.get(`idem:gasfee:pkr:${idempKey}`)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
-        if (existing) return reply.send({ success: true, data: existing })
+        if (existing && existing.userId === (req.user?.id ?? null)) return reply.send({ success: true, data: existing })
       }
     }
 
@@ -1605,7 +1606,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const existingId = await redis.get(`idem:gasfee:exchange:${idempKey}`)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
-        if (existing) return reply.send({ success: true, data: existing })
+        if (existing && existing.userId === (req.user?.id ?? null)) return reply.send({ success: true, data: existing })
       }
     }
 
@@ -1895,7 +1896,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       const existingId = await redis.get(`idem:gasfee:crypto:${idempKey}`)
       if (existingId) {
         const existing = await db.gasFeeOrder.findUnique({ where: { id: existingId } })
-        if (existing) return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
+        if (existing && existing.userId === (req.user?.id ?? null)) return reply.send({ success: true, data: { ...existing, paymentAddress: depositAddress } })
       }
     }
 

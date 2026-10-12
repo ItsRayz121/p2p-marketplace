@@ -34,11 +34,20 @@ import { getAllChains, explorerTxUrl } from '../services/chainRegistry.service'
 
 // ─── Zod schemas ──────────────────────────────────────────────────────────────
 
+// Amounts are stored as Decimal(18,8): reject Infinity, absurd sizes and more than
+// 8 decimal places up front instead of failing deep inside the ledger transaction.
 const withdrawSchema = z.object({
-  coin: z.string().min(1),
-  network: z.string().min(1),
-  amount: z.number().positive(),
-  toAddress: z.string().min(1),
+  coin: z.string().min(1).max(20),
+  network: z.string().min(1).max(30),
+  amount: z
+    .number()
+    .positive()
+    .finite()
+    .max(1_000_000_000)
+    .refine((n) => Number.isInteger(Math.round(n * 1e8)) && Math.abs(n * 1e8 - Math.round(n * 1e8)) < 1e-4, {
+      message: 'Amount supports at most 8 decimal places',
+    }),
+  toAddress: z.string().min(1).max(128),
 })
 
 const lockCollateralSchema = z.object({

@@ -17,8 +17,11 @@ export function buildMeta(
 ): Metadata {
   const url = `${BASE_URL}${path}`
   const { ogImage = true } = opts
+  // The root layout's title template already appends " | RupChain"; callers pass the full
+  // brand-suffixed title (kept as-is for social cards), so strip it for <title> only.
+  const pageTitle = title.replace(/\s+[—|-]\s+RupChain$/, '')
   return {
-    title,
+    title: pageTitle,
     description,
     openGraph: {
       title,

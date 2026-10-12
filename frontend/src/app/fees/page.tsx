@@ -2,7 +2,6 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { marketplaceApi, apiRequest } from '@/lib/api'
-import { LoadingState } from '@/components/ui/LoadingState'
 import { PageBackNav } from '@/components/ui/PageBackNav'
 import { Gift } from 'lucide-react'
 
@@ -101,14 +100,16 @@ export default function FeesPage() {
       .catch(() => {})
   }, [])
 
-  if (loading) return <LoadingState message="Loading fee schedule..." />
-
+  // Render immediately: the fee schedule is public marketing/legal content, so crawlers and
+  // no-JS clients must get the real page rather than a loading placeholder. Only the
+  // KYC limits depend on fetched config, and they show a dash until it arrives.
   const makerFee = config?.p2pMakerFee ?? '0%'
   const takerFee = config?.p2pTakerFee ?? '0%'
   const kycLimits = {
     basic: config?.kycLimitBasicDaily ?? 50000,
     enhanced: config?.kycLimitEnhancedDaily ?? 200000,
   }
+  const pkr = (n: number) => (loading ? '—' : `PKR ${n.toLocaleString()}`)
 
   // Only show fees from dynamic config; no hardcoded fallback with unsupported coins
   const withdrawalFees = withdrawalFeesCfg
@@ -204,8 +205,8 @@ export default function FeesPage() {
           headers={['KYC Level', 'Daily Buy Limit', 'Daily Withdrawal Limit']}
           rows={[
             ['Unverified', 'PKR 0', 'Not allowed'],
-            ['Basic KYC', `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`, `PKR ${(kycLimits.basic ?? 50000).toLocaleString()}`],
-            ['Enhanced KYC', `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`, `PKR ${(kycLimits.enhanced ?? 200000).toLocaleString()}`],
+            ['Basic KYC', pkr(kycLimits.basic), pkr(kycLimits.basic)],
+            ['Enhanced KYC', pkr(kycLimits.enhanced), pkr(kycLimits.enhanced)],
           ]}
         />
       </section>

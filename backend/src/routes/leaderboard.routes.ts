@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { db } from '../lib/prisma'
+import { redis } from '../lib/redis'
 
 type Period = 'all' | 'month' | 'week'
 type TradeType = 'all' | 'usdt' | 'ctm' | 'gas'
@@ -45,13 +46,28 @@ function sortAndPage(map: Map<string, UserAccum>, skip: number, limit: number) {
 export async function leaderboardRoutes(app: FastifyInstance) {
   app.get('/leaderboard', async (req, reply) => {
     const query = req.query as Record<string, string>
-    const type = (query.type as 'traders' | 'merchants') ?? 'traders'
-    const period = (query.period as Period) ?? 'all'
-    const tradeType = (query.tradeType as TradeType) ?? 'all'
-    const page = query.page ? parseInt(query.page, 10) : 1
-    const limit = Math.min(query.limit ? parseInt(query.limit, 10) : 20, 100)
+    // Whitelist/clamp every input: it is public, and it feeds both the cache key and the query.
+    const type: 'traders' | 'merchants' = query.type === 'merchants' ? 'merchants' : 'traders'
+    const period: Period = query.period === 'week' || query.period === 'month' ? query.period : 'all'
+    const tradeType: TradeType =
+      query.tradeType === 'usdt' || query.tradeType === 'ctm' || query.tradeType === 'gas' ? query.tradeType : 'all'
+    const page = Math.min(Math.max(parseInt(query.page ?? '1', 10) || 1, 1), 1000)
+    const limit = Math.min(Math.max(parseInt(query.limit ?? '20', 10) || 20, 1), 100)
     const skip = (page - 1) * limit
     const since = dateSince(period)
+
+    // The ranking is public and user-independent, but computing it scans every completed
+    // trade. Serve a short-lived shared copy so a refresh storm costs one scan, not hundreds.
+    const cacheKey = `leaderboard:v1:${type}:${period}:${tradeType}:${page}:${limit}`
+    try {
+      const hit = await redis.get(cacheKey)
+      if (hit) {
+        reply.header('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120')
+        return reply.type('application/json').send(hit)
+      }
+    } catch {
+      // Cache is an optimisation only — fall through to the database.
+    }
 
     let entries: unknown[]
     let total: number
@@ -268,9 +284,12 @@ export async function leaderboardRoutes(app: FastifyInstance) {
       }
     }
 
-    return reply.send({
+    const body = JSON.stringify({
       success: true,
       data: { type, period, tradeType, entries, pagination: { page, limit, total, pages: Math.ceil(total / limit) } },
     })
+    void redis.set(cacheKey, body, 'EX', 60).catch(() => {})
+    reply.header('Cache-Control', 'public, max-age=30, s-maxage=60, stale-while-revalidate=120')
+    return reply.type('application/json').send(body)
   })
 }

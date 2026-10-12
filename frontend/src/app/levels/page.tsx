@@ -8,7 +8,8 @@ import { StaticPageNav } from '@/components/ui/StaticPageNav'
 import { RankPerksTable } from '@/components/ui/RankPerksTable'
 
 export const metadata: Metadata = {
-  title: 'Trader Levels & Badges — RupChain',
+  title: 'Trader Levels & Badges',
+  alternates: { canonical: 'https://rupchain.com/levels' },
   description:
     'Understand how RupChain trader badges and KYC verification levels work — the exact requirements to level up, how your Trust Score is calculated, and the benefits of each tier.',
 }

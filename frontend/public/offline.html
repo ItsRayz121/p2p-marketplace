@@ -5,33 +5,95 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#0D1B2A">
-<title>RupChain — connection problem</title>
+<title>RupChain — You’re Offline</title>
 <style>
-  :root { color-scheme: light dark; --bg:#f8fafc; --fg:#0f172a; --muted:#475569; --soft:#64748b; --primary:#2563eb; --ring:#93c5fd; }
-  @media (prefers-color-scheme: dark) { :root { --bg:#0D1B2A; --fg:#f1f5f9; --muted:#cbd5e1; --soft:#94a3b8; --primary:#3b82f6; } }
+  :root { color-scheme: light dark;
+    --bg:#f8fafc; --fg:#0f172a; --soft:#64748b; --primary:#2563eb; --ring:#93c5fd;
+    --line:#94a3b8; --dim:#cbd5e1; --glow:#2563eb; --node:#e2e8f0; }
+  @media (prefers-color-scheme: dark) { :root {
+    --bg:#0D1B2A; --fg:#f1f5f9; --soft:#94a3b8; --primary:#3b82f6;
+    --line:#5b708a; --dim:#2b3d52; --glow:#60a5fa; --node:#16293f; } }
   * { box-sizing:border-box; }
   body { margin:0; min-height:100vh; min-height:100dvh; display:flex; align-items:center; justify-content:center; padding:16px; font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; background:var(--bg); color:var(--fg); }
   main { width:100%; max-width:22rem; text-align:center; }
-  img { display:block; width:56px; height:56px; margin:0 auto; border-radius:22%; }
-  h1 { font-size:1.15rem; line-height:1.4; margin:1.1rem 0 .4rem; }
-  p { margin:0 0 1.25rem; font-size:.9rem; line-height:1.5; color:var(--muted); }
+  h1 { font-size:1.5rem; line-height:1.3; font-weight:700; margin:.25rem 0 1.5rem; letter-spacing:-.01em; }
   button { font:inherit; font-weight:600; background:var(--primary); color:#fff; border:0; border-radius:.6rem; padding:.7rem 1.6rem; min-width:9rem; min-height:44px; cursor:pointer; }
   button[disabled] { opacity:.7; cursor:default; }
   button:focus-visible { outline:3px solid var(--ring); outline-offset:2px; }
   #status { min-height:1.25rem; margin:.9rem 0 0; font-size:.8rem; color:var(--soft); }
-  small { display:block; margin-top:1.25rem; color:var(--soft); font-size:.72rem; line-height:1.5; }
-  code { font-size:.7rem; }
+
+  /* Illustration: a technician repairs a damaged signal cable beside a tower.
+     One 7s loop: signal weakens -> a link fades -> repair -> waves pulse back. */
+  .scene { display:block; width:100%; max-width:19rem; height:auto; margin:0 auto .5rem; overflow:visible; }
+  .scene .st { fill:none; stroke:var(--line); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .scene .node { fill:var(--node); stroke:var(--line); stroke-width:2; }
+  .scene .ground { stroke:var(--dim); stroke-width:2; stroke-linecap:round; }
+  .scene .body { fill:var(--primary); }
+  .scene .skin { fill:var(--line); }
+  .scene .hat { fill:var(--glow); }
+  .wave { fill:none; stroke:var(--glow); stroke-width:2.5; stroke-linecap:round; opacity:.9; animation:wave 7s ease-in-out infinite; }
+  .wave.w2 { animation-delay:.2s; } .wave.w3 { animation-delay:.4s; }
+  .link { stroke:var(--glow); stroke-dasharray:3 5; animation:link 7s ease-in-out infinite; }
+  .patch { fill:none; stroke:var(--glow); stroke-width:2.5; stroke-linecap:round; opacity:0; animation:patch 7s ease-in-out infinite; }
+  .tip { fill:var(--glow); opacity:0; animation:patch 7s ease-in-out infinite; }
+  .tech { animation:sway 4s ease-in-out infinite alternate; transform-origin:130px 60px; }
+  .arm { animation:work .7s ease-in-out infinite alternate; transform-origin:136px 102px; }
+  .cap { stroke:var(--glow); }
+  @keyframes wave  { 0%,10% { opacity:.9 } 28%,62% { opacity:.12 } 78% { opacity:1 } 90%,100% { opacity:.9 } }
+  @keyframes link  { 0%,12% { opacity:1 } 30%,62% { opacity:.12 } 82%,100% { opacity:1 } }
+  @keyframes patch { 0%,40% { opacity:0 } 62%,86% { opacity:1 } 100% { opacity:0 } }
+  @keyframes sway  { from { transform:rotate(-2.5deg) } to { transform:rotate(2.5deg) } }
+  @keyframes work  { from { transform:rotate(-14deg) } to { transform:rotate(10deg) } }
+  /* Connection restored: every part settles into the normal brand colour. */
+  .restored .wave, .restored .link, .restored .patch, .restored .tip, .restored .arm, .restored .tech { animation:none; }
+  .restored .wave, .restored .link, .restored .patch { opacity:1; transition:opacity .3s ease; }
+  .restored .tower { stroke:var(--glow); transition:stroke .3s ease; }
+  .restored .scene { filter:drop-shadow(0 0 8px var(--glow)); transition:filter .3s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    .wave, .link, .patch, .tip, .tech, .arm { animation:none; }
+    .wave.w1 { opacity:.9 } .wave.w2 { opacity:.5 } .wave.w3 { opacity:.15 }
+    .link { opacity:.35 } .patch { opacity:0 }
+  }
 </style>
 </head>
 <!-- data-reason / data-sw / data-api are filled in by sw.js when it serves this page. -->
 <body data-reason="network" data-sw="" data-api="">
 <main role="main">
-  <img alt="RupChain" src="data:image/png;base64,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">
-  <h1 id="title">We couldn't connect to RupChain just now.</h1>
-  <p id="body">Please try again in a moment.</p>
-  <button type="button" id="retry">Try again</button>
+  <svg class="scene" viewBox="0 -16 240 200" role="img" aria-label="A technician repairing a signal tower cable">
+    <line class="ground" x1="14" y1="180" x2="226" y2="180"/>
+    <!-- blockchain-style network nodes -->
+    <path class="st" d="M190 70 L214 112 L180 152"/>
+    <circle class="node" cx="190" cy="70" r="6"/><circle class="node" cx="214" cy="112" r="6"/><circle class="node" cx="180" cy="152" r="6"/>
+    <path class="st link" d="M70 20 Q130 6 190 70"/>
+    <!-- tower -->
+    <g class="st tower">
+      <path d="M70 40 L40 180 M70 40 L100 180"/>
+      <path d="M63.4 80 H76.6 M54.9 120 H85.1 M46.3 160 H93.7"/>
+      <path d="M63.4 80 L85.1 120 M76.6 80 L54.9 120 M54.9 120 L93.7 160 M85.1 120 L46.3 160"/>
+      <path d="M70 40 V22"/>
+    </g>
+    <circle class="node cap" cx="70" cy="18" r="4"/>
+    <path class="wave w1" d="M60 18 A10 10 0 0 1 80 18"/>
+    <path class="wave w2" d="M52 18 A18 18 0 0 1 88 18"/>
+    <path class="wave w3" d="M44 18 A26 26 0 0 1 96 18"/>
+    <!-- damaged cable: two ends and a gap the technician closes -->
+    <path class="st" d="M88 126 L116 130 M144 134 L176 150"/>
+    <path class="patch" d="M116 130 L144 134"/>
+    <!-- technician hanging from a boom, reconnecting the cable -->
+    <path class="st" d="M76.6 60 H130"/>
+    <g class="tech">
+      <path class="st" d="M130 60 V86"/>
+      <circle class="skin" cx="130" cy="92" r="5"/>
+      <path class="hat" d="M124.5 91 a5.5 5.5 0 0 1 11 0 Z"/>
+      <rect class="body" x="124" y="98" width="12" height="18" rx="3"/>
+      <path class="st" d="M127 116 V126 M133 116 V126"/>
+      <g class="arm"><path class="st" d="M136 102 L146 126" style="stroke:var(--fg)"/><circle class="tip" cx="146" cy="128" r="3"/></g>
+    </g>
+  </svg>
+  <h1 id="title">You&rsquo;re Offline</h1>
+  <button type="button" id="retry">Try Again</button>
   <p id="status" role="status" aria-live="polite"></p>
-  <small>If this keeps happening, contact support@rupchain.com.<br><code id="diag"></code></small>
+  <code id="diag" hidden></code>
 </main>
 <script>
 (function () {
@@ -44,9 +106,10 @@
 
   function setReason(r) {
     reason = r;
+    // A server-side failure must not blame the visitor's connection.
     document.getElementById('title').textContent = r === 'server'
-      ? 'RupChain is having trouble right now.'
-      : "We couldn't connect to RupChain just now.";
+      ? 'Connection Interrupted'
+      : "You\u2019re Offline";
   }
   setReason(reason);
   document.getElementById('diag').textContent =
@@ -130,6 +193,16 @@
       }, function () { return { page: false, api: false, server: false }; });
   }
 
+  // Light the tower up in the normal brand colour for a moment, then reload. Skipped
+  // (immediate reload) when animations are unavailable or the user asked for less motion.
+  function restoredThenReload() {
+    var calm = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!body.classList || calm) { location.reload(); return; }
+    body.classList.add('restored');
+    statusEl.textContent = '';
+    setTimeout(function () { location.reload(); }, 450);
+  }
+
   var running = false, timer = null, attempt = 0;
   var DELAYS = [3000, 6000, 12000, 20000, 30000];
 
@@ -156,7 +229,7 @@
       // also waits for the API, so we don't bounce the user into a broken app —
       // and only reloads when the loop guard could record it.
       if (res.page && (manual || res.api)) {
-        if (manual || noteAutoReload()) { location.reload(); return; }
+        if (manual || noteAutoReload()) { restoredThenReload(); return; }
         guardOk = false;
         statusEl.textContent = 'RupChain is back. Tap "Try again" to continue.';
         return;

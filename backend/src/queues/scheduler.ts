@@ -1,5 +1,6 @@
 import { logger } from '../lib/logger'
 import { createAdminNotif } from '../services/adminNotification.service'
+import { shouldAlertSweepFailure } from './sweepAlert'
 
 // Lightweight replacement for a BullMQ Queue+Worker pair, used ONLY for jobs
 // that are pure fixed-interval sweeps with no job payload. Every sweep moved
@@ -15,6 +16,7 @@ const activeIntervals: NodeJS.Timeout[] = []
 
 export function scheduleSweep(name: string, fn: () => Promise<unknown>, intervalMs: number): void {
   let running = false
+  let lastAlertAt: number | null = null
 
   const tick = async () => {
     // Overlap guard — mirrors the `{ max: 1, duration }` concurrency limiter
@@ -23,8 +25,11 @@ export function scheduleSweep(name: string, fn: () => Promise<unknown>, interval
     running = true
     try {
       await fn()
+      lastAlertAt = null
     } catch (err) {
       logger.error({ err, sweep: name }, `Scheduled sweep failed: ${name}`)
+      if (!shouldAlertSweepFailure(lastAlertAt, Date.now())) return
+      lastAlertAt = Date.now()
       // Every Group-A sweep ran with attempts:1 in BullMQ, so a failure was
       // already "final" on first occurrence and triggered an admin alert.
       // Preserve that exact behavior here.
