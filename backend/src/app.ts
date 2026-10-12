@@ -10,6 +10,7 @@ import * as Sentry from '@sentry/node'
 import { env } from './lib/env'
 import { logger } from './lib/logger'
 import { rateLimitRedis } from './lib/redis'
+import { MemoryRateLimiter, fallbackBudget } from './lib/memoryRateLimit'
 import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
 import { csrfHook } from './lib/csrf'
@@ -125,6 +126,61 @@ export async function buildApp() {
       message: `Rate limit exceeded. Retry after ${context.after}.`,
       retryAfter: context.ttl,
     }),
+  })
+
+  // Fallback limiter. @fastify/rate-limit above fails OPEN when Redis is unreachable, which would
+  // silently remove brute-force and abuse protection from login, OTP email, withdrawals and uploads.
+  // While the shared limiter is down, enforce a conservative per-process budget instead. Inactive
+  // (zero cost beyond a status check) whenever Redis is healthy.
+  const fallbackLimiter = new MemoryRateLimiter(60_000)
+  let fallbackWarnedAt = 0
+  app.addHook('onRequest', async (req, reply) => {
+    if (rateLimitRedis.status === 'ready') return
+    const pathname = req.url.split('?')[0] ?? req.url
+    if (pathname === '/health' || pathname.startsWith('/health/')) return
+    // Provider webhooks are HMAC/secret-authenticated and bursty; throttling them would only
+    // make the provider retry harder. They keep their own verification.
+    if (pathname.startsWith('/api/v1/webhooks/') || pathname === '/api/v1/telegram/webhook') return
+    const { cls, max } = fallbackBudget(req.method, pathname)
+    const auth = req.headers.authorization
+    const payload = auth?.startsWith('Bearer ') ? verifyAccessToken(auth.slice(7)) : null
+    const who = payload ? `u:${payload.userId}` : `ip:${resolveClientIp(req.headers as Record<string, unknown>, req.ip) ?? req.ip}`
+    const res = fallbackLimiter.hit(`${who}:${cls}`, max)
+    if (Date.now() - fallbackWarnedAt > 60_000) {
+      fallbackWarnedAt = Date.now()
+      logger.warn({ redisStatus: rateLimitRedis.status }, 'Shared rate limiter unavailable: using per-process fallback limits')
+    }
+    if (!res.allowed) {
+      reply.header('Retry-After', String(res.retryAfterSeconds))
+      return reply.status(429).send({
+        success: false,
+        error: 'TOO_MANY_REQUESTS',
+        message: `Rate limit exceeded. Retry after ${res.retryAfterSeconds} seconds.`,
+        retryAfter: res.retryAfterSeconds * 1000,
+      })
+    }
+  })
+
+  // Temporary proxy-topology diagnostics: log the forwarding headers of the first few requests this
+  // process serves (last IPv4 octet masked) so the number of trusted proxy hops can be determined from
+  // production logs instead of guessed. Bounded, so it cannot become a log flood.
+  let proxyDiagLeft = 12
+  const maskIp = (v: unknown) =>
+    typeof v === 'string' ? v.replace(/(\d+\.\d+\.\d+\.)\d+/g, '$1x').replace(/([0-9a-f]+:[0-9a-f:]*):[0-9a-f]+/gi, '$1:x') : v
+  app.addHook('onRequest', async (req) => {
+    if (proxyDiagLeft <= 0 || req.url.startsWith('/health')) return
+    proxyDiagLeft -= 1
+    logger.info({
+      proxyDiag: {
+        xff: maskIp(req.headers['x-forwarded-for']),
+        cfConnectingIp: maskIp(req.headers['cf-connecting-ip']),
+        xRealIp: maskIp(req.headers['x-real-ip']),
+        hasCfRay: Boolean(req.headers['cf-ray']),
+        socket: maskIp(req.socket.remoteAddress),
+        reqIp: maskIp(req.ip),
+        host: req.headers.host,
+      },
+    }, 'proxyDiag sample')
   })
 
   // CSRF protection — validates X-CSRF-Token on all unsafe methods

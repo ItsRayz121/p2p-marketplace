@@ -71,11 +71,31 @@ export function validateCsrfToken(token: string, userId?: string): boolean {
   }
 }
 
+/**
+ * /auth/refresh is CSRF-exempt (the refresh cookie is its only credential and the SPA cannot attach a
+ * token before it has one) but the cookie is SameSite=None in production, so a hostile page could
+ * make a victim's browser POST it and rotate away their session. Browsers always send Origin on a
+ * cross-site POST, so a present Origin that is not our frontend is refused. Non-browser callers send
+ * no Origin and are unaffected.
+ */
+export function isForeignOrigin(origin: unknown, allowed: string): boolean {
+  if (typeof origin !== 'string' || origin === '') return false
+  const norm = (u: string) => u.replace(/\/+$/, '').toLowerCase()
+  return norm(origin) !== norm(allowed)
+}
+
 export async function csrfHook(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   if (!UNSAFE_METHODS.has(req.method)) return
   // Match on the pathname only — req.url includes the querystring, so a request
   // like `/api/v1/auth/login?x=1` would otherwise miss the exempt set.
   const pathname = req.url.split('?')[0] ?? req.url
+  if (pathname === '/api/v1/auth/refresh' && isForeignOrigin(req.headers.origin, env.FRONTEND_URL)) {
+    return reply.status(403).send({
+      success: false,
+      error: 'INVALID_ORIGIN',
+      message: 'Cross-site refresh requests are not allowed.',
+    })
+  }
   if (CSRF_EXEMPT.has(pathname)) return
 
   // Public blog endpoints that a guest browser hits without a CSRF token:
