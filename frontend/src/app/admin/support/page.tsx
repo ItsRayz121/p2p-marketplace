@@ -17,7 +17,7 @@ import { adminApi } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { isTrustedImageUrl } from '@/lib/utils'
-import { Send, UserPlus, Search, X, Trash2 } from 'lucide-react'
+import { Send, UserPlus, Search, X, Trash2, ArrowLeft } from 'lucide-react'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
 import { ComposerPlusMenu } from '@/components/chat/ComposerPlusMenu'
 import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
@@ -236,7 +236,7 @@ export default function AdminSupportPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-start justify-between gap-3">
+      <div className={`${activeId ? 'hidden md:flex' : 'flex'} items-start justify-between gap-3`}>
         <div>
           <h1 className="text-2xl font-black text-text-primary">Support Chat</h1>
           <p className="text-sm text-text-muted">Reply to users live, or reach out to any user first.</p>
@@ -304,9 +304,9 @@ export default function AdminSupportPage() {
         </div>
       )}
 
-      <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100dvh-12rem)]">
+      <div className="grid md:grid-cols-[20rem_1fr] gap-4 h-[calc(100dvh-7rem)] md:h-[calc(100dvh-12rem)]">
         {/* Conversation list */}
-        <div className="bg-surface border border-border rounded-xl overflow-y-auto">
+        <div className={`${activeId ? 'hidden md:block' : 'block'} bg-surface border border-border rounded-xl overflow-y-auto min-h-0`}>
           {conversations.length === 0 ? (
             <EmptyState title="No conversations yet" description="User messages will show up here." />
           ) : (
@@ -333,14 +333,21 @@ export default function AdminSupportPage() {
         </div>
 
         {/* Thread */}
-        <div className="bg-surface border border-border rounded-xl flex flex-col overflow-hidden">
+        <div className={`${activeId ? 'flex' : 'hidden md:flex'} bg-surface border border-border rounded-xl flex-col overflow-hidden min-h-0`}>
           {!thread ? (
             <div className="flex-1 flex items-center justify-center text-text-muted text-sm">
-              Select a conversation
+              {activeId ? 'Loading…' : 'Select a conversation'}
             </div>
           ) : (
             <>
               <div className="px-4 py-3 border-b border-border flex items-center gap-3 flex-shrink-0">
+                <button
+                  onClick={() => { setActiveId(null); setThread(null) }}
+                  className="md:hidden p-1 -ml-1 hover:bg-canvas rounded-lg flex-shrink-0"
+                  aria-label="Back to conversations"
+                >
+                  <ArrowLeft className="w-5 h-5 text-text-muted" />
+                </button>
                 <UserAvatar name={thread.user.name} avatarUrl={thread.user.avatarUrl} size="sm" />
                 <div className="min-w-0 flex-1">
                   <p className="font-semibold text-sm text-text-primary truncate">{thread.user.name}</p>
