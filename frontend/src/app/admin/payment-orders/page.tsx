@@ -16,12 +16,6 @@ import { Modal } from '@/components/ui/Modal'
 import { EntityLogo } from '@/components/ui/EntityLogo'
 import { RejectProofModal } from '@/components/admin/GasOrderActionModals'
 import { GAS_STATUS_LABELS, gasStatusVariant, isPaidFailed } from '@/lib/gasOrderStatus'
-import { GasOrdersTabs } from '@/components/admin/GasOrdersTabs'
-import { useGasRange } from '@/hooks/useGasRange'
-import { useLiveData } from '@/hooks/useLiveData'
-import { DataFreshness, GasRangePicker } from '@/components/admin/gas-insights/GasInsightsUI'
-import { PaymentsSummaryStrip } from '@/components/admin/gas-insights/OrdersSummaryStrips'
-import type { PaymentsSummary } from '@/lib/gasInsights'
 import { PAYMENT_ORDERS_ROUTE, gasOrderHref, paymentOrdersHref, parseGasOrderFilters, type GasPaymentType } from '@/lib/adminRoutes'
 
 interface GasOrder {
@@ -198,7 +192,6 @@ function PaymentOrdersInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const initial = parseGasOrderFilters(searchParams)
-  const gr = useGasRange()
 
   const [orders, setOrders] = useState<GasOrder[]>([])
   const [total, setTotal] = useState(0)
@@ -238,26 +231,11 @@ function PaymentOrdersInner() {
   // dashboard / notification deep links arrive pre-filtered.
   useEffect(() => {
     const base = paymentOrdersHref({ status: statusFilter, paymentType: paymentTypeFilter, chain: chainFilter, from, to, q: search })
-    // Keep the summary's date range (?range=…) in the URL alongside the list filters.
-    const rangeQs = gr.carryQuery.slice(1)
-    const target = rangeQs ? `${base}${base.includes('?') ? '&' : '?'}${rangeQs}` : base
+    const target = base
     const current = searchParams.toString() ? `${PAYMENT_ORDERS_ROUTE}?${searchParams.toString()}` : PAYMENT_ORDERS_ROUTE
     if (target !== current) router.replace(target, { scroll: false })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statusFilter, paymentTypeFilter, chainFilter, from, to, search, gr.carryQuery])
-
-  // Summary strip: same status / method / chain / search filters as the list, over the selected range.
-  // Keyed on every input so a filter change refetches and discards any older in-flight response.
-  const paySum = useLiveData<PaymentsSummary>(() => {
-    const w = gr.resolve()
-    const params: Record<string, string | number | undefined> = { view: 'payments', tz: gr.tz, to: w.to }
-    if (w.from) params.from = w.from
-    if (statusFilter !== 'all') params.status = statusFilter
-    if (paymentTypeFilter !== 'all') params.paymentType = paymentTypeFilter
-    if (chainFilter) params.chain = chainFilter
-    if (search) params.search = search
-    return adminApi.getGasOrdersSummary(params) as Promise<PaymentsSummary>
-  }, `paysum|${gr.key}|${statusFilter}|${paymentTypeFilter}|${chainFilter}|${search}`)
+  }, [statusFilter, paymentTypeFilter, chainFilter, from, to, search])
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -315,7 +293,6 @@ function PaymentOrdersInner() {
       close()
     }
     void refresh()
-    void paySum.refresh()
   }
 
   const handleRetry = () => selectedId ? run(() => adminApi.retryGasOrder(selectedId), () => setConfirmRetry(false), 'Gas order queued for retry.', 'Failed to retry gas order') : Promise.resolve()
@@ -344,7 +321,6 @@ function PaymentOrdersInner() {
 
   return (
     <div className="space-y-5">
-      <GasOrdersTabs active="payments" />
       <div className="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Payment Orders</h1>
@@ -372,16 +348,6 @@ function PaymentOrdersInner() {
           </button>
         ))}
       </div>
-
-      {/* Compact payments summary over the selected range */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-        <GasRangePicker range={gr.range} customFrom={gr.customFrom} customTo={gr.customTo} tz={gr.tz} label={gr.resolve().label} onChange={gr.setRange} />
-        <DataFreshness updatedAt={paySum.updatedAt} stale={paySum.stale} error={paySum.error} refreshing={paySum.refreshing} onRefresh={() => { void paySum.refresh() }} />
-      </div>
-      <PaymentsSummaryStrip
-        summary={paySum.data} error={paySum.error} onRetry={() => { void paySum.refresh() }}
-        analyticsHref={`/admin/gas/insights${gr.carryQuery}`}
-      />
 
       {/* Filters */}
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border space-y-4">

@@ -600,9 +600,6 @@ function GasAdminPageInner() {
               Emergency Pause
             </Button>
           )}
-          <Link href="/admin/gas/insights" className="w-full lg:w-auto">
-            <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Analytics</Button>
-          </Link>
           <Link href="/admin/gas/requests" className="w-full lg:w-auto">
             <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Custom Requests</Button>
           </Link>
