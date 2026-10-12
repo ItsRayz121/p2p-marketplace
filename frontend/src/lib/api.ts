@@ -17,6 +17,7 @@ function resolveApiBase(): string {
 export const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
+import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -3031,6 +3032,12 @@ export const adminApi = {
       expected?: { to: string | null; nativeAmount: number; tokenAmount?: number | null; tokenSymbol?: string }
     }>(`/admin/gas/wallet-activity/${id}/verify`),
 
+  // Gas Analytics (dedicated page) + Payment Orders / Gas Trades summary strips
+  getGasInsights: (params: { from?: string; to?: string; tz?: string }) =>
+    apiRequest<GasInsights>('/admin/gas/insights' + buildQs(params)),
+  getGasOrdersSummary: (params: Record<string, string | number | undefined>) =>
+    apiRequest<TradesSummary | PaymentsSummary>('/admin/gas/orders/summary' + buildQs(params)),
+
   // Gas Orders
   getGasOrders: (params?: Record<string, string | number | undefined>) =>
     apiRequest<{ orders: unknown[]; pagination: { total: number; page: number; limit: number; pages: number } }>('/admin/gas/orders' + buildQs(params)),
@@ -3079,7 +3086,7 @@ export const adminApi = {
 
   // Gas Custom Requests
   getGasCustomRequests: (params?: Record<string, string | number | undefined>) =>
-    apiRequest<{ requests: GasCustomRequest[]; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/admin/gas/custom-requests' + buildQs(params)),
+    apiRequest<{ requests: GasCustomRequest[]; counts: Record<'all' | GasCustomRequest['status'], number>; pagination: { page: number; limit: number; total: number; totalPages: number } }>('/admin/gas/custom-requests' + buildQs(params)),
   updateGasCustomRequest: (id: string, data: { status?: GasCustomRequest['status']; adminNotes?: string }) =>
     apiRequest<GasCustomRequest>(`/admin/gas/custom-requests/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
 

@@ -8,7 +8,6 @@ import { fmtDate } from '@/lib/fmt'
 import { usePolling } from '@/hooks/usePolling'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { Badge } from '@/components/ui/Badge'
-import { Fuel } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { ConfirmModal } from '@/components/ui/ConfirmModal'
 import { Modal } from '@/components/ui/Modal'
@@ -55,13 +54,6 @@ interface RpcTestResult {
   allClear: boolean
 }
 
-interface GasAnalytics {
-  period: string
-  successCount: number
-  failedCount: number
-  avgCompletionSec: number | null
-  chainStats: Array<{ chain: string; delivered: number; failed: number; total: number; successRate: number | null }>
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,12 +61,6 @@ interface GasAnalytics {
 function fmtNative(amount: string | number): string {
   const n = parseFloat(String(amount))
   return n >= 1 ? String(Math.round(n)) : n.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
-}
-
-function fmtSeconds(secs: number): string {
-  if (secs < 60) return `${secs}s`
-  if (secs < 3600) return `${Math.round(secs / 60)}m`
-  return `${(secs / 3600).toFixed(1)}h`
 }
 
 function fmtRelativeTime(iso: string | null): string {
@@ -286,145 +272,6 @@ function WalletCard({
   )
 }
 
-// ─── Analytics Panel ──────────────────────────────────────────────────────────
-
-function AnalyticsPanel({ analytics }: { analytics: GasAnalytics }) {
-  return (
-    <div className="bg-surface shadow-card border border-border rounded-xl p-5">
-      <h2 className="text-sm font-semibold text-text-primary mb-4">
-        Delivery Analytics
-        <span className="ml-2 text-xs font-normal text-text-muted">({analytics.period})</span>
-      </h2>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <div className="bg-surface rounded-lg p-3">
-          <p className="text-xs text-text-muted">Successful</p>
-          <p className="text-xl font-bold text-success mt-1">{analytics.successCount.toLocaleString()}</p>
-        </div>
-        <div className="bg-surface rounded-lg p-3">
-          <p className="text-xs text-text-muted">Failed</p>
-          <p className={`text-xl font-bold mt-1 ${analytics.failedCount > 0 ? 'text-danger' : 'text-text-primary'}`}>
-            {analytics.failedCount.toLocaleString()}
-          </p>
-        </div>
-        <div className="bg-surface rounded-lg p-3">
-          <p className="text-xs text-text-muted">Avg. Completion</p>
-          <p className="text-xl font-bold text-text-primary mt-1">
-            {analytics.avgCompletionSec !== null ? fmtSeconds(analytics.avgCompletionSec) : '—'}
-          </p>
-        </div>
-        <div className="bg-surface rounded-lg p-3">
-          <p className="text-xs text-text-muted">Overall Rate</p>
-          <p className="text-xl font-bold text-text-primary mt-1">
-            {analytics.successCount + analytics.failedCount > 0
-              ? `${Math.round(analytics.successCount / (analytics.successCount + analytics.failedCount) * 100)}%`
-              : '—'}
-          </p>
-        </div>
-      </div>
-
-      {analytics.chainStats.length > 0 && (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="border-b border-border text-text-muted">
-                <th className="text-left pb-2 font-medium">Chain</th>
-                <th className="text-right pb-2 font-medium">Delivered</th>
-                <th className="text-right pb-2 font-medium">Failed</th>
-                <th className="text-right pb-2 font-medium">Success Rate</th>
-                <th className="text-right pb-2 font-medium">Rate Bar</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {analytics.chainStats.sort((a, b) => b.total - a.total).map((c) => (
-                <tr key={c.chain} className="py-1.5">
-                  <td className="py-1.5 font-medium text-text-primary">
-                    <span className="inline-flex items-center gap-1.5">
-                      <EntityLogo type="chain" slug={c.chain} size="xs" />
-                      {chainDisplayName(c.chain)}
-                    </span>
-                  </td>
-                  <td className="py-1.5 text-right text-success">{c.delivered}</td>
-                  <td className="py-1.5 text-right text-danger">{c.failed}</td>
-                  <td className="py-1.5 text-right font-medium">
-                    {c.successRate !== null ? `${c.successRate}%` : '—'}
-                  </td>
-                  <td className="py-1.5 text-right">
-                    {c.successRate !== null && (
-                      <div className="w-16 h-1.5 bg-border rounded-full ml-auto">
-                        <div
-                          className={`h-1.5 rounded-full ${c.successRate >= 90 ? 'bg-success' : c.successRate >= 70 ? 'bg-warning' : 'bg-danger'}`}
-                          style={{ width: `${c.successRate}%` }}
-                        />
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Financial KPI Dashboard ──────────────────────────────────────────────────
-
-function fmtUsd(n: number) { return `$${n.toFixed(2)}` }
-function fmtPkr(n: number) { return `PKR ${Math.round(n).toLocaleString()}` }
-function fmtPct(n: number) { return `${n.toFixed(1)}%` }
-
-function FinancialKpiSection({ kpi, loading, onTotalOrders }: { kpi: GasFinancialKpi | null; loading: boolean; onTotalOrders?: () => void }) {
-  if (loading) return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <div key={i} className="h-28 bg-surface rounded-xl animate-pulse" />
-      ))}
-    </div>
-  )
-  if (!kpi) return null
-
-  const margin      = kpi.marginPct
-  const marginColor = margin >= 50 ? 'text-success' : margin >= 20 ? 'text-warning' : 'text-danger'
-  const marginBg    = margin >= 50 ? 'bg-success'   : margin >= 20 ? 'bg-warning'   : 'bg-danger'
-
-  const cards: Array<{ label: string; primary: string; secondary: string; accent: string; onClick?: () => void }> = [
-    { label: 'Total Orders',         primary: kpi.totalOrders.toLocaleString(), secondary: `Rate ${fmtUsd(kpi.usdPkrRate)}/USD`, accent: 'text-text-primary', onClick: onTotalOrders },
-    { label: 'Payment Received',     primary: fmtUsd(kpi.paymentReceivedUsdt),  secondary: fmtPkr(kpi.paymentReceivedPkr),        accent: 'text-text-primary' },
-    { label: 'Gas Delivered',        primary: fmtUsd(kpi.gasSpentUsdt),         secondary: fmtPkr(kpi.gasSpentPkr),               accent: 'text-warning' },
-    { label: 'Refunds Issued',       primary: fmtUsd(kpi.refundCostUsdt),       secondary: fmtPkr(kpi.refundCostPkr),             accent: kpi.refundCostUsdt > 0 ? 'text-danger' : 'text-text-primary' },
-    { label: 'Net Profit',           primary: fmtUsd(kpi.netProfitUsdt),        secondary: fmtPkr(kpi.netProfitPkr),              accent: kpi.netProfitUsdt >= 0 ? 'text-success' : 'text-danger' },
-  ]
-
-  return (
-    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-      {cards.map(({ label, primary, secondary, accent, onClick }) => (
-        <div
-          key={label}
-          onClick={onClick}
-          role={onClick ? 'button' : undefined}
-          tabIndex={onClick ? 0 : undefined}
-          onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onClick() } } : undefined}
-          className={`bg-surface shadow-card border border-border rounded-xl p-4 ${onClick ? 'cursor-pointer hover:border-primary/40 hover:shadow-md transition-all' : ''}`}
-        >
-          <p className="text-xs text-text-muted font-medium uppercase tracking-wide mb-2">{label}{onClick && <span className="text-primary ml-1">→</span>}</p>
-          <p className={`text-xl font-bold ${accent}`}>{primary}</p>
-          <p className="text-sm text-text-muted mt-0.5">{secondary}</p>
-          {label === 'Net Profit' && (
-            <>
-              <div className="mt-2 h-1.5 bg-border rounded-full overflow-hidden">
-                <div className={`h-1.5 rounded-full transition-all ${marginBg}`}
-                  style={{ width: `${Math.min(Math.max(margin, 0), 100)}%` }} />
-              </div>
-              <p className={`text-xs font-bold mt-1 ${marginColor}`}>{fmtPct(margin)} margin</p>
-            </>
-          )}
-        </div>
-      ))}
-    </div>
-  )
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 interface PollerHealthNetwork {
@@ -601,18 +448,6 @@ function GasAdminPageInner() {
   const [stats, setStats] = useState<GasStats | null>(null)
   const [statsError, setStatsError] = useState<string | null>(null)
 
-  // Analytics state
-  const [analytics, setAnalytics] = useState<GasAnalytics | null>(null)
-  const [analyticsPeriod, setAnalyticsPeriod] = useState<'24h' | '7d' | '30d' | 'all'>('7d')
-  const [showAnalytics, setShowAnalytics] = useState(false)
-
-  // Financial KPI state
-  const [kpiTab, setKpiTab] = useState<'today' | 'alltime' | 'custom'>('today')
-  const [kpiFrom, setKpiFrom] = useState('')
-  const [kpiTo, setKpiTo]     = useState('')
-  const [customKpi, setCustomKpi] = useState<GasFinancialKpi | null>(null)
-  const [customKpiLoading, setCustomKpiLoading] = useState(false)
-
   // Global pause state
   const [globalPaused, setGlobalPaused] = useState(false)
   const [globalPauseReason, setGlobalPauseReason] = useState<string | null>(null)
@@ -656,43 +491,11 @@ function GasAdminPageInner() {
     } catch { /* non-critical */ }
   }, [])
 
-  const fetchAnalytics = useCallback(async () => {
-    try {
-      const data = await adminApi.getGasAnalytics(analyticsPeriod)
-      setAnalytics(data)
-    } catch { /* non-critical */ }
-  }, [analyticsPeriod])
-
-  const fetchCustomKpi = useCallback(async () => {
-    if (!kpiFrom && !kpiTo) return
-    setCustomKpiLoading(true)
-    try {
-      const data = await adminApi.getGasFinancials(kpiFrom || undefined, kpiTo || undefined)
-      setCustomKpi(data)
-    } catch { /* non-critical */ }
-    finally { setCustomKpiLoading(false) }
-  }, [kpiFrom, kpiTo])
-
   const refresh = useCallback(async () => {
     await Promise.all([fetchStats(), fetchGlobalPause()])
   }, [fetchStats, fetchGlobalPause])
 
   usePolling(refresh, 30_000)
-
-  // Fetch analytics on demand
-  const handleShowAnalytics = useCallback(async () => {
-    setShowAnalytics(true)
-    await fetchAnalytics()
-  }, [fetchAnalytics])
-
-  // Re-fetch analytics when period changes
-  const handleAnalyticsPeriod = useCallback(async (p: '24h' | '7d' | '30d' | 'all') => {
-    setAnalyticsPeriod(p)
-    try {
-      const data = await adminApi.getGasAnalytics(p)
-      setAnalytics(data)
-    } catch { /* non-critical */ }
-  }, [])
 
   async function handleToggleChain(chain: string) {
     setToggling(chain)
@@ -786,7 +589,7 @@ function GasAdminPageInner() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-text-primary">Gas Fee Operations</h1>
-          <p className="text-text-muted text-sm mt-0.5">Hot wallets, chain health and financial KPIs</p>
+          <p className="text-text-muted text-sm mt-0.5">Hot wallets, chain health and operational controls</p>
         </div>
         {/* Mobile: an even 2-column grid so every action is visible and aligned
             (was a hidden horizontal-scroll strip that clipped the later buttons).
@@ -797,9 +600,9 @@ function GasAdminPageInner() {
               Emergency Pause
             </Button>
           )}
-          <Button size="sm" variant="ghost" fullWidth className="lg:w-auto" onClick={showAnalytics ? () => setShowAnalytics(false) : handleShowAnalytics}>
-            {showAnalytics ? 'Hide Analytics' : 'Analytics'}
-          </Button>
+          <Link href="/admin/gas/insights" className="w-full lg:w-auto">
+            <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Analytics</Button>
+          </Link>
           <Link href="/admin/gas/requests" className="w-full lg:w-auto">
             <Button size="sm" variant="ghost" fullWidth className="lg:w-auto">Custom Requests</Button>
           </Link>
@@ -868,94 +671,6 @@ function GasAdminPageInner() {
           </Link>
         </div>
       )}
-
-      {/* ── Financial KPI Dashboard ──────────────────────────────────────────── */}
-      <div className="bg-surface shadow-card border border-border rounded-xl overflow-hidden">
-        {/* Tab bar */}
-        <div className="flex items-center gap-0 border-b border-border">
-          {(['today', 'alltime', 'custom'] as const).map((tab) => (
-            <button key={tab} onClick={() => setKpiTab(tab)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                kpiTab === tab ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'
-              }`}
-            >
-              {tab === 'today' ? 'Today' : tab === 'alltime' ? 'All Time' : 'Date Range'}
-            </button>
-          ))}
-        </div>
-
-        <div className="p-4 space-y-4">
-          {/* Custom date range picker */}
-          {kpiTab === 'custom' && (
-            <div className="flex items-center gap-3 flex-wrap">
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-text-muted font-medium">From</label>
-                <input type="date" value={kpiFrom} onChange={e => setKpiFrom(e.target.value)}
-                  className="border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-text-muted font-medium">To</label>
-                <input type="date" value={kpiTo} onChange={e => setKpiTo(e.target.value)}
-                  className="border border-border rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary" />
-              </div>
-              <button onClick={fetchCustomKpi} disabled={customKpiLoading || (!kpiFrom && !kpiTo)}
-                className="px-3 py-1.5 bg-primary text-white text-sm rounded-lg font-medium disabled:opacity-50 hover:opacity-90 transition-opacity">
-                {customKpiLoading ? 'Loading…' : 'Apply'}
-              </button>
-              {customKpi && (
-                <button onClick={() => { setCustomKpi(null); setKpiFrom(''); setKpiTo('') }}
-                  className="text-xs text-text-muted hover:text-danger underline">Clear</button>
-              )}
-            </div>
-          )}
-
-          {/* KPI cards */}
-          {kpiTab === 'today' && (
-            <FinancialKpiSection kpi={stats?.today ?? null} loading={!stats} onTotalOrders={() => router.push(paymentOrdersHref())} />
-          )}
-          {kpiTab === 'alltime' && (
-            <FinancialKpiSection kpi={stats?.allTime ?? null} loading={!stats} onTotalOrders={() => router.push(paymentOrdersHref())} />
-          )}
-          {kpiTab === 'custom' && (
-            <FinancialKpiSection kpi={customKpi} loading={customKpiLoading} />
-          )}
-          {kpiTab === 'custom' && !customKpi && !customKpiLoading && (
-            <p className="text-sm text-text-muted text-center py-4">Select a date range and click Apply</p>
-          )}
-        </div>
-      </div>
-
-      {/* ── Analytics Panel ──────────────────────────────────────────────────── */}
-      {showAnalytics && (
-        <div>
-          <div className="flex gap-2 mb-3">
-            {(['24h', '7d', '30d', 'all'] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => handleAnalyticsPeriod(p)}
-                className={`px-3 py-1 text-xs rounded-lg border font-medium transition-colors ${
-                  analyticsPeriod === p ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface'
-                }`}
-              >
-                {p === 'all' ? 'All Time' : p}
-              </button>
-            ))}
-          </div>
-          {analytics ? <AnalyticsPanel analytics={analytics} /> : (
-            <div className="bg-surface shadow-card border border-border rounded-xl p-8 text-center text-text-muted text-sm">Loading analytics…</div>
-          )}
-        </div>
-      )}
-
-      {/* ── Payment Orders shortcut ─────────────────────────────────────────── */}
-      <Link
-        href={paymentOrdersHref()}
-        className="flex items-center gap-3 px-4 py-3 bg-primary/5 border border-primary/20 rounded-xl text-sm text-text-primary hover:bg-primary/10 transition-colors"
-      >
-        <Fuel className="w-5 h-5 text-primary flex-shrink-0" aria-hidden />
-        <span><strong>Payment orders moved.</strong> Proof review, approvals, refunds and the full order list now live on their own page.</span>
-        <span className="ml-auto text-xs font-bold text-primary whitespace-nowrap">Open Payment Orders →</span>
-      </Link>
 
       {/* ── Custom Gas Requests Alert ────────────────────────────────────────── */}
       {(stats?.pendingCustomRequests ?? 0) > 0 && (

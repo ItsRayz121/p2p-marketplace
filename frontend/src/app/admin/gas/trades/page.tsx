@@ -1,9 +1,10 @@
 'use client'
-import { useState, useCallback } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { adminApi } from '@/lib/api'
 import { fmtDate } from '@/lib/fmt'
-import { usePolling } from '@/hooks/usePolling'
+import { useLiveData } from '@/hooks/useLiveData'
+import { useGasRange, useUrlParams } from '@/hooks/useGasRange'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -14,6 +15,9 @@ import { EntityLogo } from '@/components/ui/EntityLogo'
 import { GAS_STATUS_LABELS, gasStatusLabel } from '@/lib/gasOrderStatus'
 import { gasOrderHref } from '@/lib/adminRoutes'
 import { GasOrdersTabs } from '@/components/admin/GasOrdersTabs'
+import { DataFreshness, GasRangePicker } from '@/components/admin/gas-insights/GasInsightsUI'
+import { TradesSummaryStrip } from '@/components/admin/gas-insights/OrdersSummaryStrips'
+import type { TradesSummary } from '@/lib/gasInsights'
 
 // The admin gas-orders endpoint returns raw GasFeeOrder rows; we only type the
 // fields this table renders.
@@ -54,73 +58,101 @@ function orderSource(o: AdminGasOrder): 'merchant' | 'free' | 'direct' {
   return 'direct'
 }
 
-// Filter tabs → query params for GET /admin/gas/orders.
-const SOURCE_TABS: { value: string; label: string; params: Record<string, string> }[] = [
-  { value: 'all',    label: 'All',      params: {} },
-  { value: 'crypto', label: 'Crypto',   params: { paymentType: 'CRYPTO' } },
-  { value: 'pkr',    label: 'PKR',      params: { paymentCoin: 'PKR' } },
-  { value: 'free',   label: 'Free Gas', params: { freeGrant: 'true' } },
+// Category tabs are the mutually-exclusive order categories (Crypto / PKR / Free Gas, plus
+// Unknown for incomplete records). They map straight onto the server `category` filter.
+type CategoryTab = 'all' | 'crypto' | 'pkr' | 'free' | 'unknown'
+const SOURCE_TABS: { value: CategoryTab; label: string }[] = [
+  { value: 'all',    label: 'All' },
+  { value: 'crypto', label: 'Crypto' },
+  { value: 'pkr',    label: 'PKR' },
+  { value: 'free',   label: 'Free Gas' },
 ]
+const isCategoryTab = (v: string | null): v is CategoryTab => !!v && ['all', 'crypto', 'pkr', 'free', 'unknown'].includes(v)
+const LIMIT = 20
 
 export default function GasTradesPage() {
-  const [orders, setOrders] = useState<AdminGasOrder[]>([])
-  const [total, setTotal] = useState(0)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [sourceTab, setSourceTab] = useState('all')
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [merchantOnly, setMerchantOnly] = useState(false)
+  return (
+    <Suspense fallback={<LoadingState message="Loading gas trades..." />}>
+      <GasTradesInner />
+    </Suspense>
+  )
+}
 
-  const limit = 20
+function GasTradesInner() {
+  // Every filter lives in the URL, so the view survives refresh and back/forward navigation.
+  const url = useUrlParams()
+  const gr = useGasRange()
+  const rawTab = url.get('category')
+  const sourceTab: CategoryTab = isCategoryTab(rawTab) ? rawTab : 'all'
+  const rawStatus = url.get('status')
+  const statusFilter = rawStatus && rawStatus in GAS_STATUS_LABELS ? rawStatus : 'all'
+  const merchantOnly = url.get('merchant') === '1'
+  const filterKey = `${gr.key}|${sourceTab}|${statusFilter}|${merchantOnly}`
+  const [pageState, setPageState] = useState({ key: filterKey, page: 1 })
+  const page = pageState.key === filterKey ? pageState.page : 1
+  const setPage = (p: number | ((n: number) => number)) =>
+    setPageState({ key: filterKey, page: typeof p === 'function' ? p(page) : p })
 
-  const fetchOrders = useCallback(async () => {
-    try {
-      const tab = SOURCE_TABS.find((t) => t.value === sourceTab) ?? SOURCE_TABS[0]!
-      const params: Record<string, string | number> = { page, limit, ...tab.params }
-      if (statusFilter !== 'all') params.status = statusFilter
-      const data = await adminApi.getGasOrders(params) as unknown as GasOrdersResponse
-      let rows = data.orders ?? []
-      // The backend has no merchant filter, so refine "merchant only" client-side.
-      if (merchantOnly) rows = rows.filter((o) => !!o.merchantApiKeyId)
-      setOrders(rows)
-      setTotal(data.pagination?.total ?? 0)
-      setError(null)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load gas trades')
-    } finally {
-      setLoading(false)
-    }
-  }, [page, sourceTab, statusFilter, merchantOnly])
+  // List and summary come from ONE fetch with ONE resolved date range, so records, totals,
+  // cards and the chart always describe the same filtered snapshot. The key changes with every
+  // filter, so a stale response from a previous filter can never replace the current one.
+  const q = useLiveData(async () => {
+    const w = gr.resolve()
+    const base: Record<string, string | number | undefined> = { tz: gr.tz, to: w.to }
+    if (w.from) base.from = w.from
+    if (sourceTab !== 'all') base.category = sourceTab
+    if (statusFilter !== 'all') base.status = statusFilter
+    if (merchantOnly) base.merchantOnly = 'true'
+    const [list, summary] = await Promise.all([
+      adminApi.getGasOrders({ ...base, page, limit: LIMIT }),
+      adminApi.getGasOrdersSummary({ ...base, view: 'trades' }),
+    ])
+    return { list: list as unknown as GasOrdersResponse, summary: summary as TradesSummary }
+  }, `trades|${filterKey}|${page}`)
 
-  usePolling(fetchOrders, 30_000)
+  const orders = q.data?.list.orders ?? []
+  const total = q.data?.list.pagination?.total ?? 0
+  const totalPages = Math.ceil(total / LIMIT)
+  const summary = q.data?.summary ?? null
+  const unknownCount = summary?.categories.find((c) => c.category === 'unknown')?.count ?? 0
+  const tabs = unknownCount > 0 || sourceTab === 'unknown' ? [...SOURCE_TABS, { value: 'unknown' as const, label: 'Unknown' }] : SOURCE_TABS
 
-  const totalPages = Math.ceil(total / limit)
+  const setFilter = (updates: Record<string, string | null>) => { url.set(updates) }
+  const refresh = () => { void q.refresh() }
 
-  if (loading) return <LoadingState message="Loading gas trades..." />
-  if (error && orders.length === 0) return <ErrorState title={error} onRetry={fetchOrders} />
+  if (q.error && !q.data) return <ErrorState title={q.error} onRetry={refresh} />
 
   return (
     <div className="space-y-5">
       <GasOrdersTabs active="trades" />
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Gas Trades</h1>
-        <p className="text-text-muted text-sm mt-0.5">
-          Every crypto-gas order — direct user buys, merchant API orders, and free-gas grants. {total.toLocaleString()} orders
+        <p className="text-text-muted text-sm mt-0.5" aria-live="polite">
+          Every gas order — direct user buys, merchant API orders, and free-gas grants.{' '}
+          {q.data ? `${total.toLocaleString()} orders in range` : 'Loading…'}
         </p>
       </div>
 
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+        <GasRangePicker range={gr.range} customFrom={gr.customFrom} customTo={gr.customTo} tz={gr.tz} label={gr.resolve().label} onChange={gr.setRange} />
+        <DataFreshness updatedAt={q.updatedAt} stale={q.stale} error={q.error} refreshing={q.refreshing} onRefresh={refresh} />
+      </div>
+
+      <TradesSummaryStrip summary={summary} error={q.error} onRetry={refresh} analyticsHref={`/admin/gas/insights${gr.carryQuery}`} />
+
       {/* Filters */}
       <div className="bg-surface shadow-card p-4 rounded-xl border border-border flex flex-wrap items-center gap-3">
-        <div className="admin-toolbar gap-2">
-          {SOURCE_TABS.map((t) => (
+        <div className="admin-toolbar gap-2" role="group" aria-label="Order category">
+          {tabs.map((t) => (
             <button
               key={t.value}
-              onClick={() => { setSourceTab(t.value); setPage(1) }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
+              type="button"
+              aria-pressed={sourceTab === t.value}
+              onClick={() => setFilter({ category: t.value === 'all' ? null : t.value })}
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${
                 sourceTab === t.value
                   ? 'bg-primary text-white border-primary'
-                  : 'bg-surface text-text-secondary border-border hover:bg-surface'
+                  : 'bg-surface text-text-secondary border-border hover:bg-surface-alt'
               }`}
             >
               {t.label}
@@ -128,8 +160,9 @@ export default function GasTradesPage() {
           ))}
         </div>
         <select
+          aria-label="Status"
           value={statusFilter}
-          onChange={(e) => { setStatusFilter(e.target.value); setPage(1) }}
+          onChange={(e) => setFilter({ status: e.target.value === 'all' ? null : e.target.value })}
           className="px-3 py-2 border border-border rounded-lg text-sm text-text-primary bg-surface focus:outline-none focus:ring-2 focus:ring-primary"
         >
           <option value="all">All Statuses</option>
@@ -141,14 +174,17 @@ export default function GasTradesPage() {
           <input
             type="checkbox"
             checked={merchantOnly}
-            onChange={(e) => { setMerchantOnly(e.target.checked); setPage(1) }}
+            onChange={(e) => setFilter({ merchant: e.target.checked ? '1' : null })}
             className="w-4 h-4 accent-primary"
           />
           Merchant orders only
         </label>
       </div>
 
-      {orders.length === 0 ? (
+      {!q.data ? (
+        <LoadingState message="Loading gas trades..." />
+      ) : orders.length === 0 ? (
+
         <EmptyState icon={Flame} title="No gas trades found" description="No gas orders match the current filters." />
       ) : (
         <div className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">

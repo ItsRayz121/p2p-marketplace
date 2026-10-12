@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { cloudinary, CLOUDINARY_FOLDERS, signCloudinaryDeliveryUrl, fetchCloudinaryAsset } from '../lib/cloudinary'
 import { authenticate, requireRole, requireAdminStepUp } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
+import { buildGasOrderWhere } from '../lib/gas/gas.orderQuery'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { AppError, Errors } from '../lib/errors'
@@ -4418,58 +4419,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const query = req.query as Record<string, string>
     const { page, limit, skip } = paginationParams(query)
 
-    const where: Record<string, unknown> = {}
-    // 'active' is a dashboard convenience group matching the Active Orders KPI
-    // (everything still in flight, pre-delivery). All other values are exact.
-    if (query.status === 'active') {
-      where.status = { in: [...GAS_ACTIVE_STATUSES] }
-    } else if (query.status && query.status.includes(',')) {
-      where.status = { in: query.status.split(',').map((s) => s.trim()).filter(Boolean) }
-    } else if (query.status) {
-      where.status = query.status
-    }
-    // Strict PKR vs crypto separation. PKR orders carry paymentCoin='PKR';
-    // crypto orders carry 'USDT' (or any non-PKR coin). Lets the dashboard link
-    // straight to "PKR proof review" or "crypto" without mixing payment types.
-    if (query.paymentType === 'PKR' || query.paymentCoin === 'PKR') {
-      where.paymentCoin = 'PKR'
-    } else if (query.paymentType === 'EXCHANGE') {
-      where.paymentNetwork = 'EXCHANGE'
-    } else if (query.paymentType === 'MANUAL') {
-      // Every manual-review rail (PKR bank transfer + exchange internal transfer).
-      Object.assign(where, MANUAL_PROOF_WHERE)
-    } else if (query.paymentType === 'CRYPTO') {
-      // Auto-verified on-chain payments only — PKR and exchange transfers are manual.
-      where.paymentCoin = { not: 'PKR' }
-      where.paymentNetwork = { not: 'EXCHANGE' }
-    } else if (query.paymentCoin) {
-      where.paymentCoin = query.paymentCoin
-    }
-    // Free-grant history: platform-funded ($0) deliveries from the Free Gas tool.
-    if (query.freeGrant === 'true') where.isFreeGrant = true
-
-    // Payment Orders page filters: chain, created-date window, free-text search.
-    if (query.chain) where.chain = query.chain
-    const createdAt: Record<string, Date> = {}
-    if (query.from && !Number.isNaN(Date.parse(query.from))) createdAt.gte = new Date(query.from)
-    if (query.to && !Number.isNaN(Date.parse(query.to))) {
-      const end = new Date(query.to)
-      // A bare date (YYYY-MM-DD) means "through the end of that day".
-      if (/^\d{4}-\d{2}-\d{2}$/.test(query.to)) end.setUTCHours(23, 59, 59, 999)
-      createdAt.lte = end
-    }
-    if (createdAt.gte || createdAt.lte) where.createdAt = createdAt
-    const search = query.search?.trim().slice(0, 100)
-    if (search) {
-      // AND-wrapped so it can't clobber the OR already set by paymentType=MANUAL.
-      where.AND = [{ OR: [
-        { orderRef:       { contains: search, mode: 'insensitive' } },
-        { toAddress:      { contains: search, mode: 'insensitive' } },
-        { paymentTxHash:  { contains: search, mode: 'insensitive' } },
-        { user: { username: { contains: search, mode: 'insensitive' } } },
-        { user: { email:    { contains: search, mode: 'insensitive' } } },
-      ] }]
-    }
+    const where = buildGasOrderWhere(query)
 
     const [orders, total] = await Promise.all([
       db.gasFeeOrder.findMany({
@@ -7084,11 +7034,15 @@ export async function adminRoutes(app: FastifyInstance) {
     const { page, limit, status } = qSchema.parse(req.query)
     const skip = (page - 1) * limit
     const where = status ? { status } : {}
-    const [requests, total] = await Promise.all([
+    const [requests, total, grouped] = await Promise.all([
       db.gasCustomRequest.findMany({ where, orderBy: { createdAt: 'desc' }, skip, take: limit }),
       db.gasCustomRequest.count({ where }),
+      // Tab counts span the FULL dataset, independent of the active status filter and page.
+      db.gasCustomRequest.groupBy({ by: ['status'], _count: { _all: true } }),
     ])
-    return reply.send({ success: true, data: { requests, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } })
+    const counts = { all: 0, pending: 0, reviewing: 0, completed: 0, rejected: 0 }
+    for (const g of grouped) { counts[g.status] = g._count._all; counts.all += g._count._all }
+    return reply.send({ success: true, data: { requests, counts, pagination: { page, limit, total, totalPages: Math.ceil(total / limit) } } })
   })
 
   // ── PATCH /admin/gas/custom-requests/:id — update status/notes ───────────────────
