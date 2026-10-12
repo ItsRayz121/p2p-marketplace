@@ -226,6 +226,13 @@ export const FLAGS = {
    * confirm-or-dispute, exactly as before this shipped).
    */
   TRADE_PROOF_REJECT: 'trade_proof_reject_enabled',
+  /**
+   * Voice messages in DMs and channels. DEFAULT ON — an admin kill-switch: set
+   * `voice_messages_enabled=false` to hide the mic and reject new voice uploads /
+   * voice posts (voice notes already sent stay playable until the retention sweep
+   * removes them). Read with `isFlagEnabled(FLAGS.VOICE_MESSAGES, true)`.
+   */
+  VOICE_MESSAGES: 'voice_messages_enabled',
 } as const
 
 /** How many times a seller may bounce a buyer's payment proof before the next rejection auto-disputes. */

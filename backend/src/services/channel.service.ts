@@ -8,7 +8,7 @@ import { notify } from '../lib/notify'
 import {
   CHANNELS_MAX_PER_USER_KEY, CHANNELS_MAX_PER_USER_DEFAULT,
   CHANNELS_MAX_MEMBERS_KEY, CHANNELS_MAX_MEMBERS_DEFAULT,
-  getNumberConfig,
+  getNumberConfig, FLAGS, isFlagEnabled,
 } from './platformFlags.service'
 import { resolveSharedAdPreviews, resolveSharedGasPreviews, assertSharedGasChainAvailable, summarizeReactions, REACTION_EMOJIS, type Market } from './chatThread.service'
 import { slugify as baseSlugify } from './blog.service'
@@ -411,6 +411,9 @@ export async function postChannelMessage(
   // only our own Cloudinary uploads are allowed, so nobody can post an arbitrary
   // third-party URL (tracking pixel, phishing image) to a public audience.
   if (attachmentUrl) assertCloudinaryUrl(attachmentUrl, 'attachmentUrl')
+  if (attachmentUrl?.includes('/video/upload/') && !(await isFlagEnabled(FLAGS.VOICE_MESSAGES, true))) {
+    throw new AppError('FEATURE_DISABLED', 'Voice messages are currently disabled', 403)
+  }
 
   const channel = await db.channel.findUnique({ where: { id: channelId }, select: { ownerId: true, name: true, slug: true } })
   if (!channel) throw new AppError('NOT_FOUND', 'Channel not found', 404)

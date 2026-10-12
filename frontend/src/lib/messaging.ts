@@ -35,6 +35,8 @@ export interface InboxSummary {
   enabled: boolean
   unreadThreads: number
   activeTrades: number
+  /** Admin kill-switch for voice messages (`voice_messages_enabled`); absent on older backends = on. */
+  voiceEnabled?: boolean
 }
 
 export interface SharedAdPreview {

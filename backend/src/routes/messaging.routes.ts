@@ -50,10 +50,11 @@ export async function messagingRoutes(app: FastifyInstance) {
   // so the client can reveal the "Messaging" item the moment the flag is flipped.
   app.get('/messages/summary', { preHandler: [authenticate] }, async (req, reply) => {
     if (!(await isFlagEnabled(FLAGS.MESSAGING_INBOX))) {
-      return reply.send({ success: true, data: { enabled: false, unreadThreads: 0, activeTrades: 0 } })
+      return reply.send({ success: true, data: { enabled: false, unreadThreads: 0, activeTrades: 0, voiceEnabled: false } })
     }
     const data = await getInboxSummary(req.user!.id)
-    return reply.send({ success: true, data: { enabled: true, ...data } })
+    const voiceEnabled = await isFlagEnabled(FLAGS.VOICE_MESSAGES, true)
+    return reply.send({ success: true, data: { enabled: true, ...data, voiceEnabled } })
   })
 
   // GET /api/v1/messages/:threadId — full thread (messages + episodes + stats).

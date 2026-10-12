@@ -7,6 +7,7 @@ import { AppError } from '../lib/errors'
 import { assertCloudinaryUrl } from '../lib/upload'
 import { env } from '../lib/env'
 import { CLOUDINARY_FOLDERS } from '../lib/cloudinary'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { db } from '../lib/prisma'
 import { getMe } from '../services/auth.service'
 
@@ -56,6 +57,11 @@ export async function uploadRoutes(app: FastifyInstance) {
     }
 
     const { type } = parsed.data
+
+    // Admin kill-switch (Admin → Config → New & Beta Features). Default ON.
+    if (type === 'voice-note' && !(await isFlagEnabled(FLAGS.VOICE_MESSAGES, true))) {
+      throw new AppError('FEATURE_DISABLED', 'Voice messages are currently disabled', 403)
+    }
 
     // Blog images are an admin-authoring concern — don't let any logged-in user
     // mint Cloudinary upload signatures for the blog folder.

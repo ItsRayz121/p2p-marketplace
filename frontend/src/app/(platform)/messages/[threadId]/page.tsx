@@ -27,6 +27,7 @@ import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelec
 import { MessageTicks } from '@/components/chat/MessageTicks'
 import { VoiceRecorder, type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder'
 import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
+import { useVoiceEnabled } from '@/hooks/useVoiceEnabled'
 import { MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
@@ -228,6 +229,7 @@ export default function MessageThreadPage() {
   // sent with the next message (as an optional-caption attachment).
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const voiceRef = useRef<VoiceRecorderHandle>(null)
+  const voiceEnabled = useVoiceEnabled()
   const { upload, uploading, progress } = useFileUpload('chat-image')
 
   // Locally-dismissed rate prompts — once the user taps "Rate", the prompt
@@ -797,7 +799,7 @@ export default function MessageThreadPage() {
                 </span>
                 <span className="text-sm font-semibold text-text-primary">Share gas fees</span>
               </button>
-              <button
+              {voiceEnabled && <button
                 type="button"
                 onClick={() => { setAttachOpen(false); voiceRef.current?.start() }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt"
@@ -806,7 +808,7 @@ export default function MessageThreadPage() {
                   <Mic className="w-5 h-5" />
                 </span>
                 <span className="text-sm font-semibold text-text-primary">Voice message</span>
-              </button>
+              </button>}
             </div>
           </AnchoredMenu>
           <input
@@ -824,7 +826,7 @@ export default function MessageThreadPage() {
             maxSeconds={60}
             disabled={uploading || blocked}
             onSend={(url) => send(url)}
-            showMic={!draft.trim() && !pendingImage && !blocked}
+            showMic={voiceEnabled && !draft.trim() && !pendingImage && !blocked}
             micClassName="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-white disabled:opacity-50 flex-shrink-0"
           >
             <Button size="sm" onClick={() => void send()} disabled={uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">

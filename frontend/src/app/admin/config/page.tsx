@@ -58,7 +58,7 @@ const STRUCTURED_KEYS = new Set([
   'taker_first_settlement_enabled', 'nokyc_taker_enabled',
   'nokyc_max_per_trade_pkr', 'nokyc_max_daily_pkr', 'nokyc_rolling_ceiling_pkr', 'nokyc_max_open_trades',
   'trade_proof_reject_enabled', 'trade_proof_reject_max', 'trade_buyer_cancel_after_pay_minutes',
-  'channels_enabled', 'channels_max_per_user', 'channels_max_members',
+  'channels_enabled', 'channels_max_per_user', 'channels_max_members', 'voice_messages_enabled',
   // Hours & level-2 affiliates (see "Hours & Level-2 Affiliates" panel)
   'active_hours_enabled', 'platform_timezone',
   'manual_verify_offline_enabled', 'manual_verify_offline_start', 'manual_verify_offline_end', 'manual_verify_offline_message',
@@ -325,6 +325,7 @@ export default function ConfigPage() {
   const [proofRejectMax, setProofRejectMax] = useState('2')
   const [buyerCancelAfterPayMin, setBuyerCancelAfterPayMin] = useState('0')
   const [channelsFlag, setChannelsFlag] = useState(true)
+  const [voiceFlag, setVoiceFlag] = useState(true)
   const [channelsMaxPerUser, setChannelsMaxPerUser] = useState('5')
   const [channelsMaxMembers, setChannelsMaxMembers] = useState('10000')
   const [betaSaving, setBetaSaving] = useState(false)
@@ -474,6 +475,7 @@ export default function ConfigPage() {
       setProofRejectMax(m['trade_proof_reject_max'] ?? '2')
       setBuyerCancelAfterPayMin(m['trade_buyer_cancel_after_pay_minutes'] ?? '0')
       setChannelsFlag(m['channels_enabled'] !== 'false') // default ON
+      setVoiceFlag(m['voice_messages_enabled'] !== 'false') // default ON
       setChannelsMaxPerUser(m['channels_max_per_user'] ?? '5')
       setChannelsMaxMembers(m['channels_max_members'] ?? '10000')
       setUsdtMargin(m['usdt_price_margin_pct'] ?? '5')
@@ -694,6 +696,7 @@ export default function ConfigPage() {
         { key: 'trade_proof_reject_max', value: String(Math.max(parseInt(proofRejectMax, 10) || 0, 1)) },
         { key: 'trade_buyer_cancel_after_pay_minutes', value: String(Math.max(parseInt(buyerCancelAfterPayMin, 10) || 0, 0)) },
         { key: 'channels_enabled', value: channelsFlag ? 'true' : 'false' },
+        { key: 'voice_messages_enabled', value: voiceFlag ? 'true' : 'false' },
         { key: 'channels_max_per_user', value: String(Math.max(parseInt(channelsMaxPerUser, 10) || 0, 1)) },
         { key: 'channels_max_members', value: String(Math.max(parseInt(channelsMaxMembers, 10) || 0, 1)) },
       ])
@@ -1169,6 +1172,15 @@ export default function ConfigPage() {
             <div>
               <p className="text-sm font-medium text-text-primary">Channels tab <span className="font-mono text-xs text-text-muted">channels_enabled</span> <Badge variant="success" size="sm">default ON</Badge></p>
               <p className="text-xs text-text-muted mt-0.5">Telegram-style broadcast Channels alongside Messages — users create text-only channels, discover public ones, or join private ones via invite link. Turn OFF to hide the tab and reject writes (existing channels/messages are kept, not deleted).</p>
+            </div>
+          </label>
+
+          {/* Voice messages (DMs + channels) — defaults ON */}
+          <label className="flex items-start gap-3 rounded-xl border border-border p-3 cursor-pointer hover:bg-surface/40 transition-colors">
+            <input type="checkbox" checked={voiceFlag} onChange={(e) => setVoiceFlag(e.target.checked)} className="mt-0.5 accent-primary w-4 h-4" />
+            <div>
+              <p className="text-sm font-medium text-text-primary">Voice messages <span className="font-mono text-xs text-text-muted">voice_messages_enabled</span> <Badge variant="success" size="sm">default ON</Badge></p>
+              <p className="text-xs text-text-muted mt-0.5">Record-and-send voice notes in Messages (60s) and Channels (2 min). Turn OFF to hide the mic and reject new voice uploads and voice posts — voice notes already sent stay playable until the retention sweep removes them.</p>
             </div>
           </label>
 

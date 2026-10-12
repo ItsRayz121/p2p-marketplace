@@ -586,6 +586,10 @@ export async function postThreadMessage(
   if (!text && !attachmentUrl && !sharedAd && !sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Message is empty', 400)
   if (text.length > 2000) throw new AppError('VALIDATION_ERROR', 'Message too long', 400)
   if (sharedAd && sharedGasChainSlug) throw new AppError('VALIDATION_ERROR', 'Cannot share a listing and gas fees in the same message', 400)
+  // Voice notes are Cloudinary audio (/video/upload/); honour the admin kill-switch.
+  if (attachmentUrl?.includes('/video/upload/') && !(await isFlagEnabled(FLAGS.VOICE_MESSAGES, true))) {
+    throw new AppError('FEATURE_DISABLED', 'Voice messages are currently disabled', 403)
+  }
 
   const thread = await db.chatThread.findUnique({ where: { id: threadId }, select: { id: true, userAId: true, userBId: true } })
   if (!thread) throw new AppError('NOT_FOUND', 'Conversation not found', 404)

@@ -10,6 +10,7 @@ import { compressImage } from '@/lib/imageCompress'
 import { isTrustedImageUrl, isVoiceNoteUrl } from '@/lib/utils'
 import { VoiceRecorder, type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder'
 import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
+import { useVoiceEnabled } from '@/hooks/useVoiceEnabled'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -85,6 +86,7 @@ export default function ChannelPage() {
   // send (so they can add a caption first), mirroring the DM thread's flow.
   const [pendingImage, setPendingImage] = useState<string | null>(null)
   const voiceRef = useRef<VoiceRecorderHandle>(null)
+  const voiceEnabled = useVoiceEnabled()
   const [compressing, setCompressing] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const { upload: uploadImage, uploading: uploadingImage, progress: imageProgress } = useFileUpload('channel-image')
@@ -538,12 +540,12 @@ export default function ChannelPage() {
                     >
                       ⛽ Share gas fees
                     </button>
-                    <button
+                    {voiceEnabled && <button
                       onClick={() => { setShareMenuOpen(false); voiceRef.current?.start() }}
                       className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
                     >
                       <Mic className="w-4 h-4" /> Voice message
-                    </button>
+                    </button>}
                   </div>
                 </AnchoredMenu>
                 <textarea
@@ -562,7 +564,7 @@ export default function ChannelPage() {
                   maxSeconds={120}
                   disabled={sending || !!editingId || uploadingImage || compressing}
                   onSend={(url) => send(url)}
-                  showMic={!editingId && !draft.trim() && !pendingImage}
+                  showMic={voiceEnabled && !editingId && !draft.trim() && !pendingImage}
                 >
                   <button
                     onClick={() => void send()}
