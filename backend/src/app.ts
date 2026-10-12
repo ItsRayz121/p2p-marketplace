@@ -128,6 +128,16 @@ export async function buildApp() {
     }),
   })
 
+  // Make req.ip the real client address. Behind Cloudflare + Railway, Fastify's own req.ip (the
+  // leftmost X-Forwarded-For entry) is a Cloudflare EDGE address shared by every visitor routed
+  // through that edge, which skewed every limit and record that reads req.ip directly (gas-order
+  // hourly cap, registration IP, login records, same-IP abuse checks). resolveClientIp is the
+  // single source of truth and already keys the global rate limiter.
+  app.addHook('onRequest', async (req) => {
+    const ip = resolveClientIp(req.headers as Record<string, unknown>, req.ip)
+    if (ip && ip !== req.ip) Object.defineProperty(req, 'ip', { value: ip, configurable: true })
+  })
+
   // Fallback limiter. @fastify/rate-limit above fails OPEN when Redis is unreachable, which would
   // silently remove brute-force and abuse protection from login, OTP email, withdrawals and uploads.
   // While the shared limiter is down, enforce a conservative per-process budget instead. Inactive

@@ -86,6 +86,9 @@ const envSchema = z.object({
   // are strongly encouraged to point these at their own dedicated providers
   // for production use.
   ETHEREUM_RPC_URL: z.string().url().default('https://eth.llamarpc.com'),
+  // Optional. When set, Cloudflare client-IP headers are only trusted on requests that also carry
+  // `X-Edge-Secret: <this value>` (added by a Cloudflare Transform Rule). See lib/requestContext.ts.
+  EDGE_SHARED_SECRET: z.string().min(16).optional(),
   BSC_RPC_URL: z.string().url().default('https://bsc-dataseed.binance.org'),
   // Optional dedicated BSC endpoints for the gas payment poller's getLogs scan.
   // BSC public RPCs (bsc-dataseed.binance.org) reject wide block ranges with
