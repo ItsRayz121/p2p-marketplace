@@ -15,14 +15,16 @@ import '../lib/cloudinary'
 
 const presignSchema = z
   .object({
-    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image', 'task-proof']),
+    type: z.enum(['kyc-front', 'kyc-back', 'kyc-selfie', 'payment-proof', 'avatar', 'kyc-video', 'chat-image', 'blog-image', 'giveaway-image', 'channel-image', 'task-proof', 'voice-note']),
     mimeType: z.string(),
   })
   .refine(
     (d) =>
       d.type === 'kyc-video'
         ? /^video\/(mp4|quicktime|webm)$/.test(d.mimeType)
-        : /^image\/(jpeg|png|webp)$/.test(d.mimeType),
+        : d.type === 'voice-note'
+          ? /^audio\/(webm|ogg|mp4|mpeg|aac|x-m4a)(;.*)?$/.test(d.mimeType)
+          : /^image\/(jpeg|png|webp)$/.test(d.mimeType),
     { message: 'Unsupported file type for this upload' },
   )
 
@@ -38,6 +40,7 @@ const folderMap: Record<string, string> = {
   'blog-image': CLOUDINARY_FOLDERS.BLOG_IMAGE,
   'giveaway-image': CLOUDINARY_FOLDERS.GIVEAWAY_IMAGE,
   'task-proof': CLOUDINARY_FOLDERS.TASK_PROOF,
+  'voice-note': CLOUDINARY_FOLDERS.VOICE_NOTE,
 }
 
 export async function uploadRoutes(app: FastifyInstance) {
@@ -61,7 +64,8 @@ export async function uploadRoutes(app: FastifyInstance) {
     }
 
     const folder = folderMap[type]!
-    const resourceType = type === 'kyc-video' ? 'video' : 'image'
+    // Cloudinary stores audio under the `video` resource type (no transcode is requested — the clip is kept as recorded).
+    const resourceType = type === 'kyc-video' || type === 'voice-note' ? 'video' : 'image'
     const publicId = randomUUID()
     const timestamp = Math.round(Date.now() / 1000)
 

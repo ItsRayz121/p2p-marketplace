@@ -7,7 +7,9 @@ import { channelsApi, type ChannelDetail, type ChannelMessage } from '@/lib/chan
 import { renderChannelText } from '@/lib/richText'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { compressImage } from '@/lib/imageCompress'
-import { isTrustedImageUrl } from '@/lib/utils'
+import { isTrustedImageUrl, isVoiceNoteUrl } from '@/lib/utils'
+import { VoiceRecorder, type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder'
+import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
 import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { UserAvatar } from '@/components/ui/UserAvatar'
@@ -26,7 +28,7 @@ import { fmtTime } from '@/lib/fmt'
 import { MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import {
   ArrowLeft, Send, Trash2, MoreVertical, Users, Lock, Link2, LogOut, Pencil,
-  ExternalLink, Tag, Radio, X, Camera, ImagePlus,
+  ExternalLink, Tag, Radio, X, Camera, ImagePlus, Mic,
 } from 'lucide-react'
 
 function SharedAdCard({ ad }: { ad: NonNullable<ChannelMessage['sharedAd']> }) {
@@ -82,6 +84,7 @@ export default function ChannelPage() {
   // Cloudinary the moment it's picked; the URL waits here until the user hits
   // send (so they can add a caption first), mirroring the DM thread's flow.
   const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const voiceRef = useRef<VoiceRecorderHandle>(null)
   const [compressing, setCompressing] = useState(false)
   const imageInputRef = useRef<HTMLInputElement>(null)
   const { upload: uploadImage, uploading: uploadingImage, progress: imageProgress } = useFileUpload('channel-image')
@@ -187,10 +190,12 @@ export default function ChannelPage() {
     }
   }
 
-  async function send() {
+  // `voiceUrl` is set only by the voice recorder: a voice broadcast posts on its
+  // own (empty body) and leaves any half-typed draft / staged image untouched.
+  async function send(voiceUrl?: string) {
     if (!channel || sending) return
-    const body = draft.trim()
-    if (!body && !pendingImage) return
+    const body = voiceUrl ? '' : draft.trim()
+    if (!body && !pendingImage && !voiceUrl) return
     setSending(true)
     try {
       if (editingId) {
@@ -198,10 +203,12 @@ export default function ChannelPage() {
         setEditingId(null)
       } else {
         const clientId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
-        await channelsApi.post(channel.id, body, clientId, undefined, pendingImage ?? undefined, undefined, replyTo?.id)
+        await channelsApi.post(channel.id, body, clientId, undefined, voiceUrl ?? pendingImage ?? undefined, undefined, replyTo?.id)
       }
-      setDraft('')
-      setPendingImage(null)
+      if (!voiceUrl) {
+        setDraft('')
+        setPendingImage(null)
+      }
       setReplyTo(null)
       await load()
     } catch (e) {
@@ -428,7 +435,8 @@ export default function ChannelPage() {
                         )}
                         {m.sharedAd && <div className="mb-1"><SharedAdCard ad={m.sharedAd} /></div>}
                         {m.sharedGas && <div className="mb-1"><SharedGasCard gas={m.sharedGas} /></div>}
-                        {isTrustedImageUrl(m.attachmentUrl) && (
+                        {isVoiceNoteUrl(m.attachmentUrl) && <VoiceNotePlayer url={m.attachmentUrl!} />}
+                        {!isVoiceNoteUrl(m.attachmentUrl) && isTrustedImageUrl(m.attachmentUrl) && (
                           <a href={m.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                             <img loading="lazy" decoding="async" src={m.attachmentUrl!} alt="Broadcast attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                           </a>
@@ -489,7 +497,7 @@ export default function ChannelPage() {
                   )}
                 </div>
               )}
-              <div className="flex items-end gap-2 px-3 py-3">
+              <div className="relative flex items-end gap-2 px-3 py-3">
                 <button
                   type="button"
                   onClick={() => imageInputRef.current?.click()}
@@ -530,6 +538,12 @@ export default function ChannelPage() {
                     >
                       ⛽ Share gas fees
                     </button>
+                    <button
+                      onClick={() => { setShareMenuOpen(false); voiceRef.current?.start() }}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-surface-alt"
+                    >
+                      <Mic className="w-4 h-4" /> Voice message
+                    </button>
                   </div>
                 </AnchoredMenu>
                 <textarea
@@ -543,14 +557,22 @@ export default function ChannelPage() {
                   disabled={sending}
                   className="flex-1 rounded-2xl border border-border bg-background px-4 py-2 text-sm resize-none focus:outline-none focus:border-primary disabled:opacity-50"
                 />
-                <button
-                  onClick={() => void send()}
-                  disabled={sending || (editingId ? !draft.trim() : !draft.trim() && !pendingImage)}
-                  aria-label={editingId ? 'Save edit' : 'Post'}
-                  className="p-2.5 rounded-full bg-primary text-white disabled:opacity-50 flex-shrink-0"
+                <VoiceRecorder
+                  ref={voiceRef}
+                  maxSeconds={120}
+                  disabled={sending || !!editingId || uploadingImage || compressing}
+                  onSend={(url) => send(url)}
+                  showMic={!editingId && !draft.trim() && !pendingImage}
                 >
-                  <Send className="w-4 h-4" />
-                </button>
+                  <button
+                    onClick={() => void send()}
+                    disabled={sending || (editingId ? !draft.trim() : !draft.trim() && !pendingImage)}
+                    aria-label={editingId ? 'Save edit' : 'Post'}
+                    className="p-2.5 rounded-full bg-primary text-white disabled:opacity-50 flex-shrink-0"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </VoiceRecorder>
               </div>
             </div>
           ) : (

@@ -20,11 +20,13 @@ import { Modal } from '@/components/ui/Modal'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
 import { activeLabel } from '@/lib/onlineStatus'
-import { isTrustedImageUrl } from '@/lib/utils'
+import { isTrustedImageUrl, isVoiceNoteUrl } from '@/lib/utils'
 import { fmtTime, fmtPkr } from '@/lib/fmt'
 import { toast } from '@/lib/toast'
 import { buildProfileShareLink, isTelegramMiniApp, openTelegramLink, hapticSelection } from '@/lib/telegram'
 import { MessageTicks } from '@/components/chat/MessageTicks'
+import { VoiceRecorder, type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder'
+import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
 import { MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, type ReplyRef } from '@/components/chat/MessageActions'
 import { Linkified } from '@/lib/linkify'
 import { TradeEventBubble, TradeNotice } from '@/components/chat/TradeEventBubble'
@@ -33,7 +35,7 @@ import { ShareAdPicker } from '@/components/chat/ShareAdPicker'
 import { SharedGasCard } from '@/components/chat/SharedGasCard'
 import { GasSharePicker } from '@/components/channels/GasSharePicker'
 import type { GasChain } from '@/lib/api'
-import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus } from 'lucide-react'
+import { ArrowLeft, Send, CheckCircle2, XCircle, AlertTriangle, Clock, ImagePlus, Tag, ExternalLink, X, MoreVertical, ShieldOff, ShieldCheck, Flag, Share2, Plus, Mic } from 'lucide-react'
 
 /** A message not yet confirmed by the server — rendered like a real one but with
  *  a pending/failed indicator instead of delivery ticks (which only exist once
@@ -225,6 +227,7 @@ export default function MessageThreadPage() {
   // Pending image attachment — uploaded to Cloudinary the moment it's picked, then
   // sent with the next message (as an optional-caption attachment).
   const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const voiceRef = useRef<VoiceRecorderHandle>(null)
   const { upload, uploading, progress } = useFileUpload('chat-image')
 
   // Locally-dismissed rate prompts — once the user taps "Rate", the prompt
@@ -371,13 +374,15 @@ export default function MessageThreadPage() {
     }
   }, [threadId, load])
 
-  const send = async () => {
+  // `voiceUrl` is set only by the voice recorder: a voice message posts on its own
+  // (empty body) and leaves any half-typed draft / staged image untouched.
+  const send = async (voiceUrl?: string) => {
     if (!user) return
-    const body = draft.trim()
-    // A message needs either text or an image attachment.
-    if (!body && !pendingImage) return
+    const body = voiceUrl ? '' : draft.trim()
+    // A message needs either text, an image attachment or a voice note.
+    if (!body && !pendingImage && !voiceUrl) return
     const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    const attachmentUrl = pendingImage ?? undefined
+    const attachmentUrl = voiceUrl ?? pendingImage ?? undefined
     const quoting = replyTo
     // Show it immediately — the user sees their message land in the timeline
     // right away instead of waiting on the network round-trip.
@@ -387,8 +392,10 @@ export default function MessageThreadPage() {
       replyToId: quoting?.id ?? null,
       replyTo: quoting ? { id: quoting.id, senderId: quoting.sender, preview: quoting.preview, hasImage: !!quoting.hasImage, deleted: false } : null,
     }])
-    setDraft('')
-    setPendingImage(null)
+    if (!voiceUrl) {
+      setDraft('')
+      setPendingImage(null)
+    }
     setReplyTo(null)
     sendQueueRef.current = sendQueueRef.current.then(() => attemptSend(tempId, body, attachmentUrl, quoting?.id))
   }
@@ -651,7 +658,8 @@ export default function MessageThreadPage() {
           // A deleted message leaves no trace for either side — not even a "this was
           // deleted" placeholder — so it's simply omitted from the rendered timeline.
           if (m.deletedAt) return null
-          const hasImage = isTrustedImageUrl(m.attachmentUrl)
+          const hasVoice = isVoiceNoteUrl(m.attachmentUrl)
+          const hasImage = !hasVoice && isTrustedImageUrl(m.attachmentUrl)
           // Own free-chat message (not a folded trade line, not still-local) inside the 15-min window.
           const deletable =
             mine && !m.pending && !m.failed && !m.id.startsWith('tm_') && !m.id.startsWith('cm_') &&
@@ -675,6 +683,7 @@ export default function MessageThreadPage() {
                     <img loading="lazy" decoding="async" src={m.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
                   </a>
                 )}
+                {hasVoice && <VoiceNotePlayer url={m.attachmentUrl!} mine={mine} />}
                 {m.replyTo && (
                   <ReplyQuote
                     reply={{ id: m.replyTo.id, sender: m.replyTo.senderId, preview: m.replyTo.preview, hasImage: m.replyTo.hasImage }}
@@ -737,7 +746,7 @@ export default function MessageThreadPage() {
           </div>
         )}
         {replyTo && <ReplyBanner reply={replyTo} name={replyTo.name} onCancel={() => setReplyTo(null)} />}
-        <div className="flex items-center gap-2 px-3 py-3">
+        <div className="relative flex items-center gap-2 px-3 py-3">
           <input
             ref={fileInputRef}
             type="file"
@@ -788,6 +797,16 @@ export default function MessageThreadPage() {
                 </span>
                 <span className="text-sm font-semibold text-text-primary">Share gas fees</span>
               </button>
+              <button
+                type="button"
+                onClick={() => { setAttachOpen(false); voiceRef.current?.start() }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-surface-alt"
+              >
+                <span className="flex-shrink-0 w-9 h-9 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center">
+                  <Mic className="w-5 h-5" />
+                </span>
+                <span className="text-sm font-semibold text-text-primary">Voice message</span>
+              </button>
             </div>
           </AnchoredMenu>
           <input
@@ -800,9 +819,18 @@ export default function MessageThreadPage() {
             disabled={blocked}
             className="flex-1 rounded-full border border-border bg-background px-4 py-2 text-sm focus:outline-none focus:border-primary disabled:opacity-50"
           />
-          <Button size="sm" onClick={() => void send()} disabled={uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">
-            <Send className="w-4 h-4" />
-          </Button>
+          <VoiceRecorder
+            ref={voiceRef}
+            maxSeconds={60}
+            disabled={uploading || blocked}
+            onSend={(url) => send(url)}
+            showMic={!draft.trim() && !pendingImage && !blocked}
+            micClassName="inline-flex items-center justify-center rounded-lg bg-primary px-3 py-2 text-white disabled:opacity-50 flex-shrink-0"
+          >
+            <Button size="sm" onClick={() => void send()} disabled={uploading || blocked || (!draft.trim() && !pendingImage)} aria-label="Send">
+              <Send className="w-4 h-4" />
+            </Button>
+          </VoiceRecorder>
         </div>
       </div>
 

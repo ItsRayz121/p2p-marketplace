@@ -29,6 +29,7 @@ export const CLOUDINARY_FOLDERS = {
   BLOG_IMAGE: 'rupchain/blog',
   GIVEAWAY_IMAGE: 'rupchain/giveaways',
   TASK_PROOF: 'rupchain/task-proof',
+  VOICE_NOTE: 'rupchain/voice',
 } as const
 
 // Max file sizes in bytes

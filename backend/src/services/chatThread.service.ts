@@ -221,7 +221,7 @@ export async function getInbox(userId: string) {
       userA: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true } } } },
       userB: { select: { id: true, username: true, fullName: true, avatarUrl: true, lastSeenAt: true, tradeStats: { select: { badge: true, equippedBadge: true, equippedCosmetics: true } } } },
       episodes: { select: { outcome: true } },
-      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, sharedGasChainSlug: true, deletedAt: true } },
+      messages: { orderBy: { createdAt: 'desc' }, take: 1, select: { senderId: true, body: true, isSystem: true, deliveredAt: true, readAt: true, createdAt: true, sharedAdMarket: true, sharedGasChainSlug: true, deletedAt: true, attachmentUrl: true } },
     },
   })
 
@@ -250,7 +250,7 @@ export async function getInbox(userId: string) {
       threadId: t.id,
       other: disputed ? { ...other, disputed: true } : other,
       lastMessageAt: t.lastMessageAt,
-      lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : last.sharedGasChainSlug ? '⛽ Shared gas fees' : '')) : null,
+      lastMessagePreview: last && !last.deletedAt ? (last.body || (last.sharedAdMarket ? '📎 Shared a listing' : last.sharedGasChainSlug ? '⛽ Shared gas fees' : last.attachmentUrl ? (last.attachmentUrl.includes('/video/upload/') ? '🎤 Voice message' : '📷 Photo') : '')) : null,
       lastMessageStatus: last && last.senderId === userId
         ? (last.readAt ? 'read' : last.deliveredAt ? 'delivered' : 'sent')
         : null,
@@ -647,7 +647,7 @@ export async function postThreadMessage(
       void (async () => {
         const sender = await db.user.findUnique({ where: { id: userId }, select: { username: true } })
         const senderLabel = sender?.username ?? 'Someone'
-        const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : gasChainSlug ? '⛽ Shared gas fees' : 'New message')
+        const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? (attachmentUrl.includes('/video/upload/') ? '🎤 Voice message' : 'Sent a photo') : gasChainSlug ? '⛽ Shared gas fees' : 'New message')
         const buzzKey = `notif:chatbuzz:dm:${otherId}:${threadId}`
         const claimed = await redis.set(buzzKey, '1', 'EX', 300, 'NX').catch(() => 'OK')
         const silent = claimed === null

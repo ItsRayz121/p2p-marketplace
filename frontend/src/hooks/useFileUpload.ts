@@ -2,12 +2,16 @@
 import { useState, useCallback } from 'react'
 import { apiRequest } from '@/lib/api'
 
-type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'avatar' | 'chat-image' | 'blog-image' | 'giveaway-image' | 'channel-image' | 'task-proof'
+type UploadType = 'kyc-front' | 'kyc-back' | 'kyc-selfie' | 'kyc-video' | 'payment-proof' | 'avatar' | 'chat-image' | 'blog-image' | 'giveaway-image' | 'channel-image' | 'task-proof' | 'voice-note'
 
 const ALLOWED_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const ALLOWED_VIDEO_TYPES = ['video/mp4', 'video/quicktime', 'video/webm']
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024 // 10 MB
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024 // 50 MB
+// Voice notes: 2 min of speech at ~24 kbps is about 360 KB, so 1 MB is generous headroom
+// while keeping an oversized upload out of Cloudinary storage.
+const ALLOWED_AUDIO_TYPES = ['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg', 'audio/aac', 'audio/x-m4a']
+const MAX_AUDIO_BYTES = 1024 * 1024 // 1 MB
 // Broadcasts fan out to every channel member, so a broadcast image goes through
 // client-side compression first (see lib/imageCompress.ts) and is capped much
 // tighter than an ordinary chat attachment.
@@ -77,11 +81,15 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
     setError(null)
 
     const isVideo = type === 'kyc-video'
-    const allowed = isVideo ? ALLOWED_VIDEO_TYPES : ALLOWED_IMAGE_TYPES
-    const maxBytes = isVideo ? MAX_VIDEO_BYTES : type === 'channel-image' ? MAX_CHANNEL_IMAGE_BYTES : MAX_IMAGE_BYTES
+    const isAudio = type === 'voice-note'
+    const allowed = isAudio ? ALLOWED_AUDIO_TYPES : isVideo ? ALLOWED_VIDEO_TYPES : ALLOWED_IMAGE_TYPES
+    const maxBytes = isAudio ? MAX_AUDIO_BYTES : isVideo ? MAX_VIDEO_BYTES : type === 'channel-image' ? MAX_CHANNEL_IMAGE_BYTES : MAX_IMAGE_BYTES
 
-    if (!allowed.includes(file.type)) {
-      const msg = isVideo
+    // MediaRecorder blobs carry a codec suffix (e.g. "audio/webm;codecs=opus").
+    if (!allowed.includes(file.type.split(';')[0]!)) {
+      const msg = isAudio
+        ? 'Unsupported audio format.'
+        : isVideo
         ? 'Only MP4, MOV, and WebM videos are allowed.'
         : 'Only JPEG, PNG, and WebP images are allowed.'
       setError(msg)
@@ -89,7 +97,7 @@ export function useFileUpload(type: UploadType): UseFileUploadReturn {
     }
 
     if (file.size > maxBytes) {
-      const msg = `File size must be ${isVideo ? '50' : Math.round(maxBytes / (1024 * 1024))} MB or less.`
+      const msg = isAudio ? 'Voice message is too large.' : `File size must be ${isVideo ? '50' : Math.round(maxBytes / (1024 * 1024))} MB or less.`
       setError(msg)
       throw new Error(msg)
     }

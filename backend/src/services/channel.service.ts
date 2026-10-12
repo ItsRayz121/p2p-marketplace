@@ -547,7 +547,7 @@ async function notifyChannelMembers(
   attachmentUrl?: string,
 ) {
   try {
-    const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? 'Sent a photo' : 'New broadcast')
+    const preview = text.length > 60 ? text.slice(0, 57) + '…' : text || (attachmentUrl ? (attachmentUrl.includes('/video/upload/') ? '🎤 Voice message' : 'Sent a photo') : 'New broadcast')
     const members = await db.channelMember.findMany({
       where: { channelId, userId: { not: ownerId } },
       select: { userId: true },

@@ -34,6 +34,7 @@ import { runDisputeAutoHold } from '../jobs/disputeAutoHold.job'
 import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
+import { runVoiceRetention } from '../jobs/voiceRetention.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -129,6 +130,10 @@ export function startWorkers() {
   // channelRetention.job.ts.
   scheduleSweep('channel-retention', () => runChannelRetention(), 24 * 60 * 60 * 1000)
   void runChannelRetention().catch((err) => logger.error({ err }, 'Channel-retention startup seed failed'))
+
+  // Voice-retention sweep — daily. Deletes DM voice-note audio older than
+  // `voice_note_retention_days` (default 30) so audio never accumulates in Cloudinary.
+  scheduleSweep('voice-retention', () => runVoiceRetention(), 24 * 60 * 60 * 1000)
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)
