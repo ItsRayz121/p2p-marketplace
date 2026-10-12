@@ -883,20 +883,21 @@ export async function unlockCollateral(userId: string, lockId: string) {
   }
 
   return db.$transaction(async (tx) => {
-    const lock = await tx.collateralLock.findFirst({
+    // Claim the lock atomically: the status filter makes this a compare-and-set, so two
+    // concurrent unlock requests cannot both pass and both release the same amount (the old
+    // read-then-decrement let the second one free funds that other locks still hold).
+    const claimed = await tx.collateralLock.updateMany({
       where: { id: lockId, userId, status: 'locked' },
-    })
-    if (!lock) throw new AppError('NOT_FOUND', 'Active collateral lock not found', 404)
-
-    await tx.wallet.updateMany({
-      where: { userId, coin: lock.coin },
-      data: { lockedBalance: { decrement: Number(lock.amount) } },
-    })
-
-    return tx.collateralLock.update({
-      where: { id: lockId },
       data: { status: 'unlocked', unlockedAt: new Date() },
     })
+    if (claimed.count === 0) throw new AppError('NOT_FOUND', 'Active collateral lock not found', 404)
+
+    const lock = await tx.collateralLock.findUniqueOrThrow({ where: { id: lockId } })
+    await tx.wallet.updateMany({
+      where: { userId, coin: lock.coin },
+      data: { lockedBalance: { decrement: lock.amount } },
+    })
+    return lock
   })
 }
 

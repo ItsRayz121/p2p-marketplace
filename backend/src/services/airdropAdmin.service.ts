@@ -8,6 +8,7 @@
  * separate, money-and-legal step done manually when the project is ready. The
  * allocation table + CSV export here is what feeds that step.
  */
+import { csvCell } from '../lib/csv'
 import { db } from '../lib/prisma'
 import { Prisma } from '@prisma/client'
 import { AppError } from '../lib/errors'
@@ -168,7 +169,7 @@ export async function exportAllocationsCsv(seasonId: string): Promise<string> {
   const pool = season.tokenPool ? Number(season.tokenPool) : null
 
   const header = 'userId,username,email,points,level,sharePct,tokenAllocation'
-  const escape = (v: string) => (/[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v)
+  const escape = (v: string) => csvCell(v)
   const lines = [header]
 
   const BATCH = 5000

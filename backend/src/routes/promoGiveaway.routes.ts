@@ -1,3 +1,4 @@
+import { csvCell } from '../lib/csv'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, optionalAuth, requireRole } from '../middleware/auth.middleware'
@@ -88,11 +89,6 @@ async function assertCanCreate(userId: string, role: string): Promise<'admin' | 
   const affiliate = await db.gasAffiliate.findUnique({ where: { userId }, select: { status: true } })
   if (affiliate?.status === 'approved') return 'affiliate'
   throw new AppError('FORBIDDEN', 'Only approved affiliates can create giveaways. Apply on the Referral page.', 403)
-}
-
-function csvCell(v: unknown): string {
-  const s = v == null ? '' : String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 // Fulfillment statuses the creator can set on an entry.

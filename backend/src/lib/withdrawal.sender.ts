@@ -10,7 +10,10 @@
 import { createWalletClient, http, parseUnits, type Chain } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, base, bsc, mainnet, optimism, polygon } from 'viem/chains'
+import { randomBytes } from 'node:crypto'
 import { env } from './env'
+import { db } from './prisma'
+import { redis } from './redis'
 import {
   decryptGasSeed,
   deriveEvmPrivateKeyHex,
@@ -26,6 +29,18 @@ import { getHotWalletBalance } from './gas/gas.balance'
 import type { GasChainId } from './gas/gas.chains'
 import { sendAptosWithdrawalOnChain } from './withdrawal.aptos.sender'
 import { finalizeWithdrawalSent } from './withdrawal.finalize'
+
+// Claim key guarding the window between broadcast and DB finalize (same idea as the Aptos sender).
+// The row only leaves 'auto_approved' AFTER the transfer is on-chain, so without this a slow first
+// send plus the 2-minute recovery pass (or a crash after broadcast) could broadcast the same
+// withdrawal twice. The claim outlives a crash on purpose: a stuck row is alerted to admins after
+// 15 minutes, which beats paying a user twice.
+const EVM_CLAIM_TTL_MS = 60 * 60_000
+const evmClaimKey = (id: string) => `withdrawal:evm:claim:${id}`
+
+export function evmWithdrawalClaimHeld(id: string): Promise<boolean> {
+  return redis.exists(evmClaimKey(id)).then((n) => n === 1)
+}
 
 const ERC20_TRANSFER_ABI = [
   {
@@ -189,8 +204,10 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     }
   }
 
-  let txHash: `0x${string}`
+  let txHash: `0x${string}` | null
   let seed: Buffer | undefined
+  let claimedByUs = false
+  const claimToken = randomBytes(16).toString('hex')
   try {
     seed = decryptGasSeed()
     const privateKey = deriveEvmPrivateKeyHex(seed, HOT_WALLET_INDEX)
@@ -201,6 +218,19 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     // pending nonce so a concurrent withdrawal/gas-delivery can't collide on the
     // same nonce and silently drop one tx (see hotWalletLock.ts).
     txHash = await withHotWalletLock(chainCfg.id, async () => {
+      // Re-read inside the lock: an admin reject/refund or a concurrent send may have moved the row on.
+      const fresh = await db.withdrawal.findUnique({ where: { id: wd.id }, select: { status: true, txHash: true } })
+      if (!fresh || fresh.status !== 'auto_approved' || fresh.txHash) {
+        log.info({ withdrawalId: wd.id, status: fresh?.status }, 'sendWithdrawalOnChain: row no longer auto_approved, not broadcasting')
+        return null
+      }
+      const got = await redis.set(evmClaimKey(wd.id), claimToken, 'PX', EVM_CLAIM_TTL_MS, 'NX')
+      if (got !== 'OK') {
+        log.info({ withdrawalId: wd.id }, 'sendWithdrawalOnChain: another sender holds the claim, not broadcasting')
+        return null
+      }
+      claimedByUs = true
+
       const nonce = await getTransactionCount(rpcUrl, chainCfg.id, account.address, 'pending')
       return client.writeContract({
         address: tokenCfg.address as `0x${string}`,
@@ -212,6 +242,7 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     })
   } catch (err) {
     seed?.fill(0)
+    if (claimedByUs) await redis.del(evmClaimKey(wd.id)).catch(() => {})
     const msg = err instanceof Error ? err.message : String(err)
     log.error({ err, withdrawalId: wd.id }, 'sendWithdrawalOnChain: on-chain send failed')
     void createAdminNotif({
@@ -225,20 +256,47 @@ export async function sendWithdrawalOnChain(wd: AutoWithdrawal): Promise<void> {
     return
   }
   seed.fill(0)
+  if (!txHash) return // skipped inside the lock — nothing was broadcast
 
   // Update DB: withdrawal → sent, pending Transaction → completed, fee ledgered,
   // admin notified. Shared with the Aptos sender so behaviour can't drift.
   try {
-    await finalizeWithdrawalSent(wd, txHash)
+    const finalized = await finalizeWithdrawalSent(wd, txHash)
+    if (claimedByUs) await redis.del(evmClaimKey(wd.id)).catch(() => {})
+    if (!finalized) {
+      // The transfer IS on-chain but the row had already left 'auto_approved' (e.g. an admin
+      // rejected and refunded it mid-send). Money moved AND was refunded: a human must reconcile.
+      void createAdminNotif({
+        category: 'WITHDRAWAL',
+        title:    'Withdrawal sent on-chain but its status had already changed',
+        body:     `Withdrawal ${wd.id} txHash ${txHash} was broadcast, but the row was no longer auto_approved (rejected/refunded concurrently?). Check whether the user was refunded as well and reconcile.`,
+        href:     '/admin/withdrawals',
+        metadata: { withdrawalId: wd.id, txHash },
+        email:    true,
+      })
+    }
   } catch (err) {
-    // On-chain tx is already broadcast — log the DB failure but don't throw
+    // On-chain tx is already broadcast — getting the row out of 'auto_approved' is now critical,
+    // otherwise the recovery pass would broadcast it again.
     log.error({ err, withdrawalId: wd.id, txHash }, 'sendWithdrawalOnChain: DB update failed after successful on-chain send')
+    let salvaged = false
+    try {
+      const r = await db.withdrawal.updateMany({
+        where: { id: wd.id, status: 'auto_approved' },
+        data: { status: 'sent', txHash, completedAt: new Date() },
+      })
+      salvaged = r.count > 0
+    } catch (err2) {
+      log.error({ err: err2, withdrawalId: wd.id, txHash }, 'sendWithdrawalOnChain: salvage status update also failed')
+    }
+    // Keep the claim unless the row is safely out of 'auto_approved'; it self-expires as a last resort.
+    if (salvaged && claimedByUs) await redis.del(evmClaimKey(wd.id)).catch(() => {})
     void createAdminNotif({
       category: 'WITHDRAWAL',
       title:    'Auto-withdrawal sent on-chain but DB update failed',
-      body:     `Withdrawal ${wd.id} txHash ${txHash} was broadcast but the DB could not be updated. Update the status manually.`,
+      body:     `Withdrawal ${wd.id} txHash ${txHash} was broadcast${salvaged ? ' and the status was salvaged to "sent"' : ' but the status could NOT be updated — set it to "sent" with this txHash manually and do NOT let it be resent'}.`,
       href:     '/admin/withdrawals',
-      metadata: { withdrawalId: wd.id, txHash },
+      metadata: { withdrawalId: wd.id, txHash, salvaged },
     })
   }
 }

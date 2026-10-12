@@ -19,6 +19,8 @@ vi.mock('../../services/platformFlags.service', () => ({
   FLAGS: { MAKER_GATE: 'maker_gate_enabled' },
   isFlagEnabled: mocks.isFlagEnabled,
   getNumberConfig: mocks.getNumberConfig,
+  // makerGate reads the contact handle through this; without it every assertMakerEligible call threw.
+  getStringConfig: async (_key: string, fallback: string) => fallback,
 }))
 
 import { getMakerStatus, assertMakerEligible, decideInitialStatus, normalizeWhatsapp } from '../makerGate'

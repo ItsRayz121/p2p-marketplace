@@ -1,3 +1,4 @@
+import { csvCell } from '../lib/csv'
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify'
 import { findSharedContacts } from '../lib/sharedContacts'
 import { randomUUID } from 'node:crypto'
@@ -1111,10 +1112,13 @@ export async function adminRoutes(app: FastifyInstance) {
       }
 
       for (const lock of collateralLocks) {
-        await tx.collateralLock.update({
-          where: { id: lock.id },
+        // Claim each lock atomically: the user may be unlocking the same lock right now, and only
+        // whoever flips 'locked' may release its amount from the wallet's lockedBalance.
+        const claimed = await tx.collateralLock.updateMany({
+          where: { id: lock.id, status: 'locked' },
           data: { status: 'seized', seizedAt: new Date(), seizeReason: parsed.data.reason },
         })
+        if (claimed.count === 0) continue
         // Clear locked balance from USDT wallet
         await tx.wallet.updateMany({
           where: { userId: id, coin: lock.coin },
@@ -1453,15 +1457,15 @@ export async function adminRoutes(app: FastifyInstance) {
     const header = 'id,username,email,joined,kycStatus,kycLevel,referralCode,referrerId,referrerUsername,referrerEmail,completedTrades,totalVolumePKR,registrationIp'
     const rows = users.map((u) => [
       u.id,
-      `"${u.username}"`,
-      `"${u.email}"`,
+      csvCell(u.username),
+      csvCell(u.email),
       u.createdAt.toISOString(),
       u.kycStatus,
       u.kycLevel,
       u.referralCode,
       u.referredBy?.id ?? '',
-      `"${u.referredBy?.username ?? ''}"`,
-      `"${u.referredBy?.email ?? ''}"`,
+      csvCell(u.referredBy?.username),
+      csvCell(u.referredBy?.email),
       u.tradeStats?.completedTrades ?? 0,
       u.tradeStats?.totalVolumePKR?.toString() ?? '0',
       u.registrationIp ?? '',
@@ -3343,28 +3347,40 @@ export async function adminRoutes(app: FastifyInstance) {
       include: { user: { select: { email: true } } },
     })
     if (!withdrawal) throw Errors.NOT_FOUND('Withdrawal')
-    if (['completed', 'sent'].includes(withdrawal.status)) {
-      throw new AppError('INVALID_STATUS', 'Cannot reject a completed or sent withdrawal', 400)
+    if (['completed', 'sent', 'rejected', 'cancelled'].includes(withdrawal.status)) {
+      throw new AppError('INVALID_STATUS', `Cannot reject a withdrawal that is already ${withdrawal.status}`, 400)
     }
 
-    // email_pending withdrawals never had their balance deducted — do not refund.
-    const balanceWasDeducted = withdrawal.status !== 'email_pending'
-
+    let balanceWasDeducted = true
     await db.$transaction(async (tx) => {
       const wallet = await tx.wallet.findFirst({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
         select: { id: true },
       })
 
-      await tx.withdrawal.update({
-        where: { id },
+      // Claim the row atomically BEFORE refunding. The status was read outside this transaction, so
+      // two concurrent rejects (or a reject racing a confirm) could both have passed the check above
+      // and both credited the wallet. Only the request that flips the status gets to refund.
+      // email_pending never had its balance deducted — flipping that one must not refund.
+      const flippedDeducted = await tx.withdrawal.updateMany({
+        where: { id, status: { in: ['pending', 'first_approved', 'approved', 'auto_approved', 'on_hold'] } },
         data: { status: 'rejected', rejectedBy: req.user!.id, rejectionReason: parsed.data.reason },
       })
+      if (flippedDeducted.count === 0) {
+        const flippedPending = await tx.withdrawal.updateMany({
+          where: { id, status: 'email_pending' },
+          data: { status: 'rejected', rejectedBy: req.user!.id, rejectionReason: parsed.data.reason },
+        })
+        if (flippedPending.count === 0) {
+          throw new AppError('INVALID_STATUS', 'Withdrawal was already processed by another request', 409)
+        }
+        balanceWasDeducted = false
+      }
 
       if (balanceWasDeducted) {
         await tx.wallet.updateMany({
           where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
-          data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
+          data: { balance: { increment: new Prisma.Decimal(withdrawal.amount).add(withdrawal.fee) } },
         })
 
         if (wallet) {
@@ -3689,19 +3705,24 @@ export async function adminRoutes(app: FastifyInstance) {
     const refundReason = `Refunded by admin: ${parsed.data.reason}`
 
     await db.$transaction(async (tx) => {
-      await tx.withdrawal.update({
-        where: { id },
+      // Atomic claim (status 'sent' -> 'rejected') before crediting, so a double-click or two
+      // admins cannot refund the same withdrawal twice. The status was read outside this transaction.
+      const claimed = await tx.withdrawal.updateMany({
+        where: { id, status: 'sent' },
         data: {
           status: 'rejected',
           rejectedBy: req.user!.id,
           rejectionReason: refundReason,
         },
       })
+      if (claimed.count === 0) {
+        throw new AppError('INVALID_STATUS', 'Withdrawal was already processed by another request', 409)
+      }
 
       // Credit amount + fee back to the user's wallet
       await tx.wallet.updateMany({
         where: { userId: withdrawal.userId, coin: withdrawal.coin, network: withdrawal.network },
-        data: { balance: { increment: new Prisma.Decimal(Number(withdrawal.amount) + Number(withdrawal.fee)) } },
+        data: { balance: { increment: new Prisma.Decimal(withdrawal.amount).add(withdrawal.fee) } },
       })
 
       const wallet = await tx.wallet.findFirst({

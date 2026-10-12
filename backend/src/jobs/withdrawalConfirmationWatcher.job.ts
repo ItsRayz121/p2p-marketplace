@@ -24,7 +24,7 @@ import { getChainByNetworkLabel, getRpcUrl } from '../services/chainRegistry.ser
 import { createAdminNotif } from '../services/adminNotification.service'
 import { recordAuditLog } from '../lib/audit'
 import { isWellFormedEvmTxHash } from '../lib/txHash'
-import { sendWithdrawalOnChain } from '../lib/withdrawal.sender'
+import { sendWithdrawalOnChain, evmWithdrawalClaimHeld } from '../lib/withdrawal.sender'
 import { aptosWithdrawalClaimHeld } from '../lib/withdrawal.aptos.sender'
 import { getAptosTxOutcome } from '../lib/gas/aptosTransfer'
 
@@ -228,10 +228,10 @@ async function checkAptosWithdrawal(
 }
 
 /**
- * Re-drive auto-send for withdrawals stuck in 'auto_approved'. sendWithdrawalOnChain
- * is idempotent: it claims the row with updateMany({status:'auto_approved'}) before
- * marking it 'sent', so this can never double-broadcast a withdrawal that already
- * went out. Per-chain hot-wallet locking (hotWalletLock.ts) prevents nonce clashes
+ * Re-drive auto-send for withdrawals stuck in 'auto_approved'. Both senders re-read the row
+ * inside the hot-wallet lock and take a Redis claim before broadcasting (and finalizeWithdrawalSent
+ * claims the row with updateMany({status:'auto_approved'})), so this must not double-broadcast a
+ * withdrawal that is in flight or already went out. Per-chain hot-wallet locking (hotWalletLock.ts) prevents nonce clashes
  * with concurrent sends.
  */
 async function recoverOrphanedAutoSends(): Promise<void> {
@@ -269,6 +269,10 @@ async function recoverOrphanedAutoSends(): Promise<void> {
       continue
     }
 
+    // Same for EVM: a send that is mid-flight (or crashed after broadcast) holds a claim. Never
+    // re-broadcast against it; the stuck alert below tells an admin to look.
+    const evmHeld = wd.network.toUpperCase() !== 'APTOS' && (await evmWithdrawalClaimHeld(wd.id).catch(() => false))
+
     // Genuinely stuck (initial send + earlier recovery passes all failed) → alert
     // admins once per day so it can't sit invisible with the balance debited.
     if (Date.now() - wd.createdAt.getTime() > STUCK_ALERT_AGE_MS) {
@@ -281,6 +285,11 @@ async function recoverOrphanedAutoSends(): Promise<void> {
       }).catch((err) =>
         logger.error({ err, withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: stuck alert failed'),
       )
+    }
+
+    if (evmHeld) {
+      logger.info({ withdrawalId: wd.id }, 'withdrawalConfirmationWatcher: EVM send claim held, skipping recovery')
+      continue
     }
 
     try {

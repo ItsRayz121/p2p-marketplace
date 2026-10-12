@@ -1,3 +1,4 @@
+import { csvCell } from '../lib/csv'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate, requireRole } from '../middleware/auth.middleware'
@@ -135,7 +136,7 @@ export async function blogRoutes(app: FastifyInstance) {
 
   app.get('/blog/subscribers/export', { preHandler: adminGuard }, async (_req, reply) => {
     const rows = await listAllSubscribers()
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`
+    const esc = csvCell
     const csv = [
       'email,source,country,subscribed_at',
       ...rows.map((r) => [esc(r.email), esc(r.source ?? ''), esc(r.country ?? ''), esc(r.createdAt.toISOString())].join(',')),
