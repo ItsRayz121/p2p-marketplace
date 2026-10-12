@@ -13,8 +13,9 @@ import { deleteCloudinaryAsset } from '../lib/cloudinary'
 // SAFETY: only terminal trades are eligible, and NEVER `disputed` (an open
 // dispute). We anchor on `updatedAt`, which stops changing once a trade is
 // terminal, so it is a faithful "settled at" timestamp. The whole job is gated
-// OFF by default (`media_retention_enabled`) so nothing is deleted until an admin
-// consciously enables it.
+// ON by default (`media_retention_enabled`); an admin can switch it off in Admin → Config.
+// NOTE: Platform Config rows are created once, so a deployment that already has the key
+// stored as 'false' must flip it to 'true' there — the default only applies to a missing row.
 
 const TERMINAL_USDT = ['crypto_released', 'cancelled', 'dispute_resolved'] as const
 const TERMINAL_CTM = ['completed', 'cancelled', 'dispute_resolved', 'expired'] as const
@@ -32,7 +33,7 @@ async function getConfig(): Promise<{ enabled: boolean; days: number }> {
     db.platformConfig.upsert({
       where: { key: 'media_retention_enabled' },
       update: {},
-      create: { key: 'media_retention_enabled', value: 'false' },
+      create: { key: 'media_retention_enabled', value: 'true' },
     }),
     db.platformConfig.upsert({
       where: { key: 'media_retention_days' },

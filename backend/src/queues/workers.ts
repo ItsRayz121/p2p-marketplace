@@ -34,7 +34,7 @@ import { runDisputeAutoHold } from '../jobs/disputeAutoHold.job'
 import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
-import { runVoiceRetention } from '../jobs/voiceRetention.job'
+import { runUserMediaRetention } from '../jobs/userMediaRetention.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -131,9 +131,13 @@ export function startWorkers() {
   scheduleSweep('channel-retention', () => runChannelRetention(), 24 * 60 * 60 * 1000)
   void runChannelRetention().catch((err) => logger.error({ err }, 'Channel-retention startup seed failed'))
 
-  // Voice-retention sweep — daily. Deletes DM voice-note audio older than
-  // `voice_note_retention_days` (default 30) so audio never accumulates in Cloudinary.
-  scheduleSweep('voice-retention', () => runVoiceRetention(), 24 * 60 * 60 * 1000)
+  // User-media retention sweep — daily. Destroys the Cloudinary asset, then clears the
+  // DB reference, for DM photos/voice notes, support attachments, task proofs and
+  // appeal/dispute/token-request evidence older than `user_media_retention_days`
+  // (default 30). Admin-uploaded media and KYC are never touched — see
+  // userMediaRetention.job.ts.
+  scheduleSweep('user-media-retention', () => runUserMediaRetention(), 24 * 60 * 60 * 1000)
+  void runUserMediaRetention().catch((err) => logger.error({ err }, 'User-media retention startup run failed'))
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)
