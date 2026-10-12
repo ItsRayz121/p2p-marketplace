@@ -1,4 +1,4 @@
-import Fastify from 'fastify'
+import Fastify, { type FastifyError } from 'fastify'
 import cors from '@fastify/cors'
 import helmet from '@fastify/helmet'
 import multipart from '@fastify/multipart'
@@ -216,7 +216,7 @@ export async function buildApp() {
 
   // Catch-all hook — fires for every error regardless of which error handler runs.
   // Global error handler
-  app.setErrorHandler((error, _req, reply) => {
+  app.setErrorHandler((error: FastifyError, _req, reply) => {
     // AppError must be checked FIRST — it has a statusCode property that would
     // otherwise be caught by the generic httpStatus >= 400 fallback below,
     // causing the specific error.code (e.g. EMAIL_NOT_VERIFIED) to be lost.
