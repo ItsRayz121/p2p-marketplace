@@ -145,6 +145,9 @@ function getNavTarget(notif: Notification): string | null {
     return `/points?tab=tasks&bucket=${bucket}`
   }
 
+  // New task is live — open the Available bucket
+  if (t === 'task_new') return '/points?tab=tasks&bucket=available'
+
   // Gas orders / Share & Earn, account moderation, support inbox
   if (t === 'gas') return meta?.orderRef ? '/gas/orders' : '/gas'
   if (t === 'moderation') return '/account/restricted'

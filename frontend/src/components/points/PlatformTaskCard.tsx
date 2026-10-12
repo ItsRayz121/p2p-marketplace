@@ -1,7 +1,7 @@
 'use client'
 import { useRef, useState } from 'react'
 import Link from 'next/link'
-import { ExternalLink, Send, Clock, Paperclip, X } from 'lucide-react'
+import { ExternalLink, Send, Clock, Paperclip, X, ChevronDown } from 'lucide-react'
 import { platformTaskApi, PAYOUT_NETWORKS, type UserPlatformTask, type ClaimStatus, type ProofAttachment } from '@/lib/platformTasks'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { toast } from '@/lib/toast'
@@ -97,6 +97,8 @@ export function PlatformTaskCard({
   const [network, setNetwork] = useState<(typeof PAYOUT_NETWORKS)[number]>('BEP20')
   const [address, setAddress] = useState('')
   const [busy, setBusy] = useState(false)
+  // Collapsed by default so many tasks fit on screen; open straight away when the user must act on feedback.
+  const [open, setOpen] = useState(!!task.claim?.canResubmit)
 
   const needsAddress = task.rewardType === 'usdt' && task.payoutMode === 'manual'
   const needsProof = task.verifyMode === 'manual_proof'
@@ -132,8 +134,13 @@ export function PlatformTaskCard({
   const submitLabel = resubmitting ? 'Resubmit' : task.verifyMode === 'telegram_auto' ? 'Verify' : needsProof ? 'Submit' : 'Claim reward'
 
   return (
-    <div className="rounded-xl border border-border p-4 space-y-2">
-      <div className="flex items-start justify-between gap-3">
+    <div className="rounded-xl border border-border">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-3 p-3.5 text-left sm:p-4"
+      >
         {isTrustedImageUrl(task.logoUrl ?? null) && (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={task.logoUrl!} alt="" loading="lazy" decoding="async" className="h-10 w-10 flex-shrink-0 rounded-lg border border-border object-cover" />
@@ -143,7 +150,10 @@ export function PlatformTaskCard({
           <p className="text-xs text-emerald-500 font-medium mt-0.5">Reward: {rewardLabel(task)}</p>
         </div>
         {badge && <span className={`flex-shrink-0 rounded-full px-2 py-1 text-[11px] font-bold ${badge.cls}`}>{badge.text}</span>}
-      </div>
+        <ChevronDown className={`h-4 w-4 flex-shrink-0 text-text-muted transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
+      </button>
+      {open && (
+    <div className="space-y-2 border-t border-border p-3.5 sm:p-4">
       {task.description && <p className="text-xs text-text-muted">{task.description}</p>}
       {task.instructions && !task.claim?.completedAt && <p className="whitespace-pre-wrap rounded-lg bg-surface-alt px-3 py-2 text-xs text-text-secondary">{task.instructions}</p>}
 
@@ -158,12 +168,12 @@ export function PlatformTaskCard({
           <span className="inline-flex items-center gap-1"><Clock className="w-3 h-3" aria-hidden />Ends {new Date(task.endsAt).toLocaleDateString()}</span>
         )}
         {task.spotsLeft != null && !task.claim && <span>{task.spotsLeft} spot{task.spotsLeft === 1 ? '' : 's'} left</span>}
-        {task.url && (
-          <a href={task.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 font-semibold text-primary hover:underline">
-            <ExternalLink className="w-3 h-3" aria-hidden />Open link
-          </a>
-        )}
       </div>
+      {task.url && (
+        <a href={task.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary/20">
+          <ExternalLink className="w-4 h-4" aria-hidden />Open link
+        </a>
+      )}
 
       {task.claim?.status === 'needs_changes' && task.claim.feedback && (
         <p className="rounded-lg bg-info/10 px-3 py-2 text-xs text-text-primary"><span className="font-semibold text-info">Changes needed: </span>{task.claim.feedback}</p>
@@ -220,6 +230,8 @@ export function PlatformTaskCard({
             {busy ? 'Please wait…' : submitLabel}
           </button>
         </div>
+      )}
+    </div>
       )}
     </div>
   )

@@ -20,6 +20,7 @@ import { logger } from '../lib/logger'
 import { notify } from '../lib/notify'
 import { telegramRequest } from '../lib/telegram.client'
 import { awardTaskPointsTx } from './airdrop.service'
+import { announceTaskLive } from './platformTaskAnnounce.service'
 import {
   PLATFORMS, RuleError, acceptsClaims, assertDecision, assertEvidence, buildSnapshot, canResubmit, cleanAttachments,
   cleanLinks, isReviewable, nextStatus, taskLifecycle, type Attachment, type Decision,
@@ -120,7 +121,7 @@ function outcomeStatus(task: { rewardType: string; payoutMode: string }): 'compl
 export async function createTask(adminId: string, t: TaskInput) {
   assertTaskConfig(t)
   if (t.platform && !(PLATFORMS as readonly string[]).includes(t.platform)) throw new AppError('VALIDATION_ERROR', 'Unknown platform.', 400)
-  return db.platformTask.create({
+  const created = await db.platformTask.create({
     data: {
       title: t.title.trim(),
       description: t.description?.trim() || null,
@@ -146,6 +147,8 @@ export async function createTask(adminId: string, t: TaskInput) {
       isDraft: t.isDraft ?? false,
     },
   })
+  if (taskLifecycle(created, new Date()) === 'active') void announceTaskLive(created.id)
+  return created
 }
 
 /** Requirement-affecting fields: changing any of these bumps the task version. Existing claims keep
@@ -179,7 +182,8 @@ export async function updateTask(id: string, p: TaskPatch) {
     p[k] !== undefined && (p[k] ?? null) !== ((task as Record<string, unknown>)[k] ?? null)
   const bump = REQUIREMENT_FIELDS.some(changed)
 
-  return db.platformTask.update({
+  const wasLive = taskLifecycle(task, new Date()) === 'active'
+  const updated = await db.platformTask.update({
     where: { id },
     data: {
       ...(p.title !== undefined ? { title: p.title.trim() } : {}),
@@ -201,6 +205,9 @@ export async function updateTask(id: string, p: TaskPatch) {
       ...(bump ? { version: { increment: 1 } } : {}),
     },
   })
+  // Draft published / resumed / schedule reached → tell users (once per task, see announceTaskLive).
+  if (!wasLive && taskLifecycle(updated, new Date()) === 'active') void announceTaskLive(updated.id)
+  return updated
 }
 
 export async function adminListTasks() {
