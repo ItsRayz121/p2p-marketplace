@@ -214,7 +214,7 @@ function Toolbar({ editor }: { editor: Editor }) {
     if (!looksLikeMarkdown(text)) { window.alert('No Markdown found in this article to convert.'); return }
     if (!window.confirm('Convert Markdown in this article to formatting?\n\nThis reflows the whole article and will drop any inserted images or videos. Press Undo (Ctrl+Z) if you don’t like the result.')) return
     const rendered = marked.parse(text, { async: false, gfm: true }) as string
-    editor.chain().focus().setContent(rendered, true).run()
+    editor.chain().focus().setContent(rendered, { emitUpdate: true }).run()
   }
 
   return (
@@ -254,7 +254,8 @@ export function BlogEditor({ value, onChange }: { value: string; onChange: (html
   const editor = useEditor({
     immediatelyRender: false, // avoid Next.js SSR hydration mismatch
     extensions: [
-      StarterKit,
+      // v3 bundles Link and Underline; we configure Link ourselves and never offered Underline
+      StarterKit.configure({ link: false, underline: false }),
       FigureImage,
       Link.configure({ openOnClick: false, autolink: true, HTMLAttributes: { rel: 'noopener', target: '_blank' } }),
       Placeholder.configure({ placeholder: 'Write your article… use the toolbar for headings, images, and videos.' }),
