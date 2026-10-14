@@ -253,6 +253,9 @@ export function BlogEditor({ value, onChange }: { value: string; onChange: (html
 
   const editor = useEditor({
     immediatelyRender: false, // avoid Next.js SSR hydration mismatch
+    // Tiptap v3 stopped re-rendering on every transaction; the toolbar reads editor.isActive()/can()
+    // during render, so without this its highlights go stale when only the cursor moves.
+    shouldRerenderOnTransaction: true,
     extensions: [
       // v3 bundles Link and Underline; we configure Link ourselves and never offered Underline
       StarterKit.configure({ link: false, underline: false }),
