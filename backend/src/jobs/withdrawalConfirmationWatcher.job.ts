@@ -333,6 +333,8 @@ async function alertStuckAutoApproved(wd: {
 // One alert per withdrawal per window. The watcher runs every 2 minutes, so without this a single
 // stuck withdrawal raised a fresh admin notification on every tick.
 const STALE_ALERT_WINDOW_SECONDS = 6 * 3600
+// A malformed stored hash never fixes itself, so re-alerting every 6h is just noise: remind weekly.
+const MALFORMED_ALERT_WINDOW_SECONDS = 7 * 86_400
 
 async function alertStaleWithdrawal(
   wd: { id: string; orderRef: string; txHash: string | null; network: string; updatedAt: Date },
@@ -342,7 +344,7 @@ async function alertStaleWithdrawal(
   // `immediate` is for conditions that are wrong on arrival (malformed hash), not merely old.
   if (!immediate && wd.updatedAt >= new Date(Date.now() - 2 * 3_600_000)) return
   const first = await redis
-    .set(`wd:stale-alert:${wd.id}`, '1', 'EX', STALE_ALERT_WINDOW_SECONDS, 'NX')
+    .set(`wd:stale-alert:${wd.id}`, '1', 'EX', immediate ? MALFORMED_ALERT_WINDOW_SECONDS : STALE_ALERT_WINDOW_SECONDS, 'NX')
     .catch(() => 'OK') // Redis down: alert rather than stay silent
   if (first !== 'OK') return
   logger.warn({ withdrawalId: wd.id, reason }, 'withdrawalConfirmationWatcher: stale withdrawal')
