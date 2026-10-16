@@ -76,7 +76,14 @@ const QUICK_LINKS: { href: string; Icon: React.ElementType; label: string; iconC
 // ─── Component ────────────────────────────────────────────────────────────────
 
 export default function Navbar() {
-  const { user, logout } = useAuth()
+  const { user: authUser, logout } = useAuth()
+  // The auth store starts from the user cached in this browser, which the server cannot know. Rendering it
+  // on the very first pass made server and browser disagree (header with a bell vs. with a Login link), so
+  // React threw the server markup away and logged a hydration error. The first pass now matches the server
+  // and the signed-in header appears right after.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+  const user = hydrated ? authUser : null
   const pathname = usePathname()
   const [unreadCount, setUnreadCount] = useState(0)
   const [menuOpen, setMenuOpen] = useState(false)

@@ -21,7 +21,9 @@ export interface MarkRow {
 /** How many of a token's most recent settled trades are examined for proven prices. */
 export const PRICE_LOOKBACK_TRADES = 200
 const LOOKUP_PARALLEL = 5
-const CACHE_TTL_MS = 60_000
+// Short, so a trade that just settled shows in the portfolio within seconds. It is not cleared by the trade
+// itself on purpose: that would put portfolio code into the trade-completion path.
+const CACHE_TTL_MS = 15_000
 
 interface Point { price: string; observedAt: Date }
 /** Proven trade prices of a token, newest first. */

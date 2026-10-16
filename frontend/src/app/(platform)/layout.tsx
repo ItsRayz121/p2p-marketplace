@@ -33,7 +33,14 @@ const noticeColors: Record<string, string> = {
 }
 
 export default function PlatformLayout({ children }: { children: React.ReactNode }) {
-  const { isLoading: authLoading, user, accessToken } = useAuthStore()
+  const { isLoading: storeLoading, user: storeUser, accessToken } = useAuthStore()
+  // The auth store starts from the user cached in this browser, which the server cannot know. Using it on the
+  // first pass made the server's loading screen and the browser's page disagree, so React discarded the server
+  // markup and logged a hydration error. The first pass now matches the server; the cached state applies right after.
+  const [hydrated, setHydrated] = useState(false)
+  useEffect(() => { setHydrated(true) }, [])
+  const authLoading = hydrated ? storeLoading : true
+  const user = hydrated ? storeUser : null
   const [config, setConfig] = useState<SiteConfig>({})
   const [dismissed, setDismissed] = useState(false)
   const pathname = usePathname()

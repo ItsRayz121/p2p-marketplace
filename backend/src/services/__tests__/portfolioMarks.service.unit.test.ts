@@ -71,6 +71,21 @@ describe('platformMarksFor', () => {
     expect(arg.take).toBeGreaterThan(0)
   })
 
+  it('a price is cached for 15 seconds, so a trade that just settled shows up within seconds', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date('2026-10-17T10:00:00Z'))
+      m.trades.mockResolvedValue([trade()])
+      await platformMarksFor(LINKS)
+      vi.setSystemTime(new Date('2026-10-17T10:00:14Z'))
+      await platformMarksFor(LINKS)
+      expect(m.trades).toHaveBeenCalledTimes(1) // still inside the window
+      vi.setSystemTime(new Date('2026-10-17T10:00:16Z'))
+      await platformMarksFor(LINKS)
+      expect(m.trades).toHaveBeenCalledTimes(2) // expired: looked up again
+    } finally { vi.useRealTimers() }
+  })
+
   it('looks each token up on its own, so a busy token cannot crowd out another one', async () => {
     m.trades.mockImplementation(async (arg: { where: { tokenId: string } }) =>
       arg.where.tokenId === 't1' ? [trade({ fiatAmount: dec('5000') })] : [trade({ id: 'y', tradeRef: 'ref-y', tokenId: 't2', fiatAmount: dec('4000') })])
