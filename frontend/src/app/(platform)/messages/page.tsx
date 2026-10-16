@@ -52,8 +52,20 @@ function MessagesListTab({ tabBar }: { tabBar: React.ReactNode }) {
   const [starting, setStarting] = useState<string | null>(null)
   const [openingNotes, setOpeningNotes] = useState(false)
   const [showSearch, setShowSearch] = useState(false)
-  const [filter, setFilter] = useState<'all' | 'unread'>('all')
+  const [filter, setFilterState] = useState<'all' | 'unread'>('all')
   const [officialUnread, setOfficialUnread] = useState(false)
+
+  // Remember the All/Unread choice for the session so opening a thread and
+  // coming back lands on the same filter instead of resetting to All.
+  useEffect(() => {
+    try {
+      if (sessionStorage.getItem('messages:filter') === 'unread') setFilterState('unread')
+    } catch {}
+  }, [])
+  const setFilter = (f: 'all' | 'unread') => {
+    setFilterState(f)
+    try { sessionStorage.setItem('messages:filter', f) } catch {}
+  }
 
   useEffect(() => {
     supportChatApi.get().then((s) => setOfficialUnread(!!s.conversation?.unreadByUser)).catch(() => {})
