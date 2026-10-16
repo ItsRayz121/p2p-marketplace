@@ -1,15 +1,18 @@
 'use client'
 
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { PortfolioEventInput, PortfolioEventType } from '@/lib/portfolio/types'
+import type { Currency, PortfolioEventInput, PortfolioEventType } from '@/lib/portfolio/types'
 import { AMOUNT_RE, isZeroAmount } from '@/lib/portfolio/format'
 
 export const RECORD_ONLY_NOTICE =
   'This only adds a record to your own tracker. It does not buy or sell anything on RupChain and never changes your wallet balance.'
 
+export const RATE_HELP =
+  "Used to show this entry in the other currency. Leave blank to use RupChain's current rate for entries dated now. For older entries, enter the rate for that date, otherwise this entry cannot be shown in the other currency."
+
 const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Opening holding' }
 
-type Field = 'quantity' | 'consideration' | 'fee' | 'basis' | 'occurredAt'
+type Field = 'quantity' | 'consideration' | 'fee' | 'basis' | 'occurredAt' | 'fxRate'
 
 function newRequestId(): string {
   const c = typeof crypto !== 'undefined' ? crypto : undefined
@@ -43,11 +46,13 @@ function Row({ id, label, help, error, children }: { id: string; label: string; 
 interface Props {
   assetName: string
   defaultType?: PortfolioEventType
+  /** Pre-selected currency: the one the portfolio is currently shown in. */
+  defaultCurrency?: Currency
   onSubmit: (input: PortfolioEventInput) => Promise<void> | void
   onCancel: () => void
 }
 
-export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }: Props) {
+export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel }: Props) {
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const requestId = useRef(newRequestId())
@@ -55,11 +60,13 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
   useEffect(() => { firstRef.current?.focus() }, [])
 
   const [type, setType] = useState<PortfolioEventType>(defaultType)
+  const [quote, setQuote] = useState<Currency>(defaultCurrency)
   const [when, setWhen] = useState(nowLocal)
   const [quantity, setQuantity] = useState('')
   const [consideration, setConsideration] = useState('')
   const [fee, setFee] = useState('')
   const [basis, setBasis] = useState('')
+  const [fxRate, setFxRate] = useState('')
   const [zeroCost, setZeroCost] = useState(false)
   const [note, setNote] = useState('')
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
@@ -67,14 +74,14 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
   const [busy, setBusy] = useState(false)
 
   const trade = type !== 'OPENING'
-  const amountLabel = type === 'BUY' ? 'Amount paid (PKR)' : 'Amount received (PKR)'
+  const amountLabel = type === 'BUY' ? `Amount paid (${quote})` : `Amount received (${quote})`
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     if (busy) return
     setFormError(null)
     const errs: Partial<Record<Field, string>> = {}
-    const q = quantity.trim(), c = consideration.trim(), f = fee.trim(), b = basis.trim()
+    const q = quantity.trim(), c = consideration.trim(), f = fee.trim(), b = basis.trim(), r = fxRate.trim()
 
     const ts = new Date(when).getTime()
     if (!when || Number.isNaN(ts)) errs.occurredAt = 'Enter a valid date and time.'
@@ -87,16 +94,22 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
     } else if (!zeroCost && b && !AMOUNT_RE.test(b)) {
       errs.basis = 'Enter the total cost as a plain number, or leave it blank if unknown.'
     }
+    if (r && (!AMOUNT_RE.test(r) || isZeroAmount(r))) {
+      errs.fxRate = 'Enter the rate as a plain number greater than zero, for example 280.5, or leave it blank.'
+    }
     if (Object.keys(errs).length) {
       setErrors(errs)
-      const order: Field[] = ['occurredAt', 'quantity', 'consideration', 'fee', 'basis']
+      const order: Field[] = ['occurredAt', 'quantity', 'consideration', 'fee', 'basis', 'fxRate']
       const first = order.find((k) => errs[k])
       if (first) document.getElementById(id(first))?.focus()
       return
     }
     setErrors({})
 
-    const input: PortfolioEventInput = { type, occurredAt: new Date(when).toISOString(), quantity: q, clientRequestId: requestId.current }
+    const input: PortfolioEventInput = {
+      type, occurredAt: new Date(when).toISOString(), quantity: q, quote, clientRequestId: requestId.current,
+    }
+    if (r) input.fxRate = r
     if (trade) {
       input.consideration = c
       if (f) input.fee = f
@@ -147,13 +160,20 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
         <input id={id('quantity')} type="text" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inputCls(!!errors.quantity)} {...d('quantity', false)} />
       </Row>
 
+      <Row id={id('quote')} label="Currency of the amounts">
+        <select id={id('quote')} value={quote} onChange={(e) => setQuote(e.target.value as Currency)} className={inputCls(false)}>
+          <option value="PKR">PKR</option>
+          <option value="USDT">USDT</option>
+        </select>
+      </Row>
+
       {trade ? (
         <>
           <Row id={id('consideration')} label={amountLabel} help="Total for the whole quantity, before the fee." error={errors.consideration}>
             <input id={id('consideration')} type="text" inputMode="decimal" autoComplete="off" value={consideration} onChange={(e) => setConsideration(e.target.value)} className={inputCls(!!errors.consideration)} {...d('consideration')} />
           </Row>
           <Row
-            id={id('fee')} label="Fee (PKR), optional" error={errors.fee}
+            id={id('fee')} label={`Fee (${quote}), optional`} error={errors.fee}
             help={type === 'BUY' ? 'Added to your cost.' : 'Deducted from what you received.'}
           >
             <input id={id('fee')} type="text" inputMode="decimal" autoComplete="off" value={fee} onChange={(e) => setFee(e.target.value)} className={inputCls(!!errors.fee)} {...d('fee')} />
@@ -162,7 +182,7 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
       ) : (
         <>
           <Row
-            id={id('basis')} label="Total cost (PKR), optional" error={errors.basis}
+            id={id('basis')} label={`Total cost (${quote}), optional`} error={errors.basis}
             help="Leave blank if you do not know. An unknown cost is never treated as zero, so profit and loss for these units stays unavailable."
           >
             <input id={id('basis')} type="text" inputMode="decimal" autoComplete="off" disabled={zeroCost} value={zeroCost ? '' : basis} onChange={(e) => setBasis(e.target.value)} className={inputCls(!!errors.basis)} {...d('basis')} />
@@ -173,6 +193,10 @@ export function EventForm({ assetName, defaultType = 'BUY', onSubmit, onCancel }
           </label>
         </>
       )}
+
+      <Row id={id('fxRate')} label="USDT/PKR rate for this date (PKR per 1 USDT), optional" help={RATE_HELP} error={errors.fxRate}>
+        <input id={id('fxRate')} type="text" inputMode="decimal" autoComplete="off" value={fxRate} onChange={(e) => setFxRate(e.target.value)} className={inputCls(!!errors.fxRate)} {...d('fxRate')} />
+      </Row>
 
       <Row id={id('note')} label="Note, optional">
         <input id={id('note')} type="text" maxLength={200} autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls(false)} />

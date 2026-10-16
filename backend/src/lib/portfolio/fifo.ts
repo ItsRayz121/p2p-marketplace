@@ -1,4 +1,4 @@
-import { Prisma } from '@prisma/client'
+import { D, ALLOC_DP, ROUND, type Dec } from './decimal'
 
 /**
  * Portfolio calculation engine (analytical shadow ledger).
@@ -11,13 +11,7 @@ import { Prisma } from '@prisma/client'
  * determination. Single quote currency per call; fees are charged in the quote currency (other fee
  * assets are not supported yet and must be rejected upstream, not guessed at).
  */
-// decimal.js defaults to 20 significant digits, too few for 28-digit amounts with 18 decimals.
-const D = Prisma.Decimal.clone({ precision: 60, rounding: Prisma.Decimal.ROUND_HALF_EVEN })
-type Dec = InstanceType<typeof D>
-
-/** Rounding applied ONLY when splitting a lot's basis or a sale's proceeds across lots. */
-export const ALLOC_DP = 8
-const ROUND = Prisma.Decimal.ROUND_HALF_EVEN
+export { ALLOC_DP }
 
 const AMOUNT_RE = /^\d{1,28}(\.\d{1,18})?$/
 
@@ -56,6 +50,13 @@ interface Lot {
   basis: Dec | null
 }
 
+export interface RealizedEntry {
+  eventId: string
+  at: string
+  realized: string
+  complete: boolean
+}
+
 export interface UnresolvedSale {
   eventId: string
   /** Quantity sold in excess of recorded holdings; no P&L is produced for it. */
@@ -73,6 +74,8 @@ export interface AssetPosition {
   /** False when some sold units came from lots with unknown basis. */
   realizedComplete: boolean
   unresolvedSales: UnresolvedSale[]
+  /** Realized result of each SELL, for period reporting. complete is false if any matched lot had unknown cost or part of the sale was unresolved. */
+  realizedByEvent: RealizedEntry[]
 }
 
 export interface ValuedPosition extends AssetPosition {
@@ -133,6 +136,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
   let realized = new D(0)
   let realizedComplete = true
   const unresolved: UnresolvedSale[] = []
+  const realizedByEvent: RealizedEntry[] = []
 
   for (const e of sortEvents(mine)) {
     const qty = dec('quantity', e.quantity, { positive: true })
@@ -180,13 +184,16 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
     // Split net proceeds across ALL sold units by quantity (matched pieces first, the unresolved
     // excess last). The last matched piece takes the rounding remainder so shares sum exactly.
     let allocated = new D(0)
+    let evRealized = new D(0)
+    let evComplete = toSell.isZero()
     pieces.forEach((p, i) => {
       const isLastOfAll = i === pieces.length - 1 && toSell.isZero()
       const share = isLastOfAll ? net.minus(allocated) : q8(net.times(p.qty).div(qty))
       allocated = allocated.plus(share)
-      if (p.basis === null) realizedComplete = false
-      else realized = realized.plus(share.minus(p.basis))
+      if (p.basis === null) { realizedComplete = false; evComplete = false }
+      else { realized = realized.plus(share.minus(p.basis)); evRealized = evRealized.plus(share.minus(p.basis)) }
     })
+    realizedByEvent.push({ eventId: e.id, at: e.at, realized: out(evRealized), complete: evComplete })
   }
 
   let quantity = new D(0)
@@ -206,6 +213,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
     realizedKnown: out(realized),
     realizedComplete,
     unresolvedSales: unresolved,
+    realizedByEvent,
   }
 }
 

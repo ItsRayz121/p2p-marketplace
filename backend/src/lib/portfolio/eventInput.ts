@@ -10,6 +10,10 @@ const EARLIEST = Date.parse('2009-01-03T00:00:00Z')
 /** Clock-skew allowance; records dated in the future are rejected. */
 const FUTURE_SLACK_MS = 5 * 60 * 1000
 
+const quoteEnum = z.enum(['PKR', 'USDT'])
+/** PKR per 1 USDT, plain positive decimal. */
+const rate = z.string().regex(/^\d{1,10}(\.\d{1,18})?$/, 'Enter the exchange rate as a plain number, for example 280.5').refine((r) => !isZero(r), 'Exchange rate must be greater than zero')
+
 export const eventSchema = z.object({
   type: z.enum(['BUY', 'SELL', 'OPENING']),
   occurredAt: z.string().datetime({ offset: true, message: 'Enter a valid date and time' }),
@@ -18,6 +22,8 @@ export const eventSchema = z.object({
   fee: amount.nullish(),
   basis: amount.nullish(),
   zeroCost: z.boolean().optional(),
+  quote: quoteEnum.optional(),
+  fxRate: rate.nullish(),
   note: z.string().max(1000).nullish(),
   clientRequestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).nullish(),
 }).strict().superRefine((e, ctx) => {
@@ -46,4 +52,5 @@ export function cleanNote(note: string | null | undefined): string | null {
 
 export const priceSchema = z.object({
   price: amount.refine((p) => !isZero(p), 'Price must be greater than zero'),
+  quote: quoteEnum.optional(),
 }).strict()

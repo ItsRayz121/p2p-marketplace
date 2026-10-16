@@ -205,9 +205,10 @@ describe('spec fixture 10.13: aggregate with a fifth, unpriced custom asset', ()
 describe('metadata independence (corrections 6 and 8)', () => {
   it('results depend only on events and marks: renaming/re-linking an asset changes nothing', () => {
     const assets = new Map([['MEC', { name: 'Meta Earth', symbol: 'MEC', sourceUrl: 'https://a.example' }]])
-    const before = summarizePortfolio(mecEvents(), { MEC: { price: '1200' } })
+    const events = mecEvents()
+    const before = summarizePortfolio(events, { MEC: { price: '1200' } })
     assets.set('MEC', { name: 'Totally Different Name', symbol: 'ZZZ', sourceUrl: 'https://b.example' })
-    const after = summarizePortfolio(mecEvents(), { MEC: { price: '1200' } })
+    const after = summarizePortfolio(events, { MEC: { price: '1200' } })
     expect(after).toEqual(before)
   })
   it('two assets with identical metadata but different ids never merge', () => {

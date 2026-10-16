@@ -2,11 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
-  PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  Currency, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from '@/lib/portfolio/types'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
+import type { ExportData } from '@/lib/portfolio/exportFile'
+import type { PortfolioApiLike } from '@/lib/portfolio/apiTypes'
 import { formatDecimal, formatQuantity, formatSigned } from '@/lib/portfolio/format'
 import { CustomTokenForm } from './CustomTokenForm'
+import { ExportMenu } from './ExportMenu'
+import { ImportBackupDialog } from './ImportBackupDialog'
+import { ImportBanner } from './ImportBanner'
+import { PerformanceSection } from './PerformanceSection'
 import { PortfolioHeadline } from './PortfolioHeadline'
 import { TokenDetail } from './TokenDetail'
 import { TokenMonogram } from './TokenMonogram'
@@ -20,9 +26,14 @@ type View =
 interface Props {
   /** Existing custody wallet UI (spendable balance, deposit/withdraw, history). Rendered unchanged. */
   walletSection?: ReactNode
+  /** Status shown above everything else (offline / waiting-to-sync). */
+  notice?: ReactNode
   /** Tracked (analytical) assets. Never combined with custody balances. */
   assets?: PortfolioAsset[]
   summary?: PortfolioSummaryResponse | null
+  /** Currency the portfolio is shown in. */
+  currency?: Currency
+  onCurrencyChange?: (c: Currency) => void
   loading?: boolean
   error?: string | null
   onRetry?: () => void
@@ -31,7 +42,23 @@ interface Props {
   loadEvents?: (assetId: string) => Promise<PortfolioEvent[]>
   onRecordEvent?: (assetId: string, input: PortfolioEventInput) => Promise<void>
   onDeleteEvent?: (assetId: string, eventId: string) => Promise<void>
-  onSetPrice?: (assetId: string, price: string) => Promise<void>
+  onSetPrice?: (assetId: string, price: string, quote: Currency) => Promise<void>
+  loadPerformance?: (range: { currency: Currency; from?: string; to?: string }) => Promise<PerformanceResponse>
+  onArchive?: (assetId: string) => Promise<void>
+  onUnarchive?: (assetId: string) => Promise<void>
+  onDeleteAsset?: (assetId: string) => Promise<void>
+  /** Preview of RupChain trades that could be added (and those deliberately left out). */
+  importReport?: ImportReport | null
+  importBusy?: boolean
+  importError?: string | null
+  onImportTrades?: () => void
+  onDismissImport?: () => void
+  loadExport?: () => Promise<ExportData>
+  onSuggestListing?: (assetId: string) => Promise<void>
+  onWithdrawListing?: (assetId: string) => Promise<void>
+  /** Account only: lets the user bring a backup file (e.g. from the local tracker) into this account. */
+  backupImportApi?: Pick<PortfolioApiLike, 'addAsset' | 'addEvent' | 'listEvents'>
+  onBackupImported?: () => void
 }
 
 const noEvents = async (): Promise<PortfolioEvent[]> => []
@@ -42,8 +69,10 @@ const noop = async () => {}
  * entry forms all live here; the tab itself stays selected while views change.
  */
 export function PortfolioTab({
-  walletSection, assets = [], summary = null, loading = false, error = null, onRetry,
-  onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onSetPrice = noop,
+  notice, walletSection, assets = [], summary = null, currency = 'PKR', onCurrencyChange, loading = false, error = null, onRetry,
+  onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
+  importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport,
+  onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported,
 }: Props) {
   const [view, setView] = useState<View>({ name: 'overview' })
   const lastRowRef = useRef<string | null>(null)
@@ -52,6 +81,8 @@ export function PortfolioTab({
   const headingRef = useRef<HTMLHeadingElement>(null)
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const first = useRef(true)
+  const [showBackupImport, setShowBackupImport] = useState(false)
+  const [showArchived, setShowArchived] = useState(false)
 
   // Move focus into a view when it opens, and back to where the user came from when it closes.
   useEffect(() => {
@@ -62,15 +93,21 @@ export function PortfolioTab({
     else addBtnRef.current?.focus()
   }, [view])
 
+  const activeAssets = useMemo(() => assets.filter((a) => !a.archivedAt), [assets])
+  const archivedAssets = useMemo(() => assets.filter((a) => a.archivedAt), [assets])
+  const listed = showArchived ? assets : activeAssets
   const names = useMemo(() => Object.fromEntries(assets.map((a) => [a.id, a.name])), [assets])
   const positions = useMemo(
     () => new Map((summary?.summary.positions ?? []).map((p) => [p.assetId, p])),
     [summary],
   )
+  // Labels follow the data on screen, not the switch: right after a click the numbers are still in the previous currency until the reply arrives.
+  const shown: Currency = summary?.currency ?? currency
   const current = view.name === 'token' || view.name === 'edit' ? assets.find((a) => a.id === view.assetId) : undefined
 
   return (
     <div className="space-y-8">
+      {notice}
       <section aria-labelledby="tracked-portfolio-heading">
         {view.name === 'add' && (
           <div className="space-y-4">
@@ -105,6 +142,8 @@ export function PortfolioTab({
               asset={current}
               position={positions.get(current.id)}
               price={summary?.prices[current.id]}
+              currency={shown}
+              fxUnavailable={summary?.fxUnavailableAssets.includes(current.id)}
               backRef={backRef}
               onBack={() => setView({ name: 'overview' })}
               onEdit={onEditAsset ? () => setView({ name: 'edit', assetId: current.id }) : undefined}
@@ -112,6 +151,11 @@ export function PortfolioTab({
               onRecordEvent={onRecordEvent}
               onDeleteEvent={onDeleteEvent}
               onSetPrice={onSetPrice}
+              onArchive={onArchive}
+              onUnarchive={onUnarchive}
+              onDeleteAsset={onDeleteAsset}
+              onSuggestListing={onSuggestListing}
+              onWithdrawListing={onWithdrawListing}
             />
           ) : (
             <div className="space-y-4">
@@ -135,8 +179,33 @@ export function PortfolioTab({
               Estimates based on transactions you record. Separate from your RupChain wallet balance below; the two are never added together.
             </p>
 
-            {summary && summary.summary.positions.length > 0 && (
-              <div className="mb-4"><PortfolioHeadline data={summary} names={names} /></div>
+            {importReport && onImportTrades && onDismissImport && (
+              <div className="mb-4">
+                <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} />
+              </div>
+            )}
+
+            {onCurrencyChange && (
+              <div role="radiogroup" aria-label="Show amounts in" className="inline-flex rounded-lg border border-border overflow-hidden mb-3">
+                {(['PKR', 'USDT'] as const).map((c) => (
+                  <button
+                    key={c} type="button" role="radio" aria-checked={currency === c}
+                    onClick={() => onCurrencyChange(c)}
+                    className={`px-3 py-1.5 text-xs font-semibold ${currency === c ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+                  >
+                    {c}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {summary && (summary.summary.positions.length > 0 || summary.fxUnavailableAssets.length > 0) && (
+              <div className="mb-4 space-y-6">
+                <PortfolioHeadline data={summary} names={names} />
+                {loadPerformance && summary.summary.positions.length > 0 && (
+                  <PerformanceSection currency={shown} load={loadPerformance} refreshKey={summary.asOf} />
+                )}
+              </div>
             )}
 
             {loading ? (
@@ -154,9 +223,13 @@ export function PortfolioTab({
               <div className="bg-surface shadow-card rounded-xl border border-border p-5 text-sm text-text-muted">
                 No tracked tokens yet.
               </div>
+            ) : listed.length === 0 ? (
+              <div className="bg-surface shadow-card rounded-xl border border-border p-5 text-sm text-text-muted">
+                All your tracked tokens are archived. Their history still counts in the totals above.
+              </div>
             ) : (
               <ul className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border">
-                {assets.map((a) => {
+                {listed.map((a) => {
                   const pos = positions.get(a.id)
                   return (
                     <li key={a.id}>
@@ -168,13 +241,16 @@ export function PortfolioTab({
                       >
                         <TokenMonogram name={a.name} size="md" />
                         <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium text-text-primary break-words">{a.name}</span>
+                          <span className="block text-sm font-medium text-text-primary break-words">{a.name}{a.archivedAt && <span className="ml-2 text-xs font-normal text-text-muted">Archived</span>}</span>
                           {a.symbol && <span className="block text-xs text-text-muted break-words">{a.symbol}</span>}
                         </span>
+                        {!pos && summary?.fxUnavailableAssets.includes(a.id) && (
+                          <span className="text-right text-xs text-amber-800 flex-shrink-0">No {shown} rate</span>
+                        )}
                         {pos && (
                           <span className="text-right text-xs text-text-muted flex-shrink-0">
                             <span className="block text-text-primary">{formatQuantity(pos.quantity)} held</span>
-                            <span className="block">{pos.value === null ? 'No price' : `PKR ${formatDecimal(pos.value)}`}</span>
+                            <span className="block">{pos.value === null ? 'No price' : `${shown} ${formatDecimal(pos.value)}`}</span>
                             {pos.unrealized !== null && <span className="block">P/L {formatSigned(pos.unrealized)}</span>}
                           </span>
                         )}
@@ -183,6 +259,26 @@ export function PortfolioTab({
                   )
                 })}
               </ul>
+            )}
+            {!loading && !error && loadExport && assets.length > 0 && (
+              <div className="mt-3"><ExportMenu load={loadExport} /></div>
+            )}
+            {!loading && !error && backupImportApi && (
+              showBackupImport ? (
+                <div className="mt-3">
+                  <ImportBackupDialog api={backupImportApi} existing={assets} onClose={() => setShowBackupImport(false)} onDone={() => onBackupImported?.()} />
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowBackupImport(true)} className="mt-3 block text-xs font-medium text-primary hover:underline">Import from a backup file</button>
+              )
+            )}
+            {!loading && !error && archivedAssets.length > 0 && (
+              <button
+                type="button" aria-pressed={showArchived} onClick={() => setShowArchived((s) => !s)}
+                className="mt-3 text-xs font-medium text-primary hover:underline"
+              >
+                {showArchived ? 'Hide archived tokens' : `Show archived tokens (${archivedAssets.length})`}
+              </button>
             )}
           </>
         )}

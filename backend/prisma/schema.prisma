@@ -554,6 +554,7 @@ model User {
   portfolioAssets        PortfolioAsset[]
   portfolioEvents        PortfolioEvent[]
   portfolioPrices        PortfolioPriceObservation[]
+  portfolioInterests     PortfolioListingInterest[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
   moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
@@ -1887,9 +1888,17 @@ model PortfolioAsset {
   contractAddress String?  @db.VarChar(128)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+  /// Set when the user archives the token: hidden from the list, history and realized P&L kept.
+  /// A token with records can only be archived, never deleted.
+  archivedAt      DateTime?
+  /// Set when this token mirrors a platform CTM token (created by the trade import). Null for
+  /// tokens the user typed in. One linked token per user per CTM token.
+  ctmTokenId      String?  @db.VarChar(40)
   events          PortfolioEvent[]
   prices          PortfolioPriceObservation[]
+  interests       PortfolioListingInterest[]
 
+  @@unique([userId, ctmTokenId])
   @@index([userId, createdAt])
 }
 
@@ -1912,15 +1921,52 @@ model PortfolioEvent {
   fee             Decimal?       @db.Decimal(46, 18)
   basis           Decimal?       @db.Decimal(46, 18)
   zeroCost        Boolean        @default(false)
+  /// Currency of consideration / fee / basis: 'PKR' or 'USDT'.
+  quote           String         @default("PKR") @db.VarChar(4)
+  /// PKR per 1 USDT at the time of THIS record. Only ever stamped from the platform rate when the
+  /// record is dated "now"; older records need a user-entered rate (never today's rate by default).
+  fxRate          Decimal?       @db.Decimal(46, 18)
+  /// 'platform' (stamped from rate_USDT_PKR at entry time) or 'manual' (entered by the user).
+  fxSource        String?        @db.VarChar(10)
   note            String?        @db.VarChar(200)
   /// Client-generated id so a retried submit cannot record the same event twice.
   clientRequestId String?        @db.VarChar(64)
+  /// Where the record came from. Set by the SERVER only: 'manual' (typed by the user) or 'ctm'
+  /// (read from a settled RupChain CTM trade). Imported records are read-only.
+  source          String         @default("manual") @db.VarChar(12)
+  /// Stable id of the source record (the CTM trade id) so an import can never create it twice.
+  sourceRef       String?        @db.VarChar(64)
+  /// Set when an imported trade stops qualifying as settled: the record stays visible but is
+  /// excluded from every calculation. Cleared again if the trade qualifies again.
+  voidedAt        DateTime?
+  voidReason      String?        @db.VarChar(40)
   createdAt       DateTime       @default(now())
 
   @@unique([userId, clientRequestId])
+  @@unique([userId, source, sourceRef])
   @@index([userId, assetId, occurredAt])
 }
 
+/// A user's explicit, withdrawable "I would like this token listed on RupChain" signal.
+/// Identity is network + contract (a bare name is not an identity). Admins never see rows: only
+/// anonymous aggregate groups above a minimum size (see portfolioAdmin.routes.ts).
+model PortfolioListingInterest {
+  id          String         @id @default(cuid())
+  userId      String
+  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId     String
+  asset       PortfolioAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  /// lower-cased network + ":" + contract (hex addresses lower-cased); the only thing that is grouped on.
+  identityKey String         @db.VarChar(200)
+  /// The token name the user had at consent time. Used only to suggest a common name for a large group.
+  displayName String         @db.VarChar(80)
+  consentedAt DateTime       @default(now())
+  withdrawnAt DateTime?
+
+  @@unique([userId, identityKey])
+  @@index([identityKey, withdrawnAt])
+  @@index([assetId])
+}
 /// A user-entered current price ("mark") for an asset. A price observation, not a transaction.
 model PortfolioPriceObservation {
   id         String         @id @default(cuid())
@@ -1929,6 +1975,8 @@ model PortfolioPriceObservation {
   assetId    String
   asset      PortfolioAsset @relation(fields: [assetId], references: [id], onDelete: NoAction)
   price      Decimal        @db.Decimal(46, 18)
+  /// Currency the price was entered in: 'PKR' or 'USDT'.
+  quote      String         @default("PKR") @db.VarChar(4)
   source     String         @default("manual") @db.VarChar(16)
   observedAt DateTime       @default(now())
 

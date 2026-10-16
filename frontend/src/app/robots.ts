@@ -29,6 +29,7 @@ export default function robots(): MetadataRoute.Robots {
         disallow: [
           '/dashboard',
           '/wallet',
+          '/tracker',
           '/orders',
           '/trade/',
           '/payment-methods',

@@ -34,6 +34,7 @@ export default function Footer() {
               <FooterLink href="/gas">Crypto Gas Fees</FooterLink>
               <FooterLink href="/markets">Token Markets</FooterLink>
               <FooterLink href="/fees">Fee Schedule</FooterLink>
+              <FooterLink href="/tracker">Local Portfolio Tracker</FooterLink>
             </nav>
           </div>
 

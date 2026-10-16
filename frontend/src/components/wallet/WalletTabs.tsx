@@ -1,12 +1,9 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { hashForWalletTab, parseWalletTab, type WalletTab } from '@/lib/walletTab'
+import { hashForWalletTab, parseWalletTab, WALLET_TABS, type WalletTab } from '@/lib/walletTab'
 
-export const WALLET_TABS: ReadonlyArray<{ id: WalletTab; label: string }> = [
-  { id: 'methods', label: 'Payment methods' },
-  { id: 'portfolio', label: 'Portfolio' },
-]
+export { WALLET_TABS }
 
 /** Tab state kept in sync with the URL hash (no navigation, so scroll and history stay put). */
 export function useWalletTab(): [WalletTab, (t: WalletTab) => void] {
@@ -32,25 +29,32 @@ export function useWalletTab(): [WalletTab, (t: WalletTab) => void] {
 export const tabId = (t: WalletTab) => `wallet-tab-${t}`
 export const panelId = (t: WalletTab) => `wallet-panel-${t}`
 
-export function WalletTabs({ tab, onChange }: { tab: WalletTab; onChange: (t: WalletTab) => void }) {
+interface TabsProps {
+  tab: WalletTab
+  onChange: (t: WalletTab) => void
+  /** Which tabs to show. Defaults to both; the second tab is relabelled when the Portfolio feature is switched off. */
+  tabs?: ReadonlyArray<{ id: WalletTab; label: string }>
+}
+
+export function WalletTabs({ tab, onChange, tabs = WALLET_TABS }: TabsProps) {
   const refs = useRef<Record<string, HTMLButtonElement | null>>({})
 
   const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>, index: number) => {
     let next = -1
-    if (e.key === 'ArrowRight') next = (index + 1) % WALLET_TABS.length
-    else if (e.key === 'ArrowLeft') next = (index - 1 + WALLET_TABS.length) % WALLET_TABS.length
+    if (e.key === 'ArrowRight') next = (index + 1) % tabs.length
+    else if (e.key === 'ArrowLeft') next = (index - 1 + tabs.length) % tabs.length
     else if (e.key === 'Home') next = 0
-    else if (e.key === 'End') next = WALLET_TABS.length - 1
+    else if (e.key === 'End') next = tabs.length - 1
     if (next < 0) return
     e.preventDefault()
-    const target = WALLET_TABS[next].id
+    const target = tabs[next].id
     onChange(target)
     refs.current[target]?.focus()
   }
 
   return (
     <div role="tablist" aria-label="Wallet sections" className="flex gap-1 border-b border-border -mb-4 overflow-x-auto">
-      {WALLET_TABS.map(({ id, label }, i) => {
+      {tabs.map(({ id, label }, i) => {
         const selected = tab === id
         return (
           <button

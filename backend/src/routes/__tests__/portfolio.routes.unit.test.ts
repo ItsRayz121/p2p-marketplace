@@ -4,17 +4,18 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 
 const mocks = vi.hoisted(() => ({
-  findMany: vi.fn(), count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(),
+  findMany: vi.fn(), count: vi.fn(), create: vi.fn(), updateMany: vi.fn(), findFirst: vi.fn(), intFindMany: vi.fn(), intUpdateMany: vi.fn(),
 }))
 
 // Any model other than portfolioAsset throws, proving these routes never touch wallets,
 // transactions, trades or any settlement table.
 vi.mock('../../lib/prisma', () => ({
   db: new Proxy(
-    { portfolioAsset: { findMany: mocks.findMany, count: mocks.count, create: mocks.create, updateMany: mocks.updateMany, findFirst: mocks.findFirst } },
+    { portfolioAsset: { findMany: mocks.findMany, count: mocks.count, create: mocks.create, updateMany: mocks.updateMany, findFirst: mocks.findFirst }, portfolioListingInterest: { findMany: mocks.intFindMany, updateMany: mocks.intUpdateMany } },
     { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } },
   ),
 }))
+vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: async () => true }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
@@ -41,6 +42,8 @@ const row = (over = {}) => ({ id: 'a1', name: 'Meta Earth', symbol: null, source
 beforeEach(() => {
   for (const m of Object.values(mocks)) m.mockReset()
   mocks.count.mockResolvedValue(0)
+  mocks.intFindMany.mockResolvedValue([])
+  mocks.intUpdateMany.mockResolvedValue({ count: 0 })
 })
 
 describe('auth and privacy headers', () => {
@@ -60,7 +63,7 @@ describe('GET', () => {
   it('lists only the caller\'s assets', async () => {
     mocks.findMany.mockResolvedValue([row()])
     await app.inject({ method: 'GET', url: '/api/v1/portfolio/assets', headers: as('u1') })
-    expect(mocks.findMany.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
+    expect(mocks.findMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', archivedAt: null })
   })
 })
 

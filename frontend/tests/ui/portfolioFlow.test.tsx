@@ -5,9 +5,15 @@ import { formatDecimal, formatQuantity, formatSigned, isNegative } from '@/lib/p
 
 const api = vi.hoisted(() => ({
   listAssets: vi.fn(), addAsset: vi.fn(), updateAsset: vi.fn(), summary: vi.fn(),
-  listEvents: vi.fn(), addEvent: vi.fn(), deleteEvent: vi.fn(), setPrice: vi.fn(),
+  listEvents: vi.fn(), addEvent: vi.fn(), deleteEvent: vi.fn(), setPrice: vi.fn(), performance: vi.fn(), importCtm: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ portfolioApi: api }))
+
+const emptyPerf = {
+  currency: 'PKR', from: '2026-01-01T00:00:00Z', to: '2026-10-16T00:00:00Z', fxUnavailableAssets: [], points: [],
+  period: { realized: '0', realizedComplete: true, moneyIn: '0', moneyOut: '0', openingsAdded: 0, valueStart: null, valueEnd: null, gain: null, gainUnavailableReason: 'A price is missing at the start or the end of this period.', returnPct: null, returnMethod: 'MODIFIED_DIETZ' },
+}
+
 
 import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel'
 import { RECORD_ONLY_NOTICE } from '@/components/portfolio/EventForm'
@@ -48,7 +54,7 @@ const pos = (assetId: string, o: Record<string, unknown> = {}) => ({
   unresolvedSales: [], price: null, value: null, unrealized: null, ...o,
 })
 const sum = (o: Record<string, unknown> = {}, positions: unknown[] = [], prices = {}) => ({
-  currency: 'PKR', method: 'FIFO', prices, asOf: '2026-10-16T10:00:00Z',
+  currency: 'PKR', method: 'FIFO', fx: { usdtPkr: '280' }, fxUnavailableAssets: [], prices, asOf: '2026-10-16T10:00:00Z',
   summary: {
     positions, pricedValue: '0', knownRemainingBasis: '0', knownUnrealized: '0', knownRealized: '0', knownTotalPnl: '0',
     unpricedAssets: [], unknownBasisAssets: [], unresolvedAssets: [], partial: false, ...o,
@@ -62,11 +68,11 @@ const fixture = () => sum(
     pos('MEC', { quantity: '60', knownRemainingBasis: '60600', realizedKnown: '11200', price: '1200', value: '72000', unrealized: '11400' }),
     pos('SDA', { quantity: '1000', knownRemainingBasis: '10000', price: '8', value: '8000', unrealized: '-2000' }),
   ],
-  { MEC: { price: '1200', observedAt: '2026-10-16T09:00:00Z' } },
+  { MEC: { price: '1200', original: '1200', quote: 'PKR', observedAt: '2026-10-16T09:00:00Z' } },
 )
 const ev = (o: Record<string, unknown> = {}) => ({
   id: 'e1', assetId: 'MEC', type: 'BUY', occurredAt: '2026-01-01T10:00:00Z', quantity: '100', consideration: '100000', fee: '1000',
-  basis: null, zeroCost: false, note: null, ...o,
+  basis: null, zeroCost: false, quote: 'PKR', fxRate: null, fxSource: null, note: null, source: 'manual', voided: false, voidReason: null, ...o,
 })
 
 beforeEach(() => {
@@ -74,6 +80,8 @@ beforeEach(() => {
   api.listAssets.mockResolvedValue([asset('MEC', 'Meta Earth'), asset('SDA', 'Sidra')])
   api.summary.mockResolvedValue(fixture())
   api.listEvents.mockResolvedValue([])
+  api.performance.mockResolvedValue(emptyPerf)
+  api.importCtm.mockResolvedValue({ dryRun: true, created: 0, restored: 0, voided: 0, alreadyImported: 0, attention: [], hasImportedBefore: false, preview: [], skippedForLimit: 0 })
 })
 
 describe('overview numbers', () => {
@@ -269,7 +277,7 @@ describe('token detail', () => {
     await user.clear(screen.getByLabelText(/Current price per unit/))
     await user.type(screen.getByLabelText(/Current price per unit/), '1200')
     await user.click(screen.getByRole('button', { name: 'Save price' }))
-    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '1200'))
+    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '1200', 'PKR'))
   })
 })
 
@@ -292,5 +300,130 @@ describe('metadata edits do not trigger any financial change', () => {
     expect(api.summary.mock.calls.length).toBe(summaryCalls) // numbers untouched, nothing recomputed
     expect(await screen.findByRole('heading', { name: 'Renamed' })).toBeInTheDocument()
     expect(screen.getByText('60,600.00')).toBeInTheDocument() // same figures after the rename
+  })
+})
+
+describe('PKR / USDT switch', () => {
+  const usdtSummary = (o: Record<string, unknown> = {}) => ({
+    ...sum({ pricedValue: '450', knownRealized: '10', knownUnrealized: '5', knownTotalPnl: '15' }, [pos('MEC', { quantity: '60', value: '450', unrealized: '5' })],
+      { MEC: { price: '7.5', original: '2100', quote: 'PKR', observedAt: '2026-10-16T09:00:00Z' } }),
+    currency: 'USDT', fx: { usdtPkr: '280' }, ...o,
+  })
+
+  it('switching currency re-requests the summary in that currency and relabels every figure', async () => {
+    api.summary.mockImplementation(async (c: string) => (c === 'USDT' ? usdtSummary() : fixture()))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    expect(await screen.findByText('PKR 207,000.00')).toBeInTheDocument()
+    expect(api.summary).toHaveBeenLastCalledWith('PKR')
+    await user.click(screen.getByRole('radio', { name: 'USDT' }))
+    expect((await screen.findAllByText('USDT 450.00')).length).toBeGreaterThan(0)
+    expect(api.summary).toHaveBeenLastCalledWith('USDT')
+    expect(screen.getByRole('radio', { name: 'USDT' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: 'PKR' })).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByText(/280.00 PKR per USDT/)).toBeInTheDocument()
+  })
+  it('labels keep matching the numbers on screen while a currency switch is still loading', async () => {
+    let release: (v: unknown) => void = () => {}
+    api.summary.mockImplementation((c: string) => (c === 'USDT' ? new Promise((r) => { release = r }) : Promise.resolve(fixture())))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    expect(await screen.findByText('PKR 207,000.00')).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'USDT' }))
+    expect(screen.getByRole('radio', { name: 'USDT' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByText('PKR 207,000.00')).toBeInTheDocument() // still PKR numbers, still PKR label
+    release(usdtSummary())
+    expect((await screen.findAllByText('USDT 450.00')).length).toBeGreaterThan(0)
+    expect(screen.queryByText('PKR 207,000.00')).toBeNull()
+  })
+  it('lists tokens that have no rate for the chosen currency and never shows them as zero', async () => {
+    api.summary.mockResolvedValue(usdtSummary({ fxUnavailableAssets: ['SDA'], summary: { ...usdtSummary().summary, partial: true } }))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('No USDT/PKR rate recorded')
+    expect(alert).toHaveTextContent('Sidra')
+    expect(screen.getByRole('button', { name: /Sidra/ })).toHaveTextContent('No USDT rate')
+    await user.click(screen.getByRole('button', { name: /Sidra/ }))
+    expect(await screen.findByText(/cannot be shown in USDT/)).toBeInTheDocument()
+  })
+  it('shows a price entered in another currency together with its original value', async () => {
+    api.summary.mockResolvedValue(usdtSummary())
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    expect(await screen.findByText('7.5')).toBeInTheDocument()
+    expect(screen.getByText(/as 2,100 PKR/)).toBeInTheDocument()
+  })
+  it('a price whose conversion is impossible says so instead of showing zero', async () => {
+    api.summary.mockResolvedValue(usdtSummary({
+      fx: { usdtPkr: null },
+      prices: { MEC: { price: null, original: '2100', quote: 'PKR', observedAt: '2026-10-16T09:00:00Z' } },
+    }))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    expect(await screen.findByText('No price')).toBeInTheDocument()
+    expect(screen.getByText(/no USDT\/PKR rate is available to convert it/)).toBeInTheDocument()
+  })
+
+  async function openRecord(name: string) {
+    api.summary.mockImplementation(async (c: string) => (c === 'USDT' ? usdtSummary() : fixture()))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await screen.findByText('PKR 207,000.00')
+    await user.click(screen.getByRole('radio', { name: 'USDT' }))
+    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name }))
+    return user
+  }
+  it('the entry form starts in the currency being viewed and sends currency and rate as strings', async () => {
+    api.addEvent.mockResolvedValue(ev())
+    const user = await openRecord('Record buy')
+    expect(screen.getByLabelText('Currency of the amounts')).toHaveValue('USDT')
+    expect(screen.getByLabelText('Amount paid (USDT)')).toBeInTheDocument()
+    expect(screen.getByText(/otherwise this entry cannot be shown in the other currency/)).toBeInTheDocument()
+    await user.type(screen.getByLabelText('Quantity'), '10')
+    await user.type(screen.getByLabelText('Amount paid (USDT)'), '36')
+    await user.type(screen.getByLabelText(/USDT\/PKR rate for this date/), '278.5')
+    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
+    expect(api.addEvent.mock.calls[0]![1]).toMatchObject({ quote: 'USDT', consideration: '36', fxRate: '278.5' })
+  })
+  it('the rate is optional and omitted when blank; a bad rate is rejected', async () => {
+    api.addEvent.mockResolvedValue(ev())
+    const user = await openRecord('Record buy')
+    await user.type(screen.getByLabelText('Quantity'), '1')
+    await user.type(screen.getByLabelText('Amount paid (USDT)'), '5')
+    await user.type(screen.getByLabelText(/USDT\/PKR rate for this date/), '0')
+    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    expect(await screen.findByText(/Enter the rate as a plain number greater than zero/)).toBeInTheDocument()
+    expect(api.addEvent).not.toHaveBeenCalled()
+    await user.clear(screen.getByLabelText(/USDT\/PKR rate for this date/))
+    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
+    expect(api.addEvent.mock.calls[0]![1]).not.toHaveProperty('fxRate')
+  })
+  it('the price form can enter a price in USDT', async () => {
+    api.setPrice.mockResolvedValue({ price: '2', quote: 'USDT', observedAt: '2026-10-16T10:00:00Z' })
+    const user = await openRecord('Update current price')
+    expect(screen.getByLabelText('Price currency')).toHaveValue('USDT')
+    await user.type(screen.getByLabelText(/Current price per unit \(USDT\)/), '2')
+    await user.click(screen.getByRole('button', { name: 'Save price' }))
+    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '2', 'USDT'))
+  })
+  it('history shows each entry in its own currency with the rate recorded for it', async () => {
+    api.listEvents.mockResolvedValue([
+      ev({ id: 'a', quote: 'USDT', consideration: '36', fee: '0', fxRate: '278.5', fxSource: 'manual' }),
+      ev({ id: 'b', consideration: '10000', fee: '0', fxRate: '280', fxSource: 'platform' }),
+    ])
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText(/36.00 USDT/)).toBeInTheDocument()
+    expect(within(table).getByText(/10,000.00 PKR/)).toBeInTheDocument()
+    expect(within(table).getByText(/278.50 PKR\/USDT \(entered by you\)/)).toBeInTheDocument()
+    expect(within(table).getByText(/280.00 PKR\/USDT$/)).toBeInTheDocument()
   })
 })

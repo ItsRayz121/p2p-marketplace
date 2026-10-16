@@ -1,6 +1,6 @@
-﻿'use client'
+'use client'
 import { useState, useCallback, useEffect, useRef } from 'react'
-import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi, isNetworkError } from '@/lib/api'
+import { walletApi, marketplaceApi, userPaymentMethodsApi, ctmApi, portfolioApi, isNetworkError } from '@/lib/api'
 import { withdrawalIdempotencyKey } from '@/lib/withdrawalKey'
 import type { WalletBalance, Transaction, TrustedAddress, UserPaymentMethod, SavedDeliveryAddress } from '@/lib/api'
 import { useAuth } from '@/hooks/useAuth'
@@ -21,7 +21,12 @@ import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
 import { WalletTabs, useWalletTab, tabId, panelId } from '@/components/wallet/WalletTabs'
-import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel'
+import { walletTabsFor } from '@/lib/walletTab'
+// The whole Portfolio feature (charts, forms, offline sync) is only needed once its tab is opened.
+const PortfolioPanel = dynamic(() => import('@/components/portfolio/PortfolioPanel').then((m) => m.PortfolioPanel), {
+  ssr: false,
+  loading: () => <LoadingState message="Loading your portfolio..." />,
+})
 import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
 import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
@@ -1715,10 +1720,13 @@ export default function WalletPage() {
   const [depositCoin, setDepositCoin] = useState<string | null>(null)
   const [withdrawWallet, setWithdrawWallet] = useState<{ coin: string; network: string } | null>(null)
   const [activeTab, setTab] = useWalletTab()
+  // Kill switch for the Portfolio feature. Assume ON until told otherwise (and if the check fails).
+  const [portfolioOn, setPortfolioOn] = useState(true)
   const [isMaker, setIsMaker] = useState(false)
 
   useEffect(() => {
     makerApi.getStatus().then((s) => setIsMaker(s.makerStatus === 'approved')).catch(() => {})
+    portfolioApi.status().then((s) => setPortfolioOn(s.enabled)).catch(() => {})
   }, [])
 
   const fetchBalances = useCallback(async () => {
@@ -1785,49 +1793,15 @@ export default function WalletPage() {
   // Makers need a deposit to post ads, so they see the wallet section even at zero.
   // The Portfolio tab itself is always available; only the custody wallet section inside it is gated.
   const showBalanceTab = hasFunds || isMaker
+  // With the feature on, the second tab is Portfolio for everyone. With it off, the page goes back to
+  // exactly how it was: the old balance tab, only for people who have funds (or are makers).
+  const { secondTabVisible, tabs } = walletTabsFor({ portfolioOn, showBalanceTab })
+  const tab = secondTabVisible ? activeTab : 'methods'
 
-  return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
-      <div>
-        <h1 className="text-2xl font-bold text-text-primary">Wallet &amp; Payment Methods</h1>
-        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto, plus your portfolio{showBalanceTab ? ', balance and deposits.' : '.'}</p>
-      </div>
-
-      <WalletTabs tab={activeTab} onChange={setTab} />
-
-      {/* ── Withdrawal security lock banner ── */}
-      {wdLockActive && (
-        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 flex items-start gap-3">
-          <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
-          <div>
-            <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
-            <p className="text-xs text-amber-700 mt-0.5">
-              Due to a recent {user?.withdrawalLockReason ?? 'security change'}, withdrawals are locked until <strong>{wdLockUntil}</strong>. Deposits and trading are unaffected.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'methods' && (
-        <div role="tabpanel" id={panelId('methods')} aria-labelledby={tabId('methods')} className="space-y-8">
-          {/* ── PKR Payment Methods ── */}
-          <div id="payment-methods">
-            <PaymentMethodsSection />
-          </div>
-
-          {/* ── Saved Delivery Addresses ── */}
-          <div id="saved-addresses">
-            <SavedDeliveryAddressesSection />
-          </div>
-
-          {/* ── Trusted addresses ── */}
-          <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
-        </div>
-      )}
-
-      {activeTab === 'portfolio' && (
-      <div role="tabpanel" id={panelId('portfolio')} aria-labelledby={tabId('portfolio')}>
-      <PortfolioPanel walletSection={<>
+  // The custody wallet (spendable balance, deposits, withdrawals, history). Shown inside the Portfolio tab
+  // while the feature is on, and on its own, exactly as before, if the feature is switched off.
+  const walletSectionEl = (
+    <>
       {/* ── RupChain internal balances (custody wallet) ──
           Deposits are switched off for new users: only accounts that already hold
           (or have collateral locked in) a balance see this, so nobody is locked out
@@ -1991,7 +1965,51 @@ export default function WalletPage() {
         )}
       </section>
       )}
-      </>} />
+          </>
+  )
+
+  return (
+    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
+      <div>
+        <h1 className="text-2xl font-bold text-text-primary">Wallet &amp; Payment Methods</h1>
+        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto{portfolioOn ? ', plus your portfolio' : ''}{showBalanceTab ? (portfolioOn ? ', balance and deposits.' : ', plus your balance and deposits.') : '.'}</p>
+      </div>
+
+      {tabs.length > 1 && <WalletTabs tab={tab} onChange={setTab} tabs={tabs} />}
+
+      {/* ── Withdrawal security lock banner ── */}
+      {wdLockActive && (
+        <div className="bg-amber-500/10 border border-amber-500/40 rounded-xl px-4 py-3 flex items-start gap-3">
+          <Lock size={18} className="text-amber-500 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Withdrawals Temporarily Locked</p>
+            <p className="text-xs text-amber-700 mt-0.5">
+              Due to a recent {user?.withdrawalLockReason ?? 'security change'}, withdrawals are locked until <strong>{wdLockUntil}</strong>. Deposits and trading are unaffected.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {tab === 'methods' && (
+        <div role="tabpanel" id={panelId('methods')} aria-labelledby={tabId('methods')} className="space-y-8">
+          {/* ── PKR Payment Methods ── */}
+          <div id="payment-methods">
+            <PaymentMethodsSection />
+          </div>
+
+          {/* ── Saved Delivery Addresses ── */}
+          <div id="saved-addresses">
+            <SavedDeliveryAddressesSection />
+          </div>
+
+          {/* ── Trusted addresses ── */}
+          <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
+        </div>
+      )}
+
+      {tab === 'portfolio' && secondTabVisible && (
+      <div role="tabpanel" id={panelId('portfolio')} aria-labelledby={tabId('portfolio')}>
+        {portfolioOn ? <PortfolioPanel userId={user?.id} walletSection={walletSectionEl} /> : walletSectionEl}
       </div>
       )}
 

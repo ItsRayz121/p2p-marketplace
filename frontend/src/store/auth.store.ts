@@ -2,6 +2,7 @@
 import { create } from 'zustand'
 import { setAuthHint, clearAuthHint } from '../lib/authCookie'
 import { swrClear } from '../lib/swrCache'
+import { purgePortfolioCache } from '../lib/portfolio/offline/cache'
 
 export interface AuthUser {
   id: string
@@ -121,6 +122,8 @@ export const useAuthStore = create<AuthStore>((set) => ({
     clearAuthHint()
     writeCachedUser(null)
     swrClear()
+    // The saved offline copy of this person's portfolio must not outlive their session on a shared device.
+    void purgePortfolioCache()
     set({ accessToken: null, user: null })
   },
 }))

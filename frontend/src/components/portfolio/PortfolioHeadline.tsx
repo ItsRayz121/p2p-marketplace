@@ -13,21 +13,22 @@ function Card({ label, value, note }: { label: string; value: string; note: stri
 
 /**
  * Headline numbers for the tracked portfolio. Totals cover only what is known: anything unpriced,
- * of unknown cost, or sold beyond the recorded history is listed in the notice and excluded, never
- * counted as zero.
+ * of unknown cost, without an exchange rate, or sold beyond the recorded history is listed in the
+ * notice and excluded, never counted as zero.
  */
 export function PortfolioHeadline({ data, names }: { data: PortfolioSummaryResponse; names: Record<string, string> }) {
   const s = data.summary
+  const cur = data.currency
   const label = (ids: string[]) => ids.map((id) => names[id] ?? 'Unnamed token').join(', ')
   const asOf = new Date(data.asOf).toLocaleString()
 
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card label="Priced holdings" value={`PKR ${formatDecimal(s.pricedValue)}`} note="Tokens where you entered a current price" />
-        <Card label="Realized profit / loss" value={`PKR ${formatSigned(s.knownRealized)}`} note="From sales you recorded (FIFO)" />
-        <Card label="Unrealized profit / loss" value={`PKR ${formatSigned(s.knownUnrealized)}`} note="Only tokens with a price and a known cost" />
-        <Card label="Total known profit / loss" value={`PKR ${formatSigned(s.knownTotalPnl)}`} note="Realized plus unrealized, known parts only" />
+        <Card label="Priced holdings" value={`${cur} ${formatDecimal(s.pricedValue)}`} note="Tokens where you entered a current price" />
+        <Card label="Realized profit / loss" value={`${cur} ${formatSigned(s.knownRealized)}`} note="From sales you recorded (FIFO)" />
+        <Card label="Unrealized profit / loss" value={`${cur} ${formatSigned(s.knownUnrealized)}`} note="Only tokens with a price and a known cost" />
+        <Card label="Total known profit / loss" value={`${cur} ${formatSigned(s.knownTotalPnl)}`} note="Realized plus unrealized, known parts only" />
       </div>
 
       {s.partial ? (
@@ -36,13 +37,21 @@ export function PortfolioHeadline({ data, names }: { data: PortfolioSummaryRespo
           {s.unpricedAssets.length > 0 && <p>No current price: {label(s.unpricedAssets)}</p>}
           {s.unknownBasisAssets.length > 0 && <p>Unknown cost: {label(s.unknownBasisAssets)}</p>}
           {s.unresolvedAssets.length > 0 && <p>Sold more than recorded (add opening holdings): {label(s.unresolvedAssets)}</p>}
+          {data.fxUnavailableAssets.length > 0 && (
+            <p>
+              No USDT/PKR rate recorded for some entries, so these cannot be shown in {cur}: {label(data.fxUnavailableAssets)}.
+              Open the token and re-enter those entries with the rate for their date, or switch currency.
+            </p>
+          )}
         </div>
       ) : (
         <p className="text-xs text-text-muted">Every recorded token is priced and has a known cost.</p>
       )}
 
       <p className="text-xs text-text-muted">
-        Based on the transactions and prices you entered, in PKR, as of {asOf}. This is not verified ownership, an exit price, or tax advice. Method: FIFO.
+        Based on the transactions and prices you entered, in {cur}, as of {asOf}.
+        {data.fx.usdtPkr !== null && <> Current prices use today&apos;s RupChain rate of {formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry uses the rate recorded with it.</>}
+        {' '}This is not verified ownership, an exit price, or tax advice. Method: FIFO.
       </p>
     </div>
   )

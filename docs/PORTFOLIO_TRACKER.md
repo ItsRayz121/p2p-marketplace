@@ -49,8 +49,31 @@ Status: [ ] todo Â· [~] in progress Â· [x] done and cross-checked
 - [x] Full review of all diffs against all 8 corrections
 - [x] Commit + push, report hash/build status/auto-deploy
 
+## Round 2 — remaining scope (approved: build in order, cross-check each, one final review, then commit + push)
+### P7 — PKR / USDT switch
+- [x] Per-record currency + exchange rate stamped from the platform `rate_USDT_PKR` (user can override); price marks carry a currency
+- [x] Summary in PKR or USDT: each record converted at ITS OWN rate; missing rate => asset excluded + flagged, never today's rate
+- [x] UI: currency switch, record form currency/rate, labels follow currency
+### P8 — Archive / delete tokens
+- [x] Delete only when a token has no records; otherwise archive (history + realized P&L kept); unarchive; archived hidden by default
+### P9 — Charts and time periods
+- [x] Periods: this month, 7D, 30D, 90D, all time, custom; realized-in-period, money in/out; value only where genuinely priced (gaps, no interpolation)
+- [x] Accessible SVG charts with data-table fallback; percentage return shown unavailable unless valid
+### P10 — Import RupChain trades (read-only)
+- [x] Settlement eligibility from the real CTM completion path; ineligible/pending shown as "needs attention", never imported
+- [x] Idempotent import keyed by trade id; auto-creates linked token; imported records read-only; later reversal => voided, not deleted
+### P11 — CSV export
+- [x] CSV with formula-injection protection; versioned JSON backup
+### P12 — Optional listing interest (admin, aggregate only)
+- [x] User consent + withdraw; identity = network+contract; admin sees only groups >= threshold, bucketed, audited
+### P13 — Guest / offline (spec phase E)
+- [x] Shared decimal engine in the browser; local-only guest tracker (IndexedDB), encrypted backup, explicit migration to account
+- [x] Signed-in offline: last-saved view with timestamp, queued analytical edits (idempotent), cleared on logout
+### P14 — Feature flag (default ON, kill switch)
+### P15 — Final in-depth cross-check of everything, then ONE commit + push
 ## Log
 - 2026-10-16: audit written (docs/PORTFOLIO_AUDIT.md); plan approved by user.
 - 2026-10-16: P1 (tab shell) and P2 (validation, monogram, form) built and cross-checked: 51 UI tests pass, tsc clean. Not pushed yet by design.
 - 2026-10-16: P3 (storage+API, 24 backend tests) and P4 (FIFO engine, all spec fixtures match, 29 tests) done. Cross-check found correction 2 incomplete (no transaction records/history/forms) -> P6 added. Build, bundle budget and 45 legacy tests pass.
 - 2026-10-16: P6 done (events API + engine summary, entry/history/price forms, overview numbers). Final cross-check: FE 82 UI tests + 45 legacy pass, BE 92 unit tests pass, both tsc clean, next build OK, wallet bundle 177/190 KB, Prisma-generated SQL == hand-written migrations (additive only). Real-browser pass and staging migration NOT done (no DB/login available locally).
+- 2026-10-16: Round 2 complete (P7-P14) and final cross-check done: FE 293 UI + 45 legacy tests, BE 372 unit tests, both tsc/eslint clean, next build OK, wallet bundle 170/190 KB, migrations == Prisma-generated diff (18 additive ops). Cross-check fixes: label/number mismatch during currency switch, focus loss after closing a form, emoji-initial bug, price-history cap, same-request-id race, hostile backup validation, stray empty files removed. NOT verified: real browser, real database (migrations and the CTM import queries ran only against mocks / Prisma-generated SQL).

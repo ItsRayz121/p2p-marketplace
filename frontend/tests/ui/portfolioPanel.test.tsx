@@ -4,9 +4,15 @@ import userEvent from '@testing-library/user-event'
 
 const api = vi.hoisted(() => ({
   listAssets: vi.fn(), addAsset: vi.fn(), updateAsset: vi.fn(), summary: vi.fn(),
-  listEvents: vi.fn(), addEvent: vi.fn(), deleteEvent: vi.fn(), setPrice: vi.fn(),
+  listEvents: vi.fn(), addEvent: vi.fn(), deleteEvent: vi.fn(), setPrice: vi.fn(), performance: vi.fn(), importCtm: vi.fn(),
 }))
 vi.mock('@/lib/api', () => ({ portfolioApi: api }))
+
+const emptyPerf = {
+  currency: 'PKR', from: '2026-01-01T00:00:00Z', to: '2026-10-16T00:00:00Z', fxUnavailableAssets: [], points: [],
+  period: { realized: '0', realizedComplete: true, moneyIn: '0', moneyOut: '0', openingsAdded: 0, valueStart: null, valueEnd: null, gain: null, gainUnavailableReason: 'A price is missing at the start or the end of this period.', returnPct: null, returnMethod: 'MODIFIED_DIETZ' },
+}
+
 
 import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel'
 
@@ -15,7 +21,7 @@ const dto = (over = {}) => ({
 })
 
 const emptySummary = {
-  currency: 'PKR', method: 'FIFO', prices: {}, asOf: '2026-10-16T00:00:00Z',
+  currency: 'PKR', method: 'FIFO', fx: { usdtPkr: null }, fxUnavailableAssets: [], prices: {}, asOf: '2026-10-16T00:00:00Z',
   summary: { positions: [], pricedValue: '0', knownRemainingBasis: '0', knownUnrealized: '0', knownRealized: '0', knownTotalPnl: '0', unpricedAssets: [], unknownBasisAssets: [], unresolvedAssets: [], partial: false },
 }
 
@@ -23,6 +29,8 @@ beforeEach(() => {
   Object.values(api).forEach((m) => m.mockReset())
   api.summary.mockResolvedValue(emptySummary)
   api.listEvents.mockResolvedValue([])
+  api.performance.mockResolvedValue(emptyPerf)
+  api.importCtm.mockResolvedValue({ dryRun: true, created: 0, restored: 0, voided: 0, alreadyImported: 0, attention: [], hasImportedBefore: false, preview: [], skippedForLimit: 0 })
 })
 
 describe('PortfolioPanel', () => {

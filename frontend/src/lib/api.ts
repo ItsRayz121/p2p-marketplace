@@ -18,7 +18,8 @@ export const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
-import type { PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
+import type { ExportData } from '@/lib/portfolio/exportFile'
+import type { Currency, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -1591,6 +1592,27 @@ export interface PortfolioAssetDto {
   network: string | null
   contractAddress: string | null
   createdAt: string
+  archivedAt: string | null
+  /** The user has told RupChain they would like this token listed (withdrawable). */
+  listingInterest?: boolean
+  /** This token mirrors a token already available on RupChain. */
+  linkedToRupChainToken?: boolean
+}
+
+export interface ListingInterestGroup {
+  network: string
+  contract: string
+  approxAccounts: number
+  commonName: string | null
+  trend: 'rising' | 'steady' | 'falling'
+}
+export interface ListingInterestReport {
+  asOf: string
+  refreshesEvery: string
+  threshold: number
+  groups: ListingInterestGroup[]
+  suppressedGroups: number
+  notice: string
 }
 export interface PortfolioAssetInput {
   name: string
@@ -1601,7 +1623,11 @@ export interface PortfolioAssetInput {
 }
 
 export const portfolioApi = {
-  listAssets: () => apiRequest<PortfolioAssetDto[]>('/portfolio/assets'),
+  listAssets: (includeArchived = true) =>
+    apiRequest<PortfolioAssetDto[]>(`/portfolio/assets${includeArchived ? '?includeArchived=1' : ''}`),
+  archiveAsset: (id: string) => apiRequest<void>(`/portfolio/assets/${encodeURIComponent(id)}/archive`, { method: 'POST' }),
+  unarchiveAsset: (id: string) => apiRequest<void>(`/portfolio/assets/${encodeURIComponent(id)}/unarchive`, { method: 'POST' }),
+  deleteAsset: (id: string) => apiRequest<void>(`/portfolio/assets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   addAsset: (data: PortfolioAssetInput) =>
     apiRequest<PortfolioAssetDto>('/portfolio/assets', { method: 'POST', body: JSON.stringify(data) }),
   updateAsset: (id: string, data: PortfolioAssetInput) =>
@@ -1612,9 +1638,30 @@ export const portfolioApi = {
     apiRequest<PortfolioEvent>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`, { method: 'POST', body: JSON.stringify(data) }),
   deleteEvent: (assetId: string, eventId: string) =>
     apiRequest<void>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
-  setPrice: (assetId: string, price: string) =>
-    apiRequest<{ price: string; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price }) }),
-  summary: () => apiRequest<PortfolioSummaryResponse>('/portfolio/summary'),
+  setPrice: (assetId: string, price: string, quote: Currency = 'PKR') =>
+    apiRequest<{ price: string; quote: Currency; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price, quote }) }),
+  summary: (currency: Currency = 'PKR') => apiRequest<PortfolioSummaryResponse>(`/portfolio/summary?currency=${currency}`),
+  exportAll: () => apiRequest<ExportData>('/portfolio/export'),
+  /** Whether the Portfolio feature is switched on (it is by default). */
+  status: () => apiRequest<{ enabled: boolean }>('/portfolio/status'),
+  suggestListing: (id: string) =>
+    apiRequest<{ listingInterest: boolean }>(`/portfolio/assets/${encodeURIComponent(id)}/interest`, { method: 'POST', body: JSON.stringify({ consent: true }) }),
+  withdrawListingSuggestion: (id: string) =>
+    apiRequest<{ listingInterest: boolean }>(`/portfolio/assets/${encodeURIComponent(id)}/interest`, { method: 'DELETE' }),
+  /** Copies your settled RupChain trades into the tracker (one-way, read-only toward the platform). `dryRun` only previews. */
+  importCtm: (dryRun: boolean) =>
+    apiRequest<ImportReport>('/portfolio/import/ctm', { method: 'POST', body: JSON.stringify({ dryRun }) }),
+  performance: (opts: { currency: Currency; from?: string; to?: string }) => {
+    const qs = new URLSearchParams({ currency: opts.currency })
+    if (opts.from) qs.set('from', opts.from)
+    if (opts.to) qs.set('to', opts.to)
+    return apiRequest<PerformanceResponse>(`/portfolio/performance?${qs.toString()}`)
+  },
+}
+
+/** Administrators only: anonymous, aggregate listing interest (never individual data). */
+export const portfolioAdminApi = {
+  interest: () => apiRequest<ListingInterestReport>('/admin/portfolio/interest'),
 }
 
 export interface SavedDeliveryAddress {

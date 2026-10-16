@@ -5,7 +5,7 @@ import { Prisma } from '@prisma/client'
 const m = vi.hoisted(() => ({
   assetFindFirst: vi.fn(),
   evFindMany: vi.fn(), evFindFirst: vi.fn(), evCount: vi.fn(), evCreate: vi.fn(), evDeleteMany: vi.fn(),
-  prCreate: vi.fn(), prFindMany: vi.fn(),
+  prCreate: vi.fn(), prFindMany: vi.fn(), prCount: vi.fn(), cfg: vi.fn(),
 }))
 
 // Only portfolio tables exist on this mock; touching anything else (wallets, transactions, trades,
@@ -14,9 +14,10 @@ vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
     portfolioAsset: { findFirst: m.assetFindFirst, findMany: vi.fn(), count: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     portfolioEvent: { findMany: m.evFindMany, findFirst: m.evFindFirst, count: m.evCount, create: m.evCreate, deleteMany: m.evDeleteMany },
-    portfolioPriceObservation: { create: m.prCreate, findMany: m.prFindMany },
+    portfolioPriceObservation: { create: m.prCreate, findMany: m.prFindMany, count: m.prCount },
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
+vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
@@ -44,7 +45,8 @@ const past = '2026-01-02T00:00:00.000Z'
 
 const evRow = (o: Record<string, unknown> = {}) => ({
   id: 'ev1', assetId: 'a1', type: 'BUY', occurredAt: new Date(past), quantity: dec('100'), consideration: dec('100000'),
-  fee: dec('1000'), basis: null, zeroCost: false, note: null, createdAt: new Date(past), ...o,
+  fee: dec('1000'), basis: null, zeroCost: false, quote: 'PKR', fxRate: null, fxSource: null, note: null, createdAt: new Date(past),
+  source: 'manual', voidedAt: null, voidReason: null, ...o,
 })
 const post = (payload: unknown, id = 'a1', headers: Record<string, string> = U) =>
   app.inject({ method: 'POST', url: `/api/v1/portfolio/assets/${id}/events`, headers, payload: payload as object })
@@ -54,6 +56,8 @@ beforeEach(() => {
   m.assetFindFirst.mockResolvedValue({ id: 'a1' })
   m.evCount.mockResolvedValue(0)
   m.evFindFirst.mockResolvedValue(null)
+  m.cfg.mockResolvedValue('')
+  m.prCount.mockResolvedValue(0)
 })
 
 describe('auth and ownership', () => {
@@ -76,11 +80,28 @@ describe('auth and ownership', () => {
     expect(m.assetFindFirst.mock.calls[0]![0].where).toEqual({ id: 'theirs', userId: 'u1' })
   })
   it('delete is scoped to the caller, the asset and the entry', async () => {
-    m.evDeleteMany.mockResolvedValue({ count: 0 })
+    m.evFindFirst.mockResolvedValue(null)
     expect((await app.inject({ method: 'DELETE', url: '/api/v1/portfolio/assets/a1/events/ev9', headers: U })).statusCode).toBe(404)
-    expect(m.evDeleteMany.mock.calls[0]![0].where).toEqual({ id: 'ev9', assetId: 'a1', userId: 'u1' })
+    expect(m.evFindFirst.mock.calls[0]![0].where).toEqual({ id: 'ev9', assetId: 'a1', userId: 'u1' })
+    expect(m.evDeleteMany).not.toHaveBeenCalled()
+    m.evFindFirst.mockResolvedValue({ id: 'ev1', source: 'manual' })
     m.evDeleteMany.mockResolvedValue({ count: 1 })
     expect((await app.inject({ method: 'DELETE', url: '/api/v1/portfolio/assets/a1/events/ev1', headers: U })).statusCode).toBe(200)
+    expect(m.evDeleteMany.mock.calls[0]![0].where).toEqual({ id: 'ev1', assetId: 'a1', userId: 'u1', source: 'manual' })
+  })
+  it('an entry imported from a RupChain trade is read-only: it cannot be removed', async () => {
+    m.evFindFirst.mockResolvedValue({ id: 'ev1', source: 'ctm' })
+    const res = await app.inject({ method: 'DELETE', url: '/api/v1/portfolio/assets/a1/events/ev1', headers: U })
+    expect(res.statusCode).toBe(409)
+    expect(res.json().error.message).toMatch(/read-only/)
+    expect(m.evDeleteMany).not.toHaveBeenCalled()
+  })
+  it('shows where an entry came from and whether it is voided, never the owner', async () => {
+    m.evFindMany.mockResolvedValue([evRow({ source: 'ctm', voidedAt: new Date(), voidReason: 'disputed' })])
+    const e = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/assets/a1/events', headers: U })).json().data[0]
+    expect(e).toMatchObject({ source: 'ctm', voided: true, voidReason: 'disputed' })
+    expect(e).not.toHaveProperty('userId')
+    expect(e).not.toHaveProperty('sourceRef')
   })
   it('never returns the owner id and sends decimals as strings, with no-store', async () => {
     m.evFindMany.mockResolvedValue([evRow()])
@@ -177,11 +198,11 @@ describe('GET /portfolio/summary runs the FIFO engine on stored records', () => 
     ev('5', 'RUBI', 'BUY', '2026-01-03T00:00:00Z', '1000', '12000', '0'),
   ]
   const prices = (extra: Array<{ assetId: string; price: string }> = []) => [
-    { assetId: 'MEC', price: dec('1200'), observedAt: new Date(NOW) },
-    { assetId: 'USDT', price: dec('280'), observedAt: new Date(NOW) },
-    { assetId: 'SDA', price: dec('8'), observedAt: new Date(NOW) },
-    { assetId: 'RUBI', price: dec('15'), observedAt: new Date(NOW) },
-    ...extra.map((p) => ({ assetId: p.assetId, price: dec(p.price), observedAt: new Date(NOW) })),
+    { assetId: 'MEC', price: dec('1200'), quote: 'PKR', observedAt: new Date(NOW) },
+    { assetId: 'USDT', price: dec('280'), quote: 'PKR', observedAt: new Date(NOW) },
+    { assetId: 'SDA', price: dec('8'), quote: 'PKR', observedAt: new Date(NOW) },
+    { assetId: 'RUBI', price: dec('15'), quote: 'PKR', observedAt: new Date(NOW) },
+    ...extra.map((p) => ({ assetId: p.assetId, price: dec(p.price), quote: 'PKR', observedAt: new Date(NOW) })),
   ]
 
   it('reproduces the spec aggregate: 207,000 / 193,800 / 13,200 / 11,200 / 24,400', async () => {
@@ -219,7 +240,7 @@ describe('GET /portfolio/summary runs the FIFO engine on stored records', () => 
     m.evFindMany.mockResolvedValue([])
     m.prFindMany.mockResolvedValue([])
     await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary', headers: U })
-    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
+    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', voidedAt: null }) // voided entries never count
     expect(m.prFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
   })
   it('does not leak internals when stored data is corrupt', async () => {
@@ -229,5 +250,102 @@ describe('GET /portfolio/summary runs the FIFO engine on stored records', () => 
     expect(res.statusCode).toBe(500)
     expect(res.json().error.code).toBe('PORTFOLIO_CALC_FAILED')
     expect(res.body).not.toMatch(/invalid quantity/)
+  })
+})
+
+describe('currency and exchange rate', () => {
+  const recent = () => new Date(Date.now() - 60 * 60 * 1000).toISOString()
+
+  it('stamps the platform USDT/PKR rate on a record dated now', async () => {
+    m.cfg.mockResolvedValue('281.5')
+    m.evCreate.mockResolvedValue(evRow())
+    await post({ type: 'BUY', occurredAt: recent(), quantity: '1', consideration: '10', quote: 'USDT' })
+    expect(m.cfg).toHaveBeenCalledWith('rate_USDT_PKR', '')
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ quote: 'USDT', fxRate: '281.5', fxSource: 'platform' })
+  })
+  it('does NOT stamp today\'s rate on an old record (history is never rebuilt at the wrong rate)', async () => {
+    m.cfg.mockResolvedValue('281.5')
+    m.evCreate.mockResolvedValue(evRow())
+    await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10' })
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ quote: 'PKR', fxRate: null, fxSource: null })
+  })
+  it('a rate typed by the user is stored as manual, even on an old record, and the platform rate is not read', async () => {
+    m.cfg.mockResolvedValue('999')
+    m.evCreate.mockResolvedValue(evRow())
+    await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10', fxRate: '275' })
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ fxRate: '275', fxSource: 'manual' })
+    expect(m.cfg).not.toHaveBeenCalled()
+  })
+  it.each([[{ quote: 'EUR' }], [{ fxRate: '0' }], [{ fxRate: '-1' }], [{ fxRate: 'abc' }], [{ fxRate: '1e3' }]])('rejects %j', async (over) => {
+    const res = await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10', ...over })
+    expect(res.statusCode).toBe(400)
+    expect(m.evCreate).not.toHaveBeenCalled()
+  })
+  it('returns currency and rate in the record, as strings', async () => {
+    m.evFindMany.mockResolvedValue([evRow({ quote: 'USDT', fxRate: dec('280'), fxSource: 'manual' })])
+    const e = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/assets/a1/events', headers: U })).json().data[0]
+    expect(e).toMatchObject({ quote: 'USDT', fxRate: '280', fxSource: 'manual' })
+  })
+  it('a price can be entered in USDT and defaults to PKR', async () => {
+    m.prCreate.mockResolvedValue({ price: dec('2'), quote: 'USDT', observedAt: new Date(NOW) })
+    await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '2', quote: 'USDT' } })
+    expect(m.prCreate.mock.calls[0]![0].data.quote).toBe('USDT')
+    m.prCreate.mockClear()
+    await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '2' } })
+    expect(m.prCreate.mock.calls[0]![0].data.quote).toBe('PKR')
+  })
+
+  describe('GET /portfolio/summary?currency=', () => {
+    const stored = () => [evRow({ id: 'x1', assetId: 'A', quantity: dec('10'), consideration: dec('2800'), fee: dec('0'), fxRate: dec('280') })]
+    it('rejects an unknown currency', async () => {
+      const res = await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary?currency=EUR', headers: U })
+      expect(res.statusCode).toBe(400)
+    })
+    it('defaults to PKR and can report in USDT using each record\'s own rate', async () => {
+      m.evFindMany.mockResolvedValue(stored())
+      m.prFindMany.mockResolvedValue([])
+      m.cfg.mockResolvedValue('999')
+      const pkr = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary', headers: U })).json().data
+      expect(pkr.currency).toBe('PKR')
+      expect(pkr.summary.positions[0].knownRemainingBasis).toBe('2800')
+      const usdt = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary?currency=USDT', headers: U })).json().data
+      expect(usdt.currency).toBe('USDT')
+      expect(usdt.summary.positions[0].knownRemainingBasis).toBe('10') // 2800 / 280, not / 999
+      expect(usdt.fx.usdtPkr).toBe('999')
+    })
+    it('lists tokens that cannot be shown in USDT because no rate was recorded', async () => {
+      m.evFindMany.mockResolvedValue([evRow({ id: 'x2', assetId: 'OLD', fxRate: null })])
+      m.prFindMany.mockResolvedValue([])
+      const d = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary?currency=USDT', headers: U })).json().data
+      expect(d.fxUnavailableAssets).toEqual(['OLD'])
+      expect(d.summary.partial).toBe(true)
+    })
+  })
+})
+
+describe('bounds and races', () => {
+  it('price history is capped per user, like entries', async () => {
+    m.prCount.mockResolvedValue(MAX_PORTFOLIO_EVENTS)
+    const res = await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '5' } })
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.code).toBe('PORTFOLIO_PRICE_LIMIT')
+    expect(m.prCreate).not.toHaveBeenCalled()
+  })
+  it('two saves with the same request id at the same instant: the loser gets the saved entry, not an error', async () => {
+    m.evCreate.mockRejectedValue(Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }))
+    m.evFindFirst.mockResolvedValueOnce(null).mockResolvedValueOnce(evRow({ id: 'winner' }))
+    const res = await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10', clientRequestId: 'req-12345678' })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.id).toBe('winner')
+    expect(m.evFindFirst.mock.calls[1]![0].where).toEqual({ userId: 'u1', clientRequestId: 'req-12345678', assetId: 'a1' })
+  })
+  it('any other database error is not swallowed', async () => {
+    m.evCreate.mockRejectedValue(new Error('connection lost'))
+    const res = await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10', clientRequestId: 'req-12345678' })
+    expect(res.statusCode).toBe(500)
+  })
+  it('a uniqueness error without a request id is also not hidden', async () => {
+    m.evCreate.mockRejectedValue(Object.assign(new Error('x'), { code: 'P2002' }))
+    expect((await post({ type: 'BUY', occurredAt: past, quantity: '1', consideration: '10' })).statusCode).toBe(500)
   })
 })
