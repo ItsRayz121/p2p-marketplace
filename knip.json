@@ -10,6 +10,7 @@
         "src/server.ts",
         "src/scripts/**/*.ts",
         "scripts/**/*.ts",
+        "scripts/**/*.mjs",
         "prisma/seed-*.ts",
         "prisma/seeds/**/*.ts"
       ]

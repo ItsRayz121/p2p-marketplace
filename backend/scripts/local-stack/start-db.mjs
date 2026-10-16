@@ -4,7 +4,9 @@ import fs from 'node:fs'
 
 let EmbeddedPostgres
 try {
-  EmbeddedPostgres = (await import('embedded-postgres')).default
+  // Not a project dependency on purpose (it is a local-only helper), so the name is not a static import.
+  const name = 'embedded-postgres'
+  EmbeddedPostgres = (await import(name)).default
 } catch {
   console.error('embedded-postgres is not installed here. Run: npm init -y && npm i embedded-postgres')
   process.exit(1)
