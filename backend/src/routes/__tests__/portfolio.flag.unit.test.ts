@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import Fastify from 'fastify'
 
-const m = vi.hoisted(() => ({ bool: vi.fn() }))
+const m = vi.hoisted(() => ({ str: vi.fn() }))
 
 // Any database access throws: when the feature is off, NOTHING may be read or written.
 vi.mock('../../lib/prisma', () => ({ db: new Proxy({}, { get(_t, p: string) { throw new Error(`unexpected db access: ${p}`) } }) }))
-vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: m.bool }))
+vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.str, getBoolConfig: vi.fn() }))
 vi.mock('../../services/portfolioImport.service', () => ({ runCtmImport: vi.fn() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
@@ -34,40 +34,48 @@ const U = { 'x-test-user': 'u1' }
 const call = (method: 'GET' | 'POST' | 'DELETE' | 'PATCH', url: string, headers: Record<string, string> = U, payload?: object) =>
   app.inject({ method, url: `/api/v1${url}`, headers, ...(payload ? { payload } : {}) })
 
-beforeEach(() => { m.bool.mockReset(); resetPortfolioFlagCache(); m.bool.mockResolvedValue(true) })
+beforeEach(() => { m.str.mockReset(); resetPortfolioFlagCache(); m.str.mockResolvedValue('true') })
 
 describe('the flag itself', () => {
   it('is read from PlatformConfig "portfolio_enabled" and ON by default when the key is missing', async () => {
     expect(await isPortfolioEnabled()).toBe(true)
-    expect(m.bool).toHaveBeenCalledWith(PORTFOLIO_FLAG_KEY, true)
+    expect(m.str).toHaveBeenCalledWith(PORTFOLIO_FLAG_KEY, '')
     expect(PORTFOLIO_FLAG_KEY).toBe('portfolio_enabled')
   })
+  it.each(['True', 'TRUE', ' true ', 'yes', 'on', 'enabled', '', 'banana'])('value %j leaves it ON', async (v) => {
+    m.str.mockResolvedValue(v)
+    expect(await isPortfolioEnabled()).toBe(true)
+  })
+  it.each(['false', 'FALSE', ' False ', '0', 'off', 'no', 'disabled'])('value %j turns it OFF', async (v) => {
+    m.str.mockResolvedValue(v)
+    expect(await isPortfolioEnabled()).toBe(false)
+  })
   it('only an explicit off turns it off', async () => {
-    m.bool.mockResolvedValue(false)
+    m.str.mockResolvedValue('false')
     expect(await isPortfolioEnabled()).toBe(false)
   })
   it('is cached briefly, then re-read, so a change takes effect within seconds', async () => {
     const t0 = 1_000_000
     await isPortfolioEnabled(t0)
     await isPortfolioEnabled(t0 + 5_000)
-    expect(m.bool).toHaveBeenCalledTimes(1)
-    m.bool.mockResolvedValue(false)
+    expect(m.str).toHaveBeenCalledTimes(1)
+    m.str.mockResolvedValue('false')
     expect(await isPortfolioEnabled(t0 + 16_000)).toBe(false)
-    expect(m.bool).toHaveBeenCalledTimes(2)
+    expect(m.str).toHaveBeenCalledTimes(2)
   })
   it('if the setting cannot be read it keeps the last known value, and defaults to on', async () => {
-    m.bool.mockRejectedValue(new Error('db down'))
+    m.str.mockRejectedValue(new Error('db down'))
     expect(await isPortfolioEnabled(1)).toBe(true)
     resetPortfolioFlagCache()
-    m.bool.mockResolvedValue(false)
+    m.str.mockResolvedValue('false')
     expect(await isPortfolioEnabled(2)).toBe(false)
-    m.bool.mockRejectedValue(new Error('db down'))
+    m.str.mockRejectedValue(new Error('db down'))
     expect(await isPortfolioEnabled(100_000)).toBe(false) // did not flip back on by accident
   })
 })
 
 describe('when the feature is switched off', () => {
-  beforeEach(() => { m.bool.mockResolvedValue(false) })
+  beforeEach(() => { m.str.mockResolvedValue('false') })
 
   it.each([
     ['GET', '/portfolio/assets'], ['POST', '/portfolio/assets'], ['GET', '/portfolio/summary'], ['GET', '/portfolio/performance'],
@@ -99,7 +107,7 @@ describe('when the feature is switched off', () => {
   })
   it('turning it back on restores access (nothing was deleted)', async () => {
     expect((await call('GET', '/portfolio/status')).json().data.enabled).toBe(false)
-    m.bool.mockResolvedValue(true)
+    m.str.mockResolvedValue('true')
     resetPortfolioFlagCache()
     expect((await call('GET', '/portfolio/status')).json().data.enabled).toBe(true)
   })
