@@ -45,7 +45,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --config vitest.unit.config.ts",
-    "test:integration": "vitest run --config vitest.integration.config.ts"
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "db:push:local": "tsx scripts/local-stack/push-schema.ts"
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^1.39.0",

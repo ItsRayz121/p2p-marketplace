@@ -29,8 +29,10 @@ Everything here refuses to run against a database that is not on `localhost`.
    FRONTEND_URL=http://localhost:3000
    ```
    and `frontend/.env.local`: `NEXT_PUBLIC_API_URL=http://localhost:3001`.
-4. **Create the tables**: `cd backend && npx prisma migrate deploy` (if that fails on a fresh database,
-   see the note below, then use `npx prisma db push --skip-generate`).
+4. **Create the tables**: `cd backend && npm run db:push:local` (add `-- --reset` to wipe and recreate).
+   Do not use `prisma migrate deploy` on an empty database: the migration chain cannot be replayed from
+   scratch (two migrations alter `ctm_trades`, but the table created earlier is `CtmTrade`). That is
+   tracked in `src/lib/__tests__/migrationsChain.unit.test.ts`, which fails if any NEW gap is added.
 
 ## Every time
 
@@ -60,3 +62,19 @@ TEST_DATABASE_URL=postgresql://postgres:pw@localhost:54329/rup npm run test:inte
 - **Requests are rate limited**: after a few calls to a limited route you get an error until the window passes.
 - **Every non-GET request needs a CSRF token**: `GET /api/v1/auth/csrf`, send it as `x-csrf-token`.
 - **Encoding**: Postgres must be UTF-8 (`start-db.mjs` sets it); the default on Windows is not, and migrations fail.
+
+## Open question for production (read-only checks, run by the owner)
+
+To decide whether the migration chain needs a catch-up migration, run these two read-only queries against the
+production database (they change nothing):
+
+```sql
+SELECT to_regclass('public."ctm_trades"') AS snake_case, to_regclass('public."CtmTrade"') AS pascal_case;
+SELECT migration_name, finished_at, applied_steps_count, logs
+  FROM _prisma_migrations
+ WHERE migration_name IN ('20260520220000_ctm_phase2_escrow', '20261011110000_admin_notification_preferences');
+```
+
+If `snake_case` is non-null, production has an extra `ctm_trades` table the schema does not know about.
+If both migrations show `finished_at` set and `snake_case` is null, they were marked as applied by hand.
+Either way a fresh database cannot be built from the chain, which is why the local stack uses `db:push:local`.

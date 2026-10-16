@@ -15,6 +15,7 @@ import { registerRoutes } from './routes/index'
 import { AppError } from './lib/errors'
 import { csrfHook } from './lib/csrf'
 import { requestContext, resolveClientIp } from './lib/requestContext'
+import { rateLimitErrorResponse } from './lib/rateLimitResponse'
 import { verifyAccessToken } from './lib/jwt'
 
 export async function buildApp() {
@@ -120,12 +121,7 @@ export async function buildApp() {
       return `ip:${ip}:${cls}`
     },
     max: (req) => (isReadMethod(req.method) ? 1000 : 200),
-    errorResponseBuilder: (_req, context) => ({
-      success: false,
-      error: 'TOO_MANY_REQUESTS',
-      message: `Rate limit exceeded. Retry after ${context.after}.`,
-      retryAfter: context.ttl,
-    }),
+    errorResponseBuilder: rateLimitErrorResponse,
   })
 
   // Make req.ip the real client address. Behind Cloudflare + Railway, Fastify's own req.ip (the
