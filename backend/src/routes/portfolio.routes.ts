@@ -756,7 +756,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       }),
       db.portfolioPriceObservation.findMany({
         where: { userId }, orderBy: { observedAt: 'asc' }, take: MAX_PORTFOLIO_EVENTS,
-        select: { assetId: true, price: true, quote: true, observedAt: true },
+        select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
       }),
       // The newest corrections, so a restore keeps each entry's history. Capped like everything else here.
       db.portfolioEventRevision.findMany({
@@ -771,7 +771,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null })),
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
         events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
-        prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString() })),
+        prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString(), source: p.source })),
         revisions: revisions.reverse().map((r) => ({ eventId: r.eventId, assetId: r.assetId, action: r.action, before: backupBefore(r.before), createdAt: r.createdAt.toISOString() })),
       },
     })

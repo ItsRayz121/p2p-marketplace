@@ -49,7 +49,7 @@ beforeEach(() => {
     basis: null, zeroCost: false, quote: 'PKR', fxRate: null, fxSource: null, note: 'hi', createdAt: new Date('2026-01-02'),
     source: 'ctm', voidedAt: new Date('2026-02-01'), voidReason: 'disputed',
   }])
-  m.prFindMany.mockResolvedValue([{ assetId: 'a1', price: dec('2'), quote: 'USDT', observedAt: new Date('2026-01-03') }])
+  m.prFindMany.mockResolvedValue([{ assetId: 'a1', price: dec('2'), quote: 'USDT', observedAt: new Date('2026-01-03'), source: 'p2p' }])
   // Newest first, as the route asks for them; one record carries a stray key that must not leave the account.
   m.rvFindMany.mockResolvedValue([
     { eventId: 'e1', assetId: 'a1', action: 'delete', before: { type: 'BUY', quantity: '2', zeroCost: false, note: null }, createdAt: new Date('2026-01-05') },
@@ -74,7 +74,7 @@ describe('GET /portfolio/export', () => {
     expect(d.assets[0]).toMatchObject({ archivedAt: '2026-09-01T00:00:00.000Z', linkedToRupChainToken: true })
     expect(d.assets[1].linkedToRupChainToken).toBe(false)
     expect(d.events[0]).toMatchObject({ source: 'ctm', voided: true, voidReason: 'disputed', quote: 'PKR' })
-    expect(d.prices[0]).toEqual({ assetId: 'a1', price: '2', quote: 'USDT', observedAt: '2026-01-03T00:00:00.000Z' })
+    expect(d.prices[0]).toEqual({ assetId: 'a1', price: '2', quote: 'USDT', observedAt: '2026-01-03T00:00:00.000Z', source: 'p2p' })
   })
   it('exports the edit time of each entry, its trade link and correction history (oldest first), known fields only', async () => {
     const d = (await get()).json().data

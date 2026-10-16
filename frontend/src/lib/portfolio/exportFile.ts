@@ -37,7 +37,7 @@ export interface ExportEvent {
   linkedTradeRef?: string | null
 }
 /** An earlier version of an entry that was corrected or removed (account backups only). */
-export interface ExportRevision {
+interface ExportRevision {
   eventId: string
   assetId: string
   action: 'edit' | 'delete'
@@ -49,6 +49,8 @@ export interface ExportPrice {
   price: string
   quote: Currency
   observedAt: string
+  /** Account backups: where the price came from ('manual', 'p2p', 'exchange', 'other'). */
+  source?: 'manual' | 'p2p' | 'exchange' | 'other'
 }
 export interface ExportData {
   exportedAt: string
@@ -113,7 +115,7 @@ export function buildCsv(data: ExportData): string {
 export const BACKUP_FORMAT = 'rupchain-portfolio-backup'
 export const BACKUP_VERSION = 1
 /** A full account backup: version 1 plus each entry's edit time, trade link and correction history. */
-export const BACKUP_VERSION_FULL = 2
+const BACKUP_VERSION_FULL = 2
 
 export function buildBackup(data: ExportData): string {
   const version = data.revisions ? BACKUP_VERSION_FULL : BACKUP_VERSION
@@ -144,7 +146,7 @@ const revisionSchema = z.object({
   before: z.record(z.string().max(32), z.union([z.string().max(1000), z.boolean(), z.null()])),
 }).strict()
 
-const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso }).strict()
+const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso, source: z.enum(['manual', 'p2p', 'exchange', 'other']).optional() }).strict()
 
 const backupSchema = z.object({
   format: z.literal(BACKUP_FORMAT),

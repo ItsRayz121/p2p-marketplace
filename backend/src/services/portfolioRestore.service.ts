@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { validateCustomAsset, type CustomAssetInput } from '../lib/portfolioAsset'
-import { eventSchema, cleanNote } from '../lib/portfolio/eventInput'
+import { eventSchema, cleanNote, PRICE_SOURCES } from '../lib/portfolio/eventInput'
 import { cleanRate } from '../lib/portfolio/currency'
 import { checkExcludedTradeRecordable, ensureLinkedAsset } from './portfolioImport.service'
 
@@ -35,7 +35,7 @@ export interface RestoreResult {
   notes: string[]
 }
 
-const MAX_TRADE_LINKED = 500
+const MAX_TRADE_LINKED = 200
 
 const dec = z.string().regex(/^\d{1,28}(\.\d{1,18})?$/)
 const iso = z.string().datetime({ offset: true })
@@ -57,7 +57,7 @@ const entrySchema = z.object({
   editedAt: iso.nullable().optional(), linkedTradeRef: text(64).nullable().optional(),
 }).strict()
 
-const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso }).strict()
+const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso, source: z.enum(PRICE_SOURCES).optional() }).strict()
 
 const nullableText = text(64).nullable()
 const revisionSchema = z.object({
@@ -154,6 +154,9 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
   }
 
   const result = await db.$transaction(async (tx) => {
+    // One restore per account at a time: a double click or two tabs would otherwise both pass the
+    // "already there" checks and create the same token twice. Released automatically at the end of the transaction.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`portfolio-restore:${userId}`}))`
     // ── Tokens ──
     const mine = await tx.portfolioAsset.findMany({
       where: { userId }, select: { id: true, name: true, symbol: true, network: true, contractAddress: true, createdAt: true, ctmTokenId: true },
@@ -233,7 +236,7 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
       const k = pKey(assetId, new Prisma.Decimal(p.price).toFixed(), p.quote, Date.parse(p.observedAt))
       if (havePrices.has(k)) { pricesAlready += 1; continue }
       havePrices.add(k)
-      priceRows.push({ userId, assetId, price: p.price, quote: p.quote, source: 'manual', observedAt: new Date(p.observedAt) })
+      priceRows.push({ userId, assetId, price: p.price, quote: p.quote, source: p.source ?? 'manual', observedAt: new Date(p.observedAt) })
     }
     const priceCount = await tx.portfolioPriceObservation.count({ where: { userId } })
     if (priceCount + priceRows.length > limits.maxEvents) throw new AppError('PORTFOLIO_PRICE_LIMIT', `Restoring would go over the limit of ${limits.maxEvents} price entries. Nothing was changed.`, 400)

@@ -40,15 +40,17 @@ const h = await vi.hoisted(async () => {
     },
   })
   const models = { portfolioAsset: model('portfolioAsset'), portfolioEvent: model('portfolioEvent'), portfolioPriceObservation: model('portfolioPriceObservation'), portfolioEventRevision: model('portfolioEventRevision') }
+  const locks: string[] = []
   const api = {
     ...models,
+    $executeRaw: async (strings: TemplateStringsArray, ...vals: unknown[]) => { locks.push(`${strings.join('?')}|${vals.join(',')}`); return 1 },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const dec = Object.fromEntries(Object.entries(tables).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]))
       try { return await fn(guarded) } catch (e) { for (const k of Object.keys(tables)) tables[k] = dec[k]!; throw e }
     },
   }
   const guarded = new Proxy(api, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } })
-  return { tables, guarded, check: vi.fn(), ensure: vi.fn() }
+  return { tables, guarded, locks, check: vi.fn(), ensure: vi.fn() }
 })
 
 vi.mock('../../lib/prisma', () => ({ db: h.guarded }))
@@ -79,7 +81,7 @@ const rowsOf = (t: string, userId = 'u1') => h.tables[t]!.filter((r) => r.userId
 
 beforeEach(() => {
   for (const k of Object.keys(h.tables)) h.tables[k] = []
-  h.check.mockReset(); h.ensure.mockReset()
+  h.check.mockReset(); h.ensure.mockReset(); h.locks.length = 0
 })
 
 describe('restorePortfolioBackup', () => {
@@ -98,6 +100,18 @@ describe('restorePortfolioBackup', () => {
     // History points at the NEW id of the restored entry, not the id from the file.
     expect(e!.id).not.toBe('e1')
     expect(v).toMatchObject({ eventId: e!.id, assetId: a!.id, action: 'edit', before: { type: 'BUY', quantity: '9' } })
+  })
+
+  it('takes a per-account lock first, so two restores at once cannot both create the same token', async () => {
+    await restore(file(), 'u1')
+    expect(h.locks).toHaveLength(1)
+    expect(h.locks[0]).toContain('pg_advisory_xact_lock')
+    expect(h.locks[0]).toContain('portfolio-restore:u1')
+  })
+
+  it('keeps the source label of a saved price', async () => {
+    await restore(file({ prices: [{ assetId: 'a1', price: '120', quote: 'PKR', observedAt: past, source: 'p2p' }] }))
+    expect(rowsOf('portfolioPriceObservation')[0]).toMatchObject({ source: 'p2p' })
   })
 
   it('is safe to run twice: the second run adds nothing', async () => {
