@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { formatDecimal } from '@/lib/portfolio/format'
 
 export interface ChartSeries {
@@ -22,7 +22,7 @@ interface Props {
   emptyAction?: { label: string; onClick: () => void }
 }
 
-const W = 600, H = 220, PAD_L = 76, PAD_R = 14, PAD_T = 14, PAD_B = 30
+const MAX_W = 600, MIN_W = 280, H = 220, PAD_L = 76, PAD_R = 14, PAD_T = 14, PAD_B = 30
 
 const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
@@ -32,9 +32,22 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { d
  * shown to the reader is the original decimal string, also available in the data table below.
  */
 export function LineChart({ title, description, series, currency, emptyMessage, emptyAction }: Props) {
-  const uid = useId()
   const known = series.flatMap((s) => s.points.filter((p) => p.v !== null))
-  if (known.length === 0) {
+  const empty = known.length === 0
+  const uid = useId()
+  // Draw at the real pixel width so axis labels stay readable on a phone instead of shrinking with the picture.
+  const figRef = useRef<HTMLElement | null>(null)
+  const [W, setW] = useState(MAX_W)
+  useEffect(() => {
+    const el = figRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => setW(Math.max(MIN_W, Math.min(MAX_W, Math.round(el.clientWidth - 32))))
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [empty])
+  if (empty) {
     return (
       <figure className="rounded-xl border border-border bg-surface p-4">
         <figcaption className="text-sm font-semibold text-text-primary">{title}</figcaption>
@@ -73,7 +86,7 @@ export function LineChart({ title, description, series, currency, emptyMessage, 
   const valueAt = (s: ChartSeries, t: string) => s.points.find((p) => p.t === t)?.v ?? null
 
   return (
-    <figure className="rounded-xl border border-border bg-surface p-4 space-y-2">
+    <figure ref={figRef} className="rounded-xl border border-border bg-surface p-4 space-y-2">
       <figcaption className="text-sm font-semibold text-text-primary">{title}</figcaption>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-labelledby={`${uid}-t`} aria-describedby={`${uid}-d`} className="w-full h-auto">
         <title id={`${uid}-t`}>{title}</title>
