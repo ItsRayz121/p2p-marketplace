@@ -83,6 +83,17 @@ describe('GET /portfolio/export', () => {
     expect(d.revisions[0]).toEqual({ eventId: 'e1', assetId: 'a1', action: 'edit', before: { type: 'BUY', quantity: '1' }, createdAt: '2026-01-04T00:00:00.000Z' })
     expect(JSON.stringify(d)).not.toContain('stray')
   })
+  it('says so when the file cannot hold every correction record (and drops the extra row)', async () => {
+    const row = (i: number) => ({ eventId: `e${i}`, assetId: 'a1', action: 'edit', before: {}, createdAt: new Date(2026, 0, 1, 0, 0, i) })
+    m.rvFindMany.mockResolvedValue(Array.from({ length: 5001 }, (_, i) => row(5000 - i))) // newest first, one over the cap
+    const d = (await get()).json().data
+    expect(m.rvFindMany.mock.calls[0]![0].take).toBe(5001)
+    expect(d.revisionsTruncated).toBe(true)
+    expect(d.revisions).toHaveLength(5000)
+  })
+  it('does not flag a file that holds every correction record', async () => {
+    expect((await get()).json().data.revisionsTruncated).toBe(false)
+  })
   it('decimals are strings and no owner or source-system id leaks', async () => {
     const d = (await get()).json().data
     expect(typeof d.events[0].quantity).toBe('string')

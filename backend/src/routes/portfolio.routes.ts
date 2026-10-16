@@ -760,10 +760,13 @@ export async function portfolioRoutes(app: FastifyInstance) {
       }),
       // The newest corrections, so a restore keeps each entry's history. Capped like everything else here.
       db.portfolioEventRevision.findMany({
-        where: { userId }, orderBy: { createdAt: 'desc' }, take: MAX_PORTFOLIO_EVENTS,
+        // One more than the cap, only to learn whether the file is missing the oldest corrections.
+        where: { userId }, orderBy: { createdAt: 'desc' }, take: MAX_PORTFOLIO_EVENTS + 1,
         select: { eventId: true, assetId: true, action: true, before: true, createdAt: true },
       }),
     ])
+    const revisionsTruncated = revisions.length > MAX_PORTFOLIO_EVENTS
+    if (revisionsTruncated) revisions.pop() // the extra, oldest row
     return reply.send({
       success: true,
       data: {
@@ -772,6 +775,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
         events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString(), source: p.source })),
+        revisionsTruncated,
         revisions: revisions.reverse().map((r) => ({ eventId: r.eventId, assetId: r.assetId, action: r.action, before: backupBefore(r.before), createdAt: r.createdAt.toISOString() })),
       },
     })

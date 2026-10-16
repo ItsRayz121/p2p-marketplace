@@ -94,6 +94,9 @@ export function RestoreBackupDialog({ restore, onDone, onClose }: Props) {
             This backup has {n(data.assets.filter((a) => !a.linkedToRupChainToken).length, 'token', 'tokens')}, {n(manual, 'entry you typed', 'entries you typed')}, {n(data.prices.length, 'price', 'prices')}
             {data.revisions ? ` and ${n(data.revisions.length, 'earlier version', 'earlier versions')} of corrected entries` : ''}.
           </p>
+          {data.revisionsTruncated && (
+            <p className="text-xs text-text-muted">This backup does not include the oldest corrections: the account it came from had more than a backup file can hold.</p>
+          )}
           {!data.revisions && (
             <p className="text-xs text-text-muted">This backup does not include edit history, so only tokens, entries and prices come back.</p>
           )}

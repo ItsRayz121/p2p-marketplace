@@ -1,10 +1,12 @@
-import { defineConfig } from 'vitest/config'
+import { defineConfig, configDefaults } from 'vitest/config'
 import { resolve } from 'path'
 
 export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Needs a real scratch database: run on purpose with `npm run test:integration`.
+    exclude: [...configDefaults.exclude, '**/*.integration.test.ts'],
     typecheck: { tsconfig: './tsconfig.test.json' },
     setupFiles: ['./src/test/setup.ts'],
     // Provide the Telegram bot token BEFORE any module (and the env schema)

@@ -78,6 +78,8 @@ const backupSchema = z.object({
   events: z.array(entrySchema).max(5000),
   prices: z.array(priceSchema).max(5000),
   revisions: z.array(revisionSchema).max(5000).optional(),
+  /** True when the file was made from an account with more correction records than a file holds. */
+  revisionsTruncated: z.boolean().optional(),
 }).strict()
 
 type Backup = z.infer<typeof backupSchema>
@@ -243,12 +245,14 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
     if (priceRows.length) await tx.portfolioPriceObservation.createMany({ data: priceRows })
 
     // ── Correction history ──
-    // Kept for entries restored now, and for entries that were removed (their history is all that is left).
-    // History of entries that are already in the account (or were not restored) is left as it is.
+    // Kept for entries restored now. The record of an entry that was REMOVED is kept only on a token this
+    // restore created: on a token the account already had, the entry may still exist there under another id,
+    // and a "removed" record next to it would be wrong. History of entries already in the account is left as it is.
     const inFile = new Set(b.events.map((e) => e.id))
+    const createdHere = new Set(toCreate.map((t) => t.id))
     const revs = (b.revisions ?? []).flatMap((r) => {
-      const eventId = inFile.has(r.eventId) ? newEventId.get(r.eventId) : r.eventId
       const assetId = target.get(r.assetId)
+      const eventId = inFile.has(r.eventId) ? newEventId.get(r.eventId) : (assetId && createdHere.has(assetId) ? r.eventId : undefined)
       return eventId && assetId ? [{ ...r, eventId, assetId }] : []
     })
     const revEventIds = Array.from(new Set(revs.map((r) => r.eventId)))
@@ -286,6 +290,7 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
   const { tradeSkipped, noHome, ...counts } = result
   if (tradeSkipped > 0) notes.push(`${tradeSkipped} ${tradeSkipped === 1 ? 'entry' : 'entries'} recorded for a RupChain trade could not be matched to that trade now, so ${tradeSkipped === 1 ? 'it was' : 'they were'} left out to avoid counting the trade twice.`)
   if (noHome > 0) notes.push(`${noHome} ${noHome === 1 ? 'entry' : 'entries'} could not be placed on a token and ${noHome === 1 ? 'was' : 'were'} left out.`)
+  if (b.revisionsTruncated) notes.push('This backup does not include the oldest corrections: the account it came from had more than a backup file can hold.')
   if (counts.history.notRestored > 0) notes.push(`${counts.history.notRestored} earlier version${counts.history.notRestored === 1 ? ' was' : 's were'} not restored because of the per-entry history limit.`)
   return { ...counts, notes }
 }

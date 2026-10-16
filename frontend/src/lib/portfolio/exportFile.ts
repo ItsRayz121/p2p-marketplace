@@ -59,6 +59,8 @@ export interface ExportData {
   prices: ExportPrice[]
   /** Present in a full account backup: lets a restore bring back each entry's correction history. */
   revisions?: ExportRevision[]
+  /** True when the account had more correction records than a backup file holds, so the oldest are missing. */
+  revisionsTruncated?: boolean
 }
 
 /** What POST /portfolio/restore reports back. */
@@ -156,6 +158,7 @@ const backupSchema = z.object({
   events: z.array(eventSchema).max(5000),
   prices: z.array(priceSchema).max(5000),
   revisions: z.array(revisionSchema).max(5000).optional(),
+  revisionsTruncated: z.boolean().optional(),
 }).strict()
 
 export const MAX_BACKUP_BYTES = 8 * 1024 * 1024
@@ -200,6 +203,7 @@ export function parseBackup(raw: string): ParsedBackup {
     data: {
       exportedAt: r.data.exportedAt, assets: r.data.assets, events: r.data.events, prices: r.data.prices,
       ...(r.data.revisions ? { revisions: r.data.revisions } : {}),
+      ...(r.data.revisionsTruncated ? { revisionsTruncated: true } : {}),
     },
   }
 }

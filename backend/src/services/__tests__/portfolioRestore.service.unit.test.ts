@@ -156,6 +156,22 @@ describe('restorePortfolioBackup', () => {
     expect(again.history.restored).toBe(0)
   })
 
+  it('does not add a "removed" record next to an entry that may still exist on a token the account already had', async () => {
+    h.tables.portfolioAsset!.push({ id: 'mine1', userId: 'u1', name: 'Alpha', symbol: 'ALP', network: null, contractAddress: null, createdAt: new Date('2026-01-01T00:00:00.000Z'), ctmTokenId: null })
+    const r = await restore(file({
+      events: [], prices: [],
+      revisions: [{ eventId: 'gone', assetId: 'a1', action: 'delete', createdAt: past, before: { type: 'SELL' } }],
+    }))
+    expect(r.assets).toMatchObject({ created: 0, alreadyThere: 1 })
+    expect(r.history.restored).toBe(0)
+    expect(h.tables.portfolioEventRevision).toHaveLength(0)
+  })
+
+  it('tells the user when the backup is missing the oldest corrections', async () => {
+    const r = await restore(file({ revisionsTruncated: true }))
+    expect(r.notes.join(' ')).toMatch(/does not include the oldest corrections/)
+  })
+
   it('does not copy entries read from RupChain trades, and says so', async () => {
     const r = await restore(file({ events: [entry(), entry({ id: 'e2', source: 'ctm', voided: true, voidReason: 'disputed' })] }))
     expect(r.entries.restored).toBe(1)

@@ -72,6 +72,13 @@ describe('Restore from a backup file', () => {
     expect(await screen.findByText(/does not include edit history/)).toBeInTheDocument()
   })
 
+  it('warns before restoring when the backup is missing the oldest corrections', async () => {
+    const user = userEvent.setup()
+    render(<RestoreBackupDialog restore={restore} onDone={onDone} onClose={() => {}} />)
+    await pick(user, file(data({ revisionsTruncated: true })))
+    expect(await screen.findByText(/does not include the oldest corrections/)).toBeInTheDocument()
+  })
+
   it('a server error is shown and nothing is reported as restored', async () => {
     restore.mockRejectedValue(new Error('Restoring would go over the limit of 200 tokens. Nothing was changed.'))
     const user = userEvent.setup()
