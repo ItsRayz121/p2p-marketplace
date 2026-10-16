@@ -5,7 +5,7 @@ import { computePerformance, currentMarksIn } from '../engine/performance'
 import { buildSummary, type EventRow, type PriceRow } from '../engine/summaryBuilder'
 import { parseBackup, type ExportAsset, type ExportData, type ExportEvent, type ExportPrice, BACKUP_FORMAT, BACKUP_VERSION } from '../exportFile'
 import type { PortfolioApiLike } from '../apiTypes'
-import type { Currency, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '../types'
+import type { Currency, EventListQuery, EventsPage, HistoryEvent, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '../types'
 import { validateEventInput } from './eventRules'
 import type { KeyValueStore } from './idb'
 
@@ -153,6 +153,20 @@ export async function createLocalTracker(store: KeyValueStore): Promise<LocalTra
         .map((e): PortfolioEvent => ({ ...e }))
     },
 
+    async listAllEvents(query: EventListQuery): Promise<EventsPage> {
+      const names = new Map(state.assets.map((a) => [a.id, a]))
+      const q = query.q?.trim().toLowerCase()
+      const rows = state.events
+        .filter((e) => (!query.type || e.type === query.type)
+          && (!query.source || e.source === query.source)
+          && (!query.assetId || e.assetId === query.assetId)
+          && (query.status === 'counted' ? !e.voided : query.status === 'not_counted' ? e.voided : true))
+        .map((e): HistoryEvent => ({ ...e, assetName: names.get(e.assetId)?.name ?? 'Token', assetSymbol: names.get(e.assetId)?.symbol ?? null }))
+        .filter((e) => !q || [e.note, e.assetName, e.assetSymbol].some((s) => s?.toLowerCase().includes(q)))
+        .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || (a.id < b.id ? -1 : 1))
+      return { total: rows.length, items: rows.slice(query.offset, query.offset + query.limit) }
+    },
+
     async addEvent(assetId: string, data: PortfolioEventInput) {
       const asset = find(assetId)
       if (asset.archivedAt) fail('This token is archived. Restore it before adding records.')
@@ -171,12 +185,35 @@ export async function createLocalTracker(store: KeyValueStore): Promise<LocalTra
       const entry: ExportEvent = {
         id: uuid(), assetId, type: e.type, occurredAt: e.occurredAt, quantity: e.quantity, consideration: e.consideration, fee: e.fee,
         basis: e.basis, zeroCost: e.zeroCost, quote: e.quote, fxRate: stamp.fxRate, fxSource: stamp.fxSource ? 'manual' : null,
-        note: e.note, source: 'manual', voided: false, voidReason: null,
+        note: e.note, source: 'manual', voided: false, voidReason: null, ...(e.priceBasis ? { priceBasis: e.priceBasis } : {}),
       }
       state.events.push(entry)
       if (e.clientRequestId) state.requestIds[e.clientRequestId] = entry.id
       await persist()
       return { ...entry }
+    },
+
+    async updateEvent(assetId, eventId, data: PortfolioEventInput) {
+      const asset = find(assetId)
+      if (asset.archivedAt) fail('This token is archived. Restore it before adding records.')
+      const i = state.events.findIndex((e) => e.id === eventId && e.assetId === assetId)
+      if (i < 0) return fail('Entry not found')
+      const cur = state.events[i]!
+      const check = validateEventInput({ ...data, clientRequestId: undefined }, Date.now())
+      if (!check.ok) return fail(check.error)
+      const e = check.value
+      // Same rate rule as the server: a typed rate wins; an unchanged date and currency keep the stored one.
+      const sameBasis = cur.quote === e.quote && Date.parse(cur.occurredAt) === Date.parse(e.occurredAt)
+      let stamp = chooseFxStamp({ userRate: e.fxRate, platformRate: e.fxRate || sameBasis ? null : state.settings.usdtPkr, occurredAtMs: Date.parse(e.occurredAt), nowMs: Date.now() })
+      if (!e.fxRate && sameBasis && cur.fxRate) stamp = { fxRate: cur.fxRate, fxSource: cur.fxSource }
+      const next: ExportEvent = {
+        ...cur, type: e.type, occurredAt: e.occurredAt, quantity: e.quantity, consideration: e.consideration, fee: e.fee,
+        basis: e.basis, zeroCost: e.zeroCost, quote: e.quote, fxRate: stamp.fxRate, fxSource: stamp.fxSource ? 'manual' : null, note: e.note,
+        priceBasis: e.priceBasis,
+      }
+      state.events[i] = next
+      await persist()
+      return { ...next }
     },
 
     async deleteEvent(assetId, eventId) {
@@ -187,6 +224,7 @@ export async function createLocalTracker(store: KeyValueStore): Promise<LocalTra
       await persist()
     },
 
+    // The local backup format keeps no price source, so a guest's prices are always plain manual prices.
     async setPrice(assetId, price, quote: Currency = 'PKR') {
       const asset = find(assetId)
       if (asset.archivedAt) fail('This token is archived. Restore it before adding records.')

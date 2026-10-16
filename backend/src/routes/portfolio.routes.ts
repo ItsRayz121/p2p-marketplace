@@ -9,7 +9,7 @@ import { buildSummary, type EventRow as SummaryEvent } from '../lib/portfolio/su
 import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
-import { runCtmImport } from '../services/portfolioImport.service'
+import { runCtmImport, listExcludedTrades, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
 import { platformMarksFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
@@ -17,11 +17,14 @@ import { isPortfolioEnabled } from '../lib/portfolio/flag'
 /** Per-user cap so a client bug or abuse cannot grow this table without bound. */
 export const MAX_PORTFOLIO_ASSETS = 200
 export const MAX_PORTFOLIO_EVENTS = 5000
+/** Corrections kept per entry, and revisions kept per user, so history cannot grow without bound. */
+export const MAX_REVISIONS_PER_EVENT = 50
+export const MAX_REVISIONS_PER_USER = 20000
 
 const EVENT_SELECT = {
   id: true, assetId: true, type: true, occurredAt: true, quantity: true, consideration: true,
   fee: true, basis: true, zeroCost: true, quote: true, fxRate: true, fxSource: true, note: true, createdAt: true,
-  source: true, voidedAt: true, voidReason: true,
+  source: true, voidedAt: true, voidReason: true, editedAt: true, linkedTradeRef: true, priceBasis: true,
 } as const
 
 type EventRow = {
@@ -30,7 +33,7 @@ type EventRow = {
   fee: { toFixed(): string } | null; basis: { toFixed(): string } | null
   zeroCost: boolean; quote: string; fxRate: { toFixed(): string } | null; fxSource: string | null
   note: string | null; createdAt: Date
-  source: string; voidedAt: Date | null; voidReason: string | null
+  source: string; voidedAt: Date | null; voidReason: string | null; editedAt?: Date | null; linkedTradeRef?: string | null; priceBasis?: string | null
 }
 
 /** Decimal columns leave the API as strings, never numbers. */
@@ -54,8 +57,21 @@ function eventDto(r: EventRow) {
     /** An imported entry whose trade stopped qualifying: shown, but excluded from every calculation. */
     voided: r.voidedAt !== null,
     voidReason: r.voidReason,
+    /** When the user last corrected this entry; null if never. Earlier versions are in the entry's history. */
+    editedAt: r.editedAt ? r.editedAt.toISOString() : null,
+    /** The RupChain trade this entry was recorded for by hand (a trade left out of automatic tracking), or null. */
+    linkedTradeRef: r.linkedTradeRef ?? null,
+    /** 'platform' = the RupChain price was used, 'own' = the price the user got; null if not stated. */
+    priceBasis: r.priceBasis ?? null,
     createdAt: r.createdAt.toISOString(),
   }
+}
+
+/** The part of an entry a correction can change, as plain strings, for the revision log. */
+function revisionSnapshot(r: EventRow) {
+  const { id, assetId, source, voided, voidReason, createdAt, editedAt, linkedTradeRef, ...fields } = eventDto(r)
+  void id; void assetId; void source; void voided; void voidReason; void createdAt; void editedAt; void linkedTradeRef
+  return fields
 }
 
 // Shape only (type + a generous size bound so oversized input is cheap to reject). The real rules
@@ -262,6 +278,57 @@ export async function portfolioRoutes(app: FastifyInstance) {
     return a ? Errors.CONFLICT(`This token is already ${state}.`) : Errors.NOT_FOUND('Token')
   }
 
+  // Every entry across all tokens, newest first, with search, filters and paging. Includes archived
+  // tokens and entries that are shown but not counted, so the history is complete.
+  const allEventsQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    offset: z.coerce.number().int().min(0).max(100000).default(0),
+    q: z.string().trim().max(60).optional(),
+    type: z.enum(['BUY', 'SELL', 'OPENING']).optional(),
+    source: z.enum(['manual', 'ctm']).optional(),
+    status: z.enum(['counted', 'not_counted']).optional(),
+    assetId: z.string().max(64).optional(),
+  }).strict()
+  app.get('/portfolio/events', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const q = allEventsQuery.safeParse(req.query)
+    if (!q.success) throw new AppError('VALIDATION_ERROR', 'Invalid filter or paging values', 400)
+    const f = q.data
+    const where = {
+      userId,
+      ...(f.type ? { type: f.type } : {}),
+      ...(f.source ? { source: f.source } : {}),
+      ...(f.status === 'counted' ? { voidedAt: null } : f.status === 'not_counted' ? { voidedAt: { not: null } } : {}),
+      ...(f.assetId ? { assetId: f.assetId } : {}),
+      ...(f.q
+        ? {
+            OR: [
+              { note: { contains: f.q, mode: 'insensitive' as const } },
+              { asset: { name: { contains: f.q, mode: 'insensitive' as const } } },
+              { asset: { symbol: { contains: f.q, mode: 'insensitive' as const } } },
+            ],
+          }
+        : {}),
+    }
+    const [total, rows] = await Promise.all([
+      db.portfolioEvent.count({ where }),
+      db.portfolioEvent.findMany({
+        where,
+        orderBy: [{ occurredAt: 'desc' }, { createdAt: 'desc' }, { id: 'asc' }],
+        skip: f.offset,
+        take: f.limit,
+        select: { ...EVENT_SELECT, asset: { select: { name: true, symbol: true } } },
+      }),
+    ])
+    return reply.send({
+      success: true,
+      data: {
+        total,
+        items: rows.map(({ asset, ...r }) => ({ ...eventDto(r), assetName: asset.name, assetSymbol: asset.symbol })),
+      },
+    })
+  })
+
   app.get('/portfolio/assets/:id/events', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
@@ -327,6 +394,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         fxRate: stamp.fxRate,
         fxSource: stamp.fxSource,
         note: cleanNote(e.note),
+        priceBasis: e.type === 'OPENING' ? null : (e.priceBasis ?? null),
         clientRequestId: e.clientRequestId ?? null,
       },
       select: EVENT_SELECT,
@@ -343,17 +411,114 @@ export async function portfolioRoutes(app: FastifyInstance) {
     return reply.code(201).send({ success: true, data: eventDto(row) })
   })
 
-  // Removes one of the caller's own manual records. Analytical only: nothing else is changed.
+  // Removes one of the caller's own manual records. Analytical only: nothing else is changed. The
+  // entry as it was is kept in its history, so a removal can always be traced and re-entered.
   app.delete('/portfolio/assets/:id/events/:eventId', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const { id, eventId } = req.params as { id: string; eventId: string }
-    const entry = await db.portfolioEvent.findFirst({ where: { id: eventId, assetId: id, userId }, select: { id: true, source: true } })
+    const entry = await db.portfolioEvent.findFirst({ where: { id: eventId, assetId: id, userId }, select: EVENT_SELECT })
     if (!entry) throw Errors.NOT_FOUND('Entry')
     // Entries read from a RupChain trade mirror a platform record and cannot be edited or removed here.
     if (entry.source !== 'manual') throw Errors.CONFLICT('This entry was imported from a RupChain trade and is read-only.')
-    const res = await db.portfolioEvent.deleteMany({ where: { id: eventId, assetId: id, userId, source: 'manual' } })
-    if (res.count === 0) throw Errors.NOT_FOUND('Entry')
+    const removed = await db.$transaction(async (tx) => {
+      const res = await tx.portfolioEvent.deleteMany({ where: { id: eventId, assetId: id, userId, source: 'manual' } })
+      if (res.count === 0) return false
+      await tx.portfolioEventRevision.create({
+        data: { userId, eventId, assetId: id, action: 'delete', before: revisionSnapshot(entry) },
+      })
+      return true
+    })
+    if (!removed) throw Errors.NOT_FOUND('Entry')
     return reply.send({ success: true })
+  })
+
+  // Corrects one of the caller's own manual records. The earlier version is kept in the entry's
+  // history. Imported RupChain trades are never editable here, and nothing outside the user's own
+  // portfolio tables is read or written. The update is conditional on the version that was read, so
+  // two corrections at the same moment cannot silently overwrite each other.
+  app.patch('/portfolio/assets/:id/events/:eventId', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id, eventId } = req.params as { id: string; eventId: string }
+    const parsed = eventSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Invalid record', 400)
+    }
+    const e = parsed.data
+    await ownedAsset(userId, id)
+
+    const current = await db.portfolioEvent.findFirst({ where: { id: eventId, assetId: id, userId }, select: EVENT_SELECT })
+    if (!current) throw Errors.NOT_FOUND('Entry')
+    if (current.source !== 'manual') throw Errors.CONFLICT('This entry was imported from a RupChain trade and is read-only.')
+
+    const [perEvent, perUser] = await Promise.all([
+      db.portfolioEventRevision.count({ where: { userId, eventId } }),
+      db.portfolioEventRevision.count({ where: { userId } }),
+    ])
+    if (perEvent >= MAX_REVISIONS_PER_EVENT || perUser >= MAX_REVISIONS_PER_USER) {
+      throw new AppError('PORTFOLIO_HISTORY_LIMIT', 'This entry has been corrected too many times. Remove it and record it again.', 400)
+    }
+
+    // Exchange rate: a typed rate wins; an unchanged date and currency keep the rate stored with the entry;
+    // otherwise the same rule as a new record applies (platform rate only for a record dated about now).
+    const quote = (e.quote ?? 'PKR') as Quote
+    const sameBasis = current.quote === quote && current.occurredAt.getTime() === Date.parse(e.occurredAt)
+    let stamp = chooseFxStamp({
+      userRate: e.fxRate,
+      platformRate: e.fxRate || sameBasis ? null : await getStringConfig('rate_USDT_PKR', ''),
+      occurredAtMs: Date.parse(e.occurredAt),
+      nowMs: Date.now(),
+    })
+    if (!e.fxRate && sameBasis && current.fxRate) {
+      stamp = { fxRate: current.fxRate.toFixed(), fxSource: current.fxSource as 'platform' | 'manual' | null }
+    }
+
+    const data = {
+      type: e.type,
+      occurredAt: new Date(e.occurredAt),
+      quantity: e.quantity,
+      consideration: e.type === 'OPENING' ? null : (e.consideration ?? null),
+      fee: e.type === 'OPENING' ? null : (e.fee ?? '0'),
+      basis: e.type === 'OPENING' ? (e.basis ?? null) : null,
+      zeroCost: e.type === 'OPENING' ? Boolean(e.zeroCost) : false,
+      quote,
+      fxRate: stamp.fxRate,
+      fxSource: stamp.fxSource,
+      note: cleanNote(e.note),
+      priceBasis: e.type === 'OPENING' ? null : (e.priceBasis ?? null),
+      editedAt: new Date(),
+    }
+
+    const saved = await db.$transaction(async (tx) => {
+      // Only succeeds if nobody changed the entry since it was read.
+      const res = await tx.portfolioEvent.updateMany({
+        where: { id: eventId, assetId: id, userId, source: 'manual', editedAt: current.editedAt ?? null },
+        data,
+      })
+      if (res.count === 0) return null
+      await tx.portfolioEventRevision.create({
+        data: { userId, eventId, assetId: id, action: 'edit', before: revisionSnapshot(current) },
+      })
+      return tx.portfolioEvent.findFirst({ where: { id: eventId, userId }, select: EVENT_SELECT })
+    })
+    if (!saved) throw Errors.CONFLICT('This entry was changed somewhere else. Reload it and try again.')
+    return reply.send({ success: true, data: eventDto(saved) })
+  })
+
+  // Earlier versions of one entry, newest first (also for an entry that has since been removed).
+  app.get('/portfolio/assets/:id/events/:eventId/history', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const { id, eventId } = req.params as { id: string; eventId: string }
+    await ownedAsset(userId, id, { allowArchived: true })
+    const rows = await db.portfolioEventRevision.findMany({
+      where: { userId, assetId: id, eventId },
+      orderBy: { createdAt: 'desc' },
+      take: MAX_REVISIONS_PER_EVENT,
+      select: { id: true, action: true, before: true, createdAt: true },
+    })
+    return reply.send({
+      success: true,
+      data: rows.map((r) => ({ id: r.id, action: r.action, before: r.before, changedAt: r.createdAt.toISOString() })),
+    })
   })
 
   // Manual current price: a price observation, not a transaction.
@@ -370,7 +535,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       throw new AppError('PORTFOLIO_PRICE_LIMIT', `You can keep up to ${MAX_PORTFOLIO_EVENTS} price entries`, 400)
     }
     const row = await db.portfolioPriceObservation.create({
-      data: { userId, assetId: id, price: parsed.data.price, quote: parsed.data.quote ?? 'PKR', source: 'manual' },
+      data: { userId, assetId: id, price: parsed.data.price, quote: parsed.data.quote ?? 'PKR', source: parsed.data.source ?? 'manual' },
       select: { price: true, quote: true, observedAt: true },
     })
     return reply.code(201).send({ success: true, data: { price: row.price.toFixed(), quote: row.quote, observedAt: row.observedAt.toISOString() } })
@@ -390,13 +555,13 @@ export async function portfolioRoutes(app: FastifyInstance) {
       }),
       db.portfolioPriceObservation.findMany({
         where: { userId }, orderBy: { observedAt: 'desc' }, distinct: ['assetId'],
-        select: { assetId: true, price: true, quote: true, observedAt: true },
+        select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
       }),
       getStringConfig('rate_USDT_PKR', ''),
     ])
 
     const rows = events.map((e) => toSummaryRow(e, platformRate))
-    const marks = await withPlatformMarks(userId, prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt })))
+    const marks = await withPlatformMarks(userId, prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt, source: p.source })))
 
     try {
       const data = buildSummary({
@@ -480,6 +645,84 @@ export async function portfolioRoutes(app: FastifyInstance) {
       throw new AppError('PORTFOLIO_IMPORT_FAILED', 'Could not read your RupChain trades right now. Please try again later.', 500)
     }
   })
+  // Trades that were NOT added automatically (disputed, closed by the timer or an administrator,
+  // unverified transfer, unfinished), so the user can review them. Read-only toward the platform.
+  const excludedQuery = z.object({
+    limit: z.coerce.number().int().min(1).max(100).default(25),
+    offset: z.coerce.number().int().min(0).max(100000).default(0),
+  })
+  app.get('/portfolio/import/excluded', {
+    preHandler: [authenticate],
+    config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
+    const userId = req.user!.id
+    const q = excludedQuery.safeParse(req.query)
+    if (!q.success) throw new AppError('VALIDATION_ERROR', 'Invalid paging values', 400)
+    try {
+      return reply.send({ success: true, data: await listExcludedTrades(userId, q.data) })
+    } catch (err) {
+      req.log.error({ err }, 'portfolio excluded list failed')
+      throw new AppError('PORTFOLIO_IMPORT_FAILED', 'Could not read your RupChain trades right now. Please try again later.', 500)
+    }
+  })
+
+  // Record, by hand, a finished trade that was left out of automatic tracking. The caller confirms
+  // the amounts. The trade itself (and anything about settlement) is only read, never changed, and
+  // the entry is linked to the trade so it can be recorded once and the importer never adds it again.
+  app.post('/portfolio/excluded-trades/:tradeId/record', {
+    preHandler: [authenticate],
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
+    const userId = req.user!.id
+    const { tradeId } = req.params as { tradeId: string }
+    const parsed = eventSchema.safeParse(req.body)
+    if (!parsed.success) {
+      throw new AppError('VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Invalid record', 400)
+    }
+    const e = parsed.data
+    if (e.type === 'OPENING') throw new AppError('VALIDATION_ERROR', 'A trade is recorded as a buy or a sell', 400)
+
+    const check = await checkExcludedTradeRecordable(userId, tradeId)
+    if (!check.ok) {
+      throw check.status === 404 ? Errors.NOT_FOUND('Trade') : Errors.CONFLICT(check.message)
+    }
+    if (e.type !== check.side) {
+      throw new AppError('VALIDATION_ERROR', `You were the ${check.side === 'BUY' ? 'buyer' : 'seller'} in this trade, so it is recorded as a ${check.side === 'BUY' ? 'buy' : 'sell'}`, 400)
+    }
+    if (await db.portfolioEvent.findFirst({ where: { userId, linkedTradeRef: tradeId }, select: { id: true } })) {
+      throw Errors.CONFLICT('You already recorded this trade.')
+    }
+    if ((await db.portfolioEvent.count({ where: { userId } })) >= MAX_PORTFOLIO_EVENTS) {
+      throw new AppError('PORTFOLIO_EVENT_LIMIT', `You can record up to ${MAX_PORTFOLIO_EVENTS} entries`, 400)
+    }
+    const assetId = await ensureLinkedAsset(userId, check.token, { maxAssets: MAX_PORTFOLIO_ASSETS })
+    if (!assetId) throw new AppError('PORTFOLIO_ASSET_LIMIT', `You can track up to ${MAX_PORTFOLIO_ASSETS} custom tokens`, 400)
+
+    const stamp = chooseFxStamp({
+      userRate: e.fxRate,
+      platformRate: e.fxRate ? null : await getStringConfig('rate_USDT_PKR', ''),
+      occurredAtMs: Date.parse(e.occurredAt),
+      nowMs: Date.now(),
+    })
+    try {
+      const row = await db.portfolioEvent.create({
+        data: {
+          userId, assetId, type: e.type, occurredAt: new Date(e.occurredAt), quantity: e.quantity,
+          consideration: e.consideration ?? null, fee: e.fee ?? '0', basis: null, zeroCost: false,
+          quote: e.quote ?? 'PKR', fxRate: stamp.fxRate, fxSource: stamp.fxSource, note: cleanNote(e.note),
+          linkedTradeRef: tradeId,
+          priceBasis: e.priceBasis ?? null,
+        },
+        select: EVENT_SELECT,
+      })
+      return reply.code(201).send({ success: true, data: eventDto(row) })
+    } catch (err) {
+      // Two requests at once for the same trade: the database lets exactly one through.
+      if ((err as { code?: string }).code === 'P2002') throw Errors.CONFLICT('You already recorded this trade.')
+      throw err
+    }
+  })
+
   // Everything the caller has recorded, for CSV / JSON export. Includes archived tokens and voided
   // entries (flagged) so a backup is complete. Never includes another user's data or internal ids
   // of the source system.
@@ -504,7 +747,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         exportedAt: new Date().toISOString(),
         assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null })),
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
-        events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
+        events: events.map((e) => { const { createdAt, editedAt, linkedTradeRef, ...rest } = eventDto(e); void createdAt; void editedAt; void linkedTradeRef; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString() })),
       },
     })

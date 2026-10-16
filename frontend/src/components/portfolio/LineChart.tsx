@@ -18,6 +18,8 @@ interface Props {
   series: ChartSeries[]
   currency: string
   emptyMessage: string
+  /** A way to fix what the empty message says is missing. */
+  emptyAction?: { label: string; onClick: () => void }
 }
 
 const W = 600, H = 220, PAD_L = 76, PAD_R = 14, PAD_T = 14, PAD_B = 30
@@ -29,7 +31,7 @@ const fmtDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { d
  * interpolated or filled. Numbers are converted with Number() ONLY to place pixels; every value
  * shown to the reader is the original decimal string, also available in the data table below.
  */
-export function LineChart({ title, description, series, currency, emptyMessage }: Props) {
+export function LineChart({ title, description, series, currency, emptyMessage, emptyAction }: Props) {
   const uid = useId()
   const known = series.flatMap((s) => s.points.filter((p) => p.v !== null))
   if (known.length === 0) {
@@ -37,6 +39,9 @@ export function LineChart({ title, description, series, currency, emptyMessage }
       <figure className="rounded-xl border border-border bg-surface p-4">
         <figcaption className="text-sm font-semibold text-text-primary">{title}</figcaption>
         <p className="mt-2 text-xs text-text-muted">{emptyMessage}</p>
+        {emptyAction && (
+          <button type="button" onClick={emptyAction.onClick} className="mt-2 text-xs font-semibold text-primary hover:underline">{emptyAction.label}</button>
+        )}
       </figure>
     )
   }
@@ -121,7 +126,7 @@ export function LineChart({ title, description, series, currency, emptyMessage }
                   <th scope="row" className="py-1 pr-3 text-left font-normal whitespace-nowrap">{fmtDate(t)}</th>
                   {series.map((s) => {
                     const v = valueAt(s, t)
-                    return <td key={s.name} className="py-1 pr-3 text-right">{v === null ? 'Unknown' : formatDecimal(v)}</td>
+                    return <td key={s.name} className="py-1 pr-3 text-right">{v === null ? 'Not known' : formatDecimal(v)}</td>
                   })}
                 </tr>
               ))}

@@ -69,11 +69,11 @@ describe('LineChart', () => {
     expect(within(table).getByText('1,000.00')).toBeInTheDocument()
     expect(within(table).getByText('1,500.00')).toBeInTheDocument()
   })
-  it('draws a gap as a break: two separate lines, never a joined one, and lists the gap as "Unknown"', () => {
+  it('draws a gap as a break: two separate lines, never a joined one, and lists the gap as "Not known"', () => {
     const { container } = render(<LineChart title="V" description="d" currency="PKR" emptyMessage="x"
       series={[s([['2026-01-01T00:00:00Z', '1'], ['2026-01-02T00:00:00Z', '2'], ['2026-01-03T00:00:00Z', null], ['2026-01-04T00:00:00Z', '3'], ['2026-01-05T00:00:00Z', '4']])]} />)
     expect(container.querySelectorAll('svg[role="img"] polyline')).toHaveLength(2)
-    expect(screen.getByText('Unknown', { selector: 'td' })).toBeInTheDocument()
+    expect(screen.getByText('Not known', { selector: 'td' })).toBeInTheDocument()
     expect(screen.getByText(/Gaps mean the value is unknown/)).toBeInTheDocument()
   })
   it('a single known point is drawn as a marker, not as a line', () => {
@@ -132,7 +132,7 @@ beforeEach(() => {
 describe('PerformanceSection inside the Portfolio tab', () => {
   it('loads "all time" by default in the shown currency and renders results and both charts', async () => {
     render(<PortfolioPanel />)
-    expect(await screen.findByText('Realized in this period')).toBeInTheDocument()
+    expect(await screen.findByText('Buy Costs + Fees')).toBeInTheDocument()
     const first = api.performance.mock.calls[0]![0]
     expect(first.currency).toBe('PKR')
     expect(first.from).toBeUndefined()
@@ -140,27 +140,27 @@ describe('PerformanceSection inside the Portfolio tab', () => {
     expect(screen.getAllByText('PKR +11,200.00').length).toBeGreaterThanOrEqual(2) // headline card and period card
     expect(screen.getByText('PKR 101,000.00')).toBeInTheDocument()
     expect(screen.getByText('PKR 51,600.00')).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Cost and realized profit over time' })).toBeInTheDocument()
-    expect(screen.getByRole('img', { name: 'Marked value over time' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Cost and Realized Profit Over Time' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: 'Portfolio Value Over Time' })).toBeInTheDocument()
   })
   it('never shows a percentage or a gain when they are unavailable, and says why', async () => {
     render(<PortfolioPanel />)
     expect(await screen.findByText('Unavailable')).toBeInTheDocument()
     expect(screen.getByText(/A price is missing at the start or the end/)).toBeInTheDocument()
-    expect(screen.getByText(/Percentage return: unavailable/)).toBeInTheDocument()
-    expect(screen.queryByText(/Approximate return/)).toBeNull()
+    expect(screen.getByText('Return unavailable')).toBeInTheDocument()
+    expect(screen.queryByText('Approximate (Modified Dietz)')).toBeNull()
   })
   it('shows the Modified Dietz percentage only when the server provides one, labelled as an approximation', async () => {
     api.performance.mockResolvedValue(perf({ gain: '400', gainUnavailableReason: null, returnPct: '26.67', valueStart: '1000', valueEnd: '2400' }))
     render(<PortfolioPanel />)
-    expect(await screen.findByText(/Approximate return: 26.67%/)).toBeInTheDocument()
-    expect(screen.getByText(/Modified Dietz/)).toBeInTheDocument()
+    expect(await screen.findByText('26.67%')).toBeInTheDocument()
+    expect(screen.getByText('Approximate (Modified Dietz)')).toBeInTheDocument()
     expect(screen.getByText('PKR +400.00')).toBeInTheDocument()
   })
   it('choosing a period reloads with a start date; "All time" has none', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await screen.findByText('Realized in this period')
+    await screen.findByText('Buy Costs + Fees')
     await user.click(screen.getByRole('radio', { name: '30D' }))
     await vi.waitFor(() => expect(api.performance.mock.calls.length).toBeGreaterThan(1))
     const last = api.performance.mock.calls.at(-1)![0]
@@ -172,7 +172,7 @@ describe('PerformanceSection inside the Portfolio tab', () => {
   it('custom period asks for dates, validates them, then loads', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await screen.findByText('Realized in this period')
+    await screen.findByText('Buy Costs + Fees')
     const before = api.performance.mock.calls.length
     await user.click(screen.getByRole('radio', { name: 'Custom' }))
     expect(await screen.findByText('Choose a start and an end date.')).toBeInTheDocument()
@@ -190,7 +190,7 @@ describe('PerformanceSection inside the Portfolio tab', () => {
     api.summary.mockImplementation(async (c: string) => ({ ...summary, currency: c, asOf: c === 'USDT' ? '2026-10-16T11:00:00Z' : summary.asOf }))
     api.performance.mockImplementation(async ({ currency }: { currency: string }) => ({ ...perf(), currency }))
     render(<PortfolioPanel />)
-    await screen.findByText('Realized in this period')
+    await screen.findByText('Buy Costs + Fees')
     await user.click(screen.getByRole('radio', { name: 'USDT' }))
     await vi.waitFor(() => expect(api.performance.mock.calls.some((c) => c[0].currency === 'USDT')).toBe(true))
   })
@@ -198,12 +198,12 @@ describe('PerformanceSection inside the Portfolio tab', () => {
     api.performance.mockRejectedValue(new Error('Server is busy'))
     render(<PortfolioPanel />)
     expect(await screen.findByText('Server is busy')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Meta Earth/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Meta Earth/ })).toBeInTheDocument()
   })
   it('is not shown for a portfolio with nothing recorded', async () => {
     api.summary.mockResolvedValue({ ...summary, summary: { ...summary.summary, positions: [], unpricedAssets: [], partial: false } })
     render(<PortfolioPanel />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(screen.queryByText('Results over time')).toBeNull()
     expect(api.performance).not.toHaveBeenCalled()
   })

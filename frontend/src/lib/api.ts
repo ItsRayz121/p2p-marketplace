@@ -19,7 +19,7 @@ export const API_BASE = resolveApiBase()
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
 import type { ExportData } from '@/lib/portfolio/exportFile'
-import type { Currency, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
+import type { Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -1638,8 +1638,21 @@ export const portfolioApi = {
     apiRequest<PortfolioEvent>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`, { method: 'POST', body: JSON.stringify(data) }),
   deleteEvent: (assetId: string, eventId: string) =>
     apiRequest<void>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
-  setPrice: (assetId: string, price: string, quote: Currency = 'PKR') =>
-    apiRequest<{ price: string; quote: Currency; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price, quote }) }),
+  listAllEvents: (query: EventListQuery) => {
+    const p = new URLSearchParams({ limit: String(query.limit), offset: String(query.offset) })
+    for (const k of ['q', 'type', 'source', 'status', 'assetId'] as const) if (query[k]) p.set(k, query[k]!)
+    return apiRequest<EventsPage>(`/portfolio/events?${p.toString()}`)
+  },
+  updateEvent: (assetId: string, eventId: string, data: PortfolioEventInput) =>
+    apiRequest<PortfolioEvent>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  listExcluded: (limit: number, offset: number) =>
+    apiRequest<ExcludedTradesPage>(`/portfolio/import/excluded?limit=${limit}&offset=${offset}`),
+  recordExcluded: (tradeId: string, data: PortfolioEventInput) =>
+    apiRequest<PortfolioEvent>(`/portfolio/excluded-trades/${encodeURIComponent(tradeId)}/record`, { method: 'POST', body: JSON.stringify(data) }),
+  eventHistory: (assetId: string, eventId: string) =>
+    apiRequest<EventRevision[]>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}/history`),
+  setPrice: (assetId: string, price: string, quote: Currency = 'PKR', source?: string) =>
+    apiRequest<{ price: string; quote: Currency; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price, quote, ...(source && source !== 'manual' ? { source } : {}) }) }),
   summary: (currency: Currency = 'PKR') => apiRequest<PortfolioSummaryResponse>(`/portfolio/summary?currency=${currency}`),
   exportAll: () => apiRequest<ExportData>('/portfolio/export'),
   /** Whether the Portfolio feature is switched on (it is by default). */

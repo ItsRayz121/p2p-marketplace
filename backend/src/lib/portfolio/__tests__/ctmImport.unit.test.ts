@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyTrade, toEventSpec, makePlan, type CtmTradeFacts } from '../ctmImport'
+import { classifyTrade, describeTrade, toEventSpec, makePlan, type CtmTradeFacts } from '../ctmImport'
 
 const done = new Date('2026-10-01T10:00:00Z')
 const trade = (o: Partial<CtmTradeFacts> = {}): CtmTradeFacts => ({
@@ -129,5 +129,43 @@ describe('import plan (idempotent, read-only, reversible in analytics only)', ()
   it('two partial fills stay two separate entries', () => {
     const plan = makePlan([trade({ id: 'f1', tokenAmount: '30' }), trade({ id: 'f2', tokenAmount: '70' })], [])
     expect(plan.toCreate.map((s) => [s.sourceRef, s.quantity])).toEqual([['f1', '30'], ['f2', '70']])
+  })
+})
+
+describe('a trade the user already recorded by hand is never imported as well', () => {
+  it('skips an eligible trade that has a manual linked record, and counts it', () => {
+    const plan = makePlan([trade({ id: 'x' }), trade({ id: 'y' })], [], new Set(['x']))
+    expect(plan.toCreate.map((s) => s.sourceRef)).toEqual(['y'])
+    expect(plan.recordedManually).toBe(1)
+  })
+  it('without a link the trade is imported as before (and the link set is optional)', () => {
+    const plan = makePlan([trade({ id: 'x' })], [])
+    expect(plan.toCreate).toHaveLength(1)
+    expect(plan.recordedManually).toBe(0)
+  })
+  it('a linked trade that is still excluded is just excluded, not counted as recorded here', () => {
+    const plan = makePlan([trade({ id: 'x', hasDispute: true })], [], new Set(['x']))
+    expect(plan.recordedManually).toBe(0)
+    expect(plan.attention).toEqual([{ reason: 'disputed', count: 1 }])
+  })
+  it('is idempotent: running the plan again with the same link set changes nothing', () => {
+    const t = [trade({ id: 'x' })]
+    expect(makePlan(t, [], new Set(['x'])).toCreate).toEqual(makePlan(t, [], new Set(['x'])).toCreate)
+  })
+})
+
+describe('describeTrade (review list; never decides what counts)', () => {
+  it('describes an unfinished or disputed trade from the user\'s side', () => {
+    const d = describeTrade(trade({ status: 'disputed', completedAt: null }))!
+    expect(d).toMatchObject({ side: 'BUY', quantity: '100', consideration: '125000', quote: 'PKR', fxRate: null })
+    expect(describeTrade(trade({ userId: 'seller' }))!.side).toBe('SELL')
+  })
+  it('USDT-paid trades are shown in USDT with the implied rate', () => {
+    expect(describeTrade(trade({ paymentCurrency: 'USDT', usdtAmount: '446.42857143' }))).toMatchObject({ quote: 'USDT', consideration: '446.42857143', fxRate: '280' })
+  })
+  it('returns null for a stranger or an unusable token amount, and no amount for a bad fiat amount', () => {
+    expect(describeTrade(trade({ userId: 'stranger' }))).toBeNull()
+    expect(describeTrade(trade({ tokenAmount: '0' }))).toBeNull()
+    expect(describeTrade(trade({ fiatAmount: '-1' }))!.consideration).toBeNull()
   })
 })

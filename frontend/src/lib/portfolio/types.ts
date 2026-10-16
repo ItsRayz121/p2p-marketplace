@@ -22,6 +22,24 @@ export interface PortfolioEvent {
   /** Imported entry whose trade stopped qualifying: shown, but not counted. */
   voided: boolean
   voidReason: string | null
+  /** When the user last corrected this entry (signed-in accounts only); null/absent if never. */
+  editedAt?: string | null
+  /** The RupChain trade this entry was recorded for by hand (signed-in accounts only). */
+  linkedTradeRef?: string | null
+  /** 'platform' = the RupChain price was used; 'own' = the price the user got; null/absent = not stated. */
+  priceBasis?: PriceBasis | null
+}
+
+/** Which price a buy or sell used. Informational: it never changes a calculation. */
+export type PriceBasis = 'platform' | 'own'
+
+/** An earlier version of an entry, kept when it was corrected or removed. */
+export interface EventRevision {
+  id: string
+  action: 'edit' | 'delete'
+  /** The entry as it was before the change. */
+  before: Partial<Pick<PortfolioEvent, 'type' | 'occurredAt' | 'quantity' | 'consideration' | 'fee' | 'basis' | 'zeroCost' | 'quote' | 'fxRate' | 'fxSource' | 'note'>>
+  changedAt: string
 }
 
 export interface PortfolioEventInput {
@@ -35,6 +53,7 @@ export interface PortfolioEventInput {
   quote?: Currency
   fxRate?: string
   note?: string
+  priceBasis?: PriceBasis
   clientRequestId?: string
 }
 
@@ -47,6 +66,9 @@ export interface PortfolioPosition {
   realizedKnown: string
   realizedComplete: boolean
   unresolvedSales: Array<{ eventId: string; quantity: string }>
+  /** Sales recorded for this token and how many of them have an incomplete result. Absent in older cached data. */
+  soldCount?: number
+  soldIncompleteCount?: number
   price: string | null
   value: string | null
   unrealized: string | null
@@ -71,6 +93,8 @@ export interface PortfolioPriceView {
   original: string
   quote: Currency
   observedAt: string
+  /** 'platform' = latest proven RupChain trade; otherwise how the user entered it. */
+  source?: string
 }
 
 export interface PortfolioSummaryResponse {
@@ -154,8 +178,48 @@ export interface ImportReport {
   restored: number
   voided: number
   alreadyImported: number
+  /** Trades you recorded by hand; they are not added a second time. */
+  recordedManually?: number
   attention: Array<{ reason: AttentionReason; count: number }>
   hasImportedBefore: boolean
   preview: ImportPreviewItem[]
   skippedForLimit: number
 }
+
+/** A RupChain trade that was not added automatically, for the review list. */
+export interface ExcludedTrade {
+  tradeId: string
+  tradeRef: string
+  tokenName: string
+  side: 'BUY' | 'SELL'
+  quantity: string
+  consideration: string | null
+  quote: Currency
+  date: string | null
+  reason: AttentionReason
+  /** You already recorded this trade by hand. */
+  recorded: boolean
+  /** It has finished and its amounts are usable, so you may record it yourself. */
+  canRecord: boolean
+}
+
+export interface ExcludedTradesPage { total: number; items: ExcludedTrade[] }
+
+/** Filters for the all-transactions list. Empty/absent means "all". */
+export interface EventListQuery {
+  limit: number
+  offset: number
+  q?: string
+  type?: PortfolioEventType
+  source?: 'manual' | 'ctm'
+  status?: 'counted' | 'not_counted'
+  assetId?: string
+}
+
+/** An entry with the name of the token it belongs to, for lists across tokens. */
+export interface HistoryEvent extends PortfolioEvent {
+  assetName: string
+  assetSymbol: string | null
+}
+
+export interface EventsPage { total: number; items: HistoryEvent[] }

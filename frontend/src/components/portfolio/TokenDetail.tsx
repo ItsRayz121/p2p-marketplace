@@ -1,17 +1,23 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type {
-  Currency, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioEventType, PortfolioPosition, PortfolioPriceView,
+  Currency, EventRevision, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioEventType, PortfolioPosition, PortfolioPriceView,
 } from '@/lib/portfolio/types'
+import { newlyOversold } from '@/lib/portfolio/oversold'
 import { AMOUNT_RE, formatDecimal, formatQuantity, formatSigned, isZeroAmount } from '@/lib/portfolio/format'
 import { parseSourceUrl, sourceHostname } from '@/lib/portfolio/customAsset'
 import { VOID_TEXT } from '@/lib/portfolio/importText'
+import { PRICE_SOURCE_CHOICES, priceAge, priceSourceLabel, type PriceSourceChoice } from '@/lib/portfolio/priceStatus'
 import { EventForm } from './EventForm'
 import { ListingInterestBlock } from './ListingInterestBlock'
 import { TokenMonogram } from './TokenMonogram'
 
+export type StartWith = 'price' | 'buy' | 'sell' | 'opening' | 'history'
+
 export interface TokenDetailProps {
+  /** Open straight into this action (from a card or the attention list). */
+  startWith?: StartWith
   asset: PortfolioAsset
   position?: PortfolioPosition
   price?: PortfolioPriceView
@@ -25,7 +31,11 @@ export interface TokenDetailProps {
   loadEvents: (assetId: string) => Promise<PortfolioEvent[]>
   onRecordEvent: (assetId: string, input: PortfolioEventInput) => Promise<void>
   onDeleteEvent: (assetId: string, eventId: string) => Promise<void>
-  onSetPrice: (assetId: string, price: string, quote: Currency) => Promise<void>
+  /** Correct one of your own manual entries (signed-in and local trackers). */
+  onUpdateEvent?: (assetId: string, eventId: string, input: PortfolioEventInput) => Promise<void>
+  /** Earlier versions of an entry (signed-in only). */
+  loadHistory?: (assetId: string, eventId: string) => Promise<EventRevision[]>
+  onSetPrice: (assetId: string, price: string, quote: Currency, source?: string) => Promise<void>
   onArchive?: (assetId: string) => Promise<void>
   onUnarchive?: (assetId: string) => Promise<void>
   /** Only offered when the token has no records. */
@@ -34,9 +44,20 @@ export interface TokenDetailProps {
   onWithdrawListing?: (assetId: string) => Promise<void>
 }
 
-type Mode = { name: 'view' } | { name: 'record'; type: PortfolioEventType } | { name: 'price' }
+type Mode = { name: 'view' } | { name: 'record'; type: PortfolioEventType } | { name: 'price' } | { name: 'edit'; eventId: string }
 
 const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Opening holding' }
+
+/** One line describing an earlier version of an entry. */
+function describeBefore(b: EventRevision['before']): string {
+  const kind = b.type ? TYPE_LABEL[b.type] : 'Entry'
+  const parts = [`${kind} ${b.quantity ? formatQuantity(b.quantity) : ''}`.trim()]
+  if (b.type === 'OPENING') parts.push(b.zeroCost ? 'zero cost' : b.basis ? `cost ${formatDecimal(b.basis)} ${b.quote ?? ''}`.trim() : 'cost not recorded')
+  else if (b.consideration) parts.push(`${formatDecimal(b.consideration)} ${b.quote ?? ''}`.trim())
+  if (b.fee && !isZeroAmount(b.fee)) parts.push(`fee ${formatDecimal(b.fee)}`)
+  if (b.occurredAt) parts.push(new Date(b.occurredAt).toLocaleString())
+  return parts.join(' · ')
+}
 
 function Stat({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
   return (
@@ -61,10 +82,11 @@ function SourceLink({ href }: { href: string }) {
   )
 }
 
-function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetName: string; defaultCurrency: Currency; onSubmit: (p: string, q: Currency) => Promise<void>; onCancel: () => void }) {
+function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetName: string; defaultCurrency: Currency; onSubmit: (p: string, q: Currency, source: PriceSourceChoice) => Promise<void>; onCancel: () => void }) {
   const ref = useRef<HTMLInputElement>(null)
   const [value, setValue] = useState('')
   const [quote, setQuote] = useState<Currency>(defaultCurrency)
+  const [source, setSource] = useState<PriceSourceChoice>('manual')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   useEffect(() => { ref.current?.focus() }, [])
@@ -75,7 +97,7 @@ function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetNa
     if (!AMOUNT_RE.test(v) || isZeroAmount(v)) { setError('Enter a price greater than zero, for example 1200.'); return }
     setError(null)
     setBusy(true)
-    try { await onSubmit(v, quote) } catch (err) { setError(err instanceof Error ? err.message : 'Could not save this price.') } finally { setBusy(false) }
+    try { await onSubmit(v, quote, source) } catch (err) { setError(err instanceof Error ? err.message : 'Could not save this price.') } finally { setBusy(false) }
   }
 
   return (
@@ -97,6 +119,13 @@ function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetNa
           className="w-full rounded-lg border border-border bg-surface text-text-primary text-base px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
         {error && <p id="portfolio-price-error" role="alert" className="text-sm text-danger">{error}</p>}
+        <label htmlFor="portfolio-price-source" className="text-sm font-medium text-text-primary">Where is this price from? (optional)</label>
+        <select
+          id="portfolio-price-source" value={source} onChange={(e) => setSource(e.target.value as PriceSourceChoice)}
+          className="w-full rounded-lg border border-border bg-surface text-text-primary text-base px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
+        >
+          {PRICE_SOURCE_CHOICES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
       </div>
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-semibold rounded-lg border border-border text-text-secondary hover:bg-surface-hover">Cancel</button>
@@ -110,8 +139,19 @@ export function TokenDetail(p: TokenDetailProps) {
   const { asset, position, price, currency } = p
   const [events, setEvents] = useState<PortfolioEvent[] | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [mode, setMode] = useState<Mode>({ name: 'view' })
+  const [mode, setMode] = useState<Mode>(() => {
+    switch (p.startWith) {
+      case 'price': return { name: 'price' }
+      case 'buy': return { name: 'record', type: 'BUY' }
+      case 'sell': return { name: 'record', type: 'SELL' }
+      case 'opening': return { name: 'record', type: 'OPENING' }
+      default: return { name: 'view' }
+    }
+  })
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [historyOpen, setHistoryOpen] = useState<string | null>(null)
+  const [revisions, setRevisions] = useState<EventRevision[] | null>(null)
+  const [revisionError, setRevisionError] = useState<string | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
   const [confirmAssetDelete, setConfirmAssetDelete] = useState(false)
   const [assetError, setAssetError] = useState<string | null>(null)
@@ -125,6 +165,10 @@ export function TokenDetail(p: TokenDetailProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset.id])
   useEffect(() => { void reload() }, [reload])
+  useEffect(() => {
+    if (p.startWith === 'history') rootRef.current?.querySelector('#history-heading')?.scrollIntoView?.({ block: 'start' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // The action buttons unmount while a form is open, so focus is restored to the re-rendered twin by key.
   const closeForm = () => {
@@ -159,7 +203,7 @@ export function TokenDetail(p: TokenDetailProps) {
             <Stat label="Recorded quantity" value={formatQuantity(position.quantity)} note="Based on your recorded history" />
             <Stat
               label={`Remaining cost (${currency})`}
-              value={position.basisComplete ? formatDecimal(position.knownRemainingBasis) : 'Unknown'}
+              value={position.basisComplete ? formatDecimal(position.knownRemainingBasis) : 'Not known yet'}
               note={position.basisComplete ? 'FIFO' : 'Some units have no recorded cost'}
             />
             <Stat
@@ -169,13 +213,17 @@ export function TokenDetail(p: TokenDetailProps) {
                 price
                   ? price.price === null
                     ? `Entered in ${price.quote}; no USDT/PKR rate is available to convert it`
-                    : `Entered ${new Date(price.observedAt).toLocaleString()}${price.quote !== currency ? ` as ${formatDecimal(price.original, 8).replace(/\.?0+$/, '')} ${price.quote}` : ''}`
+                    : `${priceSourceLabel(price.source)}, ${new Date(price.observedAt).toLocaleString()}${price.quote !== currency ? `, as ${formatDecimal(price.original, 8).replace(/\.?0+$/, '')} ${price.quote}` : ''}`
                   : 'Enter one to see value and unrealized profit/loss'
               }
             />
             <Stat label={`Marked value (${currency})`} value={position.value === null ? 'Unavailable' : formatDecimal(position.value)} note="Not a promise you could sell at this price" />
             <Stat label="Unrealized profit / loss" value={position.unrealized === null ? 'Unavailable' : `${currency} ${formatSigned(position.unrealized)}`} />
-            <Stat label="Realized profit / loss" value={`${currency} ${formatSigned(position.realizedKnown)}`} note={position.realizedComplete ? undefined : 'Excludes sales from units with unknown cost'} />
+            <Stat
+              label="Realized profit / loss"
+              value={!position.realizedComplete && /^-?0+(\.0+)?$/.test(position.realizedKnown) ? 'Not known yet' : `${currency} ${formatSigned(position.realizedKnown)}`}
+              note={position.realizedComplete ? undefined : 'Leaves out sales of units whose cost is not recorded'}
+            />
           </dl>
         ) : p.fxUnavailable ? (
           <p role="alert" className="text-sm text-amber-800">
@@ -184,6 +232,17 @@ export function TokenDetail(p: TokenDetailProps) {
         ) : (
           <p className="text-sm text-text-muted">No entries yet. Record a buy or an opening holding to see quantity and profit/loss.</p>
         )}
+        {position && price && price.price !== null && (() => {
+          const age = priceAge(price.observedAt)
+          if (!age) return null
+          return age.stale ? (
+            <p role="alert" className="mt-3 text-xs text-amber-800 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
+              This price was recorded {age.label} and may be out of date. Update it to keep your value current.
+            </p>
+          ) : (
+            <p className="mt-3 text-xs text-text-muted">Price recorded {age.label}.</p>
+          )
+        })()}
         {position && position.unresolvedSales.length > 0 && (
           <p role="alert" className="mt-3 text-xs text-amber-800 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
             You recorded selling more than your history shows ({position.unresolvedSales.map((u) => formatQuantity(u.quantity)).join(', ')} units). No profit is counted for the excess. Add an opening holding to complete the history.
@@ -220,14 +279,34 @@ export function TokenDetail(p: TokenDetailProps) {
             assetName={asset.name}
             defaultType={mode.type}
             defaultCurrency={currency}
+            platformPrice={price && price.source === 'platform' ? { price: price.original, quote: price.quote } : null}
             onCancel={closeForm}
             onSubmit={async (input) => { await p.onRecordEvent(asset.id, input); await reload(); closeForm() }}
           />
         </div>
       )}
+      {mode.name === 'edit' && (() => {
+        const target = events?.find((e) => e.id === mode.eventId)
+        if (!target || !p.onUpdateEvent) return null
+        return (
+          <div className="bg-surface shadow-card rounded-xl border border-border p-5">
+            <EventForm
+              assetName={asset.name}
+              initial={target}
+              defaultCurrency={currency}
+              onCancel={closeForm}
+              warn={(input) => {
+                const extra = newlyOversold(events ?? [], { replace: { id: target.id, type: input.type, occurredAt: input.occurredAt, quantity: input.quantity } })
+                return extra === '0' ? null : `After this change, ${formatQuantity(extra)} units would be sold beyond what your history shows, so no profit would be counted for them. Save anyway?`
+              }}
+              onSubmit={async (input) => { await p.onUpdateEvent!(asset.id, target.id, input); setHistoryOpen(null); await reload(); closeForm() }}
+            />
+          </div>
+        )
+      })()}
       {mode.name === 'price' && (
         <div className="bg-surface shadow-card rounded-xl border border-border p-5">
-          <PriceForm assetName={asset.name} defaultCurrency={currency} onCancel={closeForm} onSubmit={async (v, q) => { await p.onSetPrice(asset.id, v, q); closeForm() }} />
+          <PriceForm assetName={asset.name} defaultCurrency={currency} onCancel={closeForm} onSubmit={async (v, q, src) => { await p.onSetPrice(asset.id, v, q, src); closeForm() }} />
         </div>
       )}
 
@@ -292,10 +371,11 @@ export function TokenDetail(p: TokenDetailProps) {
               </thead>
               <tbody className="divide-y divide-border">
                 {events.map((ev) => (
-                  <tr key={ev.id}>
+                  <Fragment key={ev.id}>
+                  <tr>
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(ev.occurredAt).toLocaleString()}</td>
                     <td className={`px-3 py-2 whitespace-nowrap ${ev.voided ? 'text-text-muted line-through' : ''}`}>
-                      {TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted no-underline">· {ev.source === 'ctm' ? 'RupChain trade' : 'manual'}</span>
+                      {TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted no-underline">· {ev.source === 'ctm' ? 'RupChain trade' : 'manual'}{ev.editedAt ? ', edited' : ''}{ev.priceBasis ? `, ${ev.priceBasis === 'platform' ? 'RupChain price' : 'own price'}` : ''}</span>
                       {ev.voided && (
                         <span className="block text-xs text-amber-800 no-underline" style={{ textDecoration: 'none' }}>
                           Not counted: {VOID_TEXT[ev.voidReason ?? ''] ?? 'it no longer qualifies'}
@@ -305,7 +385,7 @@ export function TokenDetail(p: TokenDetailProps) {
                     <td className="px-3 py-2 text-right">{formatQuantity(ev.quantity)}</td>
                     <td className="px-3 py-2 text-right">
                       {ev.type === 'OPENING'
-                        ? (ev.zeroCost ? '0 (zero cost)' : ev.basis !== null ? `${formatDecimal(ev.basis)} ${ev.quote}` : 'Unknown cost')
+                        ? (ev.zeroCost ? '0 (zero cost)' : ev.basis !== null ? `${formatDecimal(ev.basis)} ${ev.quote}` : 'Cost not recorded')
                         : `${formatDecimal(ev.consideration ?? '0')} ${ev.quote}`}
                       {ev.fxRate !== null && ev.type !== 'OPENING' && (
                         <span className="block text-xs text-text-muted">
@@ -319,26 +399,85 @@ export function TokenDetail(p: TokenDetailProps) {
                       {ev.source !== 'manual' ? (
                         <span className="text-xs text-text-muted">Read-only</span>
                       ) : confirmDelete === ev.id ? (
-                        <span className="inline-flex gap-2">
-                          <button
-                            type="button" className="text-danger font-medium hover:underline"
-                            onClick={async () => {
-                              setActionError(null)
-                              try { await p.onDeleteEvent(asset.id, ev.id); setConfirmDelete(null); await reload() }
-                              catch (e) { setConfirmDelete(null); setActionError(e instanceof Error ? e.message : 'Could not remove this entry.') }
-                            }}
-                          >
-                            Confirm remove
-                          </button>
-                          <button type="button" className="text-text-muted hover:underline" onClick={() => setConfirmDelete(null)}>Keep</button>
+                        <span className="inline-flex flex-col items-end gap-1">
+                          {(() => {
+                            const extra = newlyOversold(events, { remove: ev.id })
+                            return extra === '0' ? null : (
+                              <span role="alert" className="block max-w-[16rem] whitespace-normal text-left text-xs text-amber-800">
+                                Removing this leaves {formatQuantity(extra)} units sold beyond what your history shows, so no profit would be counted for them.
+                              </span>
+                            )
+                          })()}
+                          <span className="inline-flex gap-2">
+                            <button
+                              type="button" className="text-danger font-medium hover:underline"
+                              onClick={async () => {
+                                setActionError(null)
+                                try { await p.onDeleteEvent(asset.id, ev.id); setConfirmDelete(null); setHistoryOpen(null); await reload() }
+                                catch (e) { setConfirmDelete(null); setActionError(e instanceof Error ? e.message : 'Could not remove this entry.') }
+                              }}
+                            >
+                              Confirm remove
+                            </button>
+                            <button type="button" className="text-text-muted hover:underline" onClick={() => setConfirmDelete(null)}>Keep</button>
+                          </span>
                         </span>
                       ) : (
-                        <button type="button" className="text-text-muted hover:text-danger hover:underline" onClick={() => setConfirmDelete(ev.id)} aria-label={`Remove ${TYPE_LABEL[ev.type]} entry from ${new Date(ev.occurredAt).toLocaleDateString()}`}>
-                          Remove
-                        </button>
+                        <span className="inline-flex gap-3">
+                          {p.onUpdateEvent && !archived && (
+                            <button
+                              type="button" className="text-primary font-medium hover:underline"
+                              onClick={open(`edit-${ev.id}`, { name: 'edit', eventId: ev.id })}
+                              data-trigger={`edit-${ev.id}`}
+                              aria-label={`Edit ${TYPE_LABEL[ev.type]} entry from ${new Date(ev.occurredAt).toLocaleDateString()}`}
+                            >
+                              Edit
+                            </button>
+                          )}
+                          {p.loadHistory && ev.editedAt && (
+                            <button
+                              type="button" className="text-text-muted hover:underline" aria-expanded={historyOpen === ev.id}
+                              onClick={async () => {
+                                if (historyOpen === ev.id) { setHistoryOpen(null); return }
+                                setHistoryOpen(ev.id); setRevisions(null); setRevisionError(null)
+                                try { setRevisions(await p.loadHistory!(asset.id, ev.id)) }
+                                catch (e) { setRevisionError(e instanceof Error ? e.message : 'Could not load the history.') }
+                              }}
+                            >
+                              History
+                            </button>
+                          )}
+                          <button type="button" className="text-text-muted hover:text-danger hover:underline" onClick={() => setConfirmDelete(ev.id)} aria-label={`Remove ${TYPE_LABEL[ev.type]} entry from ${new Date(ev.occurredAt).toLocaleDateString()}`}>
+                            Remove
+                          </button>
+                        </span>
                       )}
                     </td>
                   </tr>
+                  {historyOpen === ev.id && (
+                    <tr>
+                      <td colSpan={7} className="px-3 py-2 bg-surface-hover/40">
+                        <p className="text-xs font-semibold text-text-primary mb-1">Earlier versions of this entry</p>
+                        {revisionError ? (
+                          <p role="alert" className="text-xs text-danger">{revisionError}</p>
+                        ) : revisions === null ? (
+                          <p role="status" className="text-xs text-text-muted">Loading…</p>
+                        ) : revisions.length === 0 ? (
+                          <p className="text-xs text-text-muted">No earlier versions.</p>
+                        ) : (
+                          <ul className="space-y-1">
+                            {revisions.map((r) => (
+                              <li key={r.id} className="text-xs text-text-secondary">
+                                <span className="text-text-muted">{new Date(r.changedAt).toLocaleString()}, {r.action === 'delete' ? 'removed' : 'corrected'}: </span>
+                                {describeBefore(r.before)}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

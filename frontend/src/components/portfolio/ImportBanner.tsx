@@ -12,6 +12,8 @@ interface Props {
   error: string | null
   onImport: () => void
   onDismiss: () => void
+  /** Open the list of trades that were left out (signed-in only). */
+  onReview?: () => void
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
@@ -20,7 +22,7 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
  * Shown when there are RupChain trades to add (first time: needs an explicit yes) and/or trades that
  * were deliberately NOT added. Nothing here changes a trade, a wallet or a payout.
  */
-export function ImportBanner({ report, busy, error, onImport, onDismiss }: Props) {
+export function ImportBanner({ report, busy, error, onImport, onDismiss, onReview }: Props) {
   const [open, setOpen] = useState(false)
   const toAdd = report.created + report.restored
   const attentionCount = report.attention.reduce((n, a) => n + a.count, 0)
@@ -80,8 +82,11 @@ export function ImportBanner({ report, busy, error, onImport, onDismiss }: Props
             ))}
           </ul>
           <p className="text-xs text-text-muted">
-            These are left out because a trade status alone does not prove both sides were settled. If you really did buy or sell, you can record it yourself on the token.
+            These are left out because a trade status alone does not prove both sides were settled. If you really did buy or sell, you can record it yourself.
           </p>
+          {onReview && (
+            <button type="button" onClick={onReview} className="text-xs font-semibold text-primary hover:underline">Review these trades</button>
+          )}
         </div>
       )}
 

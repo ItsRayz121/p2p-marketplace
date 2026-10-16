@@ -4,7 +4,7 @@ import { Prisma } from '@prisma/client'
 
 const m = vi.hoisted(() => ({
   assetFindFirst: vi.fn(),
-  evFindMany: vi.fn(), evFindFirst: vi.fn(), evCount: vi.fn(), evCreate: vi.fn(), evDeleteMany: vi.fn(),
+  evFindMany: vi.fn(), evFindFirst: vi.fn(), evCount: vi.fn(), evCreate: vi.fn(), evDeleteMany: vi.fn(), revCreate: vi.fn(),
   prCreate: vi.fn(), prFindMany: vi.fn(), prCount: vi.fn(), cfg: vi.fn(),
 }))
 
@@ -14,6 +14,8 @@ vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
     portfolioAsset: { findFirst: m.assetFindFirst, findMany: vi.fn(), count: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     portfolioEvent: { findMany: m.evFindMany, findFirst: m.evFindFirst, count: m.evCount, create: m.evCreate, deleteMany: m.evDeleteMany },
+    portfolioEventRevision: { create: m.revCreate },
+    $transaction: async (fn: (tx: unknown) => unknown) => fn({ portfolioEvent: { deleteMany: m.evDeleteMany }, portfolioEventRevision: { create: m.revCreate } }),
     portfolioPriceObservation: { create: m.prCreate, findMany: m.prFindMany, count: m.prCount },
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
@@ -86,10 +88,12 @@ describe('auth and ownership', () => {
     expect((await app.inject({ method: 'DELETE', url: '/api/v1/portfolio/assets/a1/events/ev9', headers: U })).statusCode).toBe(404)
     expect(m.evFindFirst.mock.calls[0]![0].where).toEqual({ id: 'ev9', assetId: 'a1', userId: 'u1' })
     expect(m.evDeleteMany).not.toHaveBeenCalled()
-    m.evFindFirst.mockResolvedValue({ id: 'ev1', source: 'manual' })
+    m.evFindFirst.mockResolvedValue(evRow())
     m.evDeleteMany.mockResolvedValue({ count: 1 })
     expect((await app.inject({ method: 'DELETE', url: '/api/v1/portfolio/assets/a1/events/ev1', headers: U })).statusCode).toBe(200)
     expect(m.evDeleteMany.mock.calls[0]![0].where).toEqual({ id: 'ev1', assetId: 'a1', userId: 'u1', source: 'manual' })
+    // The removed entry is kept in its history.
+    expect(m.revCreate.mock.calls[0]![0].data).toMatchObject({ userId: 'u1', eventId: 'ev1', assetId: 'a1', action: 'delete', before: { type: 'BUY', quantity: '100', consideration: '100000' } })
   })
   it('an entry imported from a RupChain trade is read-only: it cannot be removed', async () => {
     m.evFindFirst.mockResolvedValue({ id: 'ev1', source: 'ctm' })
@@ -182,6 +186,15 @@ describe('manual price', () => {
     expect(res.statusCode).toBe(201)
     expect(res.json().data.price).toBe('1200')
     expect(m.evCreate).not.toHaveBeenCalled()
+  })
+  it('stores the chosen price source (default "manual") and rejects free text', async () => {
+    m.prCreate.mockResolvedValue({ price: dec('13'), observedAt: new Date(NOW) })
+    await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '13', source: 'p2p' } })
+    expect(m.prCreate.mock.calls.at(-1)![0].data.source).toBe('p2p')
+    await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '13' } })
+    expect(m.prCreate.mock.calls.at(-1)![0].data.source).toBe('manual')
+    const bad = await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price: '13', source: '<script>' } })
+    expect(bad.statusCode).toBe(400)
   })
   it.each([['0'], ['-1'], ['abc'], ['1e3']])('rejects price %j', async (price) => {
     const res = await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets/a1/price', headers: U, payload: { price } })

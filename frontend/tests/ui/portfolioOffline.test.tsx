@@ -51,7 +51,7 @@ beforeEach(() => {
 afterEach(() => vi.restoreAllMocks())
 
 async function recordBuy(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+  await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
   await user.click(await screen.findByRole('button', { name: 'Record buy' }))
   await user.type(screen.getByLabelText('Quantity'), '10')
   await user.type(screen.getByLabelText('Amount paid (PKR)'), '1000')
@@ -61,7 +61,7 @@ async function recordBuy(user: ReturnType<typeof userEvent.setup>) {
 describe('saved copy', () => {
   it('a live view is saved on the device for next time', async () => {
     render(<PortfolioPanel userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     await vi.waitFor(async () => expect((await loadSnapshot('u1'))?.assets.map((a) => a.name)).toEqual(['Meta Earth']))
   })
   it('with no connection it shows the saved copy, clearly labelled as not live', async () => {
@@ -69,7 +69,7 @@ describe('saved copy', () => {
     await claimCacheOwner('u1')
     api.listAssets.mockRejectedValue(netErr())
     render(<PortfolioPanel userId="u1" />)
-    expect(await screen.findByRole('button', { name: /Meta Earth/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Meta Earth/ })).toBeInTheDocument()
     const banner = screen.getByRole('region', { name: 'Connection status' })
     expect(banner).toHaveTextContent(/saved on this device on/)
     expect(banner).toHaveTextContent(/not live/)
@@ -85,21 +85,21 @@ describe('saved copy', () => {
     api.listAssets.mockRejectedValue(serverErr('Forbidden'))
     render(<PortfolioPanel userId="u1" />)
     expect(await screen.findByRole('alert')).toHaveTextContent('Forbidden')
-    expect(screen.queryByRole('button', { name: /Meta Earth/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Meta Earth/ })).toBeNull()
   })
   it('a saved copy is never overwritten by itself (the "saved at" time stays honest)', async () => {
     await saveSnapshot('u1', { savedAt: '2026-10-15T08:30:00.000Z', currency: 'PKR', assets: [asset], summary: summary() })
     await claimCacheOwner('u1')
     api.listAssets.mockRejectedValue(netErr())
     render(<PortfolioPanel userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     await new Promise((r) => setTimeout(r, 50))
     expect((await loadSnapshot('u1'))!.savedAt).toBe('2026-10-15T08:30:00.000Z')
   })
   it('the local-only tracker and anonymous use never touch this cache', async () => {
     const { importCtm: _omit, ...local } = api
     render(<PortfolioPanel api={local as never} userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     await new Promise((r) => setTimeout(r, 50))
     expect(await loadSnapshot('u1')).toBeUndefined()
     expect(screen.queryByRole('region', { name: 'Connection status' })).toBeNull()
@@ -110,7 +110,7 @@ describe('entries recorded offline', () => {
   it('while offline an entry is kept on the device, not sent, and the form closes', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     setOnline(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
     await recordBuy(user)
@@ -123,7 +123,7 @@ describe('entries recorded offline', () => {
   it('when the connection returns, the entry is sent once with the SAME request id and the queue empties', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     setOnline(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
     await recordBuy(user)
@@ -189,7 +189,7 @@ describe('entries recorded offline', () => {
   it('a price cannot be queued: it needs a connection, and says so', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel userId="u1" />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     await user.click(await screen.findByRole('button', { name: 'Update current price' }))
     setOnline(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
@@ -201,7 +201,7 @@ describe('entries recorded offline', () => {
   it('nothing that moves money can be queued: the queue only ever holds recorded entries', async () => {
     const user = userEvent.setup()
     render(<PortfolioPanel userId="u1" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     setOnline(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
     await recordBuy(user)
@@ -217,7 +217,7 @@ describe('privacy on a shared device', () => {
     await saveSnapshot('alice', { savedAt: '2026-10-15T08:30:00.000Z', currency: 'PKR', assets: [asset], summary: summary() })
     await saveQueue('alice', [{ id: 'x', assetId: 'a1', assetName: 'Meta Earth', queuedAt: '2026-10-15T09:00:00.000Z', status: 'pending', input: { type: 'BUY', occurredAt: '2026-10-15T08:59:00.000Z', quantity: '1', consideration: '1' } }])
     render(<PortfolioPanel userId="bob" />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     await vi.waitFor(async () => {
       expect(await loadSnapshot('alice')).toBeUndefined()
       expect(await loadQueue('alice')).toEqual([])
@@ -230,7 +230,7 @@ describe('privacy on a shared device', () => {
     api.listAssets.mockRejectedValue(netErr())
     render(<PortfolioPanel userId="bob" />)
     expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /Meta Earth/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Meta Earth/ })).toBeNull()
   })
   it('logging out deletes the saved copy and the queue', async () => {
     await claimCacheOwner('u1')

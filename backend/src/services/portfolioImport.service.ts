@@ -1,6 +1,7 @@
 import { db } from '../lib/prisma'
 import { parseSourceUrl, validateCustomAsset } from '../lib/portfolioAsset'
-import { makePlan, type AttentionReason, type CtmTradeFacts, type ImportPlan } from '../lib/portfolio/ctmImport'
+import { forcedReleaseRefs, factsFromTrade, TRADE_FACTS_SELECT } from './ctmTradeFacts.service'
+import { classifyTrade, describeTrade, makePlan, type AttentionReason, type CtmTradeFacts, type ImportPlan } from '../lib/portfolio/ctmImport'
 
 /**
  * Copies the caller's SETTLED RupChain CTM trades into their private tracker.
@@ -11,7 +12,6 @@ import { makePlan, type AttentionReason, type CtmTradeFacts, type ImportPlan } f
  */
 
 export const MAX_TRADES_SCANNED = 2000
-const AUDIT_CHUNK = 100
 
 export interface ImportPreviewItem {
   tradeRef: string
@@ -29,6 +29,8 @@ export interface ImportReport {
   restored: number
   voided: number
   alreadyImported: number
+  /** Trades you recorded by hand: they are not imported a second time. */
+  recordedManually: number
   attention: Array<{ reason: AttentionReason; count: number }>
   /** True once any trade has been imported for this user (the app then keeps the tracker in sync automatically). */
   hasImportedBefore: boolean
@@ -53,54 +55,20 @@ async function loadFacts(userId: string): Promise<{ facts: CtmTradeFacts[]; toke
     orderBy: { createdAt: 'asc' },
     take: MAX_TRADES_SCANNED,
     select: {
-      id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true, status: true, settlementType: true,
-      completedAt: true, tokenId: true, tokenAmount: true, fiatAmount: true, paymentCurrency: true, usdtAmount: true,
+      ...TRADE_FACTS_SELECT,
       token: { select: { id: true, name: true, symbol: true, network: true, contractAddress: true, officialWebsite: true } },
-      dispute: { select: { id: true } },
-      messages: { where: { isSystem: true, message: { startsWith: 'Trade auto-completed' } }, select: { id: true }, take: 1 },
-      proofs: { where: { proofType: 'txhash', txVerificationStatus: 'verified' }, select: { id: true }, take: 1 },
     },
   })
 
   // Administrator force-completions are recorded in the audit log by trade reference.
-  const completedRefs = trades.filter((t) => t.status === 'completed').map((t) => t.tradeRef)
-  const forced = new Set<string>()
-  for (let i = 0; i < completedRefs.length; i += AUDIT_CHUNK) {
-    const chunk = completedRefs.slice(i, i + AUDIT_CHUNK)
-    const rows = await db.auditLog.findMany({
-      where: { action: 'CTM_ADMIN_FORCE_RELEASE', OR: chunk.map((r) => ({ metadata: { path: ['tradeRef'], equals: r } })) },
-      select: { metadata: true },
-    })
-    for (const r of rows) {
-      const ref = (r.metadata as { tradeRef?: unknown } | null)?.tradeRef
-      if (typeof ref === 'string') forced.add(ref)
-    }
-  }
+  const forced = await forcedReleaseRefs(trades.filter((t) => t.status === 'completed').map((t) => t.tradeRef))
 
   const tokens = new Map<string, TokenMeta>()
   const refs = new Map<string, string>()
   const facts = trades.map((t): CtmTradeFacts => {
     tokens.set(t.token.id, t.token)
     refs.set(t.id, t.displayRef ?? t.tradeRef)
-    return {
-      id: t.id,
-      displayRef: t.displayRef,
-      userId,
-      buyerId: t.buyerId,
-      sellerId: t.sellerId,
-      status: t.status,
-      settlementType: t.settlementType,
-      completedAt: t.completedAt,
-      tokenId: t.tokenId,
-      tokenAmount: t.tokenAmount.toFixed(),
-      fiatAmount: t.fiatAmount.toFixed(),
-      paymentCurrency: t.paymentCurrency,
-      usdtAmount: t.usdtAmount ? t.usdtAmount.toFixed() : null,
-      hasDispute: Boolean(t.dispute),
-      adminForceCompleted: forced.has(t.tradeRef),
-      autoCompleted: t.messages.length > 0,
-      verifiedTokenProof: t.proofs.length > 0,
-    }
+    return factsFromTrade(t, userId, forced)
   })
   return { facts, tokens, refs }
 }
@@ -126,9 +94,15 @@ export async function runCtmImport(
     where: { userId, source: 'ctm' },
     select: { id: true, sourceRef: true, voidedAt: true },
   })
+  // Trades the user already recorded by hand (for a trade that was left out) must not be imported as well.
+  const byHand = await db.portfolioEvent.findMany({
+    where: { userId, source: 'manual', linkedTradeRef: { not: null } },
+    select: { linkedTradeRef: true },
+  })
   const plan: ImportPlan = makePlan(
     facts,
     existing.filter((e): e is typeof e & { sourceRef: string } => e.sourceRef !== null),
+    new Set(byHand.flatMap((e) => (e.linkedTradeRef ? [e.linkedTradeRef] : []))),
   )
 
   // Respect per-user limits instead of failing half-way.
@@ -167,6 +141,7 @@ export async function runCtmImport(
     restored: plan.toRestore.length,
     voided: plan.toVoid.length,
     alreadyImported: plan.alreadyImported,
+    recordedManually: plan.recordedManually,
     attention: plan.attention,
     hasImportedBefore,
     preview,
@@ -222,4 +197,101 @@ export async function runCtmImport(
     await db.portfolioEvent.updateMany({ where: { id: { in: ids }, userId, source: 'ctm' }, data: { voidedAt: new Date(), voidReason: reason } })
   }
   return { ...report, hasImportedBefore: hasImportedBefore || rows.length > 0 }
+}
+
+// ── Review of trades left out of automatic tracking ──────────────────────────────────────────────
+
+export interface ExcludedTrade {
+  /** CTM trade id: the stable reference a manual record is linked to. */
+  tradeId: string
+  /** Reference shown to the user (the trade's display reference). */
+  tradeRef: string
+  tokenName: string
+  side: 'BUY' | 'SELL'
+  quantity: string
+  /** Null when the amount cannot be shown safely. */
+  consideration: string | null
+  quote: 'PKR' | 'USDT'
+  /** When the trade finished, or was opened if it never finished. */
+  date: string | null
+  reason: AttentionReason
+  /** The user already recorded this trade by hand. */
+  recorded: boolean
+  /** The user may record it by hand: false while unfinished, or when the amounts cannot be used. */
+  canRecord: boolean
+}
+
+/** Trades that were not added automatically, newest first, for the review list (read-only). */
+export async function listExcludedTrades(userId: string, opts: { limit: number; offset: number }): Promise<{ total: number; items: ExcludedTrade[] }> {
+  const { facts, tokens, refs } = await loadFacts(userId)
+  const byHand = new Set(
+    (await db.portfolioEvent.findMany({ where: { userId, source: 'manual', linkedTradeRef: { not: null } }, select: { linkedTradeRef: true } }))
+      .flatMap((e) => (e.linkedTradeRef ? [e.linkedTradeRef] : [])),
+  )
+  const all: ExcludedTrade[] = []
+  for (const f of facts) {
+    const c = classifyTrade(f)
+    if (c.kind !== 'attention') continue
+    const d = describeTrade(f)
+    if (!d) continue
+    all.push({
+      tradeId: f.id,
+      tradeRef: refs.get(f.id) ?? f.id,
+      tokenName: tokens.get(f.tokenId)?.name ?? 'Token',
+      side: d.side,
+      quantity: d.quantity,
+      consideration: d.consideration,
+      quote: d.quote,
+      date: (f.completedAt ?? f.createdAt ?? null)?.toISOString() ?? null,
+      reason: c.reason,
+      recorded: byHand.has(f.id),
+      canRecord: c.reason !== 'in_progress' && c.reason !== 'invalid_amounts' && d.consideration !== null,
+    })
+  }
+  all.sort((a, b) => Date.parse(b.date ?? '') - Date.parse(a.date ?? '') || (a.tradeId < b.tradeId ? -1 : 1))
+  return { total: all.length, items: all.slice(opts.offset, opts.offset + opts.limit) }
+}
+
+export type RecordCheck =
+  | { ok: true; side: 'BUY' | 'SELL'; token: TokenMeta; tradeId: string }
+  | { ok: false; status: 404 | 409; message: string }
+
+/**
+ * May the caller record this trade by hand? Only a trade of theirs that was left out of automatic
+ * tracking and has finished (disputed, timer- or admin-completed, unverified transfer). A trade that
+ * counts automatically, never happened, or has not finished cannot be recorded this way.
+ */
+export async function checkExcludedTradeRecordable(userId: string, tradeId: string): Promise<RecordCheck> {
+  const trade = await db.ctmTrade.findFirst({
+    where: { id: tradeId, OR: [{ buyerId: userId }, { sellerId: userId }] },
+    select: {
+      ...TRADE_FACTS_SELECT,
+      token: { select: { id: true, name: true, symbol: true, network: true, contractAddress: true, officialWebsite: true } },
+    },
+  })
+  if (!trade) return { ok: false, status: 404, message: 'Trade not found' }
+  const forced = await forcedReleaseRefs(trade.status === 'completed' ? [trade.tradeRef] : [])
+  const facts = factsFromTrade(trade, userId, forced)
+  const c = classifyTrade(facts)
+  if (c.kind === 'ignore') return { ok: false, status: 409, message: 'Nothing was exchanged in this trade, so there is nothing to record.' }
+  if (c.kind === 'eligible') return { ok: false, status: 409, message: 'This trade is added to your portfolio automatically.' }
+  if (c.reason === 'in_progress') return { ok: false, status: 409, message: 'This trade has not finished yet. Record it once it has.' }
+  const d = describeTrade(facts)
+  if (!d || c.reason === 'invalid_amounts') return { ok: false, status: 409, message: 'The amounts of this trade cannot be used. Record it as a normal entry instead.' }
+  return { ok: true, side: d.side, token: trade.token, tradeId: trade.id }
+}
+
+/** The caller's tracker token that mirrors this platform token, created on first use (their own tables only). */
+export async function ensureLinkedAsset(userId: string, token: TokenMeta, opts: { maxAssets: number }): Promise<string | null> {
+  const found = await db.portfolioAsset.findFirst({ where: { userId, ctmTokenId: token.id }, select: { id: true } })
+  if (found) return found.id
+  if ((await db.portfolioAsset.count({ where: { userId } })) >= opts.maxAssets) return null
+  try {
+    const created = await db.portfolioAsset.create({ data: { userId, ctmTokenId: token.id, ...assetDataFor(token) }, select: { id: true } })
+    return created.id
+  } catch {
+    // Lost a race with a parallel request: the linked token now exists, so use it.
+    const again = await db.portfolioAsset.findFirst({ where: { userId, ctmTokenId: token.id }, select: { id: true } })
+    return again?.id ?? null
+  }
 }

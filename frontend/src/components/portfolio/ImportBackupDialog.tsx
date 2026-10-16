@@ -145,6 +145,7 @@ export function ImportBackupDialog({ api, existing, onDone, onClose }: Props) {
               ...(e.type === 'OPENING' && e.zeroCost ? { zeroCost: true } : {}),
               ...(e.fxRate !== null ? { fxRate: e.fxRate } : {}),
               ...(e.note ? { note: e.note } : {}),
+              ...(e.priceBasis && e.type !== 'OPENING' ? { priceBasis: e.priceBasis } : {}),
             })
             imported += 1
           } catch (err) {

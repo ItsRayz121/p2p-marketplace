@@ -25,6 +25,7 @@ export const eventSchema = z.object({
   quote: quoteEnum.optional(),
   fxRate: rate.nullish(),
   note: z.string().max(1000).nullish(),
+  priceBasis: z.enum(['platform', 'own']).nullish(),
   clientRequestId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/).nullish(),
 }).strict().superRefine((e, ctx) => {
   const bad = (path: string, message: string) => ctx.addIssue({ code: 'custom', path: [path], message })
@@ -35,6 +36,7 @@ export const eventSchema = z.object({
 
   if (e.type === 'OPENING') {
     if (e.consideration != null || e.fee != null) bad('consideration', 'An opening holding has no consideration or fee')
+    if (e.priceBasis != null) bad('priceBasis', 'An opening holding has no price')
     if (e.basis != null && isZero(e.basis) && !e.zeroCost) bad('basis', 'A zero cost must be confirmed explicitly')
     if (e.zeroCost && (e.basis == null || !isZero(e.basis))) bad('zeroCost', 'Zero cost requires a basis of 0')
   } else {
@@ -50,7 +52,11 @@ export function cleanNote(note: string | null | undefined): string | null {
   return c ? c.slice(0, 200) : null
 }
 
+/** Where a typed-in price came from. Free text is deliberately not accepted. */
+export const PRICE_SOURCES = ['manual', 'p2p', 'exchange', 'other'] as const
+
 export const priceSchema = z.object({
   price: amount.refine((p) => !isZero(p), 'Price must be greater than zero'),
   quote: quoteEnum.optional(),
+  source: z.enum(PRICE_SOURCES).optional(),
 }).strict()

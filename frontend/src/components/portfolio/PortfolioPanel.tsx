@@ -160,6 +160,19 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
     await apiRef.current.deleteEvent(assetId, eventId)
     await refreshSummary()
   }
+  // Recording a left-out trade needs the server (it links the entry to the trade), so it is not queued while offline.
+  const recordExcluded = async (tradeId: string, input: PortfolioEventInput) => {
+    if (offlineOn && !sync.online) throw new Error('Recording a trade needs a connection. Please try again when you are back online.')
+    await apiRef.current.recordExcluded!(tradeId, input)
+    await refreshAll() // the first entry for a token also creates its tracker token
+    void syncTrades()
+  }
+  // A correction needs the server (it keeps the earlier version), so it is not queued while offline.
+  const correct = async (assetId: string, eventId: string, input: PortfolioEventInput) => {
+    if (offlineOn && !sync.online) throw new Error('Correcting an entry needs a connection. Please try again when you are back online.')
+    await apiRef.current.updateEvent(assetId, eventId, input)
+    await refreshSummary()
+  }
   // Archiving only hides the token; its records still count, so totals need no recalculation.
   const archive = async (id: string) => {
     await apiRef.current.archiveAsset(id)
@@ -183,10 +196,10 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
     await apiRef.current.withdrawListingSuggestion!(id)
     setAssets((prev) => prev.map((a) => (a.id === id ? { ...a, listingInterest: false } : a)))
   }
-  const setPrice = async (assetId: string, price: string, quote: Currency) => {
+  const setPrice = async (assetId: string, price: string, quote: Currency, source?: string) => {
     // A price is stamped with the time it is saved, so it cannot be queued for later without lying about when it was seen.
     if (offlineOn && !sync.online) throw new Error('Prices need a connection. Please try again when you are back online.')
-    await apiRef.current.setPrice(assetId, price, quote)
+    await apiRef.current.setPrice(assetId, price, quote, source)
     await refreshSummary()
   }
 
@@ -212,6 +225,11 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
       onRecordEvent={record}
       onDeleteEvent={remove}
       onSetPrice={setPrice}
+      onUpdateEvent={correct}
+      loadAllEvents={apiRef.current.listAllEvents ? (query) => apiRef.current.listAllEvents!(query) : undefined}
+      loadExcluded={apiRef.current.listExcluded ? (limit, offset) => apiRef.current.listExcluded!(limit, offset) : undefined}
+      onRecordExcluded={apiRef.current.recordExcluded ? recordExcluded : undefined}
+      loadHistory={apiRef.current.eventHistory ? (assetId, eventId) => apiRef.current.eventHistory!(assetId, eventId) : undefined}
       loadPerformance={(r) => apiRef.current.performance(r)}
       onArchive={archive}
       onUnarchive={unarchive}

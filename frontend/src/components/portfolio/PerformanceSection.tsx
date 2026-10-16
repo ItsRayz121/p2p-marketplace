@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Currency, PerformanceResponse } from '@/lib/portfolio/types'
 import { PERIOD_LABEL, resolvePeriod, type PeriodPreset } from '@/lib/portfolio/periods'
 import { formatDecimal, formatSigned } from '@/lib/portfolio/format'
+import { InfoTip } from './InfoTip'
 import { LineChart } from './LineChart'
 
 const PRESETS: PeriodPreset[] = ['month', '7d', '30d', '90d', 'all', 'custom']
@@ -13,12 +14,17 @@ interface Props {
   load: (range: { currency: Currency; from?: string; to?: string }) => Promise<PerformanceResponse>
   /** Changes whenever the underlying numbers change, so the section reloads. */
   refreshKey: string
+  /** Ways to fix what an empty chart says is missing (shown only when there is something to fix). */
+  onAddPrice?: () => void
+  onFixCost?: () => void
 }
 
-function Card({ label, value, note }: { label: string; value: string; note?: string }) {
+const isZero = (s: string) => /^-?0+(\.0+)?$/.test(s)
+
+function Card({ label, tip, value, note }: { label: string; tip: string; value: string; note?: string }) {
   return (
     <div className="bg-surface shadow-card rounded-xl border border-border p-4">
-      <p className="text-xs text-text-muted">{label}</p>
+      <p className="text-xs text-text-muted">{label}<InfoTip text={tip} /></p>
       <p className="text-base font-bold text-text-primary mt-1 break-words">{value}</p>
       {note && <p className="text-xs text-text-muted mt-1">{note}</p>}
     </div>
@@ -28,7 +34,7 @@ function Card({ label, value, note }: { label: string; value: string; note?: str
 const day = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 
 /** Period results and charts. Everything shown comes from the user's own entries and prices. */
-export function PerformanceSection({ currency, load, refreshKey }: Props) {
+export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onFixCost }: Props) {
   const [preset, setPreset] = useState<PeriodPreset>('all')
   const [custom, setCustom] = useState({ from: '', to: '' })
   const [data, setData] = useState<PerformanceResponse | null>(null)
@@ -56,6 +62,19 @@ export function PerformanceSection({ currency, load, refreshKey }: Props) {
 
   const cur = data?.currency ?? currency
   const p = data?.period
+
+  // Say exactly what is missing when a chart has nothing to draw, instead of a generic message.
+  const pts = data?.points ?? []
+  const anyHeld = pts.some((q) => q.held > 0)
+  const anyPriced = pts.some((q) => q.priced > 0)
+  const valueEmpty = !anyHeld
+    ? { message: 'You held nothing in this period, so there is no value to show.', action: null }
+    : !anyPriced
+      ? { message: 'No prices were recorded for what you held. Add a current price to start the value history. Dates without a price stay blank rather than being estimated.', action: 'Add a price' }
+      : { message: 'On these dates at least one token you held had no price, so no total can be shown. Add the missing prices. Gaps are never estimated.', action: 'Add a price' }
+  // The realized line is always known (zero before any sale), so a missing cost shows as a blank cost
+  // line plus a note, rather than an empty chart.
+  const costMissing = anyHeld && pts.every((q) => q.costBasis === null)
 
   return (
     <section aria-labelledby="performance-heading" className="space-y-3">
@@ -97,28 +116,41 @@ export function PerformanceSection({ currency, load, refreshKey }: Props) {
             {day(data.from)} to {day(data.to)} in your device&apos;s time zone. Entries on the start day count in the starting position; entries after it count in this period.
           </p>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Card
-              label="Realized in this period" value={`${cur} ${formatSigned(p.realized)}`}
-              note={p.realizedComplete ? 'From sales you recorded (FIFO)' : 'Excludes sales from units with unknown cost'}
+              label="Known Realized Profit / Loss"
+              tip="Profit or loss on units you sold during this period, using FIFO. Sales whose cost is not recorded are left out."
+              value={!p.realizedComplete && isZero(p.realized) ? 'Not known yet' : `${cur} ${formatSigned(p.realized)}`}
+              note={p.realizedComplete ? 'From sales you recorded in this period (FIFO)' : 'Leaves out sales of units whose cost is not recorded'}
             />
-            <Card label="Put in (buys and fees)" value={`${cur} ${formatDecimal(p.moneyIn)}`} />
-            <Card label="Taken out (sales after fees)" value={`${cur} ${formatDecimal(p.moneyOut)}`} />
             <Card
-              label="Change in value after money in/out"
+              label="Buy Costs + Fees"
+              tip="Everything you paid for purchases in this period, including their fees."
+              value={`${cur} ${formatDecimal(p.moneyIn)}`}
+            />
+            <Card
+              label="Sales Proceeds After Fees"
+              tip="What you received from sales in this period, after their fees."
+              value={`${cur} ${formatDecimal(p.moneyOut)}`}
+            />
+            <Card
+              label="Portfolio Value Change After Cash Flows"
+              tip="How much the value of what you hold changed, after taking out the money you put in and took out. Needs a price at the start and the end of the period."
               value={p.gain === null ? 'Unavailable' : `${cur} ${formatSigned(p.gain)}`}
               note={p.gain === null ? (p.gainUnavailableReason ?? undefined) : `Value ${formatDecimal(p.valueStart ?? '0')} to ${formatDecimal(p.valueEnd ?? '0')}`}
             />
+            <Card
+              label="Percentage Return"
+              tip="An approximate return that weights money added or removed during the period by how long it was invested (Modified Dietz). Not a time-weighted return and not tax advice."
+              value={p.returnPct === null ? 'Return unavailable' : `${p.returnPct}%`}
+              note={p.returnPct === null
+                ? 'Needs a price at the start and end of the period and money invested during it. A simple growth figure is never shown as a return.'
+                : 'Approximate (Modified Dietz)'}
+            />
           </div>
 
-          <p className="text-xs text-text-muted">
-            {p.returnPct === null
-              ? 'Percentage return: unavailable. It needs a price at the start and end of the period and money invested during it, so a simple growth figure is never shown as a return.'
-              : `Approximate return: ${p.returnPct}% (Modified Dietz: money added or removed during the period is weighted by how long it was invested). Not a time-weighted return or tax advice.`}
-          </p>
-
           <LineChart
-            title="Cost and realized profit over time"
+            title="Cost and Realized Profit Over Time"
             description="Remaining cost of what you held, and cumulative realized profit or loss, on each sampled date."
             currency={cur}
             emptyMessage="Record a buy or an opening holding to see this chart."
@@ -127,11 +159,18 @@ export function PerformanceSection({ currency, load, refreshKey }: Props) {
               { name: 'Realized profit/loss', marker: 'square', dash: '6 4', className: 'stroke-text-secondary fill-text-secondary', points: data.points.map((q) => ({ t: q.t, v: q.realized })) },
             ]}
           />
+          {costMissing && (
+            <p className="text-xs text-text-muted">
+              The remaining-cost line is blank because the cost of what you held is not recorded. Add the cost to the opening holding or the missing purchase.
+              {onFixCost && <> <button type="button" onClick={onFixCost} className="font-semibold text-primary hover:underline">Review history</button></>}
+            </p>
+          )}
           <LineChart
-            title="Marked value over time"
-            description="Value of what you held, only on dates when every token you held had a price you entered."
+            title="Portfolio Value Over Time"
+            description="Value of what you held, only on dates when every token you held had a price recorded. The latest point uses today's price, including the latest RupChain trade price."
             currency={cur}
-            emptyMessage="Enter a current price on a token to see its value over time. Dates without a price stay blank rather than being estimated."
+            emptyMessage={valueEmpty.message}
+            emptyAction={valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}
             series={[{ name: 'Marked value', marker: 'circle', className: 'stroke-primary fill-primary', points: data.points.map((q) => ({ t: q.t, v: q.value })) }]}
           />
         </div>

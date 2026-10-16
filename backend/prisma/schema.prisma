@@ -553,6 +553,7 @@ model User {
   savedTerms             SavedTerms[]
   portfolioAssets        PortfolioAsset[]
   portfolioEvents        PortfolioEvent[]
+  portfolioEventRevisions PortfolioEventRevision[]
   portfolioPrices        PortfolioPriceObservation[]
   portfolioInterests     PortfolioListingInterest[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
@@ -1940,11 +1941,41 @@ model PortfolioEvent {
   /// excluded from every calculation. Cleared again if the trade qualifies again.
   voidedAt        DateTime?
   voidReason      String?        @db.VarChar(40)
+  /// Set when the user last corrected this entry. The earlier versions are kept in PortfolioEventRevision.
+  editedAt        DateTime?
+  /// A manual entry the user recorded for a RupChain trade that was left out of automatic tracking
+  /// (disputed, auto-completed, ...). Pointing at the trade id lets the importer skip that trade
+  /// instead of counting it a second time. Null for ordinary manual entries.
+  linkedTradeRef  String?        @db.VarChar(64)
+  /// Where the price of a BUY/SELL came from, as the user chose it: 'platform' (filled in from the
+  /// RupChain price) or 'own' (the price they actually got elsewhere). Informational only: it never
+  /// changes a calculation. Null for entries made before this choice existed and for openings.
+  priceBasis      String?        @db.VarChar(8)
   createdAt       DateTime       @default(now())
 
   @@unique([userId, clientRequestId])
   @@unique([userId, source, sourceRef])
+  @@unique([userId, linkedTradeRef])
   @@index([userId, assetId, occurredAt])
+}
+
+/// The earlier version of a manual entry, kept whenever the user corrects or removes it. Analytical
+/// provenance only: never read by any calculation. `eventId` is deliberately not a foreign key, so the
+/// history of a removed entry stays readable. Deleting the user removes it.
+model PortfolioEventRevision {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  eventId   String   @db.VarChar(40)
+  assetId   String   @db.VarChar(40)
+  /// 'edit' or 'delete'.
+  action    String   @db.VarChar(8)
+  /// The entry exactly as it was before this change (quantities as decimal strings).
+  before    Json
+  createdAt DateTime @default(now())
+
+  @@index([userId, eventId, createdAt])
+  @@index([userId, assetId, createdAt])
 }
 
 /// A user's explicit, withdrawable "I would like this token listed on RupChain" signal.

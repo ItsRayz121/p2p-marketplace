@@ -90,7 +90,7 @@ describe('PortfolioPanel', () => {
     const same = { name: 'Alpha', symbol: 'ALP', sourceUrl: 'https://alpha.example/' }
     api.listAssets.mockResolvedValue([dto({ id: 'a1', ...same }), dto({ id: 'a2', ...same })])
     render(<PortfolioPanel />)
-    expect(await screen.findAllByRole('button', { name: /Alpha/ })).toHaveLength(2)
+    expect(await screen.findAllByRole('button', { name: /^Alpha/ })).toHaveLength(2)
   })
 
   it('editing details updates the name in place and calls PATCH with the asset id only', async () => {

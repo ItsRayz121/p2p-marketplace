@@ -91,7 +91,7 @@ describe('overview numbers', () => {
     expect(screen.getByText('PKR +11,200.00')).toBeInTheDocument()
     expect(screen.getByText('PKR +13,200.00')).toBeInTheDocument()
     expect(screen.getByText('PKR +24,400.00')).toBeInTheDocument()
-    expect(screen.queryByText(/Partial data/)).toBeNull()
+    expect(screen.queryByText(/missing information/)).toBeNull()
     expect(screen.getByText(/not verified ownership/i)).toBeInTheDocument()
     expect(screen.getByText(/Method: FIFO/)).toBeInTheDocument()
   })
@@ -101,28 +101,30 @@ describe('overview numbers', () => {
       [pos('MEC'), pos('SDA')],
     ))
     render(<PortfolioPanel />)
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('Partial data')
-    expect(alert).toHaveTextContent('not counted as zero')
-    expect(within(alert).getByText(/No current price: Sidra/)).toBeInTheDocument()
-    expect(within(alert).getByText(/Unknown cost: Meta Earth/)).toBeInTheDocument()
-    expect(within(alert).getByText(/Sold more than recorded.*Sidra/)).toBeInTheDocument()
+    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
+    expect(panel).toHaveTextContent('never counted as zero')
+    expect(within(panel).getByText(/1 token needs a current price/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Add price: Sidra' })).toBeInTheDocument()
+    expect(within(panel).getByText(/1 token has units whose cost is not recorded/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Review history: Meta Earth' })).toBeInTheDocument()
+    expect(within(panel).getByText(/1 token has sales larger than your recorded purchases/)).toBeInTheDocument()
+    expect(within(panel).getByRole('button', { name: 'Add opening holdings: Sidra' })).toBeInTheDocument()
   })
   it('rows show quantity, value or "No price", and signed profit/loss', async () => {
     api.summary.mockResolvedValue(sum({}, [pos('MEC', { quantity: '60', value: '72000', unrealized: '11400' }), pos('SDA', { quantity: '5' })]))
     render(<PortfolioPanel />)
-    const mec = await screen.findByRole('button', { name: /Meta Earth/ })
+    const mec = await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(mec).toHaveTextContent('60 held')
     expect(mec).toHaveTextContent('PKR 72,000.00')
     expect(mec).toHaveTextContent('P/L +11,400.00')
-    expect(screen.getByRole('button', { name: /Sidra/ })).toHaveTextContent('No price')
+    expect(screen.getByRole('button', { name: /^Sidra/ })).toHaveTextContent('No price')
   })
   it('a token with no records yet shows no position numbers (and no invented zero)', async () => {
     api.summary.mockResolvedValue(sum())
     render(<PortfolioPanel />)
-    const row = await screen.findByRole('button', { name: /Meta Earth/ })
+    const row = await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(row).not.toHaveTextContent('held')
-    expect(screen.queryByText('Partial data')).toBeNull()
+    expect(screen.queryByText(/missing information/)).toBeNull()
   })
 })
 
@@ -130,7 +132,7 @@ describe('token detail', () => {
   async function openMec() {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     return user
   }
 
@@ -144,10 +146,10 @@ describe('token detail', () => {
     expect(screen.getAllByText('PKR +11,200.00').length).toBeGreaterThan(0)
     expect(screen.getByText(/Based on your recorded history/)).toBeInTheDocument()
   })
-  it('unknown cost and missing price read as Unknown / Unavailable, never zero', async () => {
+  it('unknown cost and missing price read as Not known yet / Unavailable, never zero', async () => {
     api.summary.mockResolvedValue(sum({}, [pos('MEC', { quantity: '10', basisComplete: false, realizedComplete: false })]))
     await openMec()
-    expect(await screen.findByText('Unknown')).toBeInTheDocument()
+    expect((await screen.findAllByText('Not known yet', { selector: 'dd' })).length).toBe(2)
     expect(screen.getByText('No price')).toBeInTheDocument()
     expect(screen.getAllByText('Unavailable').length).toBe(2)
   })
@@ -160,12 +162,12 @@ describe('token detail', () => {
     api.listEvents.mockResolvedValue([ev({ note: '<img src=x onerror=alert(1)>' }), ev({ id: 'e2', type: 'OPENING', consideration: null, fee: null, basis: null })])
     const { container } = render(<PortfolioPanel />)
     const user = userEvent.setup()
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     const table = await screen.findByRole('table')
     expect(within(table).getAllByRole('columnheader').map((h) => h.textContent)).toEqual(expect.arrayContaining(['Date', 'Type', 'Quantity']))
     expect(screen.getByText('<img src=x onerror=alert(1)>')).toBeInTheDocument()
     expect(container.querySelector('img')).toBeNull()
-    expect(within(table).getByText('Unknown cost')).toBeInTheDocument()
+    expect(within(table).getByText('Cost not recorded')).toBeInTheDocument()
     expect(within(table).getAllByText(/manual/).length).toBe(2)
   })
 
@@ -277,7 +279,47 @@ describe('token detail', () => {
     await user.clear(screen.getByLabelText(/Current price per unit/))
     await user.type(screen.getByLabelText(/Current price per unit/), '1200')
     await user.click(screen.getByRole('button', { name: 'Save price' }))
-    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '1200', 'PKR'))
+    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '1200', 'PKR', 'manual'))
+  })
+})
+
+describe('price source and age', () => {
+  const ageIso = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
+  const priced = (observedAt: string, source?: string) => sum(
+    {}, [pos('MEC', { quantity: '60', price: '1200', value: '72000' })],
+    { MEC: { price: '1200', original: '1200', quote: 'PKR', observedAt, ...(source ? { source } : {}) } },
+  )
+  async function openMec() {
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
+    return user
+  }
+
+  it('says where a price came from: a platform trade price versus one you typed', async () => {
+    api.summary.mockResolvedValue(priced(ageIso(0), 'platform'))
+    await openMec()
+    expect(await screen.findByText(/Latest RupChain trade/)).toBeInTheDocument()
+  })
+  it('flags a price older than a week as possibly out of date, and a fresh one is not flagged', async () => {
+    api.summary.mockResolvedValue(priced(ageIso(12)))
+    await openMec()
+    expect(await screen.findByText(/recorded 12 days ago and may be out of date/)).toBeInTheDocument()
+  })
+  it('a fresh price only states its age', async () => {
+    api.summary.mockResolvedValue(priced(ageIso(0)))
+    await openMec()
+    expect(await screen.findByText('Price recorded today.')).toBeInTheDocument()
+    expect(screen.queryByText(/may be out of date/)).toBeNull()
+  })
+  it('the price form sends the chosen source', async () => {
+    api.setPrice.mockResolvedValue({ price: '13', quote: 'PKR', observedAt: '2026-10-16T10:00:00Z' })
+    const user = await openMec()
+    await user.click(await screen.findByRole('button', { name: 'Update current price' }))
+    await user.type(screen.getByLabelText(/Current price per unit/), '13')
+    await user.selectOptions(screen.getByLabelText(/Where is this price from/), 'p2p')
+    await user.click(screen.getByRole('button', { name: 'Save price' }))
+    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '13', 'PKR', 'p2p'))
   })
 })
 
@@ -286,7 +328,7 @@ describe('metadata edits do not trigger any financial change', () => {
     api.updateAsset.mockResolvedValue(asset('MEC', 'Renamed'))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     const summaryCalls = api.summary.mock.calls.length
     await user.click(await screen.findByRole('button', { name: 'Edit details' }))
     const name = screen.getByLabelText('Token name')
@@ -340,18 +382,18 @@ describe('PKR / USDT switch', () => {
     api.summary.mockResolvedValue(usdtSummary({ fxUnavailableAssets: ['SDA'], summary: { ...usdtSummary().summary, partial: true } }))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    const alert = await screen.findByRole('alert')
-    expect(alert).toHaveTextContent('No USDT/PKR rate recorded')
-    expect(alert).toHaveTextContent('Sidra')
-    expect(screen.getByRole('button', { name: /Sidra/ })).toHaveTextContent('No USDT rate')
-    await user.click(screen.getByRole('button', { name: /Sidra/ }))
+    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
+    expect(panel).toHaveTextContent('entries without a USDT/PKR rate')
+    expect(within(panel).getByRole('button', { name: 'Review history: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Sidra/ })).toHaveTextContent('No USDT rate')
+    await user.click(screen.getByRole('button', { name: /^Sidra/ }))
     expect(await screen.findByText(/cannot be shown in USDT/)).toBeInTheDocument()
   })
   it('shows a price entered in another currency together with its original value', async () => {
     api.summary.mockResolvedValue(usdtSummary())
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     expect(await screen.findByText('7.5')).toBeInTheDocument()
     expect(screen.getByText(/as 2,100 PKR/)).toBeInTheDocument()
   })
@@ -362,7 +404,7 @@ describe('PKR / USDT switch', () => {
     }))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     expect(await screen.findByText('No price')).toBeInTheDocument()
     expect(screen.getByText(/no USDT\/PKR rate is available to convert it/)).toBeInTheDocument()
   })
@@ -373,7 +415,7 @@ describe('PKR / USDT switch', () => {
     render(<PortfolioPanel />)
     await screen.findByText('PKR 207,000.00')
     await user.click(screen.getByRole('radio', { name: 'USDT' }))
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     await user.click(await screen.findByRole('button', { name }))
     return user
   }
@@ -410,7 +452,7 @@ describe('PKR / USDT switch', () => {
     expect(screen.getByLabelText('Price currency')).toHaveValue('USDT')
     await user.type(screen.getByLabelText(/Current price per unit \(USDT\)/), '2')
     await user.click(screen.getByRole('button', { name: 'Save price' }))
-    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '2', 'USDT'))
+    await vi.waitFor(() => expect(api.setPrice).toHaveBeenCalledWith('MEC', '2', 'USDT', 'manual'))
   })
   it('history shows each entry in its own currency with the rate recorded for it', async () => {
     api.listEvents.mockResolvedValue([
@@ -419,7 +461,7 @@ describe('PKR / USDT switch', () => {
     ])
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     const table = await screen.findByRole('table')
     expect(within(table).getByText(/36.00 USDT/)).toBeInTheDocument()
     expect(within(table).getByText(/10,000.00 PKR/)).toBeInTheDocument()

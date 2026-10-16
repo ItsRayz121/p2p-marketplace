@@ -76,6 +76,10 @@ export interface AssetPosition {
   unresolvedSales: UnresolvedSale[]
   /** Realized result of each SELL, for period reporting. complete is false if any matched lot had unknown cost or part of the sale was unresolved. */
   realizedByEvent: RealizedEntry[]
+  /** Number of SELL records for this token. 0 means nothing was sold, so realized is a genuine zero. */
+  soldCount: number
+  /** How many of those sales have an unknown or partly unknown result (unknown cost or sold beyond history). */
+  soldIncompleteCount: number
 }
 
 export interface ValuedPosition extends AssetPosition {
@@ -137,6 +141,8 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
   let realizedComplete = true
   const unresolved: UnresolvedSale[] = []
   const realizedByEvent: RealizedEntry[] = []
+  let soldCount = 0
+  let soldIncompleteCount = 0
 
   for (const e of sortEvents(mine)) {
     const qty = dec('quantity', e.quantity, { positive: true })
@@ -194,6 +200,8 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
       else { realized = realized.plus(share.minus(p.basis)); evRealized = evRealized.plus(share.minus(p.basis)) }
     })
     realizedByEvent.push({ eventId: e.id, at: e.at, realized: out(evRealized), complete: evComplete })
+    soldCount += 1
+    if (!evComplete) soldIncompleteCount += 1
   }
 
   let quantity = new D(0)
@@ -214,6 +222,8 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
     realizedComplete,
     unresolvedSales: unresolved,
     realizedByEvent,
+    soldCount,
+    soldIncompleteCount,
   }
 }
 

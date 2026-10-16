@@ -31,6 +31,8 @@ export interface CtmTradeFacts {
   status: string
   settlementType: 'MANUAL' | 'ON_CHAIN' | 'HYBRID'
   completedAt: Date | null
+  /** When the trade was opened. Only used to date a trade that never completed, in the review list. */
+  createdAt?: Date | null
   tokenId: string
   tokenAmount: string
   fiatAmount: string
@@ -65,6 +67,35 @@ export function classifyTrade(f: CtmTradeFacts): Classification {
 
   if (toEventSpec(f) === null) return { kind: 'attention', reason: 'invalid_amounts' }
   return { kind: 'eligible', evidence: onChain ? 'on_chain_verified' : 'buyer_confirmed' }
+}
+
+export interface TradeDescription {
+  side: 'BUY' | 'SELL'
+  quantity: string
+  /** Amount in `quote`, or null if it cannot be represented safely. */
+  consideration: string | null
+  quote: 'PKR' | 'USDT'
+  /** PKR per 1 USDT implied by the trade (USDT-paid trades only). */
+  fxRate: string | null
+}
+
+/**
+ * What a trade looked like for `f.userId`, for the review list. Unlike `toEventSpec` this does not
+ * need the trade to be finished, and it never decides whether the trade counts: it only describes it.
+ * Null when the user is neither party or the token amount is unusable.
+ */
+export function describeTrade(f: CtmTradeFacts): TradeDescription | null {
+  const side = f.userId === f.buyerId ? 'BUY' : f.userId === f.sellerId ? 'SELL' : null
+  if (!side) return null
+  if (!AMOUNT_RE.test(f.tokenAmount) || new D(f.tokenAmount).lte(0)) return null
+  let quote: 'PKR' | 'USDT' = 'PKR'
+  let consideration: string | null = AMOUNT_RE.test(f.fiatAmount) && new D(f.fiatAmount).gt(0) ? new D(f.fiatAmount).toFixed() : null
+  let fxRate: string | null = null
+  if (f.paymentCurrency === 'USDT' && f.usdtAmount && AMOUNT_RE.test(f.usdtAmount) && new D(f.usdtAmount).gt(0) && consideration !== null) {
+    const rate = new D(f.fiatAmount).div(f.usdtAmount).toDecimalPlaces(ALLOC_DP, ROUND)
+    if (rate.gt(0)) { quote = 'USDT'; consideration = new D(f.usdtAmount).toFixed(); fxRate = rate.toFixed() }
+  }
+  return { side, quantity: new D(f.tokenAmount).toFixed(), consideration, quote, fxRate }
 }
 
 export interface ImportedEventSpec {
@@ -128,6 +159,8 @@ export interface ImportPlan {
   /** Existing imported entries whose trade no longer qualifies: kept, but excluded from calculations. */
   toVoid: Array<{ eventId: string; reason: AttentionReason | 'trade_missing' }>
   alreadyImported: number
+  /** Eligible trades the user already recorded by hand: skipped so they are never counted twice. */
+  recordedManually: number
   attention: Array<{ reason: AttentionReason; count: number }>
 }
 
@@ -135,13 +168,14 @@ export interface ImportPlan {
  * Compare the user's trades with what was imported before.
  * Idempotent: running it twice yields an empty plan the second time.
  */
-export function makePlan(trades: CtmTradeFacts[], existing: ExistingImported[]): ImportPlan {
+export function makePlan(trades: CtmTradeFacts[], existing: ExistingImported[], linkedByHand: ReadonlySet<string> = new Set()): ImportPlan {
   const byRef = new Map(existing.map((e) => [e.sourceRef, e]))
   const toCreate: ImportedEventSpec[] = []
   const toRestore: string[] = []
   const toVoid: ImportPlan['toVoid'] = []
   const attention = new Map<AttentionReason, number>()
   let already = 0
+  let manual = 0
   const seen = new Set<string>()
 
   for (const t of trades) {
@@ -162,6 +196,8 @@ export function makePlan(trades: CtmTradeFacts[], existing: ExistingImported[]):
       else already += 1
       continue
     }
+    // The user already recorded this trade by hand: that record stands, so it is not imported as well.
+    if (linkedByHand.has(t.id)) { manual += 1; continue }
     const spec = toEventSpec(t)
     if (spec) toCreate.push(spec)
   }
@@ -176,6 +212,7 @@ export function makePlan(trades: CtmTradeFacts[], existing: ExistingImported[]):
     toRestore,
     toVoid,
     alreadyImported: already,
+    recordedManually: manual,
     attention: [...attention.entries()].map(([reason, count]) => ({ reason, count })).sort((a, b) => a.reason.localeCompare(b.reason)),
   }
 }

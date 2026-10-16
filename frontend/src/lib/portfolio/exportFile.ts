@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { cleanText, validateCustomAsset } from './customAsset'
-import type { Currency, PortfolioEventType } from './types'
+import type { Currency, PortfolioEventType, PriceBasis } from './types'
 
 /** What GET /portfolio/export returns, and what a backup file contains. */
 export interface ExportAsset {
@@ -31,6 +31,7 @@ export interface ExportEvent {
   source: 'manual' | 'ctm'
   voided: boolean
   voidReason: string | null
+  priceBasis?: PriceBasis | null
 }
 export interface ExportPrice {
   assetId: string
@@ -65,7 +66,7 @@ export function csvCell(value: string | number | boolean | null | undefined, kin
 
 export const CSV_HEADER = [
   'token', 'symbol', 'network', 'contract', 'date_utc', 'type', 'quantity', 'currency', 'amount', 'fee', 'cost_basis',
-  'zero_cost', 'usdt_pkr_rate', 'rate_source', 'source', 'counted', 'not_counted_reason', 'note', 'token_id', 'entry_id',
+  'zero_cost', 'usdt_pkr_rate', 'rate_source', 'source', 'counted', 'not_counted_reason', 'note', 'token_id', 'entry_id', 'price_used',
 ] as const
 
 export function buildCsv(data: ExportData): string {
@@ -78,7 +79,7 @@ export function buildCsv(data: ExportData): string {
       csvCell(e.consideration, 'number'), csvCell(e.fee, 'number'), csvCell(e.basis, 'number'),
       csvCell(e.zeroCost ? 'yes' : 'no'), csvCell(e.fxRate, 'number'), csvCell(e.fxSource),
       csvCell(e.source === 'ctm' ? 'RupChain trade' : 'manual'), csvCell(e.voided ? 'no' : 'yes'), csvCell(e.voidReason),
-      csvCell(e.note), csvCell(e.assetId), csvCell(e.id),
+      csvCell(e.note), csvCell(e.assetId), csvCell(e.id), csvCell(e.priceBasis === 'platform' ? 'RupChain price' : e.priceBasis === 'own' ? 'own price' : ''),
     ].join(',')
   })
   // UTF-8 byte-order mark so Excel opens non-Latin token names correctly.
@@ -109,6 +110,7 @@ const eventSchema = z.object({
   consideration: dec.nullable(), fee: dec.nullable(), basis: dec.nullable(), zeroCost: z.boolean(), quote,
   fxRate: z.string().regex(/^\d{1,10}(\.\d{1,18})?$/).nullable(), fxSource: z.enum(['platform', 'manual']).nullable(),
   note: text(400).nullable(), source: z.enum(['manual', 'ctm']), voided: z.boolean(), voidReason: text(60).nullable(),
+  priceBasis: z.enum(['platform', 'own']).nullable().optional(),
 }).strict()
 
 const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso }).strict()

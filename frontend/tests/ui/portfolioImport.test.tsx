@@ -91,7 +91,7 @@ describe('after the first import: kept in sync automatically', () => {
   it('nothing new means no second call', async () => {
     api.importCtm.mockResolvedValue(report({ hasImportedBefore: true, alreadyImported: 3 }))
     render(<PortfolioPanel />)
-    await screen.findByRole('button', { name: /Meta Earth/ })
+    await screen.findByRole('button', { name: /^Meta Earth/ })
     await vi.waitFor(() => expect(api.importCtm).toHaveBeenCalledTimes(1))
   })
 })
@@ -117,7 +117,7 @@ describe('trades that need attention', () => {
   it('a failing import check never blocks the tracker itself', async () => {
     api.importCtm.mockRejectedValue(new Error('boom'))
     render(<PortfolioPanel />)
-    expect(await screen.findByRole('button', { name: /Meta Earth/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /^Meta Earth/ })).toBeInTheDocument()
     expect(screen.queryByText('boom')).toBeNull()
   })
 })
@@ -132,7 +132,7 @@ describe('imported entries are read-only and voided ones are not counted', () =>
     api.listEvents.mockResolvedValue(events)
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: /Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
     return await screen.findByRole('table')
   }
   it('an imported entry is labelled as a RupChain trade and has no Remove button', async () => {

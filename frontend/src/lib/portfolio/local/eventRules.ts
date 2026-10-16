@@ -11,7 +11,7 @@ const REQUEST_ID_RE = /^[A-Za-z0-9_-]{8,64}$/
 const ISO_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/
 const EARLIEST = Date.parse('2009-01-03T00:00:00Z')
 const FUTURE_SLACK_MS = 5 * 60 * 1000
-const ALLOWED = new Set(['type', 'occurredAt', 'quantity', 'consideration', 'fee', 'basis', 'zeroCost', 'quote', 'fxRate', 'note', 'clientRequestId'])
+const ALLOWED = new Set(['type', 'occurredAt', 'quantity', 'consideration', 'fee', 'basis', 'zeroCost', 'quote', 'fxRate', 'note', 'priceBasis', 'clientRequestId'])
 
 const isZero = (s: string) => /^0+(\.0+)?$/.test(s)
 
@@ -26,6 +26,7 @@ export interface CleanEvent {
   quote: Currency
   fxRate: string | null
   note: string | null
+  priceBasis: 'platform' | 'own' | null
   clientRequestId: string | null
 }
 
@@ -61,6 +62,7 @@ export function validateEventInput(input: PortfolioEventInput, nowMs: number): E
     if (isZero(input.fxRate)) return bad('Exchange rate must be greater than zero')
   }
   if (input.zeroCost !== undefined && typeof input.zeroCost !== 'boolean') return bad('Invalid record')
+  if (present(input.priceBasis) && input.priceBasis !== 'platform' && input.priceBasis !== 'own') return bad('Invalid record')
   if (present(input.note) && (typeof input.note !== 'string' || input.note.length > 1000)) return bad('Invalid record')
   if (present(input.clientRequestId) && (typeof input.clientRequestId !== 'string' || !REQUEST_ID_RE.test(input.clientRequestId))) return bad('Invalid record')
 
@@ -71,6 +73,7 @@ export function validateEventInput(input: PortfolioEventInput, nowMs: number): E
 
   if (type === 'OPENING') {
     if (present(input.consideration) || present(input.fee)) return bad('An opening holding has no consideration or fee')
+    if (present(input.priceBasis)) return bad('An opening holding has no price')
     if (present(input.basis) && isZero(input.basis) && !input.zeroCost) return bad('A zero cost must be confirmed explicitly')
     if (input.zeroCost && (!present(input.basis) || !isZero(input.basis))) return bad('Zero cost requires a basis of 0')
   } else {
@@ -92,6 +95,7 @@ export function validateEventInput(input: PortfolioEventInput, nowMs: number): E
       quote: input.quote ?? 'PKR',
       fxRate: input.fxRate ?? null,
       note: note ? note.slice(0, 200) : null,
+      priceBasis: type === 'OPENING' ? null : (input.priceBasis ?? null),
       clientRequestId: input.clientRequestId ?? null,
     },
   }

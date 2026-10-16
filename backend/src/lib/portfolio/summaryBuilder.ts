@@ -22,6 +22,8 @@ export interface PriceRow {
   price: string
   quote: Quote
   observedAt: Date
+  /** 'platform' (a proven RupChain trade) or how the user entered it ('manual', 'p2p', 'exchange', 'other'). */
+  source?: string
 }
 
 export interface PriceView {
@@ -30,6 +32,7 @@ export interface PriceView {
   original: string
   quote: Quote
   observedAt: string
+  source?: string
 }
 
 export type SummaryPosition = Omit<ValuedPosition, 'realizedByEvent'>
@@ -110,7 +113,7 @@ export function buildSummary(args: {
   const prices: Record<string, PriceView> = {}
   for (const p of args.prices) {
     const price = convertAmount(p.price, p.quote, currency, platformRate)
-    prices[p.assetId] = { price, original: p.price, quote: p.quote, observedAt: p.observedAt.toISOString() }
+    prices[p.assetId] = { price, original: p.price, quote: p.quote, observedAt: p.observedAt.toISOString(), ...(p.source ? { source: p.source } : {}) }
     marks[p.assetId] = { price }
   }
 

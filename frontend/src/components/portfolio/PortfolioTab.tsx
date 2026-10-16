@@ -2,26 +2,30 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
-  Currency, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from '@/lib/portfolio/types'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
 import type { ExportData } from '@/lib/portfolio/exportFile'
 import type { PortfolioApiLike } from '@/lib/portfolio/apiTypes'
-import { formatDecimal, formatQuantity, formatSigned } from '@/lib/portfolio/format'
 import { CustomTokenForm } from './CustomTokenForm'
 import { ExportMenu } from './ExportMenu'
 import { ImportBackupDialog } from './ImportBackupDialog'
+import { ExcludedTradesView } from './ExcludedTradesView'
 import { ImportBanner } from './ImportBanner'
 import { PerformanceSection } from './PerformanceSection'
 import { PortfolioHeadline } from './PortfolioHeadline'
-import { TokenDetail } from './TokenDetail'
-import { TokenMonogram } from './TokenMonogram'
+import { NeedsAttention } from './NeedsAttention'
+import { TokenCard, type CardAction } from './TokenCard'
+import { TokenDetail, type StartWith } from './TokenDetail'
+import { TransactionHistory } from './TransactionHistory'
 
 type View =
   | { name: 'overview' }
   | { name: 'add' }
-  | { name: 'token'; assetId: string }
+  | { name: 'token'; assetId: string; start?: StartWith }
+  | { name: 'history' }
   | { name: 'edit'; assetId: string }
+  | { name: 'excluded' }
 
 interface Props {
   /** Existing custody wallet UI (spendable balance, deposit/withdraw, history). Rendered unchanged. */
@@ -42,7 +46,9 @@ interface Props {
   loadEvents?: (assetId: string) => Promise<PortfolioEvent[]>
   onRecordEvent?: (assetId: string, input: PortfolioEventInput) => Promise<void>
   onDeleteEvent?: (assetId: string, eventId: string) => Promise<void>
-  onSetPrice?: (assetId: string, price: string, quote: Currency) => Promise<void>
+  onUpdateEvent?: (assetId: string, eventId: string, input: PortfolioEventInput) => Promise<void>
+  loadHistory?: (assetId: string, eventId: string) => Promise<EventRevision[]>
+  onSetPrice?: (assetId: string, price: string, quote: Currency, source?: string) => Promise<void>
   loadPerformance?: (range: { currency: Currency; from?: string; to?: string }) => Promise<PerformanceResponse>
   onArchive?: (assetId: string) => Promise<void>
   onUnarchive?: (assetId: string) => Promise<void>
@@ -52,6 +58,11 @@ interface Props {
   importBusy?: boolean
   importError?: string | null
   onImportTrades?: () => void
+  /** RupChain trades that were left out of automatic tracking, and a way to record one by hand. */
+  loadExcluded?: (limit: number, offset: number) => Promise<ExcludedTradesPage>
+  /** Every entry across all tokens, with search, filters and paging. */
+  loadAllEvents?: (query: EventListQuery) => Promise<EventsPage>
+  onRecordExcluded?: (tradeId: string, input: PortfolioEventInput) => Promise<void>
   onDismissImport?: () => void
   loadExport?: () => Promise<ExportData>
   onSuggestListing?: (assetId: string) => Promise<void>
@@ -70,8 +81,8 @@ const noop = async () => {}
  */
 export function PortfolioTab({
   notice, walletSection, assets = [], summary = null, currency = 'PKR', onCurrencyChange, loading = false, error = null, onRetry,
-  onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
-  importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport,
+  onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onUpdateEvent, loadHistory, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
+  importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport, loadExcluded, onRecordExcluded, loadAllEvents,
   onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported,
 }: Props) {
   const [view, setView] = useState<View>({ name: 'overview' })
@@ -87,7 +98,7 @@ export function PortfolioTab({
   // Move focus into a view when it opens, and back to where the user came from when it closes.
   useEffect(() => {
     if (first.current) { first.current = false; return }
-    if (view.name === 'token') backRef.current?.focus()
+    if (view.name === 'token' || view.name === 'excluded' || view.name === 'history') backRef.current?.focus()
     else if (view.name === 'add' || view.name === 'edit') headingRef.current?.focus()
     else if (lastRowRef.current) rowRefs.current[lastRowRef.current]?.focus()
     else addBtnRef.current?.focus()
@@ -96,11 +107,18 @@ export function PortfolioTab({
   const activeAssets = useMemo(() => assets.filter((a) => !a.archivedAt), [assets])
   const archivedAssets = useMemo(() => assets.filter((a) => a.archivedAt), [assets])
   const listed = showArchived ? assets : activeAssets
-  const names = useMemo(() => Object.fromEntries(assets.map((a) => [a.id, a.name])), [assets])
   const positions = useMemo(
     () => new Map((summary?.summary.positions ?? []).map((p) => [p.assetId, p])),
     [summary],
   )
+  // Tokens you currently hold according to your records (archived ones are not counted).
+  const trackedHeld = activeAssets.filter((a) => /[1-9]/.test(positions.get(a.id)?.quantity ?? '0')).length
+  // The first active token that lacks a price / a recorded cost, so an empty chart can offer a way to fix it.
+  const firstToFix = useMemo(() => {
+    const activeIds = new Set(activeAssets.map((x) => x.id))
+    const first = (ids: string[] | undefined) => ids?.find((id) => activeIds.has(id))
+    return { price: first(summary?.summary.unpricedAssets), cost: first(summary?.summary.unknownBasisAssets) }
+  }, [summary, activeAssets])
   // Labels follow the data on screen, not the switch: right after a click the numbers are still in the previous currency until the reply arrives.
   const shown: Currency = summary?.currency ?? currency
   const current = view.name === 'token' || view.name === 'edit' ? assets.find((a) => a.id === view.assetId) : undefined
@@ -121,6 +139,25 @@ export function PortfolioTab({
           </div>
         )}
 
+        {view.name === 'excluded' && loadExcluded && onRecordExcluded && (
+          <ExcludedTradesView
+            load={loadExcluded}
+            onRecord={onRecordExcluded}
+            currency={shown}
+            backRef={backRef}
+            onBack={() => { lastRowRef.current = null; setView({ name: 'overview' }) }}
+          />
+        )}
+
+        {view.name === 'history' && loadAllEvents && (
+          <TransactionHistory
+            load={loadAllEvents}
+            backRef={backRef}
+            onBack={() => { lastRowRef.current = null; setView({ name: 'overview' }) }}
+            onOpenToken={(assetId) => { lastRowRef.current = assetId; setView({ name: 'token', assetId }) }}
+          />
+        )}
+
         {view.name === 'edit' && current && (
           <div className="space-y-4">
             <h2 id="tracked-portfolio-heading" ref={headingRef} tabIndex={-1} className="text-base font-semibold text-text-primary outline-none">Edit token details</h2>
@@ -139,6 +176,8 @@ export function PortfolioTab({
         {view.name === 'token' && (
           current ? (
             <TokenDetail
+              key={`${current.id}-${view.name === 'token' ? (view.start ?? 'view') : 'view'}`}
+              startWith={view.name === 'token' ? view.start : undefined}
               asset={current}
               position={positions.get(current.id)}
               price={summary?.prices[current.id]}
@@ -150,6 +189,8 @@ export function PortfolioTab({
               loadEvents={loadEvents}
               onRecordEvent={onRecordEvent}
               onDeleteEvent={onDeleteEvent}
+              onUpdateEvent={onUpdateEvent}
+              loadHistory={loadHistory}
               onSetPrice={onSetPrice}
               onArchive={onArchive}
               onUnarchive={onUnarchive}
@@ -169,11 +210,18 @@ export function PortfolioTab({
           <>
             <div className="flex items-start justify-between gap-3 mb-1">
               <h2 id="tracked-portfolio-heading" className="text-base font-semibold text-text-primary">Tracked portfolio</h2>
-              {onAddAsset && (
-                <button ref={addBtnRef} type="button" onClick={() => setView({ name: 'add' })} className="text-sm font-semibold text-primary hover:underline whitespace-nowrap">
-                  Add custom token
-                </button>
-              )}
+              <span className="inline-flex items-center gap-4">
+                {loadAllEvents && assets.length > 0 && (
+                  <button type="button" onClick={() => setView({ name: 'history' })} className="text-sm font-semibold text-primary hover:underline whitespace-nowrap">
+                    All transactions
+                  </button>
+                )}
+                {onAddAsset && (
+                  <button ref={addBtnRef} type="button" onClick={() => setView({ name: 'add' })} className="text-sm font-semibold text-primary hover:underline whitespace-nowrap">
+                    Add custom token
+                  </button>
+                )}
+              </span>
             </div>
             <p className="text-xs text-text-muted mb-3">
               Estimates based on transactions you record. Separate from your RupChain wallet balance below; the two are never added together.
@@ -181,7 +229,7 @@ export function PortfolioTab({
 
             {importReport && onImportTrades && onDismissImport && (
               <div className="mb-4">
-                <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} />
+                <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} onReview={loadExcluded && onRecordExcluded ? () => setView({ name: 'excluded' }) : undefined} />
               </div>
             )}
 
@@ -201,9 +249,22 @@ export function PortfolioTab({
 
             {summary && (summary.summary.positions.length > 0 || summary.fxUnavailableAssets.length > 0) && (
               <div className="mb-4 space-y-6">
-                <PortfolioHeadline data={summary} names={names} />
+                <PortfolioHeadline data={summary} trackedHeld={trackedHeld} trackedTotal={activeAssets.length} />
+                <NeedsAttention
+                  summary={summary}
+                  assets={assets}
+                  importReport={importReport}
+                  onOpenToken={(assetId, action) => { lastRowRef.current = assetId; setView({ name: 'token', assetId, start: action }) }}
+                  onReviewExcluded={loadExcluded && onRecordExcluded ? () => setView({ name: 'excluded' }) : undefined}
+                />
                 {loadPerformance && summary.summary.positions.length > 0 && (
-                  <PerformanceSection currency={shown} load={loadPerformance} refreshKey={summary.asOf} />
+                  <PerformanceSection
+                    currency={shown}
+                    load={loadPerformance}
+                    refreshKey={summary.asOf}
+                    onAddPrice={firstToFix.price ? () => { lastRowRef.current = firstToFix.price!; setView({ name: 'token', assetId: firstToFix.price!, start: 'price' }) } : undefined}
+                    onFixCost={firstToFix.cost ? () => { lastRowRef.current = firstToFix.cost!; setView({ name: 'token', assetId: firstToFix.cost!, start: 'history' }) } : undefined}
+                  />
                 )}
               </div>
             )}
@@ -228,36 +289,22 @@ export function PortfolioTab({
                 All your tracked tokens are archived. Their history still counts in the totals above.
               </div>
             ) : (
-              <ul className="bg-surface shadow-card rounded-xl border border-border divide-y divide-border">
-                {listed.map((a) => {
-                  const pos = positions.get(a.id)
-                  return (
-                    <li key={a.id}>
-                      <button
-                        ref={(el) => { rowRefs.current[a.id] = el }}
-                        type="button"
-                        onClick={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
-                        className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-surface-hover"
-                      >
-                        <TokenMonogram name={a.name} size="md" logoUrl={a.logoUrl} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-medium text-text-primary break-words">{a.name}{a.archivedAt && <span className="ml-2 text-xs font-normal text-text-muted">Archived</span>}</span>
-                          {a.symbol && <span className="block text-xs text-text-muted break-words">{a.symbol}</span>}
-                        </span>
-                        {!pos && summary?.fxUnavailableAssets.includes(a.id) && (
-                          <span className="text-right text-xs text-amber-800 flex-shrink-0">No {shown} rate</span>
-                        )}
-                        {pos && (
-                          <span className="text-right text-xs text-text-muted flex-shrink-0">
-                            <span className="block text-text-primary">{formatQuantity(pos.quantity)} held</span>
-                            <span className="block">{pos.value === null ? 'No price' : `${shown} ${formatDecimal(pos.value)}`}</span>
-                            {pos.unrealized !== null && <span className="block">P/L {formatSigned(pos.unrealized)}</span>}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  )
-                })}
+              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {listed.map((a) => (
+                  <TokenCard
+                    key={a.id}
+                    asset={a}
+                    position={positions.get(a.id)}
+                    price={summary?.prices[a.id]}
+                    shown={shown}
+                    fxUnavailable={Boolean(summary?.fxUnavailableAssets.includes(a.id))}
+                    buttonRef={(el) => { rowRefs.current[a.id] = el }}
+                    onAction={(action: CardAction) => {
+                      lastRowRef.current = a.id
+                      setView({ name: 'token', assetId: a.id, ...(action === 'details' ? {} : { start: action }) })
+                    }}
+                  />
+                ))}
               </ul>
             )}
             {!loading && !error && loadExport && assets.length > 0 && (
