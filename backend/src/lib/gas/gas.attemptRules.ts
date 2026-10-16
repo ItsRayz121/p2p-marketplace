@@ -20,7 +20,7 @@ export type ObservedTxState = 'success' | 'reverted' | 'mempool' | 'not_found' |
 /** Chains whose txs carry a hard validity window (blockhash / expiration) far shorter than this. */
 export const EXPIRY_PROOF_AFTER_MS = 15 * 60_000
 
-const EXPIRING_CHAINS = new Set(['SOL', 'TRON', 'APT', 'SUI'])
+const EXPIRING_CHAINS = new Set(['SOL', 'TRON', 'APT', 'SUI', 'TON'])
 
 export function classifyPriorAttempt(input: {
   hasAttempt: boolean
@@ -72,7 +72,7 @@ export function describePriorAttempt(v: PriorAttemptVerdict, txHash?: string | n
  * no-send). On other chains an error can hide an accepted broadcast, so ANY failure there
  * goes straight to manual review instead of an automatic retry.
  */
-const JOURNALED_CHAINS = new Set(['ETH', 'BSC', 'OPBNB', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'SOL'])
+const JOURNALED_CHAINS = new Set(['ETH', 'BSC', 'OPBNB', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'SOL', 'SUI', 'APT', 'TON'])
 export function supportsAttemptJournal(chain: string): boolean {
   return JOURNALED_CHAINS.has(chain)
 }

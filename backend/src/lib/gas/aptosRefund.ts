@@ -49,12 +49,33 @@ export async function getAptosNativeBalance(address: string): Promise<number> {
     ...(env.APTOS_API_KEY ? { clientConfig: { API_KEY: env.APTOS_API_KEY } } : {}),
   })
   const aptos = new Aptos(config)
-  try {
-    const octas = await aptos.getAccountAPTAmount({ accountAddress: address })
-    return Number(octas) / 1e8 // octas → APT
-  } catch {
-    return 0 // account never funded → no APT
+
+  // Read from the FULLNODE (authoritative, on-chain state) via the coin::balance view, which
+  // already includes the paired fungible-asset store and returns 0 for an unfunded account.
+  // The previous implementation used the INDEXER (getAccountAPTAmount), which lags and can
+  // return an empty row, and it also swallowed EVERY error as "0 APT" — so a rate limit or
+  // indexer hiccup made the balance flip 0 ⇄ real, firing false "low APT" alerts, phantom
+  // "topped up" notifications and phantom ledger deposits. Any error now THROWS: callers must
+  // treat "unknown" differently from "zero".
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await aptos.view<[string]>({
+        payload: {
+          function: '0x1::coin::balance',
+          typeArguments: ['0x1::aptos_coin::AptosCoin'],
+          functionArguments: [address],
+        },
+      })
+      const octas = res[0]
+      if (typeof octas !== 'string' && typeof octas !== 'number') throw new Error('Aptos coin::balance returned an unexpected shape')
+      return Number(octas) / 1e8 // octas → APT
+    } catch (err) {
+      lastErr = err
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 500 * attempt))
+    }
   }
+  throw new Error(`Aptos APT balance lookup failed: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`)
 }
 
 /** Extract the Aptos transaction_version from a synthetic `aptos:{ver}:{idx}` hash. */

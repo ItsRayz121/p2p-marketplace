@@ -276,6 +276,39 @@ async function getAptosTxStatus(txHash: string): Promise<TxStatus> {
   return { state: data.success === true ? 'success' : 'reverted' }
 }
 
+/**
+ * TON: the stored hash is the signed wallet-message BODY hash. It is matched against the
+ * inbound message of the hot wallet's recent transactions. A matching tx whose action phase
+ * emitted an outbound message paid out; a match without one failed. No match = not_found
+ * (wallet messages expire after about a minute, so the attempt-age rule decides death).
+ */
+async function getTonTxStatus(bodyHashHex: string): Promise<TxStatus> {
+  const { getTonHotWalletAddress, getTonEndpoints } = await import('./tonWalletService')
+  const { TonClient } = await import('@ton/ton')
+  const { Address } = await import('@ton/core')
+  const addr = getTonHotWalletAddress()
+  if (!addr) throw new Error('TON hot wallet not configured')
+  const wanted = bodyHashHex.toLowerCase()
+  const endpoints = (await getTonEndpoints()).filter((e) => e.kind !== 'v4')
+  let reachable = 0
+  let lastErr: unknown
+  for (const ep of endpoints) {
+    try {
+      const client = new TonClient({ endpoint: ep.jsonRpcUrl, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) })
+      const txs = await client.getTransactions(Address.parse(addr), { limit: 60, archival: true })
+      reachable++
+      for (const tx of txs) {
+        const body = tx.inMessage?.body
+        if (body && body.hash().toString('hex') === wanted) {
+          return { state: tx.outMessagesCount > 0 ? 'success' : 'reverted' }
+        }
+      }
+    } catch (err) { lastErr = err }
+  }
+  if (reachable === 0) throw new Error(`TON transaction lookup failed on every endpoint: ${lastErr instanceof Error ? lastErr.message : String(lastErr)}`)
+  return { state: 'not_found' }
+}
+
 export async function getTxStatus(chain: GasChainId | string, txHash: string): Promise<TxStatus> {
   if (chain in EVM_VIEM) return getEvmTxStatus(chain, txHash)
   switch (chain) {
@@ -284,9 +317,7 @@ export async function getTxStatus(chain: GasChainId | string, txHash: string): P
     case 'APTOS': return getAptosTxStatus(txHash)
     case 'SOL': return getSolanaTxStatus(txHash)
     case 'SUI': return getSuiTxStatus(txHash)
-    // The TON hash we store is the external-message hash, not an explorer tx hash, so it
-    // cannot be looked up; TON has instant finality and the send itself is awaited.
-    case 'TON': return { state: 'success' }
+    case 'TON': return getTonTxStatus(txHash)
     default: throw new Error(`getTxStatus: unsupported chain ${chain}`)
   }
 }

@@ -39,14 +39,18 @@ describe('classifyPriorAttempt — never allow a resend unless provably dead', (
   it('non-EVM still in mempool is never dead by age alone', () => {
     expect(classifyPriorAttempt({ ...base, chain: 'TRON', evm: false, state: 'mempool', attemptAgeMs: 99 * 60_000 })).toBe('unresolved')
   })
-  it('TON (no lookup, no expiry proof) is never provably dead', () => {
-    expect(classifyPriorAttempt({ ...base, chain: 'TON', evm: false, attemptAgeMs: 99 * 60_000 })).toBe('unresolved')
+  it('TON/Aptos/Sui not found: dead only past the expiry window (messages expire in about a minute)', () => {
+    for (const chain of ['TON', 'APT', 'SUI']) {
+      const c = { ...base, chain, evm: false, nonce: null, senderConfirmedCount: null }
+      expect(classifyPriorAttempt({ ...c, attemptAgeMs: EXPIRY_PROOF_AFTER_MS - 1 })).toBe('unresolved')
+      expect(classifyPriorAttempt({ ...c, attemptAgeMs: EXPIRY_PROOF_AFTER_MS })).toBe('dead')
+    }
   })
 })
 
 describe('supportsAttemptJournal', () => {
-  it('journals EVM + Solana only', () => {
-    for (const c of ['ETH', 'BSC', 'OPBNB', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'SOL']) expect(supportsAttemptJournal(c)).toBe(true)
-    for (const c of ['TRON', 'TON', 'SUI', 'APT']) expect(supportsAttemptJournal(c)).toBe(false)
+  it('journals every chain except TRON', () => {
+    for (const c of ['ETH', 'BSC', 'OPBNB', 'BASE', 'ARB', 'OP', 'MATIC', 'AVAX', 'SOL', 'TON', 'SUI', 'APT']) expect(supportsAttemptJournal(c)).toBe(true)
+    expect(supportsAttemptJournal('TRON')).toBe(false)
   })
 })

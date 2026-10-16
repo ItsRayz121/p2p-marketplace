@@ -181,7 +181,32 @@ async function deliverTronToken(order: GasFeeOrder, contract: string, decimals: 
 }
 
 // Aptos fungible-asset transfer (mirrors aptosRefund.sendAptosUsdtRefund).
-async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals: number): Promise<string> {
+/**
+ * Sign -> journal the deterministic tx hash -> submit ONCE. The Aptos user-tx hash is fixed once
+ * the tx is signed, so it is journaled before anything is sent. Ambiguous submit errors still
+ * return the journaled hash (the verifier decides); the wait runs inside the caller's hot-wallet
+ * lock so the next send sees the advanced sequence number, and its errors are never fatal.
+ */
+async function submitAptosJournaled(
+  aptos: import('@aptos-labs/ts-sdk').Aptos,
+  account: import('@aptos-labs/ts-sdk').Account,
+  txn: import('@aptos-labs/ts-sdk').SimpleTransaction,
+  journal?: DeliveryJournal,
+): Promise<string> {
+  const { generateUserTransactionHash } = await import('@aptos-labs/ts-sdk')
+  const senderAuthenticator = aptos.transaction.sign({ signer: account, transaction: txn })
+  const hash = generateUserTransactionHash({ transaction: txn, senderAuthenticator })
+  if (journal) await journal({ txHash: hash, nonce: Number(txn.rawTransaction.sequence_number) })
+  try {
+    await aptos.transaction.submit.simple({ transaction: txn, senderAuthenticator })
+  } catch (err) {
+    logger.warn({ err, txHash: hash }, 'Aptos delivery submit returned an error — outcome unknown, hash journaled for verification')
+  }
+  await aptos.waitForTransaction({ transactionHash: hash, options: { timeoutSecs: 30, checkSuccess: false } }).catch(() => undefined)
+  return hash
+}
+
+async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals: number, journal?: DeliveryJournal): Promise<string> {
   const { Aptos, AptosConfig, Account, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk')
   const { deriveAptosPrivateKeyForDelivery } = await import('./aptosWalletService')
 
@@ -212,9 +237,7 @@ async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals:
           functionArguments: [contract, order.toAddress, amount],
         },
       })
-      const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
-      await aptos.waitForTransaction({ transactionHash: pending.hash })
-      return pending.hash
+      return submitAptosJournaled(aptos, account, txn, journal)
     })
   } finally {
     seed.fill(0)
@@ -227,7 +250,7 @@ async function deliverAptosToken(order: GasFeeOrder, contract: string, decimals:
 // recipient account if it does not exist yet (a plain coin::transfer would fail
 // for a brand-new address). Mirrors the seed-zeroing discipline of the other
 // non-EVM senders.
-async function deliverAptosNative(order: GasFeeOrder): Promise<string> {
+async function deliverAptosNative(order: GasFeeOrder, journal?: DeliveryJournal): Promise<string> {
   const { Aptos, AptosConfig, Account, Ed25519PrivateKey } = await import('@aptos-labs/ts-sdk')
   const { deriveAptosPrivateKeyForDelivery } = await import('./aptosWalletService')
 
@@ -257,9 +280,7 @@ async function deliverAptosNative(order: GasFeeOrder): Promise<string> {
           functionArguments: [order.toAddress, amount],
         },
       })
-      const pending = await aptos.signAndSubmitTransaction({ signer: account, transaction: txn })
-      await aptos.waitForTransaction({ transactionHash: pending.hash })
-      return pending.hash
+      return submitAptosJournaled(aptos, account, txn, journal)
     })
   } finally {
     seed.fill(0)
@@ -292,9 +313,9 @@ async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: numbe
   }
 
   if (order.chain === 'TRON') return deliverTronToken(order, contract, decimals, hdIndex)
-  if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals)
+  if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals, journal)
   if (order.chain === 'SOL')  return deliverSolToken(order, contract, decimals, journal)
-  if (order.chain === 'SUI')  return deliverSuiToken(order, contract, decimals)
+  if (order.chain === 'SUI')  return deliverSuiToken(order, contract, decimals, journal)
   return deliverEvmToken(order, contract, decimals, hdIndex, journal)
 }
 
@@ -571,7 +592,7 @@ async function deliverSolToken(order: GasFeeOrder, mintAddress: string, decimals
 
 // ── TON delivery ──────────────────────────────────────────────────────────────
 
-async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
   const { WalletContractV4, TonClient, TonClient4, internal } = await import('@ton/ton')
   const { toNano } = await import('@ton/core')
 
@@ -598,45 +619,42 @@ async function deliverTon(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
         messages: [internal({ to: order.toAddress, value, bounce: false })],
       })
 
-    // Try each endpoint in order. 1–3 are the toncenter v2 family (operator → orbs →
-    // public) and tend to fail together when that backend 5xx's; the 'v4' endpoint is
-    // TON Hub's independent infrastructure and is the real survivor of a toncenter
-    // outage. getSeqno + send happen on the SAME client per attempt so the seqno
-    // stays consistent.
+    // The endpoints (toncenter v2 family, then TON Hub v4) fail independently, so BOTH phases fail
+    // over — but only the READ phase may build a message. Flow:
+    //   1. read the wallet seqno (read-only, any endpoint)        — safe to retry
+    //   2. build + sign ONE transfer for that seqno                — fixes the message hash
+    //   3. journal the hash (+ seqno) BEFORE anything is sent
+    //   4. send that IDENTICAL message, failing over across endpoints. The wallet contract
+    //      executes a given seqno once, so re-sending identical bytes can never pay twice.
+    // contract.send() wraps the body into a full external message and attaches the wallet
+    // StateInit when the account is not deployed yet (a raw sendFile of the body would 406).
     const endpoints = await getTonEndpoints()
+    const open = (ep: (typeof endpoints)[number]) => {
+      const client =
+        ep.kind === 'v4'
+          ? new TonClient4({ endpoint: ep.jsonRpcUrl, timeout: 15_000 })
+          : new TonClient({ endpoint: ep.jsonRpcUrl, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) })
+      return client.open(wallet)
+    }
+
+    let seqno: number | null = null
     let lastErr: unknown
     for (const ep of endpoints) {
-      try {
-        // Open the wallet against this endpoint's client and send through the
-        // contract provider. contract.send() → provider.external() does two things
-        // that a raw client.sendFile(transfer.toBoc()) does NOT:
-        //   1. wraps the signed transfer BODY into a complete external-in message
-        //      (toncenter rejects a bare body cell with HTTP 406 Not Acceptable);
-        //   2. attaches the wallet StateInit when the account is not yet deployed,
-        //      so the very first outgoing tx deploys the V4 contract. A freshly
-        //      funded hot wallet that has never sent is uninitialised — without the
-        //      StateInit even a correctly-wrapped message bounces/406s.
-        // Both TonClient (v2) and TonClient4 (v4) implement provider.external with
-        // this wrapping + deploy-state detection, so the two endpoint kinds collapse
-        // to the same call.
-        const client =
-          ep.kind === 'v4'
-            ? new TonClient4({ endpoint: ep.jsonRpcUrl, timeout: 15_000 })
-            : new TonClient({ endpoint: ep.jsonRpcUrl, ...(ep.apiKey ? { apiKey: ep.apiKey } : {}) })
-
-        const contract = client.open(wallet)
-        const seqno = await contract.getSeqno()
-        const transfer = buildTransfer(seqno)
-        // Body cell hash — a stable identifier for our audit trail. (Not the
-        // explorer tx hash; TON confirmation is time-based, not hash-lookup based.)
-        const txHash = transfer.hash().toString('hex')
-        await contract.send(transfer)
-        return txHash
-      } catch (err) {
-        lastErr = err // provider failed — try the next endpoint
-      }
+      try { seqno = await open(ep).getSeqno(); break } catch (err) { lastErr = err }
     }
-    throw lastErr instanceof Error ? lastErr : new Error('TON delivery failed on all endpoints')
+    if (seqno === null) throw lastErr instanceof Error ? lastErr : new Error('TON delivery: could not read the wallet seqno on any endpoint')
+
+    const transfer = buildTransfer(seqno)
+    // Body cell hash — the identifier TON verification matches against the wallet's inbound message.
+    const txHash = transfer.hash().toString('hex')
+    if (journal) await journal({ txHash, nonce: seqno })
+
+    let sent = false
+    for (const ep of endpoints) {
+      try { await open(ep).send(transfer); sent = true; break } catch (err) { lastErr = err }
+    }
+    if (!sent) logger.warn({ err: lastErr, txHash }, 'TON delivery send failed on every endpoint — outcome unknown, hash journaled for verification')
+    return txHash
   } finally {
     seed.fill(0)
     if (privateKey) privateKey.fill(0)
@@ -668,7 +686,33 @@ async function withSuiClientFailover<T>(
   throw lastErr instanceof Error ? lastErr : new Error('SUI delivery failed on all RPC endpoints')
 }
 
-async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+/**
+ * Sui: build + sign ONCE (read-only RPC, safe to fail over), journal the digest — fixed by the
+ * signed bytes — then execute the identical bytes. Re-submitting identical signed bytes to another
+ * node is idempotent (the tx executes at most once), so execution may fail over safely.
+ */
+async function executeSuiJournaled(
+  signed: { bytes: string; signature: string },
+  journal?: DeliveryJournal,
+): Promise<string> {
+  const { TransactionDataBuilder } = await import('@mysten/sui/transactions')
+  const { fromBase64 } = await import('@mysten/sui/utils')
+  const digest = TransactionDataBuilder.getDigestFromBytes(fromBase64(signed.bytes))
+  if (journal) await journal({ txHash: digest })
+  try {
+    await withSuiClientFailover((client) => client.executeTransactionBlock({
+      transactionBlock: signed.bytes,
+      signature: signed.signature,
+      requestType: 'WaitForLocalExecution',
+      options: { showEffects: true },
+    }))
+  } catch (err) {
+    logger.warn({ err, txHash: digest }, 'Sui delivery execute returned an error — outcome unknown, digest journaled for verification')
+  }
+  return digest
+}
+
+async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
   const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
   const { Transaction } = await import('@mysten/sui/transactions')
 
@@ -680,19 +724,13 @@ async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 
     const mistAmount = BigInt(Math.round(Number(order.gasAmountNative) * 1e9))
 
-    return await withSuiClientFailover(async (client) => {
+    const signed = await withSuiClientFailover(async (client) => {
       const tx = new Transaction()
       const [coin] = tx.splitCoins(tx.gas, [mistAmount])
       tx.transferObjects([coin], order.toAddress)
-
-      const result = await client.signAndExecuteTransaction({
-        signer: keypair,
-        transaction: tx,
-        requestType: 'WaitForLocalExecution',
-        options: { showEffects: true },
-      })
-      return result.digest
+      return tx.sign({ client, signer: keypair })
     })
+    return await executeSuiJournaled(signed, journal)
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
@@ -702,7 +740,7 @@ async function deliverSui(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 // SUI Coin<T> transfer (USDC etc.). Gathers the hot wallet's coin objects of this
 // type (merging when the balance is fragmented), splits off the exact amount and
 // transfers it — gas is paid from the wallet's native SUI coins as usual.
-async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: number): Promise<string> {
+async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: number, journal?: DeliveryJournal): Promise<string> {
   const { Ed25519Keypair } = await import('@mysten/sui/keypairs/ed25519')
   const { Transaction } = await import('@mysten/sui/transactions')
 
@@ -717,7 +755,7 @@ async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: n
     const keypair = Ed25519Keypair.fromSecretKey(new Uint8Array(privateKeySeed))
     const owner = keypair.getPublicKey().toSuiAddress()
 
-    return await withSuiClientFailover(async (client) => {
+    const signed = await withSuiClientFailover(async (client) => {
       // Collect coin objects of this type until they cover the amount (largest first
       // keeps the merge set small; paginate in case holdings are fragmented).
       const coins: Array<{ coinObjectId: string; balance: bigint }> = []
@@ -745,15 +783,9 @@ async function deliverSuiToken(order: GasFeeOrder, coinType: string, decimals: n
       if (picked.length > 1) tx.mergeCoins(primary, picked.slice(1).map((id) => tx.object(id)))
       const [out] = tx.splitCoins(primary, [amount])
       tx.transferObjects([out!], order.toAddress)
-
-      const result = await client.signAndExecuteTransaction({
-        signer: keypair,
-        transaction: tx,
-        requestType: 'WaitForLocalExecution',
-        options: { showEffects: true },
-      })
-      return result.digest
+      return tx.sign({ client, signer: keypair })
     })
+    return await executeSuiJournaled(signed, journal)
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
@@ -915,9 +947,9 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX,
     case 'MATIC': return deliverMatic(order, hdIndex, journal)
     case 'AVAX':  return deliverAvax(order, hdIndex, journal)
     case 'SOL':   return deliverSol(order, hdIndex, journal)
-    case 'TON':   return deliverTon(order, hdIndex)
-    case 'SUI':   return deliverSui(order, hdIndex)
-    case 'APT':   return deliverAptosNative(order)
+    case 'TON':   return deliverTon(order, hdIndex, journal)
+    case 'SUI':   return deliverSui(order, hdIndex, journal)
+    case 'APT':   return deliverAptosNative(order, journal)
     default: throw new Error(`deliverGas: unsupported chain ${order.chain}`)
   }
 }
