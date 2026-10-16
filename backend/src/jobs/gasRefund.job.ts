@@ -8,6 +8,7 @@ import { logger } from '../lib/logger'
 import type { GasChainId } from '../lib/gas/gas.chains'
 import { fromDbChain, paymentNetworkSettlementChain } from '../lib/gas/gas.chains'
 import { appendLedgerEntry } from '../lib/gas/gas.ledger'
+import { assessPriorAttempt, handBackLandedDelivery } from '../lib/gas/gas.attemptSafety'
 
 // USDT was received on the PAYMENT network (e.g. BEP20 / Aptos), which can differ
 // from the gas-DELIVERY chain (e.g. TON). The refund must go back on the chain the
@@ -40,6 +41,22 @@ export async function processGasRefund(job: Job<{ orderId: string; toAddressOver
     logger.info({ orderId, status: order.status }, 'processGasRefund: order not in refund_pending — already processed')
     return
   }
+  // A delivery broadcast that never confirmed may STILL land (stuck in a mempool). Refunding
+  // the customer while it can land would pay them twice — refund only when it is PROVEN dead.
+  if (order.unconfirmedDeliveryTxHash) {
+    const prior = await assessPriorAttempt(order)
+    if (prior.verdict === 'landed' && prior.txHash) {
+      await handBackLandedDelivery(orderId, prior.txHash)
+      logger.warn({ orderId, txHash: prior.txHash }, 'processGasRefund: delivery tx landed — refund cancelled, order handed back for finalization')
+      return
+    }
+    if (prior.verdict === 'unresolved') {
+      // Fail this attempt (BullMQ retries with backoff); never refund blind.
+      throw new Error(`Refund deferred: ${prior.detail}`)
+    }
+    // dead: provably did not pay — refund may proceed.
+  }
+
   // A manual refund carries an admin-specified destination, so it does not need a
   // payment tx hash (the admin is overriding the auto sender-resolution path).
   if (!toAddressOverride && !order.paymentTxHash) {

@@ -4909,6 +4909,29 @@ export async function adminRoutes(app: FastifyInstance) {
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
 
+    // STRICT no-double-delivery gate: if an earlier delivery tx was ever broadcast, Retry is
+    // only allowed once that attempt is PROVEN unable to land. A landed one is adopted instead.
+    const pre = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!pre) throw Errors.NOT_FOUND('Gas fee order')
+    if (pre.unconfirmedDeliveryTxHash) {
+      const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+      const prior = await assessPriorAttempt(pre)
+      if (prior.verdict === 'landed' && prior.txHash) {
+        await handBackLandedDelivery(id, prior.txHash)
+        await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY_BLOCKED_LANDED', 'GasFeeOrder', id, { txHash: prior.txHash }, clientIp(req), req.headers['user-agent'] as string | undefined)
+        return reply.send({ success: true, message: 'The earlier delivery transaction had actually landed on-chain — the order is being finalized as delivered. Nothing was resent.' })
+      }
+      if (prior.verdict === 'unresolved') {
+        throw new AppError('CONFLICT', `Retry blocked to prevent a double delivery. ${prior.detail} Wait and use "Verify on-chain", or deliver manually only after confirming the earlier tx cannot land.`, 409)
+      }
+      // dead: archive the proven-dead attempt in the audit trail, then clear the journal so the worker may send once more.
+      await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY_AFTER_PROVEN_DEAD', 'GasFeeOrder', id, { deadTxHash: prior.txHash, nonce: pre.deliveryNonce, detail: prior.detail }, clientIp(req), req.headers['user-agent'] as string | undefined)
+      await db.gasFeeOrder.updateMany({
+        where: { id, unconfirmedDeliveryTxHash: pre.unconfirmedDeliveryTxHash },
+        data: { unconfirmedDeliveryTxHash: null, deliveryNonce: null, deliveryAttemptAt: null },
+      })
+    }
+
     // CAS: transition failed/awaiting_refund → payment_detected so the delivery
     // worker can re-claim it. For awaiting_refund we also clear the refund window.
     // Concurrent retries find count=0 on the second call and fall through below.
@@ -4960,6 +4983,18 @@ export async function adminRoutes(app: FastifyInstance) {
     // force the refund immediately from here.
     if (order.status === 'failed' && !isPaidFailed(order)) {
       throw new AppError('INVALID_STATUS', 'This order never had a payment accepted (rejected or cancelled) — there is nothing to refund.', 400)
+    }
+    // Never refund while an earlier delivery tx could still land (customer would be paid twice).
+    if (order.unconfirmedDeliveryTxHash) {
+      const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+      const prior = await assessPriorAttempt(order)
+      if (prior.verdict === 'landed' && prior.txHash) {
+        await handBackLandedDelivery(id, prior.txHash)
+        return reply.send({ success: true, message: 'The earlier delivery transaction had actually landed — the order is being finalized as delivered. No refund was started.' })
+      }
+      if (prior.verdict === 'unresolved') {
+        throw new AppError('CONFLICT', `Refund blocked to prevent a double payout. ${prior.detail}`, 409)
+      }
     }
     if (!['failed', 'refund_pending', 'expired', 'payment_detected', 'awaiting_refund'].includes(order.status)) {
       throw new AppError(
@@ -6931,6 +6966,19 @@ export async function adminRoutes(app: FastifyInstance) {
     const blocked = manualDeliveryIneligibleReason(order)
     if (blocked) throw new AppError('CONFLICT', blocked, 409)
 
+    // A broadcast from the platform that never confirmed may STILL land (stuck in the
+    // mempool) — recording a manual delivery now could pay the customer twice.
+    if (order.unconfirmedDeliveryTxHash) {
+      const { assessPriorAttempt } = await import('../lib/gas/gas.attemptSafety')
+      const prior = await assessPriorAttempt(order)
+      if (prior.verdict === 'landed') {
+        throw new AppError('CONFLICT', `The platform's own delivery tx ${prior.txHash} actually landed on-chain — use Retry to finalize it instead of delivering manually.`, 409)
+      }
+      if (prior.verdict === 'unresolved') {
+        throw new AppError('CONFLICT', `Manual delivery blocked to prevent a double delivery. ${prior.detail} Wait, then use "Verify on-chain".`, 409)
+      }
+    }
+
     // The same external tx can only ever settle ONE order.
     const dup = await db.gasFeeOrder.findFirst({ where: { deliveryTxHash: txHash, NOT: { id } }, select: { orderRef: true } })
     if (dup) throw new AppError('CONFLICT', `That transaction hash is already recorded as the delivery of order ${dup.orderRef}.`, 409)
@@ -6980,6 +7028,163 @@ export async function adminRoutes(app: FastifyInstance) {
     if (order.userId) queues.badgeRecalculate.add('recalc', { userId: order.userId }).catch(() => {})
 
     return reply.send({ success: true, data: { status: 'delivered', deliveryTxHash: txHash, deliveryMode: 'manual' } })
+  })
+
+  // ── POST /admin/gas/orders/:id/verify-delivery — live on-chain check of the delivery tx ──
+  // Read-mostly: asks the chain (several RPC endpoints) whether the order's delivery
+  // (or still-unconfirmed broadcast) tx is really mined. If it is, and the order is
+  // delivered-but-unconfirmed, the confirmation flag is healed.
+  app.post('/admin/gas/orders/:id/verify-delivery', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    const txHash = order.deliveryTxHash ?? order.unconfirmedDeliveryTxHash
+    if (!txHash) throw new AppError('VALIDATION_ERROR', 'This order has no delivery transaction to verify.', 400)
+
+    const { getTxStatus } = await import('../lib/gas/gas.confirmation')
+    let status
+    try {
+      status = await getTxStatus(order.chain, txHash)
+    } catch (err) {
+      throw new AppError('SERVICE_UNAVAILABLE', `Could not reach the ${order.chain} network to verify: ${err instanceof Error ? err.message : 'RPC error'}`, 503)
+    }
+
+    const final = status.state === 'success'
+      && (status.required === undefined || (status.confirmations ?? 0) >= status.required)
+    let adopted = false
+    if (status.state === 'success' && !order.deliveryTxHash && order.unconfirmedDeliveryTxHash) {
+      const { handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+      adopted = await handBackLandedDelivery(id, order.unconfirmedDeliveryTxHash)
+    }
+    let healed = false
+    if (final && order.status === 'delivered' && order.deliveryTxHash && !order.deliveryConfirmed) {
+      await db.gasFeeOrder.update({ where: { id }, data: { deliveryConfirmed: true } })
+      healed = true
+    }
+    return reply.send({
+      success: true,
+      data: {
+        txHash,
+        isBroadcastOnly: !order.deliveryTxHash,
+        state: status.state,
+        confirmations: status.confirmations ?? null,
+        required: status.required ?? null,
+        blockNumber: status.blockNumber ?? null,
+        healed,
+        adopted,
+      },
+    })
+  })
+
+  // ── POST /admin/gas/orders/:id/replace-delivery-tx — fix a delivered order whose tx never landed ──
+  // For orders marked delivered (legacy / pre-gating) whose recorded delivery tx does NOT
+  // exist on-chain, while the customer was paid by other means (manual transfer). The
+  // admin supplies the REAL tx hash; it is verified on-chain, the order is stamped as a
+  // manual delivery, and the phantom hot-wallet ledger debit is reversed (the hot wallet
+  // never moved). Nothing is sent by the platform.
+  app.post('/admin/gas/orders/:id/replace-delivery-tx', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const body = (req.body ?? {}) as { txHash?: unknown; note?: unknown; confirmed?: unknown }
+    const txHash = normalizeTxHash(body.txHash)
+    if (!txHash) throw new AppError('VALIDATION_ERROR', 'A valid transaction hash is required.', 400)
+    if (body.confirmed !== true) throw new AppError('VALIDATION_ERROR', 'Confirm that the gas was sent from an external wallet.', 400)
+    const note = typeof body.note === 'string' ? body.note.trim().slice(0, 300) : ''
+
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    const oldHash = order.deliveryTxHash
+    if (order.status !== 'delivered' || !oldHash) throw new AppError('CONFLICT', 'Only a delivered order can have its delivery transaction replaced.', 409)
+    if (order.deliveryConfirmed) throw new AppError('CONFLICT', 'This delivery is already confirmed on-chain — it cannot be replaced.', 409)
+    if (oldHash.toLowerCase() === txHash.toLowerCase()) throw new AppError('VALIDATION_ERROR', 'That is already the recorded delivery transaction.', 400)
+
+    const dup = await db.gasFeeOrder.findFirst({ where: { deliveryTxHash: txHash, NOT: { id } }, select: { orderRef: true } })
+    if (dup) throw new AppError('CONFLICT', `That transaction hash is already recorded as the delivery of order ${dup.orderRef}.`, 409)
+
+    const { getTxStatus, getEvmNativeTransfer, isEvmGasChain } = await import('../lib/gas/gas.confirmation')
+
+    // The recorded tx must genuinely be missing/failed — never replace a real or still-pending one.
+    let oldStatus
+    try { oldStatus = await getTxStatus(order.chain, oldHash) } catch (err) {
+      throw new AppError('SERVICE_UNAVAILABLE', `Could not verify the recorded delivery tx right now (${err instanceof Error ? err.message : 'RPC error'}). Try again shortly.`, 503)
+    }
+    if (oldStatus.state === 'success' || oldStatus.state === 'mempool') {
+      throw new AppError('CONFLICT', oldStatus.state === 'success'
+        ? 'The recorded delivery tx IS on-chain — use "Verify on-chain" instead of replacing it.'
+        : 'The recorded delivery tx is still pending in the mempool and could land — wait before replacing it.', 409)
+    }
+
+    // The replacement must be a real, successful tx that paid this order's destination.
+    let newStatus
+    try { newStatus = await getTxStatus(order.chain, txHash) } catch (err) {
+      throw new AppError('SERVICE_UNAVAILABLE', `Could not verify the new transaction right now (${err instanceof Error ? err.message : 'RPC error'}). Try again shortly.`, 503)
+    }
+    if (newStatus.state !== 'success') {
+      throw new AppError('VALIDATION_ERROR', `The supplied transaction is not a successful on-chain transaction on ${order.chain} (status: ${newStatus.state.replace('_', ' ')}).`, 400)
+    }
+    if (isEvmGasChain(order.chain) && !order.gasTokenConfigId) {
+      const transfer = await getEvmNativeTransfer(order.chain, txHash)
+      if (!transfer) throw new AppError('VALIDATION_ERROR', 'Could not read the supplied transaction details.', 400)
+      if ((transfer.to ?? '').toLowerCase() !== order.toAddress.toLowerCase()) {
+        throw new AppError('VALIDATION_ERROR', `That transaction was not sent to this order's destination (${order.toAddress}).`, 400)
+      }
+      const { parseEther } = await import('viem')
+      if (transfer.valueWei < parseEther(order.gasAmountNative.toString())) {
+        throw new AppError('VALIDATION_ERROR', `That transaction sent less than the ordered ${order.gasAmountNative.toString()}.`, 400)
+      }
+    }
+
+    const finalNow = newStatus.required === undefined || (newStatus.confirmations ?? 0) >= newStatus.required
+    const claimed = await db.gasFeeOrder.updateMany({
+      where: { id, status: 'delivered', deliveryConfirmed: false, deliveryTxHash: oldHash },
+      data: {
+        deliveryTxHash: txHash,
+        unconfirmedDeliveryTxHash: null,
+        deliveryConfirmed: finalNow,
+        deliveryMode: 'manual',
+        deliveredByAdminId: req.user!.id,
+        deliveryNote: `Replaced unconfirmed tx ${oldHash}${note ? ` — ${note}` : ''}`.slice(0, 500),
+        fromHotWallet: null,
+      },
+    })
+    if (claimed.count === 0) throw new AppError('CONFLICT', 'The order changed while this was being processed — reload and try again.', 409)
+
+    // Reverse the phantom hot-wallet debit written for the never-mined tx (append-only ledger).
+    const phantom = await db.gasLedgerEntry.findFirst({
+      where: { relatedOrderId: id, entryType: 'gas_delivery', txHash: oldHash },
+      select: { id: true },
+    })
+    if (phantom) {
+      const { appendLedgerEntry } = await import('../lib/gas/gas.ledger')
+      const { fromDbChain } = await import('../lib/gas/gas.chains')
+      await appendLedgerEntry({
+        entryType:      'gas_delivery',
+        chain:          order.chain === 'APT' ? ('BSC' as GasChainId) : (fromDbChain(order.chain) as GasChainId),
+        ...(order.chain === 'APT' ? { chainOverride: { dbChain: 'APT' as const, nativeSymbol: 'APT' } } : {}),
+        nativeAmount:   Number(order.gasAmountNative),
+        usdAmount:      Number(order.gasAmountUSD),
+        txHash:         oldHash,
+        relatedOrderId: id,
+        sourceKey:      `gas-delivery-reversal-${id}`,
+        notes:          `REVERSAL of phantom delivery for ${order.orderRef}: tx ${oldHash} never landed on-chain; delivered manually via ${txHash}`,
+      }).catch((e) => log.warn({ err: e, orderId: id }, 'replace-delivery-tx: ledger reversal failed'))
+    }
+
+    if (!finalNow) {
+      await queues.gasFee.add('check-delivery', { orderId: id, txHash }, {
+        delay: 60_000, jobId: `gas-check-delivery-${id}-m${Date.now()}`, attempts: 10, backoff: { type: 'fixed', delay: 60_000 },
+      }).catch(() => {})
+    }
+
+    const { recordGasAudit } = await import('../lib/gas/gas.matching')
+    await recordGasAudit({ orderId: id, txHash }, {
+      source: 'admin', event: 'delivery_tx_replaced', txHash, expectedChain: order.chain,
+      detail: `Recorded tx ${oldHash} was not on-chain (${oldStatus.state}); replaced with manual delivery tx by admin ${req.user!.id}`,
+    })
+    await createAuditLog(req.user!.id, 'GAS_ORDER_DELIVERY_TX_REPLACED', 'GasFeeOrder', id, {
+      orderRef: order.orderRef, oldTxHash: oldHash, newTxHash: txHash, oldTxState: oldStatus.state, ledgerReversed: !!phantom, note,
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
+
+    return reply.send({ success: true, data: { deliveryTxHash: txHash, deliveryMode: 'manual', deliveryConfirmed: finalNow, ledgerReversed: !!phantom } })
   })
 
   // ── POST /admin/gas/orders/:id/mark-payment — manually confirm payment received ────

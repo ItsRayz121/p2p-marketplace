@@ -8,7 +8,7 @@ import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
 import { recalculateUserBadge } from '../jobs/badgeRecalculate.job'
 import { processReferralPayout } from '../jobs/referralPayout.job'
-import { processGasFeeOrder, processGasDeliveryRetry, processGasAutoRefund } from '../jobs/gasFee.job'
+import { processGasFeeOrder, processGasDeliveryRetry, processGasAutoRefund, processGasDeliveryVerify } from '../jobs/gasFee.job'
 import { runGasExpiryJob } from '../jobs/gasExpiry.job'
 import { checkGasDelivery } from '../jobs/gasDeliveryCheck.job'
 import { runGasMonitorBalances } from '../jobs/gasMonitorBalances.job'
@@ -170,6 +170,8 @@ export function startWorkers() {
           return processGasFeeOrder(job as Parameters<typeof processGasFeeOrder>[0])
         case 'retry-delivery':
           return processGasDeliveryRetry(job as Parameters<typeof processGasDeliveryRetry>[0])
+        case 'verify-delivery':
+          return processGasDeliveryVerify(job as Parameters<typeof processGasDeliveryVerify>[0])
         case 'auto-refund':
           return processGasAutoRefund(job as Parameters<typeof processGasAutoRefund>[0])
         case 'expire-order':

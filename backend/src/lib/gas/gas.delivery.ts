@@ -1,9 +1,10 @@
 import type { GasFeeOrder } from '@prisma/client'
 import type { Chain } from 'viem'
-import { createWalletClient, http, parseEther, parseGwei, parseUnits } from 'viem'
+import { createPublicClient, createWalletClient, encodeFunctionData, http, keccak256, parseEther, parseUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import { db } from '../prisma'
+import { logger } from '../logger'
 import { env } from '../env'
 import { getHotWalletTokenBalance } from './gas.tokenBalance'
 import {
@@ -73,6 +74,53 @@ const ERC20_TRANSFER_ABI = [
   { name: 'transfer', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'to', type: 'address' }, { name: 'amount', type: 'uint256' }], outputs: [{ type: 'bool' }] },
 ] as const
 
+/**
+ * Written BEFORE a tx is broadcast. After this resolves the delivery may already be on its
+ * way, so the order must never be paid again automatically (see gas.attemptRules.ts).
+ */
+export type DeliveryJournal = (attempt: { txHash: string; nonce?: number; from?: string }) => Promise<void>
+
+/**
+ * Sign locally -> journal the deterministic hash -> broadcast ONCE. Preparing/signing happens
+ * before anything leaves the process, so those steps may be retried freely. The broadcast is
+ * never retried or re-priced: an ambiguous broadcast error (timeout after the node accepted
+ * the tx) still returns the journaled hash and the verifier decides what happened.
+ */
+async function signJournalBroadcast(args: {
+  viemChain: Chain
+  rpcUrl: string
+  account: ReturnType<typeof privateKeyToAccount>
+  tx: { to: `0x${string}`; value?: bigint; data?: `0x${string}` }
+  nonce: number
+  journal?: DeliveryJournal
+}): Promise<string> {
+  const { viemChain, rpcUrl, account, tx, nonce, journal } = args
+  const wallet = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
+  const pub = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
+
+  let serialized: `0x${string}` | undefined
+  let lastErr: unknown
+  for (let attempt = 1; attempt <= 3 && !serialized; attempt++) {
+    try {
+      const prepared = await wallet.prepareTransactionRequest({ account, chain: viemChain, nonce, ...tx } as never)
+      serialized = await wallet.signTransaction(prepared as never)
+    } catch (err) {
+      lastErr = err
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 2000 * attempt))
+    }
+  }
+  if (!serialized) throw lastErr
+
+  const hash = keccak256(serialized)
+  if (journal) await journal({ txHash: hash, nonce, from: account.address })
+  try {
+    await pub.sendRawTransaction({ serializedTransaction: serialized })
+  } catch (err) {
+    logger.warn({ err, txHash: hash, chain: viemChain.name }, 'Delivery broadcast returned an error — outcome unknown, hash journaled for verification')
+  }
+  return hash
+}
+
 // EVM ERC-20 transfer — same hot-wallet lock + nonce-reuse + gas-bump retry as the
 // native EVM path, so concurrent sends from the shared hot wallet can't collide.
 async function deliverEvmTokenTransfer(
@@ -83,37 +131,19 @@ async function deliverEvmTokenTransfer(
   chainKey: string,
   contract: `0x${string}`,
   decimals: number,
+  journal?: DeliveryJournal,
 ): Promise<string> {
   const account = privateKeyToAccount(privateKey as `0x${string}`)
-  const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
   const amount = parseUnits(order.gasAmountNative.toString(), decimals)
+  const data = encodeFunctionData({ abi: ERC20_TRANSFER_ABI, functionName: 'transfer', args: [order.toAddress as `0x${string}`, amount] })
 
   return withHotWalletLock(chainKey, async () => {
     const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
-    const MAX_ATTEMPTS = 3
-    let lastErr: unknown
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
-        return await client.writeContract({
-          account,
-          address: contract,
-          abi: ERC20_TRANSFER_ABI,
-          functionName: 'transfer',
-          args: [order.toAddress as `0x${string}`, amount],
-          nonce,
-          ...gasBump,
-        })
-      } catch (err) {
-        lastErr = err
-        if (attempt < MAX_ATTEMPTS) await new Promise((r) => setTimeout(r, 2000 * attempt))
-      }
-    }
-    throw lastErr
+    return signJournalBroadcast({ viemChain, rpcUrl, account, tx: { to: contract, data }, nonce, ...(journal ? { journal } : {}) })
   })
 }
 
-async function deliverEvmToken(order: GasFeeOrder, contract: string, decimals: number, hdIndex: number): Promise<string> {
+async function deliverEvmToken(order: GasFeeOrder, contract: string, decimals: number, hdIndex: number, journal?: DeliveryJournal): Promise<string> {
   const m = EVM_TOKEN_CHAINS[order.chain]
   if (!m) throw new Error(`deliverEvmToken: unsupported EVM chain ${order.chain}`)
   const seed = decryptGasSeed()
@@ -122,7 +152,7 @@ async function deliverEvmToken(order: GasFeeOrder, contract: string, decimals: n
     // Resolve a working endpoint (primary -> operator extras -> public fallbacks) so a dead
     // primary can't strand a paid token-gas order.
     const rpc = await getWorkingRpcUrl(order.chain === 'ETH' ? 'ETHEREUM' : (order.chain as GasChainId), m.rpc)
-    return await deliverEvmTokenTransfer(order, m.chain, rpc, privateKey, order.chain, contract as `0x${string}`, decimals)
+    return await deliverEvmTokenTransfer(order, m.chain, rpc, privateKey, order.chain, contract as `0x${string}`, decimals, journal)
   } finally {
     seed.fill(0)
   }
@@ -242,7 +272,7 @@ async function deliverAptosNative(order: GasFeeOrder): Promise<string> {
  * in one call: the decimals are authoritative (a failed read aborts delivery rather
  * than risk wrong-decimals), and the balance gates against an under-funded wallet.
  */
-async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: number): Promise<string> {
+async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: number, journal?: DeliveryJournal): Promise<string> {
   let owner: string | null
   if (order.chain === 'APT') {
     const { getAptosHotWalletAddress } = await import('./aptosWalletService')
@@ -263,9 +293,9 @@ async function deliverToken(order: GasFeeOrder, contract: string, hdIndex: numbe
 
   if (order.chain === 'TRON') return deliverTronToken(order, contract, decimals, hdIndex)
   if (order.chain === 'APT')  return deliverAptosToken(order, contract, decimals)
-  if (order.chain === 'SOL')  return deliverSolToken(order, contract, decimals)
+  if (order.chain === 'SOL')  return deliverSolToken(order, contract, decimals, journal)
   if (order.chain === 'SUI')  return deliverSuiToken(order, contract, decimals)
-  return deliverEvmToken(order, contract, decimals, hdIndex)
+  return deliverEvmToken(order, contract, decimals, hdIndex, journal)
 }
 
 /**
@@ -351,98 +381,102 @@ async function deliverTron(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Prom
 
 // ── EVM delivery (shared pattern) ─────────────────────────────────────────────
 
-// Retry EVM tx up to 3 times with a 20% gas price bump on each attempt.
-// Handles transient RPC errors and mempool congestion without blocking indefinitely.
+// Native EVM send. The nonce is read once inside the per-chain hot-wallet lock (see
+// lib/hotWalletLock.ts), the signed tx is journaled, then broadcast exactly once.
 async function deliverEvm(
   order: GasFeeOrder,
   viemChain: Chain,
   rpcUrl: string,
   privateKey: string,
   chainKey: string,
+  journal?: DeliveryJournal,
 ): Promise<string> {
   const account = privateKeyToAccount(privateKey as `0x${string}`)
-  const client = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
-
-  // Serialize per-chain against the withdrawal sender and other deliveries so
-  // concurrent broadcasts from the shared hot wallet can't collide on a nonce
-  // (see lib/hotWalletLock.ts). The nonce is fetched once inside the lock and
-  // REUSED across retries, so a gas-bumped retry replaces the stuck tx rather
-  // than queueing a second, higher-nonce send.
   return withHotWalletLock(chainKey, async () => {
     const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
-
-    const MAX_ATTEMPTS = 3
-    let lastErr: unknown
-    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-      try {
-        // On retries bump maxFeePerGas by 20% per attempt to escape a stuck mempool slot.
-        const gasBump = attempt > 1 ? { maxFeePerGas: parseGwei(String(10 * 1.2 ** (attempt - 1))) } : {}
-        const hash = await client.sendTransaction({
-          account,
-          to: order.toAddress as `0x${string}`,
-          value: parseEther(order.gasAmountNative.toString()),
-          nonce,
-          ...gasBump,
-        })
-        return hash
-      } catch (err) {
-        lastErr = err
-        if (attempt < MAX_ATTEMPTS) {
-          await new Promise((r) => setTimeout(r, 2000 * attempt))
-        }
-      }
-    }
-    throw lastErr
+    return signJournalBroadcast({
+      viemChain, rpcUrl, account, nonce,
+      tx: { to: order.toAddress as `0x${string}`, value: parseEther(order.gasAmountNative.toString()) },
+      ...(journal ? { journal } : {}),
+    })
   })
 }
 
 // ── L2 + alt-EVM delivery ─────────────────────────────────────────────────────
 
-async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: string, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+async function deliverEvmMnemonic(order: GasFeeOrder, viemChain: Chain, rpcUrl: string, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
   const seed = decryptGasSeed()
   try {
     const privateKey = deriveEvmPrivateKeyHex(seed, hdIndex)
-    return await deliverEvm(order, viemChain, rpcUrl, privateKey, order.chain)
+    return await deliverEvm(order, viemChain, rpcUrl, privateKey, order.chain, journal)
   } finally {
     seed.fill(0)
   }
 }
 
-async function deliverBsc(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, bsc, await getWorkingRpcUrl('BSC', env.BSC_RPC_URL), hdIndex)
+async function deliverBsc(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, bsc, await getWorkingRpcUrl('BSC', env.BSC_RPC_URL), hdIndex, journal)
 }
 
-async function deliverOpBnb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, opBNB, await getWorkingRpcUrl('OPBNB', env.OPBNB_RPC_URL), hdIndex)
+async function deliverOpBnb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, opBNB, await getWorkingRpcUrl('OPBNB', env.OPBNB_RPC_URL), hdIndex, journal)
 }
 
-async function deliverEth(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, mainnet, await getWorkingRpcUrl('ETHEREUM', env.ETHEREUM_RPC_URL), hdIndex)
+async function deliverEth(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, mainnet, await getWorkingRpcUrl('ETHEREUM', env.ETHEREUM_RPC_URL), hdIndex, journal)
 }
 
-async function deliverBase(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, base, await getWorkingRpcUrl('BASE', env.BASE_RPC_URL), hdIndex)
+async function deliverBase(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, base, await getWorkingRpcUrl('BASE', env.BASE_RPC_URL), hdIndex, journal)
 }
 
-async function deliverArb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, arbitrum, await getWorkingRpcUrl('ARB', env.ARBITRUM_RPC_URL), hdIndex)
+async function deliverArb(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, arbitrum, await getWorkingRpcUrl('ARB', env.ARBITRUM_RPC_URL), hdIndex, journal)
 }
 
-async function deliverOp(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, optimism, await getWorkingRpcUrl('OP', env.OPTIMISM_RPC_URL), hdIndex)
+async function deliverOp(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, optimism, await getWorkingRpcUrl('OP', env.OPTIMISM_RPC_URL), hdIndex, journal)
 }
 
-async function deliverMatic(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, polygon, await getWorkingRpcUrl('MATIC', env.POLYGON_RPC_URL), hdIndex)
+async function deliverMatic(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, polygon, await getWorkingRpcUrl('MATIC', env.POLYGON_RPC_URL), hdIndex, journal)
 }
 
-async function deliverAvax(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
-  return deliverEvmMnemonic(order, avalanche, await getWorkingRpcUrl('AVAX', env.AVALANCHE_RPC_URL), hdIndex)
+async function deliverAvax(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
+  return deliverEvmMnemonic(order, avalanche, await getWorkingRpcUrl('AVAX', env.AVALANCHE_RPC_URL), hdIndex, journal)
 }
 
 // ── Solana delivery ───────────────────────────────────────────────────────────
 
-async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Promise<string> {
+const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
+function base58(bytes: Uint8Array): string {
+  let n = 0n
+  for (const b of bytes) n = n * 256n + BigInt(b)
+  let out = ''
+  while (n > 0n) { out = B58[Number(n % 58n)]! + out; n /= 58n }
+  for (const b of bytes) { if (b === 0) out = '1' + out; else break }
+  return out
+}
+
+// The signature is fixed once the tx is signed, so it is journaled BEFORE broadcast.
+// The broadcast happens once; an ambiguous error still returns the journaled signature.
+async function journalAndSendSolana(
+  connection: { sendRawTransaction: (raw: Buffer | Uint8Array, opts?: { skipPreflight?: boolean; preflightCommitment?: 'confirmed' }) => Promise<string> },
+  tx: { signature: Buffer | null; serialize: () => Buffer },
+  journal?: DeliveryJournal,
+): Promise<string> {
+  if (!tx.signature) throw new Error('Solana delivery: transaction has no signature')
+  const signature = base58(tx.signature)
+  if (journal) await journal({ txHash: signature })
+  try {
+    await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false, preflightCommitment: 'confirmed' })
+  } catch (err) {
+    logger.warn({ err, txHash: signature }, 'Solana delivery broadcast returned an error — outcome unknown, signature journaled for verification')
+  }
+  return signature
+}
+
+async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
   const { Connection, Keypair, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } =
     await import('@solana/web3.js')
 
@@ -467,11 +501,7 @@ async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
     }))
 
     tx.sign(keypair)
-    const signature = await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed',
-    })
-    return signature
+    return await journalAndSendSolana(connection, tx, journal)
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
@@ -482,7 +512,7 @@ async function deliverSol(order: GasFeeOrder, _hdIndex = HOT_WALLET_INDEX): Prom
 // account holding the largest balance for the mint (funding via a plain wallet
 // transfer lands in the ATA, but don't assume) and creates the recipient's
 // associated token account when missing — the hot wallet pays the ~0.002 SOL rent.
-async function deliverSolToken(order: GasFeeOrder, mintAddress: string, decimals: number): Promise<string> {
+async function deliverSolToken(order: GasFeeOrder, mintAddress: string, decimals: number, journal?: DeliveryJournal): Promise<string> {
   const { Connection, Keypair, PublicKey, Transaction } = await import('@solana/web3.js')
   const {
     TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID,
@@ -532,10 +562,7 @@ async function deliverSolToken(order: GasFeeOrder, mintAddress: string, decimals
       .add(createTransferCheckedInstruction(source, mint, destAta, keypair.publicKey, amount, decimals, [], programId))
 
     tx.sign(keypair)
-    return await connection.sendRawTransaction(tx.serialize(), {
-      skipPreflight: false,
-      preflightCommitment: 'confirmed',
-    })
+    return await journalAndSendSolana(connection, tx, journal)
   } finally {
     seed.fill(0)
     if (privateKeySeed) privateKeySeed.fill(0)
@@ -854,7 +881,7 @@ export type { NormalizedDeliveryError } from './gas.deliveryError'
 
 // ── Public dispatch ───────────────────────────────────────────────────────────
 
-export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX): Promise<string> {
+export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX, journal?: DeliveryJournal): Promise<string> {
   // Non-native token order? Route to the token-delivery path. The deliveryLive
   // re-check here is belt-and-suspenders: even if an order was created while a
   // token was live, a subsequent take-offline blocks delivery.
@@ -870,7 +897,7 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
       if (!tokenCfg.contractAddress) throw new Error(`deliverGas: token ${tokenCfg.symbol} has no contract address`)
       if (!tokenDeliverySupported(order.chain)) throw new Error(`deliverGas: token delivery not supported on ${order.chain}`)
       if (!tokenCfg.deliveryLive) throw new Error(`deliverGas: token delivery is not live for ${tokenCfg.symbol}`)
-      return deliverToken(order, tokenCfg.contractAddress, hdIndex)
+      return deliverToken(order, tokenCfg.contractAddress, hdIndex, journal)
     }
   }
 
@@ -879,15 +906,15 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX)
 
   switch (order.chain) {
     case 'TRON':  return deliverTron(order, hdIndex)
-    case 'BSC':   return deliverBsc(order, hdIndex)
-    case 'OPBNB': return deliverOpBnb(order, hdIndex)
-    case 'ETH':   return deliverEth(order, hdIndex)
-    case 'BASE':  return deliverBase(order, hdIndex)
-    case 'ARB':   return deliverArb(order, hdIndex)
-    case 'OP':    return deliverOp(order, hdIndex)
-    case 'MATIC': return deliverMatic(order, hdIndex)
-    case 'AVAX':  return deliverAvax(order, hdIndex)
-    case 'SOL':   return deliverSol(order, hdIndex)
+    case 'BSC':   return deliverBsc(order, hdIndex, journal)
+    case 'OPBNB': return deliverOpBnb(order, hdIndex, journal)
+    case 'ETH':   return deliverEth(order, hdIndex, journal)
+    case 'BASE':  return deliverBase(order, hdIndex, journal)
+    case 'ARB':   return deliverArb(order, hdIndex, journal)
+    case 'OP':    return deliverOp(order, hdIndex, journal)
+    case 'MATIC': return deliverMatic(order, hdIndex, journal)
+    case 'AVAX':  return deliverAvax(order, hdIndex, journal)
+    case 'SOL':   return deliverSol(order, hdIndex, journal)
     case 'TON':   return deliverTon(order, hdIndex)
     case 'SUI':   return deliverSui(order, hdIndex)
     case 'APT':   return deliverAptosNative(order)

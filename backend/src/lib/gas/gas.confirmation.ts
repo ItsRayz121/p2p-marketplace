@@ -1,9 +1,9 @@
-import { createPublicClient, http } from 'viem'
+import { createPublicClient, http, TransactionNotFoundError, TransactionReceiptNotFoundError } from 'viem'
 import { arbitrum, avalanche, base, bsc, mainnet, opBNB, optimism, polygon } from 'viem/chains'
 import type { Chain } from 'viem'
 import { env } from '../env'
 import type { GasChainId } from './gas.chains'
-import { getWorkingRpcUrl } from './rpcFallback'
+import { getWorkingRpcUrl, getRpcUrlsInOrder, markRpcFailure } from './rpcFallback'
 import { logger } from '../logger'
 
 // ── Required confirmations per chain ─────────────────────────────────────────
@@ -47,7 +47,9 @@ async function checkEvmTxConfirmed(
   const rpcUrl = await getWorkingRpcUrl(chain, primaryRpcUrl)
   const client = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
 
-  const receipt = await client.getTransactionReceipt({ hash: txHash as `0x${string}` })
+  const receipt = await client
+    .getTransactionReceipt({ hash: txHash as `0x${string}` })
+    .catch((e) => { if (e instanceof TransactionReceiptNotFoundError) return null; throw e })
   if (!receipt || receipt.status !== 'success') return false
 
   const block = await client.getBlockNumber()
@@ -132,6 +134,203 @@ async function checkAptosTxConfirmed(txHash: string): Promise<boolean> {
 function checkTonTxConfirmed(_txHash: string): Promise<boolean> {
   logger.debug({ chain: 'TON' }, 'TON delivery confirmed (instant finality — no hash lookup needed)')
   return Promise.resolve(true)
+}
+
+// ── Live transaction status (inclusion, not finality) ─────────────────────────
+// Used to GATE order completion: a broadcast hash returned by an RPC proves nothing
+// (the node may have dropped it, or never propagated it). `getTxStatus` asks the chain
+// whether the tx is actually mined.
+//   success   — mined and executed successfully
+//   reverted  — mined but failed on-chain (funds did NOT move)
+//   mempool   — known to a node but not mined yet
+//   not_found — no node has ever seen it (dropped / never propagated / wrong hash)
+
+export type TxState = 'success' | 'reverted' | 'mempool' | 'not_found'
+
+export interface TxStatus {
+  state: TxState
+  /** EVM only: blocks since inclusion, and the count we require before "confirmed". */
+  confirmations?: number
+  required?: number
+  blockNumber?: number
+}
+
+const EVM_VIEM: Record<string, { id: GasChainId; chain: Chain; rpc: string }> = {
+  BSC:      { id: 'BSC',      chain: bsc,       rpc: env.BSC_RPC_URL },
+  OPBNB:    { id: 'OPBNB',    chain: opBNB,     rpc: env.OPBNB_RPC_URL },
+  ETH:      { id: 'ETHEREUM', chain: mainnet,   rpc: env.ETHEREUM_RPC_URL },
+  ETHEREUM: { id: 'ETHEREUM', chain: mainnet,   rpc: env.ETHEREUM_RPC_URL },
+  BASE:     { id: 'BASE',     chain: base,      rpc: env.BASE_RPC_URL },
+  ARB:      { id: 'ARB',      chain: arbitrum,  rpc: env.ARBITRUM_RPC_URL },
+  OP:       { id: 'OP',       chain: optimism,  rpc: env.OPTIMISM_RPC_URL },
+  MATIC:    { id: 'MATIC',    chain: polygon,   rpc: env.POLYGON_RPC_URL },
+  AVAX:     { id: 'AVAX',     chain: avalanche, rpc: env.AVALANCHE_RPC_URL },
+}
+
+/** True for chains whose txs can be looked up on an EVM JSON-RPC node. */
+export function isEvmGasChain(chain: string): boolean {
+  return chain in EVM_VIEM
+}
+
+/** A reachable RPC url + label for an EVM gas chain (used for sender-nonce proofs). */
+export async function evmRpcFor(chain: string): Promise<{ url: string; key: string } | null> {
+  const meta = EVM_VIEM[chain]
+  if (!meta) return null
+  return { url: await getWorkingRpcUrl(meta.id, meta.rpc), key: meta.id }
+}
+
+async function getEvmTxStatus(chain: string, txHash: string): Promise<TxStatus> {
+  const meta = EVM_VIEM[chain]!
+  const required = REQUIRED_CONFIRMATIONS[meta.id] ?? 3
+  // Ask several independent endpoints before concluding "not found": a single lagging
+  // or load-balanced node routinely answers null for a tx another node already has.
+  const urls = getRpcUrlsInOrder(meta.id, meta.rpc).slice(0, 4)
+  let reachable = 0
+  let seenInMempool = false
+  for (const url of urls) {
+    const client = createPublicClient({ chain: meta.chain, transport: http(url, { timeout: 8_000, retryCount: 0 }) })
+    try {
+      const receipt = await client
+        .getTransactionReceipt({ hash: txHash as `0x${string}` })
+        .catch((e) => { if (e instanceof TransactionReceiptNotFoundError) return null; throw e })
+      reachable++
+      if (receipt) {
+        const head = await client.getBlockNumber()
+        const confirmations = Math.max(0, Number(head) - Number(receipt.blockNumber))
+        return {
+          state: receipt.status === 'success' ? 'success' : 'reverted',
+          confirmations,
+          required,
+          blockNumber: Number(receipt.blockNumber),
+        }
+      }
+      const tx = await client
+        .getTransaction({ hash: txHash as `0x${string}` })
+        .catch((e) => { if (e instanceof TransactionNotFoundError) return null; throw e })
+      if (tx) seenInMempool = true
+    } catch {
+      markRpcFailure(url)
+    }
+  }
+  if (reachable === 0) throw new Error(`All ${meta.id} RPC endpoints unreachable while checking ${txHash}`)
+  return { state: seenInMempool ? 'mempool' : 'not_found', required }
+}
+
+async function getTronTxStatus(txHash: string): Promise<TxStatus> {
+  const url = `${env.TRON_FULLNODE_URL}/v1/transactions/${encodeURIComponent(txHash)}`
+  const headers: Record<string, string> = {}
+  if (env.TRONGRID_API_KEY) headers['TRON-PRO-API-KEY'] = env.TRONGRID_API_KEY
+  const res = await fetch(url, { headers, signal: AbortSignal.timeout(10_000) })
+  if (!res.ok) throw new Error(`TronGrid API error: HTTP ${res.status}`)
+  const data = (await res.json()) as { data?: Array<{ ret?: Array<{ contractRet?: string }> }> }
+  const ret = data.data?.[0]?.ret?.[0]?.contractRet
+  if (!ret) return { state: 'not_found' }
+  return { state: ret === 'SUCCESS' ? 'success' : 'reverted' }
+}
+
+async function getSolanaTxStatus(txHash: string): Promise<TxStatus> {
+  const res = await fetch(env.SOL_RPC_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getSignatureStatuses', params: [[txHash], { searchTransactionHistory: true }] }),
+    signal: AbortSignal.timeout(10_000),
+  })
+  if (!res.ok) throw new Error(`Solana RPC getSignatureStatuses HTTP ${res.status}`)
+  const data = (await res.json()) as {
+    result?: { value?: Array<{ confirmationStatus?: string; err?: unknown } | null> }
+    error?: { message: string }
+  }
+  if (data.error) throw new Error(`Solana RPC error: ${data.error.message}`)
+  const status = data.result?.value?.[0]
+  if (!status) return { state: 'not_found' }
+  if (status.err) return { state: 'reverted' }
+  return { state: status.confirmationStatus === 'processed' ? 'mempool' : 'success' }
+}
+
+async function getSuiTxStatus(txHash: string): Promise<TxStatus> {
+  const { suiRpcCall, SuiRpcBenignError } = await import('./suiWalletService')
+  try {
+    const result = await suiRpcCall<{ effects?: { status?: { status?: string } } }>(
+      'sui_getTransactionBlock',
+      [txHash, { showEffects: true }],
+      { benignErrorCodes: [-32000] },
+    )
+    const st = result?.effects?.status?.status
+    if (!st) return { state: 'not_found' }
+    return { state: st === 'success' ? 'success' : 'reverted' }
+  } catch (err) {
+    if (err instanceof SuiRpcBenignError) return { state: 'not_found' }
+    throw err
+  }
+}
+
+async function getAptosTxStatus(txHash: string): Promise<TxStatus> {
+  const baseUrl = env.APTOS_FULLNODE_URL.replace(/\/$/, '')
+  const headers: Record<string, string> = { accept: 'application/json' }
+  if (env.APTOS_API_KEY) headers['authorization'] = `Bearer ${env.APTOS_API_KEY}`
+  const res = await fetch(`${baseUrl}/transactions/by_hash/${encodeURIComponent(txHash)}`, { headers, signal: AbortSignal.timeout(10_000) })
+  if (res.status === 404) return { state: 'not_found' }
+  if (!res.ok) throw new Error(`Aptos fullnode error: HTTP ${res.status}`)
+  const data = (await res.json()) as { type?: string; success?: boolean }
+  if (data.type === 'pending_transaction') return { state: 'mempool' }
+  return { state: data.success === true ? 'success' : 'reverted' }
+}
+
+export async function getTxStatus(chain: GasChainId | string, txHash: string): Promise<TxStatus> {
+  if (chain in EVM_VIEM) return getEvmTxStatus(chain, txHash)
+  switch (chain) {
+    case 'TRON': return getTronTxStatus(txHash)
+    case 'APT':
+    case 'APTOS': return getAptosTxStatus(txHash)
+    case 'SOL': return getSolanaTxStatus(txHash)
+    case 'SUI': return getSuiTxStatus(txHash)
+    // The TON hash we store is the external-message hash, not an explorer tx hash, so it
+    // cannot be looked up; TON has instant finality and the send itself is awaited.
+    case 'TON': return { state: 'success' }
+    default: throw new Error(`getTxStatus: unsupported chain ${chain}`)
+  }
+}
+
+/**
+ * EVM native-transfer facts for a mined tx (recipient + value in wei), used to check that
+ * an admin-supplied manual-delivery hash really paid the customer. Null if not found.
+ */
+export async function getEvmNativeTransfer(chain: string, txHash: string): Promise<{ to: string | null; valueWei: bigint } | null> {
+  const meta = EVM_VIEM[chain]
+  if (!meta) return null
+  for (const url of getRpcUrlsInOrder(meta.id, meta.rpc).slice(0, 4)) {
+    const client = createPublicClient({ chain: meta.chain, transport: http(url, { timeout: 8_000, retryCount: 0 }) })
+    try {
+      const tx = await client.getTransaction({ hash: txHash as `0x${string}` })
+      return { to: tx.to ?? null, valueWei: tx.value }
+    } catch (e) {
+      if (!(e instanceof TransactionNotFoundError)) markRpcFailure(url)
+    }
+  }
+  return null
+}
+
+/**
+ * Poll until the tx is decided (success / reverted) or `timeoutMs` elapses, returning
+ * the last observed status. Transient RPC errors count as "not seen yet".
+ */
+export async function awaitTxInclusion(
+  chain: GasChainId | string,
+  txHash: string,
+  opts: { timeoutMs: number; intervalMs: number },
+): Promise<TxStatus> {
+  const deadline = Date.now() + opts.timeoutMs
+  let last: TxStatus = { state: 'not_found' }
+  for (;;) {
+    try {
+      last = await getTxStatus(chain, txHash)
+      if (last.state === 'success' || last.state === 'reverted') return last
+    } catch (err) {
+      logger.warn({ err, chain, txHash }, 'awaitTxInclusion: status lookup failed — will retry')
+    }
+    if (Date.now() + opts.intervalMs >= deadline) return last
+    await new Promise((r) => setTimeout(r, opts.intervalMs))
+  }
 }
 
 // ── Public dispatch ───────────────────────────────────────────────────────────

@@ -240,9 +240,24 @@ async function detectStuckSending(chain?: GasChain) {
       updatedAt: { lt: cutoff },
       ...(chain ? { chain } : {}),
     },
-    select: { id: true, orderRef: true, chain: true, updatedAt: true },
+    select: { id: true, orderRef: true, chain: true, updatedAt: true, unconfirmedDeliveryTxHash: true },
     take: 50,
   })
+
+  // Self-heal: a broadcast parked in `sending` whose verifier job was lost (worker crash
+  // between broadcast and settle) is handed back to the verifier. It is older than the
+  // give-up window, so it resolves straight to confirmed (late landing) or failed.
+  const { queues } = await import('../../queues/definitions')
+  for (const o of stuck) {
+    if (!o.unconfirmedDeliveryTxHash) continue
+    await queues.gasFee
+      .add(
+        'verify-delivery',
+        { orderId: o.id, txHash: o.unconfirmedDeliveryTxHash, startedAt: o.updatedAt.getTime() },
+        { jobId: `gas-verify-recover-${o.id}-${Math.floor(Date.now() / 3_600_000)}`, attempts: 1 },
+      )
+      .catch((err) => logger.warn({ err, orderId: o.id }, 'Reconciliation: could not re-enqueue delivery verification'))
+  }
 
   return stuck.map((o) => ({
     orderId: o.id,

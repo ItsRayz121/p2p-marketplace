@@ -1940,6 +1940,15 @@ model GasFeeOrder {
   fromHotWallet       String?
   deliveryTxHash      String?
   deliveryConfirmed   Boolean           @default(false)
+  // Hash of a broadcast delivery tx that has NOT been seen mined yet (or never was).
+  // deliveryTxHash is only set once the chain confirms inclusion; until then the order
+  // stays 'sending'. Kept after a failed/unconfirmed broadcast so a retry can first rule
+  // out a late-landing tx instead of double-sending. Cleared when delivery finalizes.
+  unconfirmedDeliveryTxHash String?
+  // Journal written BEFORE the delivery tx is broadcast: the sender nonce (EVM) and the
+  // time of the attempt. Used to PROVE an earlier attempt can never land before any resend.
+  deliveryNonce       Int?
+  deliveryAttemptAt   DateTime?
   // null = automated hot-wallet delivery; 'manual' = an admin sent the gas from an
   // external wallet and recorded its tx hash (nothing was sent by the platform).
   deliveryMode        String?

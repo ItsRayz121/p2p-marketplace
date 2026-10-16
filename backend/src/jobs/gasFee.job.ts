@@ -1,6 +1,9 @@
 import type { Job } from 'bullmq'
 import { db } from '../lib/prisma'
 import { deliverGas, describeDeliveryError } from '../lib/gas/gas.delivery'
+import type { DeliveryJournal } from '../lib/gas/gas.delivery'
+import { assessPriorAttempt } from '../lib/gas/gas.attemptSafety'
+import { supportsAttemptJournal } from '../lib/gas/gas.attemptRules'
 import { logger } from '../lib/logger'
 import { queues } from '../queues/definitions'
 import { notifyMerchantWebhook } from '../lib/gas/gas.merchant'
@@ -15,6 +18,8 @@ import { markShareRewardUsed } from '../lib/gas/gas.share'
 import { awardGasPointsForDelivery } from '../services/airdrop.service'
 import { REFUND_WINDOW_MS, AUTO_REFUND_SAFETY_MS, RETRY_INTERVAL_MS } from '../lib/gas/gas.refundWindow'
 import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
+import { awaitTxInclusion, getTxStatus } from '../lib/gas/gas.confirmation'
+import type { TxStatus } from '../lib/gas/gas.confirmation'
 import type { GasFeeOrder } from '@prisma/client'
 
 type HotWallet = Awaited<ReturnType<typeof selectHotWallet>> | null
@@ -35,6 +40,7 @@ async function finalizeDeliverySuccess(
     data: {
       status: 'delivered',
       deliveryTxHash,
+      unconfirmedDeliveryTxHash: null,
       deliveryConfirmed: false,
       deliveredAt: new Date(),
       // Clear the refund window — delivery beat the clock.
@@ -96,6 +102,166 @@ async function finalizeDeliverySuccess(
   })
 }
 
+// ── On-chain gating ──────────────────────────────────────────────────────────
+// A tx hash returned by an RPC node only proves the node ACCEPTED the broadcast, not
+// that the chain mined it (nodes drop txs, or accept without propagating). So an order
+// is only marked `delivered` — and the ledger / referral / airdrop / merchant-webhook
+// side-effects only fire — once the chain confirms inclusion. Until then the order stays
+// `sending` with the hash parked in unconfirmedDeliveryTxHash.
+const INCLUSION_WAIT_MS = 90_000          // initial in-job wait for the tx to be mined
+const INCLUSION_POLL_MS = 6_000
+const VERIFY_INTERVAL_MS = 30_000         // follow-up polling cadence
+const VERIFY_DROPPED_AFTER_MS = 5 * 60_000   // no node has ever seen the tx → dropped
+const VERIFY_GIVE_UP_MS = 20 * 60_000        // seen in a mempool but never mined
+
+type BroadcastVerdict = 'confirmed' | 'failed' | 'wait'
+
+/** Pure decision: what to do with a broadcast tx given its live status and age. */
+export function decideBroadcastVerdict(status: TxStatus, ageMs: number): BroadcastVerdict {
+  if (status.state === 'success') return 'confirmed'
+  if (status.state === 'reverted') return 'failed'
+  if (status.state === 'not_found' && ageMs >= VERIFY_DROPPED_AFTER_MS) return 'failed'
+  if (ageMs >= VERIFY_GIVE_UP_MS) return 'failed'
+  return 'wait'
+}
+
+function describeUnconfirmed(txHash: string, status: TxStatus): string {
+  const why = status.state === 'reverted'
+    ? 'was mined but REVERTED on-chain (no gas was delivered)'
+    : status.state === 'mempool'
+      ? 'was seen by a node but never mined — it may STILL land'
+      : 'was not seen on-chain — it may be dropped, but that is NOT proven and it may still land'
+  return `delivery_unconfirmed: broadcast tx ${txHash} ${why}. Do NOT resend or refund until it is verified (admin: use "Verify on-chain"); Retry is only allowed once the attempt is proven unable to land.`
+}
+
+/** Thrown when an earlier attempt exists that cannot be proven dead — automation must stop. */
+class ManualReviewRequired extends Error {
+  constructor(message: string) { super(message); this.name = 'ManualReviewRequired' }
+}
+
+/**
+ * STRICT no-double-delivery policy. Automation sends gas for an order at most ONCE: as soon as
+ * an attempt has been journaled/broadcast, any further send is a human decision (admin Retry
+ * is itself gated on the earlier attempt being proven dead). A late-landed attempt is ADOPTED.
+ */
+async function sendOrAdopt(orderId: string, order: GasFeeOrder): Promise<{ txHash: string; hotWallet: HotWallet }> {
+  const prior = await assessPriorAttempt(order)
+  if (prior.verdict === 'landed' && prior.txHash) return { txHash: prior.txHash, hotWallet: null }
+  if (prior.verdict !== 'none') {
+    throw new ManualReviewRequired(`An earlier delivery attempt exists for this order — automatic resend is disabled. ${prior.detail}`)
+  }
+  const { hotWallet, hdIndex } = await pickHotWallet(orderId, order)
+  // Written BEFORE the tx leaves the process: from here on the order may already be paid.
+  const journal: DeliveryJournal = async (a) => {
+    await db.gasFeeOrder.update({
+      where: { id: orderId },
+      data: {
+        unconfirmedDeliveryTxHash: a.txHash,
+        deliveryNonce: a.nonce ?? null,
+        deliveryAttemptAt: new Date(),
+        ...(a.from ? { fromHotWallet: a.from } : {}),
+      },
+    })
+  }
+  const txHash = await deliverGas(order, hdIndex, journal)
+  return { txHash, hotWallet }
+}
+
+/**
+ * Stop automation and surface the order as FAILED for a human decision. Never refunds and
+ * never retries by itself: the earlier attempt may still land.
+ */
+async function markNeedsManual(orderId: string, order: GasFeeOrder, reason: string): Promise<void> {
+  const moved = await db.gasFeeOrder.updateMany({
+    where: { id: orderId, status: 'sending' },
+    data: { status: 'failed', failureReason: reason.slice(0, 480), retryCount: { increment: 1 } },
+  })
+  if (moved.count === 0) return
+  try { await queues.gasFee.remove(`gas-auto-refund-${orderId}`) } catch { /* non-fatal */ }
+  logger.error({ orderId, chain: order.chain }, `Gas delivery needs manual review: ${reason}`)
+  await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
+    source: 'worker', event: 'needs_manual_review', expectedChain: order.chain, detail: reason,
+  })
+  await notifyMerchantWebhook(orderId, 'failed')
+  void createAdminNotif({
+    category: 'GAS',
+    title: 'Gas Delivery Needs Manual Review — NOT auto-retried',
+    body: `Order Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative}\n\n${reason}\n\nNothing will be resent or refunded automatically (to rule out a double delivery). Open the order: Verify on-chain, then Retry (only when proven safe), Manual deliver, or Refund.`,
+    href: `/admin/gas/orders/${order.orderRef}`,
+    telegram: true,
+  })
+}
+
+async function failUnconfirmedBroadcast(orderId: string, order: GasFeeOrder, txHash: string, status: TxStatus): Promise<void> {
+  const msg = describeUnconfirmed(txHash, status)
+  logger.error({ orderId, txHash, chain: order.chain, state: status.state }, 'Gas delivery tx not confirmed on-chain — order NOT marked delivered')
+  await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
+    source: 'worker', event: 'delivery_unconfirmed', txHash, expectedChain: order.chain, reason: status.state, detail: msg,
+  })
+  await markNeedsManual(orderId, order, msg)
+}
+
+// Park the broadcast, wait briefly for inclusion, then either finalize, fail, or hand
+// over to the follow-up verifier. NEVER throws into the send/retry path (a throw there
+// would re-send gas that may already be on its way).
+async function settleBroadcast(orderId: string, order: GasFeeOrder, txHash: string, hotWallet: HotWallet): Promise<void> {
+  await db.gasFeeOrder.update({
+    where: { id: orderId },
+    data: {
+      unconfirmedDeliveryTxHash: txHash,
+      fromHotWallet: hotWallet?.address ?? order.fromHotWallet,
+    },
+  })
+  // Chains without a pre-broadcast journal get their attempt time here (never overwrite one).
+  await db.gasFeeOrder.updateMany({ where: { id: orderId, deliveryAttemptAt: null }, data: { deliveryAttemptAt: new Date() } })
+  await recordGasAudit({ orderId, ...(order.paymentTxHash ? { txHash: order.paymentTxHash } : {}) }, {
+    source: 'worker', event: 'delivery_broadcast', txHash, expectedChain: order.chain,
+    detail: 'Broadcast accepted by RPC — waiting for on-chain inclusion before marking delivered',
+  })
+
+  const status = await awaitTxInclusion(order.chain, txHash, { timeoutMs: INCLUSION_WAIT_MS, intervalMs: INCLUSION_POLL_MS })
+  const verdict = decideBroadcastVerdict(status, INCLUSION_WAIT_MS)
+  if (verdict === 'confirmed') return finalizeDeliverySuccess(orderId, order, txHash, hotWallet)
+  if (status.state === 'reverted') return failUnconfirmedBroadcast(orderId, order, txHash, status)
+
+  // Not decided yet — keep the order in `sending` and keep checking in the background.
+  await queues.gasFee.add(
+    'verify-delivery',
+    { orderId, txHash, startedAt: Date.now() - INCLUSION_WAIT_MS },
+    { jobId: `gas-verify-${orderId}-${Date.now()}`, delay: VERIFY_INTERVAL_MS, attempts: 1 },
+  )
+}
+
+// Background follow-up for a broadcast that was not mined inside the initial wait.
+export async function processGasDeliveryVerify(job: Job<{ orderId: string; txHash: string; startedAt: number }>) {
+  const { orderId, txHash, startedAt } = job.data
+  const order = await db.gasFeeOrder.findUnique({ where: { id: orderId } })
+  // Stop if the order moved on (admin acted, already finalized) or a newer broadcast replaced this one.
+  if (!order || order.status !== 'sending' || order.unconfirmedDeliveryTxHash !== txHash) return
+
+  let status: TxStatus = { state: 'not_found' }
+  try {
+    status = await getTxStatus(order.chain, txHash)
+  } catch (err) {
+    logger.warn({ err, orderId, txHash }, 'Delivery verify: status lookup failed — will retry')
+  }
+
+  const ageMs = Date.now() - startedAt
+  const verdict = decideBroadcastVerdict(status, ageMs)
+  if (verdict === 'confirmed') {
+    const hotWallet = await selectHotWallet(order.chain).catch(() => null)
+    await finalizeDeliverySuccess(orderId, order, txHash, hotWallet && hotWallet.address === order.fromHotWallet ? hotWallet : null)
+    return
+  }
+  if (verdict === 'failed') return failUnconfirmedBroadcast(orderId, order, txHash, status)
+
+  await queues.gasFee.add(
+    'verify-delivery',
+    { orderId, txHash, startedAt },
+    { jobId: `gas-verify-${orderId}-${Date.now()}`, delay: VERIFY_INTERVAL_MS, attempts: 1 },
+  )
+}
+
 // Select the load-balanced hot wallet for the chain and stamp it on the order.
 async function pickHotWallet(orderId: string, order: GasFeeOrder): Promise<{ hotWallet: HotWallet; hdIndex: number }> {
   const hotWallet = await selectHotWallet(order.chain).catch(() => null)
@@ -144,10 +310,9 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     return
   }
 
+  let sent: { txHash: string; hotWallet: HotWallet } | null = null
   try {
-    const { hotWallet, hdIndex } = await pickHotWallet(orderId, order)
-    const deliveryTxHash = await deliverGas(order, hdIndex)
-    await finalizeDeliverySuccess(orderId, order, deliveryTxHash, hotWallet)
+    sent = await sendOrAdopt(orderId, order)
   } catch (err) {
     const attemptNumber = job.attemptsMade + 1
     const maxAttempts = job.opts.attempts ?? 3
@@ -157,6 +322,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
     // recommended action for the admin. We branch on the NORMALIZED code so
     // chain-specific phrasings (SUI/SOL empty-wallet errors that carry no .code)
     // are still recognised as insufficient balance.
+    if (err instanceof ManualReviewRequired) return markNeedsManual(orderId, order, err.message)
     const normalized = describeDeliveryError(order.chain, err)
     const errMsg = normalized.message
 
@@ -184,6 +350,12 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
       return
     }
 
+    // Chains with no pre-broadcast journal: an error may hide an already-accepted broadcast,
+    // so never auto-retry — a human decides (Verify on-chain → Retry / Manual deliver).
+    if (!supportsAttemptJournal(order.chain)) {
+      return markNeedsManual(orderId, order, `${errMsg} (${order.chain}: outcome of the send is not provable, so it is not retried automatically)`)
+    }
+
     if (attemptNumber >= maxAttempts) {
       await enterRefundWindow(orderId, order, errMsg, maxAttempts)
     } else {
@@ -199,6 +371,12 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
       throw err
     }
   }
+
+  // Past this point gas has been broadcast: never throw back into the retry path.
+  if (!sent) return
+  const txHash = sent.txHash
+  await settleBroadcast(orderId, order, txHash, sent.hotWallet).catch((e) =>
+    logger.error({ err: e, orderId, txHash }, 'settleBroadcast failed — order left in sending for the stuck-order detector'))
 }
 
 // ── Refund window ────────────────────────────────────────────────────────────
@@ -291,13 +469,16 @@ export async function processGasDeliveryRetry(job: Job<{ orderId: string }>) {
   const fresh = await db.gasFeeOrder.findUnique({ where: { id: orderId } })
   if (!fresh) return
 
+  let sent: { txHash: string; hotWallet: HotWallet } | null = null
   try {
-    const { hotWallet, hdIndex } = await pickHotWallet(orderId, fresh)
-    const deliveryTxHash = await deliverGas(fresh, hdIndex)
-    await finalizeDeliverySuccess(orderId, fresh, deliveryTxHash, hotWallet)
+    sent = await sendOrAdopt(orderId, fresh)
   } catch (err) {
+    if (err instanceof ManualReviewRequired) return markNeedsManual(orderId, fresh, err.message)
     const rawErrMsg = err instanceof Error ? err.message : String(err)
     const normalized = describeDeliveryError(fresh.chain, err)
+    if (!supportsAttemptJournal(fresh.chain) && normalized.code !== 'INSUFFICIENT_HOT_WALLET_BALANCE') {
+      return markNeedsManual(orderId, fresh, `${normalized.message} (${fresh.chain}: outcome not provable — not retried automatically)`)
+    }
     // Revert to the holding state — keep the original refundEligibleAt so the
     // user's countdown isn't reset by each retry.
     await db.gasFeeOrder.update({
@@ -309,7 +490,13 @@ export async function processGasDeliveryRetry(job: Job<{ orderId: string }>) {
       reason: normalized.code, detail: `retry during refund window: ${normalized.reason}. (raw: ${rawErrMsg.slice(0, 200)})`,
     })
     await scheduleDeliveryRetry(orderId)
+    return
   }
+
+  if (!sent) return
+  const txHash = sent.txHash
+  await settleBroadcast(orderId, fresh, txHash, sent.hotWallet).catch((e) =>
+    logger.error({ err: e, orderId, txHash }, 'settleBroadcast failed — order left in sending for the stuck-order detector'))
 }
 
 // Safety-net automatic refund. Fires AUTO_REFUND_SAFETY_MS after a delivery failure
