@@ -49,8 +49,8 @@ export function PortfolioHeadline({ data, names }: { data: PortfolioSummaryRespo
       )}
 
       <p className="text-xs text-text-muted">
-        Based on the transactions and prices you entered, in {cur}, as of {asOf}.
-        {data.fx.usdtPkr !== null && <> Current prices use today&apos;s RupChain rate of {formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry uses the rate recorded with it.</>}
+        Based on your transactions and prices (RupChain trades use the latest platform trade price), in {cur}, as of {asOf}.
+        {data.fx.usdtPkr !== null && <> Current prices use today&apos;s RupChain rate of {formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry uses the rate recorded with it, and imported RupChain trades without one use today&apos;s rate.</>}
         {' '}This is not verified ownership, an exit price, or tax advice. Method: FIFO.
       </p>
     </div>

@@ -138,7 +138,7 @@ export function TokenDetail(p: TokenDetailProps) {
       <button ref={p.backRef} type="button" onClick={p.onBack} className="text-sm font-medium text-primary hover:underline">← Back to portfolio</button>
 
       <div className="flex items-center gap-3">
-        <TokenMonogram name={asset.name} size="lg" />
+        <TokenMonogram name={asset.name} size="lg" logoUrl={asset.logoUrl} />
         <h2 id="tracked-portfolio-heading" className="text-base font-semibold text-text-primary break-words min-w-0">{asset.name}</h2>
       </div>
 

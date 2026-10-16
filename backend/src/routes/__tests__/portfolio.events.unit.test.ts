@@ -18,6 +18,8 @@ vi.mock('../../lib/prisma', () => ({
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
+// The only platform data the tracker reads is a token's latest settled trade price and logo (read-only); covered in portfolioMarks tests.
+vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], logosFor: async () => new Map() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
@@ -312,6 +314,13 @@ describe('currency and exchange rate', () => {
       expect(usdt.currency).toBe('USDT')
       expect(usdt.summary.positions[0].knownRemainingBasis).toBe('10') // 2800 / 280, not / 999
       expect(usdt.fx.usdtPkr).toBe('999')
+    })
+    it('shows an imported platform trade in USDT at the platform rate, but never does that for a typed-in entry', async () => {
+      m.cfg.mockResolvedValue('280')
+      m.evFindMany.mockResolvedValue([evRow({ id: 'c1', assetId: 'LINKED', fxRate: null, source: 'ctm' }), evRow({ id: 'x3', assetId: 'TYPED', fxRate: null })])
+      m.prFindMany.mockResolvedValue([])
+      const d = (await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary?currency=USDT', headers: U })).json().data
+      expect(d.fxUnavailableAssets).toEqual(['TYPED'])
     })
     it('lists tokens that cannot be shown in USDT because no rate was recorded', async () => {
       m.evFindMany.mockResolvedValue([evRow({ id: 'x2', assetId: 'OLD', fxRate: null })])

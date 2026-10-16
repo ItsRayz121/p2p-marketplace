@@ -54,19 +54,16 @@ async function openDialog() {
 }
 
 describe('availability', () => {
-  it('is offered in an account even with no tokens yet', async () => {
+  it('is not offered in the account tracker: platform trades import automatically, so no file upload is needed', async () => {
     render(<PortfolioPanel />)
-    expect(await screen.findByRole('button', { name: 'Import from a backup file' })).toBeInTheDocument()
-  })
-  it('is not offered where there is no account (the local tracker has no RupChain features)', async () => {
-    const { importCtm: _omit, ...local } = api
-    render(<PortfolioPanel api={local as never} />)
     await screen.findByText('No tracked tokens yet.')
     expect(screen.queryByRole('button', { name: 'Import from a backup file' })).toBeNull()
   })
 })
 
-describe('reviewing a backup', () => {
+// The backup-file dialog still exists (ImportBackupDialog) but is no longer wired into the account tracker,
+// so these flows cannot be reached through the panel. Kept for when it is turned back on.
+describe.skip('reviewing a backup', () => {
   it('lists each token with its entries and imports nothing until you press the button', async () => {
     const user = await openDialog()
     await user.upload(screen.getByLabelText('Choose a backup file (.json)'), file(buildBackup(backup())))
@@ -112,7 +109,7 @@ describe('reviewing a backup', () => {
   })
 })
 
-describe('importing', () => {
+describe.skip('importing', () => {
   it('creates each selected token as NEW and adds its entries with stable request ids, then refreshes', async () => {
     const user = await openDialog()
     await user.upload(screen.getByLabelText('Choose a backup file (.json)'), file(buildBackup(backup())))
@@ -171,7 +168,7 @@ describe('importing', () => {
   })
 })
 
-describe('duplicate review (nothing is merged silently)', () => {
+describe.skip('duplicate review (nothing is merged silently)', () => {
   it('a similar token name is only a hint; the default is still a new token', async () => {
     api.listAssets.mockResolvedValue([accountAsset])
     const user = await openDialog()
@@ -207,7 +204,7 @@ describe('duplicate review (nothing is merged silently)', () => {
   })
 })
 
-describe('partial failure', () => {
+describe.skip('partial failure', () => {
   it('reports what failed, and retrying does not create the token a second time', async () => {
     api.addEvent.mockRejectedValueOnce(new Error('Date cannot be in the future')).mockResolvedValue({})
     const data = backup({ assets: [backup().assets[0]!], events: [ev(), ev({ id: 'ev-2', occurredAt: '2026-03-02T10:00:00.000Z' })] })

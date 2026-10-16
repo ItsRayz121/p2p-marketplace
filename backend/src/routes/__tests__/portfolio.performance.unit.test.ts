@@ -6,11 +6,14 @@ const m = vi.hoisted(() => ({ evFindMany: vi.fn(), prFindMany: vi.fn(), cfg: vi.
 
 vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
+    portfolioAsset: { findMany: async () => [] },
     portfolioEvent: { findMany: m.evFindMany },
     portfolioPriceObservation: { findMany: m.prFindMany },
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
+// The only platform data the tracker reads is a token's latest settled trade price and logo (read-only); covered in portfolioMarks tests.
+vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], logosFor: async () => new Map() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {

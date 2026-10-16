@@ -239,7 +239,7 @@ export function PortfolioTab({
                         onClick={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
                         className="w-full text-left px-4 py-3 flex items-center gap-3 hover:bg-surface-hover"
                       >
-                        <TokenMonogram name={a.name} size="md" />
+                        <TokenMonogram name={a.name} size="md" logoUrl={a.logoUrl} />
                         <span className="min-w-0 flex-1">
                           <span className="block text-sm font-medium text-text-primary break-words">{a.name}{a.archivedAt && <span className="ml-2 text-xs font-normal text-text-muted">Archived</span>}</span>
                           {a.symbol && <span className="block text-xs text-text-muted break-words">{a.symbol}</span>}

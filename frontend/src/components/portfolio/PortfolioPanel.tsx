@@ -217,8 +217,6 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
       onUnarchive={unarchive}
       onDeleteAsset={deleteAsset}
       loadExport={() => apiRef.current.exportAll()}
-      backupImportApi={api.importCtm ? api : undefined}
-      onBackupImported={() => { void refreshAll() }}
       onSuggestListing={api.suggestListing ? suggest : undefined}
       onWithdrawListing={api.withdrawListingSuggestion ? withdrawSuggestion : undefined}
       importReport={importReport}

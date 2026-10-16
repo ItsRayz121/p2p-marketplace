@@ -10,6 +10,7 @@ import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
 import { runCtmImport } from '../services/portfolioImport.service'
+import { platformMarksFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
 
@@ -85,6 +86,7 @@ function assetDto<T extends { archivedAt: Date | null }>(a: T) {
 }
 
 type DbEvent = {
+  source?: string
   id: string; assetId: string; type: string; occurredAt: Date
   quantity: { toFixed(): string }; consideration: { toFixed(): string } | null
   fee: { toFixed(): string } | null; basis: { toFixed(): string } | null
@@ -92,7 +94,9 @@ type DbEvent = {
 }
 
 /** DB row -> plain strings for the pure calculation modules (rates validated, never trusted blindly). */
-function toSummaryRow(r: DbEvent): SummaryEvent {
+function toSummaryRow(r: DbEvent, platformRate?: string | null): SummaryEvent {
+  // Imported RupChain trades paid in PKR carry no USDT rate of their own: use the platform rate so the USDT view works.
+  const own = cleanRate(r.fxRate?.toFixed())
   return {
     id: r.id,
     assetId: r.assetId,
@@ -104,8 +108,14 @@ function toSummaryRow(r: DbEvent): SummaryEvent {
     basis: r.basis?.toFixed() ?? null,
     zeroCost: r.zeroCost,
     quote: r.quote as Quote,
-    fxRate: cleanRate(r.fxRate?.toFixed()),
+    fxRate: own ?? (r.source === 'ctm' ? cleanRate(platformRate) : null),
   }
+}
+
+/** Platform trade prices for tokens that mirror a RupChain token, merged under the user's own newer prices. */
+async function withPlatformMarks(userId: string, manual: Array<{ assetId: string; price: string; quote: Quote; observedAt: Date }>) {
+  const linked = await db.portfolioAsset.findMany({ where: { userId, ctmTokenId: { not: null } }, select: { id: true, ctmTokenId: true } })
+  return mergeMarks(manual, await platformMarksFor(linked))
 }
 
 const MAX_RANGE_MS = 25 * 365 * 24 * 60 * 60 * 1000
@@ -166,7 +176,8 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const interested = new Set(
       (await db.portfolioListingInterest.findMany({ where: { userId, withdrawnAt: null }, select: { assetId: true } })).map((r) => r.assetId),
     )
-    return reply.send({ success: true, data: items.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), listingInterest: interested.has(a.id), linkedToRupChainToken: Boolean(ctmTokenId) })) })
+    const logos = await logosFor(items.map((a) => ({ id: a.id, ctmTokenId: a.ctmTokenId })))
+    return reply.send({ success: true, data: items.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), listingInterest: interested.has(a.id), linkedToRupChainToken: Boolean(ctmTokenId), logoUrl: logos.get(a.id) ?? null })) })
   })
 
   // Same name / symbol / link as an existing token is allowed and creates a separate asset.
@@ -384,13 +395,13 @@ export async function portfolioRoutes(app: FastifyInstance) {
       getStringConfig('rate_USDT_PKR', ''),
     ])
 
-    const rows = events.map(toSummaryRow)
-
+    const rows = events.map((e) => toSummaryRow(e, platformRate))
+    const marks = await withPlatformMarks(userId, prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt })))
 
     try {
       const data = buildSummary({
         events: rows,
-        prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt })),
+        prices: marks,
         currency: q.data.currency,
         platformRate,
       })
@@ -430,10 +441,11 @@ export async function portfolioRoutes(app: FastifyInstance) {
     // Latest observation per asset (rows are ascending, so later ones overwrite earlier ones).
     const latest = new Map<string, (typeof priceRows)[number]>()
     for (const p of priceRows) latest.set(p.assetId, p)
+    for (const p of await withPlatformMarks(userId, [...latest.values()])) latest.set(p.assetId, p)
 
     try {
       const data = computePerformance({
-        events: events.map(toSummaryRow),
+        events: events.map((e) => toSummaryRow(e, platformRate)),
         prices: priceRows,
         currency: q.data.currency,
         currentMarks: currentMarksIn([...latest.values()], q.data.currency, cleanRate(platformRate)),

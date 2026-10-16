@@ -126,6 +126,8 @@ export interface PortfolioAsset {
   listingInterest?: boolean
   /** Mirrors a token already available on RupChain (created by the trade import). */
   linkedToRupChainToken?: boolean
+  /** Logo of the RupChain token this one mirrors (platform-uploaded). Absent for tokens the user typed in. */
+  logoUrl?: string | null
   name: string
   symbol?: string | null
   sourceUrl?: string | null
