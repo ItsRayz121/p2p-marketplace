@@ -175,6 +175,12 @@ describe('token cards', () => {
     expect(averageCost({ quantity: '10', basisComplete: false, knownRemainingBasis: '0' } as never)).toBeNull()
     expect(averageCost({ quantity: '0', basisComplete: true, knownRemainingBasis: '0' } as never)).toBeNull()
   })
+
+  it('shows average cost like other amounts: 2 decimals for money-sized, more only for tiny prices', () => {
+    expect(averageCost({ quantity: '0.65', basisComplete: true, knownRemainingBasis: '27502000' } as never)).toBe('42,310,769.23')
+    expect(averageCost({ quantity: '1000', basisComplete: true, knownRemainingBasis: '50000' } as never)).toBe('50.00')
+    expect(averageCost({ quantity: '1000000', basisComplete: true, knownRemainingBasis: '12.34' } as never)).toBe('0.000012')
+  })
 })
 
 describe('Price used: RupChain price or the price I got', () => {

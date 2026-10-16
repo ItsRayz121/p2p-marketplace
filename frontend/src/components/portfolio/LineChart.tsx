@@ -50,7 +50,8 @@ export function LineChart({ title, description, series, currency, emptyMessage, 
   const tMin = Math.min(...times), tMax = Math.max(...times)
   const ys = known.map((p) => Number(p.v))
   let yMin = Math.min(...ys), yMax = Math.max(...ys)
-  if (yMin === yMax) { yMin -= 1; yMax += 1 }
+  const flat = yMin === yMax
+  if (flat) { yMin -= 1; yMax += 1 }
   const x = (t: number) => PAD_L + (tMax === tMin ? (W - PAD_L - PAD_R) / 2 : ((t - tMin) / (tMax - tMin)) * (W - PAD_L - PAD_R))
   const y = (v: number) => PAD_T + (1 - (v - yMin) / (yMax - yMin)) * (H - PAD_T - PAD_B)
 
@@ -79,8 +80,15 @@ export function LineChart({ title, description, series, currency, emptyMessage, 
         <desc id={`${uid}-d`}>{description}</desc>
         <line x1={PAD_L} y1={PAD_T} x2={PAD_L} y2={H - PAD_B} className="stroke-border" strokeWidth={1} />
         <line x1={PAD_L} y1={H - PAD_B} x2={W - PAD_R} y2={H - PAD_B} className="stroke-border" strokeWidth={1} />
-        <text x={PAD_L - 6} y={PAD_T + 8} textAnchor="end" className="fill-text-muted" fontSize={10}>{formatDecimal(maxStr, 0)}</text>
-        <text x={PAD_L - 6} y={H - PAD_B} textAnchor="end" className="fill-text-muted" fontSize={10}>{formatDecimal(minStr, 0)}</text>
+        {flat ? (
+          // Every known value is the same: one label at the line's height instead of the same number twice.
+          <text x={PAD_L - 6} y={y(Number(maxStr)) + 3} textAnchor="end" className="fill-text-muted" fontSize={10}>{formatDecimal(maxStr, 0)}</text>
+        ) : (
+          <>
+            <text x={PAD_L - 6} y={PAD_T + 8} textAnchor="end" className="fill-text-muted" fontSize={10}>{formatDecimal(maxStr, 0)}</text>
+            <text x={PAD_L - 6} y={H - PAD_B} textAnchor="end" className="fill-text-muted" fontSize={10}>{formatDecimal(minStr, 0)}</text>
+          </>
+        )}
         <text x={PAD_L} y={H - 8} textAnchor="start" className="fill-text-muted" fontSize={10}>{fmtDate(new Date(tMin).toISOString())}</text>
         <text x={W - PAD_R} y={H - 8} textAnchor="end" className="fill-text-muted" fontSize={10}>{fmtDate(new Date(tMax).toISOString())}</text>
         {series.map((s) => (

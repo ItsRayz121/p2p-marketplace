@@ -13,7 +13,9 @@ const held = (q: string | undefined) => /[1-9]/.test(q ?? '0')
 /** Average cost per unit of what is held now, only when every held unit has a recorded cost. */
 export function averageCost(p: PortfolioPosition | undefined): string | null {
   if (!p || !p.basisComplete || !held(p.quantity)) return null
-  return formatQuantity(new D(p.knownRemainingBasis).div(p.quantity).toDecimalPlaces(4).toFixed())
+  const avg = new D(p.knownRemainingBasis).div(p.quantity)
+  // Money-sized prices read like every other amount (2 decimals); sub-1 prices keep the precision that matters.
+  return avg.abs().gte(1) ? formatDecimal(avg.toFixed(), 2) : formatQuantity(avg.toDecimalPlaces(6).toFixed())
 }
 
 /**
