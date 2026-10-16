@@ -89,6 +89,11 @@ describe('POST', () => {
     expect(res.statusCode).toBe(400)
     expect(mocks.create).not.toHaveBeenCalled()
   })
+  it('rejects a link that would not fit in the database once normalised (instead of failing with a server error)', async () => {
+    const res = await app.inject({ method: 'POST', url: '/api/v1/portfolio/assets', headers: as('u1'), payload: { name: 'X', sourceUrl: 'https://example.com/' + 'é'.repeat(700) } })
+    expect(res.statusCode).toBe(400)
+    expect(mocks.create).not.toHaveBeenCalled()
+  })
   it('accepts a blank/omitted link and an http/https link', async () => {
     mocks.create.mockResolvedValue(row())
     for (const sourceUrl of [undefined, null, '', '  ', 'https://example.com', 'http://example.com/x']) {

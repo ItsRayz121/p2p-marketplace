@@ -80,6 +80,9 @@ export function parseSourceUrl(raw: string): { ok: true; href: string } | { ok: 
     return { ok: false, error: 'Link cannot contain a username or password.' }
   }
   if (!u.hostname) return { ok: false, error: 'Enter a full link starting with http:// or https://.' }
+  // The stored form can be longer than what was typed (non-ASCII characters are percent-encoded), and
+  // it is the stored form that must fit.
+  if (u.href.length > URL_MAX) return { ok: false, error: `Link is too long (max ${URL_MAX} characters).` }
   return { ok: true, href: u.href }
 }
 

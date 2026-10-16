@@ -58,6 +58,16 @@ describe('parseSourceUrl', () => {
   ])('rejects %j', (u) => {
     expect(parseSourceUrl(u).ok).toBe(false)
   })
+  it('a link that is short as typed but too long once stored (non-ASCII is percent-encoded) is rejected', () => {
+    const url = 'https://example.com/' + 'é'.repeat(700)
+    expect(url.length).toBeLessThan(2048)
+    const r = parseSourceUrl(url)
+    expect(r.ok).toBe(false)
+    expect(validateCustomAsset({ name: 'X', sourceUrl: url }).ok).toBe(false)
+  })
+  it('a long link that still fits when stored is accepted', () => {
+    expect(parseSourceUrl('https://example.com/' + 'a'.repeat(1900)).ok).toBe(true)
+  })
   it('blank URL never blocks creation', () => {
     expect(validateCustomAsset({ name: 'X', sourceUrl: '   ' }).ok).toBe(true)
     expect(validateCustomAsset({ name: 'X', sourceUrl: undefined }).ok).toBe(true)

@@ -23,6 +23,7 @@ import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
 import { FLAGS, isFlagEnabled, clearFlagCache } from '../services/platformFlags.service'
+import { resetPortfolioFlagCache } from '../lib/portfolio/flag'
 import { approveMakerFromKyc } from '../services/maker.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { previewAccountMerge, adminMergeAccounts, adminEraseIdentity } from '../services/accountLink.service'
@@ -3817,6 +3818,7 @@ export async function adminRoutes(app: FastifyInstance) {
     await createAuditLog(req.user!.id, 'CONFIG_UPDATED', 'PlatformConfig', updated.id, { key: parsed.data.key, value: parsed.data.value }, clientIp(req), req.headers['user-agent'] as string | undefined)
 
     clearFlagCache()
+    resetPortfolioFlagCache() // so switching Portfolio on/off takes effect immediately on this server
     return reply.send({ success: true, data: updated })
   })
 

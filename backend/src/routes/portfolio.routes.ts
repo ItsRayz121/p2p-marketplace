@@ -491,7 +491,8 @@ export async function portfolioRoutes(app: FastifyInstance) {
       data: {
         exportedAt: new Date().toISOString(),
         assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null })),
-        events: events.map(eventDto),
+        // Exactly the documented backup fields (the backup reader is strict about unknown ones).
+        events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString() })),
       },
     })

@@ -22,6 +22,8 @@ vi.mock('../../middleware/auth.middleware', () => ({
 }))
 
 import { portfolioRoutes } from '../portfolio.routes'
+// The browser's backup reader/writer: what the server exports must be something it accepts.
+import { buildBackup, parseBackup, buildCsv } from '../../../../frontend/src/lib/portfolio/exportFile'
 import { AppError } from '../../lib/errors'
 
 const app = Fastify()
@@ -73,5 +75,20 @@ describe('GET /portfolio/export', () => {
     expect(typeof d.events[0].quantity).toBe('string')
     const text = JSON.stringify(d)
     for (const secret of ['userId', 'sourceRef', 'ctmTokenId', 'tok1', 'u1']) expect(text).not.toContain(secret)
+  })
+
+  it('CONTRACT: what the server exports can be saved as a backup and read straight back by the app', async () => {
+    const data = (await get()).json().data
+    const file = buildBackup(data)
+    const back = parseBackup(file)
+    expect(back.ok).toBe(true)
+    if (back.ok) {
+      expect(back.data.assets.map((a) => a.id)).toEqual(['a1', 'a2'])
+      expect(back.data.events[0]).toMatchObject({ id: 'e1', source: 'ctm', voided: true })
+    }
+  })
+  it('CONTRACT: the same export produces a CSV without errors', async () => {
+    const data = (await get()).json().data
+    expect(buildCsv(data).split('\r\n')[1]).toContain('Meta Earth')
   })
 })
