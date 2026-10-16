@@ -18,6 +18,7 @@ export const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
+import type { PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -1579,6 +1580,41 @@ export const savedTermsApi = {
     }),
   remove: (id: string) =>
     apiRequest<void>(`/saved-terms/${id}`, { method: 'DELETE' }),
+}
+
+// Portfolio (analytical, user-scoped). Never touches wallet balances or settlement data.
+export interface PortfolioAssetDto {
+  id: string
+  name: string
+  symbol: string | null
+  sourceUrl: string | null
+  network: string | null
+  contractAddress: string | null
+  createdAt: string
+}
+export interface PortfolioAssetInput {
+  name: string
+  symbol?: string | null
+  sourceUrl?: string | null
+  network?: string | null
+  contractAddress?: string | null
+}
+
+export const portfolioApi = {
+  listAssets: () => apiRequest<PortfolioAssetDto[]>('/portfolio/assets'),
+  addAsset: (data: PortfolioAssetInput) =>
+    apiRequest<PortfolioAssetDto>('/portfolio/assets', { method: 'POST', body: JSON.stringify(data) }),
+  updateAsset: (id: string, data: PortfolioAssetInput) =>
+    apiRequest<PortfolioAssetDto>(`/portfolio/assets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  listEvents: (assetId: string) =>
+    apiRequest<PortfolioEvent[]>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`),
+  addEvent: (assetId: string, data: PortfolioEventInput) =>
+    apiRequest<PortfolioEvent>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteEvent: (assetId: string, eventId: string) =>
+    apiRequest<void>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}`, { method: 'DELETE' }),
+  setPrice: (assetId: string, price: string) =>
+    apiRequest<{ price: string; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price }) }),
+  summary: () => apiRequest<PortfolioSummaryResponse>('/portfolio/summary'),
 }
 
 export interface SavedDeliveryAddress {

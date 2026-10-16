@@ -20,6 +20,8 @@ import { LoadingState } from '@/components/ui/LoadingState'
 import { ErrorState } from '@/components/ui/ErrorState'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { RecentDeposits } from '@/components/wallet/RecentDeposits'
+import { WalletTabs, useWalletTab, tabId, panelId } from '@/components/wallet/WalletTabs'
+import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel'
 import { COIN_NETWORKS, networksFor } from '@/lib/wallet/coinNetworks'
 import { fmtPakDateTime } from '@/lib/fmt'
 import { PK_BANKS, getPaymentMethodColor } from '@/lib/pkPaymentMethods'
@@ -1712,7 +1714,7 @@ export default function WalletPage() {
 
   const [depositCoin, setDepositCoin] = useState<string | null>(null)
   const [withdrawWallet, setWithdrawWallet] = useState<{ coin: string; network: string } | null>(null)
-  const [tab, setTab] = useState<'methods' | 'balance'>('methods')
+  const [activeTab, setTab] = useWalletTab()
   const [isMaker, setIsMaker] = useState(false)
 
   useEffect(() => {
@@ -1780,32 +1782,18 @@ export default function WalletPage() {
     : null
 
   const hasFunds = balances.some((b) => parseFloat(b.available) > 0 || parseFloat(b.locked) > 0)
-  // Makers need a deposit to post ads, so they get the balance tab even at zero.
+  // Makers need a deposit to post ads, so they see the wallet section even at zero.
+  // The Portfolio tab itself is always available; only the custody wallet section inside it is gated.
   const showBalanceTab = hasFunds || isMaker
-  const activeTab = showBalanceTab ? tab : 'methods'
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-8">
       <div>
         <h1 className="text-2xl font-bold text-text-primary">Wallet &amp; Payment Methods</h1>
-        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto{showBalanceTab ? ', plus your balance and deposits.' : '.'}</p>
+        <p className="text-sm text-text-muted mt-1">Where you receive PKR and crypto, plus your portfolio{showBalanceTab ? ', balance and deposits.' : '.'}</p>
       </div>
 
-      {showBalanceTab && (
-        <div role="tablist" className="flex gap-1 border-b border-border -mb-4">
-          {([['methods', 'Payment methods'], ['balance', 'Balance & deposits']] as const).map(([id, label]) => (
-            <button
-              key={id}
-              role="tab"
-              aria-selected={activeTab === id}
-              onClick={() => setTab(id)}
-              className={`px-4 py-2 text-sm font-semibold border-b-2 -mb-px transition-colors ${activeTab === id ? 'border-primary text-primary' : 'border-transparent text-text-muted hover:text-text-primary'}`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      <WalletTabs tab={activeTab} onChange={setTab} />
 
       {/* ── Withdrawal security lock banner ── */}
       {wdLockActive && (
@@ -1820,14 +1808,34 @@ export default function WalletPage() {
         </div>
       )}
 
-      {/* ── RupChain internal balances ──
+      {activeTab === 'methods' && (
+        <div role="tabpanel" id={panelId('methods')} aria-labelledby={tabId('methods')} className="space-y-8">
+          {/* ── PKR Payment Methods ── */}
+          <div id="payment-methods">
+            <PaymentMethodsSection />
+          </div>
+
+          {/* ── Saved Delivery Addresses ── */}
+          <div id="saved-addresses">
+            <SavedDeliveryAddressesSection />
+          </div>
+
+          {/* ── Trusted addresses ── */}
+          <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
+        </div>
+      )}
+
+      {activeTab === 'portfolio' && (
+      <div role="tabpanel" id={panelId('portfolio')} aria-labelledby={tabId('portfolio')}>
+      <PortfolioPanel walletSection={<>
+      {/* ── RupChain internal balances (custody wallet) ──
           Deposits are switched off for new users: only accounts that already hold
           (or have collateral locked in) a balance see this, so nobody is locked out
-          of funds they already have. Nothing is deleted — drop the hasFunds gate to
-          bring it back for everyone. */}
-      {showBalanceTab && activeTab === 'balance' && (
+          of funds they already have. Nothing is deleted — drop the gate to
+          bring it back for everyone. Separate from tracked-portfolio data. */}
+      {showBalanceTab && (
       <section>
-        <h2 className="text-base font-semibold text-text-primary mb-1">RupChain balance</h2>
+        <h2 className="text-base font-semibold text-text-primary mb-1">RupChain wallet</h2>
         <p className="text-xs text-text-muted mb-3">Held in your RupChain account. Used for withdrawals, listings, and merchant collateral. Small withdrawals send instantly, larger ones require admin review.</p>
         {(() => {
           const displayBalances = balances.filter((b) => SUPPORTED_PLATFORM_NETWORKS.has(b.network ?? ''))
@@ -1896,27 +1904,10 @@ export default function WalletPage() {
       </section>
       )}
 
-      {activeTab === 'methods' && (
-        <>
-          {/* ── PKR Payment Methods ── */}
-          <div id="payment-methods">
-            <PaymentMethodsSection />
-          </div>
-
-          {/* ── Saved Delivery Addresses ── */}
-          <div id="saved-addresses">
-            <SavedDeliveryAddressesSection />
-          </div>
-
-          {/* ── Trusted addresses ── */}
-          <TrustedAddressesSection twoFaEnabled={user?.twoFaEnabled ?? false} />
-        </>
-      )}
-
-      {activeTab === 'balance' && hasFunds && <RecentDeposits />}
+      {hasFunds && <RecentDeposits />}
 
       {/* ── Transaction history — only for accounts with wallet activity ── */}
-      {activeTab === 'balance' && (hasFunds || transactions.length > 0) && (
+      {(hasFunds || transactions.length > 0) && (
       <section>
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-base font-semibold text-text-primary">Transactions</h2>
@@ -1999,6 +1990,9 @@ export default function WalletPage() {
           </div>
         )}
       </section>
+      )}
+      </>} />
+      </div>
       )}
 
       {/* Deposit modal */}

@@ -551,6 +551,9 @@ model User {
   fraudFlags             FraudFlag[]
   rateAlerts             RateAlert[]
   savedTerms             SavedTerms[]
+  portfolioAssets        PortfolioAsset[]
+  portfolioEvents        PortfolioEvent[]
+  portfolioPrices        PortfolioPriceObservation[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
   moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
@@ -1867,6 +1870,69 @@ model SavedTerms {
   createdAt DateTime @default(now())
 
   @@index([userId, createdAt])
+}
+
+/// A token a user tracks manually in their Portfolio (analytical shadow ledger, never custody).
+/// Identity is `id` alone: name / symbol / sourceUrl are private display metadata and are
+/// deliberately NOT unique, so two tokens with the same name or link never silently merge.
+/// sourceUrl is stored as text and never fetched. Deleting the user removes this discretionary data.
+model PortfolioAsset {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name            String   @db.VarChar(80)
+  symbol          String?  @db.VarChar(16)
+  sourceUrl       String?  @db.VarChar(2048)
+  network         String?  @db.VarChar(40)
+  contractAddress String?  @db.VarChar(128)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  events          PortfolioEvent[]
+  prices          PortfolioPriceObservation[]
+
+  @@index([userId, createdAt])
+}
+
+/// A manually recorded BUY / SELL / OPENING holding for a tracked asset. Analytical only: writing
+/// one never touches Wallet, Transaction, orders or any settlement table, and never creates a
+/// payout or trade. Money is exact decimal (never float). BUY fees are capitalised into basis; SELL
+/// fees reduce proceeds. OPENING with null basis means the cost is UNKNOWN (not zero).
+/// The asset FK is NO ACTION so an asset with history cannot be deleted out from under it, while
+/// deleting the user still removes everything together.
+model PortfolioEvent {
+  id              String         @id @default(cuid())
+  userId          String
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId         String
+  asset           PortfolioAsset @relation(fields: [assetId], references: [id], onDelete: NoAction)
+  type            String         @db.VarChar(10)
+  occurredAt      DateTime
+  quantity        Decimal        @db.Decimal(46, 18)
+  consideration   Decimal?       @db.Decimal(46, 18)
+  fee             Decimal?       @db.Decimal(46, 18)
+  basis           Decimal?       @db.Decimal(46, 18)
+  zeroCost        Boolean        @default(false)
+  note            String?        @db.VarChar(200)
+  /// Client-generated id so a retried submit cannot record the same event twice.
+  clientRequestId String?        @db.VarChar(64)
+  createdAt       DateTime       @default(now())
+
+  @@unique([userId, clientRequestId])
+  @@index([userId, assetId, occurredAt])
+}
+
+/// A user-entered current price ("mark") for an asset. A price observation, not a transaction.
+model PortfolioPriceObservation {
+  id         String         @id @default(cuid())
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assetId    String
+  asset      PortfolioAsset @relation(fields: [assetId], references: [id], onDelete: NoAction)
+  price      Decimal        @db.Decimal(46, 18)
+  source     String         @default("manual") @db.VarChar(16)
+  observedAt DateTime       @default(now())
+
+  @@index([userId, assetId, observedAt])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
