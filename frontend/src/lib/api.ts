@@ -18,7 +18,7 @@ export const API_BASE = resolveApiBase()
 
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
-import type { ExportData } from '@/lib/portfolio/exportFile'
+import type { ExportData, RestoreSummary } from '@/lib/portfolio/exportFile'
 import type { Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
@@ -1655,6 +1655,8 @@ export const portfolioApi = {
     apiRequest<{ price: string; quote: Currency; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price, quote, ...(source && source !== 'manual' ? { source } : {}) }) }),
   summary: (currency: Currency = 'PKR') => apiRequest<PortfolioSummaryResponse>(`/portfolio/summary?currency=${currency}`),
   exportAll: () => apiRequest<ExportData>('/portfolio/export'),
+  restoreBackup: (data: ExportData) =>
+    apiRequest<RestoreSummary>('/portfolio/restore', { method: 'POST', body: JSON.stringify({ format: 'rupchain-portfolio-backup', version: data.revisions ? 2 : 1, ...data }) }),
   /** Whether the Portfolio feature is switched on (it is by default). */
   status: () => apiRequest<{ enabled: boolean }>('/portfolio/status'),
   suggestListing: (id: string) =>

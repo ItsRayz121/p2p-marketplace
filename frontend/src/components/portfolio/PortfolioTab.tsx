@@ -5,11 +5,12 @@ import type {
   Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from '@/lib/portfolio/types'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
-import type { ExportData } from '@/lib/portfolio/exportFile'
+import type { ExportData, RestoreSummary } from '@/lib/portfolio/exportFile'
 import type { PortfolioApiLike } from '@/lib/portfolio/apiTypes'
 import { CustomTokenForm } from './CustomTokenForm'
 import { ExportMenu } from './ExportMenu'
 import { ImportBackupDialog } from './ImportBackupDialog'
+import { RestoreBackupDialog } from './RestoreBackupDialog'
 import { ExcludedTradesView } from './ExcludedTradesView'
 import { ImportBanner } from './ImportBanner'
 import { PerformanceSection } from './PerformanceSection'
@@ -70,6 +71,9 @@ interface Props {
   /** Account only: lets the user bring a backup file (e.g. from the local tracker) into this account. */
   backupImportApi?: Pick<PortfolioApiLike, 'addAsset' | 'addEvent' | 'listEvents'>
   onBackupImported?: () => void
+  /** Account only: put a full backup (edit history and trade links included) back into this account. */
+  onRestoreBackup?: (data: ExportData) => Promise<RestoreSummary>
+  onBackupRestored?: () => void
 }
 
 const noEvents = async (): Promise<PortfolioEvent[]> => []
@@ -83,7 +87,7 @@ export function PortfolioTab({
   notice, walletSection, assets = [], summary = null, currency = 'PKR', onCurrencyChange, loading = false, error = null, onRetry,
   onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onUpdateEvent, loadHistory, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
   importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport, loadExcluded, onRecordExcluded, loadAllEvents,
-  onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported,
+  onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported, onRestoreBackup, onBackupRestored,
 }: Props) {
   const [view, setView] = useState<View>({ name: 'overview' })
   const lastRowRef = useRef<string | null>(null)
@@ -93,6 +97,7 @@ export function PortfolioTab({
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const first = useRef(true)
   const [showBackupImport, setShowBackupImport] = useState(false)
+  const [showRestore, setShowRestore] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   // Move focus into a view when it opens, and back to where the user came from when it closes.
@@ -317,6 +322,15 @@ export function PortfolioTab({
                 </div>
               ) : (
                 <button type="button" onClick={() => setShowBackupImport(true)} className="mt-3 block text-xs font-medium text-primary hover:underline">Import from a backup file</button>
+              )
+            )}
+            {!loading && !error && onRestoreBackup && (
+              showRestore ? (
+                <div className="mt-3">
+                  <RestoreBackupDialog restore={onRestoreBackup} onClose={() => setShowRestore(false)} onDone={() => onBackupRestored?.()} />
+                </div>
+              ) : (
+                <button type="button" onClick={() => setShowRestore(true)} className="mt-3 block text-xs font-medium text-primary hover:underline">Restore from a backup file</button>
               )
             )}
             {!loading && !error && archivedAssets.length > 0 && (

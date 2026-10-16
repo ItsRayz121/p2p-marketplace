@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import Fastify from 'fastify'
 import { Prisma } from '@prisma/client'
 
-const m = vi.hoisted(() => ({ aFindMany: vi.fn(), evFindMany: vi.fn(), prFindMany: vi.fn() }))
+const m = vi.hoisted(() => ({ aFindMany: vi.fn(), evFindMany: vi.fn(), prFindMany: vi.fn(), rvFindMany: vi.fn() }))
 vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
     portfolioAsset: { findMany: m.aFindMany },
     portfolioEvent: { findMany: m.evFindMany },
     portfolioPriceObservation: { findMany: m.prFindMany },
+    portfolioEventRevision: { findMany: m.rvFindMany },
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: async () => true }))
@@ -49,6 +50,11 @@ beforeEach(() => {
     source: 'ctm', voidedAt: new Date('2026-02-01'), voidReason: 'disputed',
   }])
   m.prFindMany.mockResolvedValue([{ assetId: 'a1', price: dec('2'), quote: 'USDT', observedAt: new Date('2026-01-03') }])
+  // Newest first, as the route asks for them; one record carries a stray key that must not leave the account.
+  m.rvFindMany.mockResolvedValue([
+    { eventId: 'e1', assetId: 'a1', action: 'delete', before: { type: 'BUY', quantity: '2', zeroCost: false, note: null }, createdAt: new Date('2026-01-05') },
+    { eventId: 'e1', assetId: 'a1', action: 'edit', before: { type: 'BUY', quantity: '1', stray: 'x' }, createdAt: new Date('2026-01-04') },
+  ])
 })
 
 describe('GET /portfolio/export', () => {
@@ -60,7 +66,7 @@ describe('GET /portfolio/export', () => {
     const res = await get()
     expect(res.statusCode).toBe(200)
     expect(res.headers['cache-control']).toBe('private, no-store')
-    for (const f of [m.aFindMany, m.evFindMany, m.prFindMany]) expect(f.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
+    for (const f of [m.aFindMany, m.evFindMany, m.prFindMany, m.rvFindMany]) expect(f.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
   })
   it('includes archived tokens and voided entries (flagged) so a backup is complete', async () => {
     const d = (await get()).json().data
@@ -69,6 +75,13 @@ describe('GET /portfolio/export', () => {
     expect(d.assets[1].linkedToRupChainToken).toBe(false)
     expect(d.events[0]).toMatchObject({ source: 'ctm', voided: true, voidReason: 'disputed', quote: 'PKR' })
     expect(d.prices[0]).toEqual({ assetId: 'a1', price: '2', quote: 'USDT', observedAt: '2026-01-03T00:00:00.000Z' })
+  })
+  it('exports the edit time of each entry, its trade link and correction history (oldest first), known fields only', async () => {
+    const d = (await get()).json().data
+    expect(d.events[0]).toMatchObject({ editedAt: null, linkedTradeRef: null })
+    expect(d.revisions.map((r: { action: string }) => r.action)).toEqual(['edit', 'delete'])
+    expect(d.revisions[0]).toEqual({ eventId: 'e1', assetId: 'a1', action: 'edit', before: { type: 'BUY', quantity: '1' }, createdAt: '2026-01-04T00:00:00.000Z' })
+    expect(JSON.stringify(d)).not.toContain('stray')
   })
   it('decimals are strings and no owner or source-system id leaks', async () => {
     const d = (await get()).json().data
@@ -80,9 +93,11 @@ describe('GET /portfolio/export', () => {
   it('CONTRACT: what the server exports can be saved as a backup and read straight back by the app', async () => {
     const data = (await get()).json().data
     const file = buildBackup(data)
+    expect(JSON.parse(file).version).toBe(2)
     const back = parseBackup(file)
     expect(back.ok).toBe(true)
     if (back.ok) {
+      expect(back.data.revisions).toHaveLength(2)
       expect(back.data.assets.map((a) => a.id)).toEqual(['a1', 'a2'])
       expect(back.data.events[0]).toMatchObject({ id: 'e1', source: 'ctm', voided: true })
     }

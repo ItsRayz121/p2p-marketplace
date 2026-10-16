@@ -92,6 +92,21 @@ describe('backup file', () => {
     const parsed = parseBackup(buildBackup(d))
     expect(parsed).toEqual({ ok: true, data: d })
   })
+  it('a full account backup (with correction history) is version 2 and round-trips', () => {
+    const d = data({
+      events: [ev({ editedAt: '2026-02-01T00:00:00.000Z', linkedTradeRef: 'trade1' })],
+      revisions: [{ eventId: 'e1', assetId: 'a1', action: 'edit', before: { type: 'BUY', quantity: '90', zeroCost: false, note: null }, createdAt: '2026-02-01T00:00:00.000Z' }],
+    })
+    const file = buildBackup(d)
+    expect(JSON.parse(file).version).toBe(2)
+    expect(parseBackup(file)).toEqual({ ok: true, data: d })
+  })
+  it('a correction record for a token that is not in the file is rejected', () => {
+    const d = data({ revisions: [{ eventId: 'e1', assetId: 'a1', action: 'edit', before: {}, createdAt: '2026-02-01T00:00:00.000Z' }] })
+    const j = JSON.parse(buildBackup(d)) as { revisions: Array<{ assetId: string }> }
+    j.revisions[0]!.assetId = 'nope'
+    expect(parseBackup(JSON.stringify(j)).ok).toBe(false)
+  })
   it('is labelled with a format and version', () => {
     expect(JSON.parse(buildBackup(data()))).toMatchObject({ format: 'rupchain-portfolio-backup', version: 1 })
   })
@@ -138,7 +153,7 @@ describe('backup file', () => {
     expect(bad((j) => { const e = (j.events as unknown[]); e.push(e[0]) }).ok).toBe(false)
   })
   it('tells a newer version apart from a corrupt file', () => {
-    const r = bad((j) => { j.version = 2 })
+    const r = bad((j) => { j.version = 3 })
     expect(r).toEqual({ ok: false, error: expect.stringMatching(/different version/) })
   })
   it('rejects an oversized file before parsing it', () => {

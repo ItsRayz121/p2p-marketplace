@@ -13,6 +13,7 @@ import { runCtmImport, listExcludedTrades, checkExcludedTradeRecordable, ensureL
 import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
+import { restorePortfolioBackup } from '../services/portfolioRestore.service'
 
 /** Per-user cap so a client bug or abuse cannot grow this table without bound. */
 export const MAX_PORTFOLIO_ASSETS = 200
@@ -65,6 +66,16 @@ function eventDto(r: EventRow) {
     priceBasis: r.priceBasis ?? null,
     createdAt: r.createdAt.toISOString(),
   }
+}
+
+/** Only the known fields of a stored correction record leave the account, as plain strings / booleans / null. */
+const BEFORE_TEXT = ['type', 'occurredAt', 'quantity', 'consideration', 'fee', 'basis', 'quote', 'fxRate', 'fxSource', 'note', 'priceBasis'] as const
+function backupBefore(raw: unknown) {
+  const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const out: Record<string, string | boolean | null> = {}
+  for (const k of BEFORE_TEXT) if (k in src) out[k] = typeof src[k] === 'string' ? src[k] : null
+  if (typeof src.zeroCost === 'boolean') out.zeroCost = src.zeroCost
+  return out
 }
 
 /** The part of an entry a correction can change, as plain strings, for the revision log. */
@@ -738,7 +749,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const userId = req.user!.id
-    const [assets, events, prices] = await Promise.all([
+    const [assets, events, prices, revisions] = await Promise.all([
       db.portfolioAsset.findMany({ where: { userId }, orderBy: { createdAt: 'asc' }, take: MAX_PORTFOLIO_ASSETS, select: { ...SELECT, ctmTokenId: true } }),
       db.portfolioEvent.findMany({
         where: { userId }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS, select: EVENT_SELECT,
@@ -747,6 +758,11 @@ export async function portfolioRoutes(app: FastifyInstance) {
         where: { userId }, orderBy: { observedAt: 'asc' }, take: MAX_PORTFOLIO_EVENTS,
         select: { assetId: true, price: true, quote: true, observedAt: true },
       }),
+      // The newest corrections, so a restore keeps each entry's history. Capped like everything else here.
+      db.portfolioEventRevision.findMany({
+        where: { userId }, orderBy: { createdAt: 'desc' }, take: MAX_PORTFOLIO_EVENTS,
+        select: { eventId: true, assetId: true, action: true, before: true, createdAt: true },
+      }),
     ])
     return reply.send({
       success: true,
@@ -754,11 +770,35 @@ export async function portfolioRoutes(app: FastifyInstance) {
         exportedAt: new Date().toISOString(),
         assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null })),
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
-        events: events.map((e) => { const { createdAt, editedAt, linkedTradeRef, ...rest } = eventDto(e); void createdAt; void editedAt; void linkedTradeRef; return rest }),
+        events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString() })),
+        revisions: revisions.reverse().map((r) => ({ eventId: r.eventId, assetId: r.assetId, action: r.action, before: backupBefore(r.before), createdAt: r.createdAt.toISOString() })),
       },
     })
   })
+
+  // Put a backup back into this account: tokens, entries, prices, correction history and links to
+  // RupChain trades. Own portfolio tables only (see portfolioRestore.service.ts); idempotent; all or nothing.
+  app.post('/portfolio/restore', {
+    preHandler: [authenticate],
+    bodyLimit: 8 * 1024 * 1024,
+    config: { rateLimit: { max: 3, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
+    const userId = req.user!.id
+    try {
+      const data = await restorePortfolioBackup(userId, req.body, {
+        maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS,
+        maxRevisionsPerEvent: MAX_REVISIONS_PER_EVENT, maxRevisionsPerUser: MAX_REVISIONS_PER_USER,
+      })
+      return reply.send({ success: true, data })
+    } catch (err) {
+      if (err instanceof AppError) throw err
+      if ((err as { code?: string }).code === 'P2002') throw Errors.CONFLICT('Another change to your portfolio happened at the same time. Please try the restore again.')
+      req.log.error({ err }, 'portfolio restore failed')
+      throw new AppError('PORTFOLIO_RESTORE_FAILED', 'Could not restore the backup. Nothing was changed. Please try again.', 500)
+    }
+  })
+
   // ── Optional: "I would like this token listed on RupChain" ──
   // Explicit, withdrawable, and only for tokens with a known network + contract. It never lists
   // anything; admins only ever see anonymous aggregate groups above a minimum size.

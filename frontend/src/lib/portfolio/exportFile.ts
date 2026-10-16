@@ -32,6 +32,17 @@ export interface ExportEvent {
   voided: boolean
   voidReason: string | null
   priceBasis?: PriceBasis | null
+  /** Account backups only: when the entry was last corrected, and the RupChain trade it was recorded for. */
+  editedAt?: string | null
+  linkedTradeRef?: string | null
+}
+/** An earlier version of an entry that was corrected or removed (account backups only). */
+export interface ExportRevision {
+  eventId: string
+  assetId: string
+  action: 'edit' | 'delete'
+  before: Record<string, string | boolean | null>
+  createdAt: string
 }
 export interface ExportPrice {
   assetId: string
@@ -44,6 +55,17 @@ export interface ExportData {
   assets: ExportAsset[]
   events: ExportEvent[]
   prices: ExportPrice[]
+  /** Present in a full account backup: lets a restore bring back each entry's correction history. */
+  revisions?: ExportRevision[]
+}
+
+/** What POST /portfolio/restore reports back. */
+export interface RestoreSummary {
+  assets: { created: number; alreadyThere: number }
+  entries: { restored: number; alreadyThere: number; notRestored: number }
+  prices: { restored: number; alreadyThere: number }
+  history: { restored: number; alreadyThere: number; notRestored: number }
+  notes: string[]
 }
 
 // ───────────────────────────── CSV ─────────────────────────────
@@ -90,9 +112,12 @@ export function buildCsv(data: ExportData): string {
 
 export const BACKUP_FORMAT = 'rupchain-portfolio-backup'
 export const BACKUP_VERSION = 1
+/** A full account backup: version 1 plus each entry's edit time, trade link and correction history. */
+export const BACKUP_VERSION_FULL = 2
 
 export function buildBackup(data: ExportData): string {
-  return JSON.stringify({ format: BACKUP_FORMAT, version: BACKUP_VERSION, ...data }, null, 2)
+  const version = data.revisions ? BACKUP_VERSION_FULL : BACKUP_VERSION
+  return JSON.stringify({ format: BACKUP_FORMAT, version, ...data }, null, 2)
 }
 
 const dec = z.string().regex(/^\d{1,28}(\.\d{1,18})?$/)
@@ -111,17 +136,24 @@ const eventSchema = z.object({
   fxRate: z.string().regex(/^\d{1,10}(\.\d{1,18})?$/).nullable(), fxSource: z.enum(['platform', 'manual']).nullable(),
   note: text(400).nullable(), source: z.enum(['manual', 'ctm']), voided: z.boolean(), voidReason: text(60).nullable(),
   priceBasis: z.enum(['platform', 'own']).nullable().optional(),
+  editedAt: iso.nullable().optional(), linkedTradeRef: text(64).nullable().optional(),
+}).strict()
+
+const revisionSchema = z.object({
+  eventId: text(40), assetId: text(64), action: z.enum(['edit', 'delete']), createdAt: iso,
+  before: z.record(z.string().max(32), z.union([z.string().max(1000), z.boolean(), z.null()])),
 }).strict()
 
 const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso }).strict()
 
 const backupSchema = z.object({
   format: z.literal(BACKUP_FORMAT),
-  version: z.literal(BACKUP_VERSION),
+  version: z.union([z.literal(BACKUP_VERSION), z.literal(BACKUP_VERSION_FULL)]),
   exportedAt: iso,
   assets: z.array(assetSchema).max(200),
   events: z.array(eventSchema).max(5000),
   prices: z.array(priceSchema).max(5000),
+  revisions: z.array(revisionSchema).max(5000).optional(),
 }).strict()
 
 export const MAX_BACKUP_BYTES = 8 * 1024 * 1024
@@ -139,7 +171,7 @@ export function parseBackup(raw: string): ParsedBackup {
   const r = backupSchema.safeParse(json)
   if (!r.success) {
     const v = (json as { version?: unknown } | null)?.version
-    if (typeof v === 'number' && v !== BACKUP_VERSION) return { ok: false, error: 'This backup was made by a different version and cannot be read.' }
+    if (typeof v === 'number' && v !== BACKUP_VERSION && v !== BACKUP_VERSION_FULL) return { ok: false, error: 'This backup was made by a different version and cannot be read.' }
     return { ok: false, error: 'This file is not a valid RupChain portfolio backup.' }
   }
   // A backup is untrusted input: its tokens and notes must pass the same checks as anything typed into
@@ -158,7 +190,16 @@ export function parseBackup(raw: string): ParsedBackup {
   if (r.data.events.some((e) => !ids.has(e.assetId)) || r.data.prices.some((p) => !ids.has(p.assetId))) {
     return { ok: false, error: 'This backup refers to a token that is not in the file.' }
   }
-  return { ok: true, data: { exportedAt: r.data.exportedAt, assets: r.data.assets, events: r.data.events, prices: r.data.prices } }
+  if (r.data.revisions?.some((v) => !ids.has(v.assetId))) {
+    return { ok: false, error: 'This backup refers to a token that is not in the file.' }
+  }
+  return {
+    ok: true,
+    data: {
+      exportedAt: r.data.exportedAt, assets: r.data.assets, events: r.data.events, prices: r.data.prices,
+      ...(r.data.revisions ? { revisions: r.data.revisions } : {}),
+    },
+  }
 }
 
 // ───────────────────────────── download ─────────────────────────────
