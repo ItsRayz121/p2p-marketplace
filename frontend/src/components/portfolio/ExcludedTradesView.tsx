@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { Currency, ExcludedTrade, ExcludedTradesPage, PortfolioEventInput } from '@/lib/portfolio/types'
 import { ATTENTION_TEXT } from '@/lib/portfolio/importText'
 import { formatDecimal, formatQuantity } from '@/lib/portfolio/format'
@@ -29,11 +29,13 @@ export function ExcludedTradesView({ load, onRecord, onBack, backRef, currency }
   const [page, setPage] = useState<ExcludedTradesPage | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [recording, setRecording] = useState<string | null>(null)
+  const seq = useRef(0)
 
   const reload = useCallback(async () => {
     setError(null)
-    try { setPage(await load(EXCLUDED_PAGE_SIZE, offset)) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not load your trades.') }
+    const mine = ++seq.current
+    try { const r = await load(EXCLUDED_PAGE_SIZE, offset); if (mine === seq.current) setPage(r) }
+    catch (e) { if (mine === seq.current) setError(e instanceof Error ? e.message : 'Could not load your trades.') }
   }, [load, offset])
   useEffect(() => { void reload() }, [reload])
 

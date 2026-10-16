@@ -159,7 +159,7 @@ export interface ImportPlan {
   /** Existing imported entries whose trade no longer qualifies: kept, but excluded from calculations. */
   toVoid: Array<{ eventId: string; reason: AttentionReason | 'trade_missing' }>
   alreadyImported: number
-  /** Eligible trades the user already recorded by hand: skipped so they are never counted twice. */
+  /** Trades the user already recorded by hand (eligible ones are skipped so they are never counted twice; left-out ones no longer need attention). */
   recordedManually: number
   attention: Array<{ reason: AttentionReason; count: number }>
 }
@@ -187,7 +187,9 @@ export function makePlan(trades: CtmTradeFacts[], existing: ExistingImported[], 
       continue
     }
     if (c.kind === 'attention') {
-      attention.set(c.reason, (attention.get(c.reason) ?? 0) + 1)
+      // A trade the user already recorded by hand is handled: it no longer needs their attention.
+      if (linkedByHand.has(t.id)) manual += 1
+      else attention.set(c.reason, (attention.get(c.reason) ?? 0) + 1)
       if (prev && !prev.voidedAt) toVoid.push({ eventId: prev.id, reason: c.reason })
       continue
     }

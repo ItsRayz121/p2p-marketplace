@@ -1957,6 +1957,7 @@ model PortfolioEvent {
   @@unique([userId, source, sourceRef])
   @@unique([userId, linkedTradeRef])
   @@index([userId, assetId, occurredAt])
+  @@index([userId, occurredAt])
 }
 
 /// The earlier version of a manual entry, kept whenever the user corrects or removes it. Analytical

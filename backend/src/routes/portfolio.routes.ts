@@ -10,7 +10,7 @@ import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
 import { runCtmImport, listExcludedTrades, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
-import { platformMarksFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
+import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
 
@@ -449,6 +449,10 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const current = await db.portfolioEvent.findFirst({ where: { id: eventId, assetId: id, userId }, select: EVENT_SELECT })
     if (!current) throw Errors.NOT_FOUND('Entry')
     if (current.source !== 'manual') throw Errors.CONFLICT('This entry was imported from a RupChain trade and is read-only.')
+    // An entry recorded for a RupChain trade keeps the side you had in that trade.
+    if (current.linkedTradeRef && e.type !== current.type) {
+      throw new AppError('VALIDATION_ERROR', 'This entry was recorded for a RupChain trade, so it stays a ' + (current.type === 'BUY' ? 'buy' : 'sell'), 400)
+    }
 
     const [perEvent, perUser] = await Promise.all([
       db.portfolioEventRevision.count({ where: { userId, eventId } }),
@@ -602,10 +606,13 @@ export async function portfolioRoutes(app: FastifyInstance) {
     if (from.getTime() > to.getTime()) throw new AppError('VALIDATION_ERROR', 'The start date must be before the end date', 400)
     if (to.getTime() - from.getTime() > MAX_RANGE_MS) throw new AppError('VALIDATION_ERROR', 'That date range is too long', 400)
 
-    const priceRows = prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt }))
+    const manualRows = prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt }))
+    // Past dates can also use the proven RupChain trade prices that were current then (linked tokens only).
+    const linked = await db.portfolioAsset.findMany({ where: { userId, ctmTokenId: { not: null } }, select: { id: true, ctmTokenId: true } })
+    const priceRows = [...manualRows, ...(await platformHistoryFor(linked))]
     // Latest observation per asset (rows are ascending, so later ones overwrite earlier ones).
-    const latest = new Map<string, (typeof priceRows)[number]>()
-    for (const p of priceRows) latest.set(p.assetId, p)
+    const latest = new Map<string, (typeof manualRows)[number]>()
+    for (const p of manualRows) latest.set(p.assetId, p)
     for (const p of await withPlatformMarks(userId, [...latest.values()])) latest.set(p.assetId, p)
 
     try {

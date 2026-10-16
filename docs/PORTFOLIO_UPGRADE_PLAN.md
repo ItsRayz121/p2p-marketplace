@@ -49,6 +49,6 @@ All six steps are implemented, cross-checked and covered by tests (backend unit 
 Known limits, by design:
 - Correcting an entry and recording a left-out trade need a connection; they are not queued offline (a queued edit could collide with a newer version; the server uses a conditional update to prevent silent overwrites).
 - Backups (JSON/CSV) keep the price basis but not the edit history, edit time or trade link. Restoring a backup re-creates entries as plain manual entries.
-- The value-over-time chart uses only prices recorded on past dates; the latest point also uses the latest proven RupChain trade price.
+- The value-over-time chart uses prices you entered plus proven RupChain trade prices of linked tokens (last 200 trades); older dates stay blank, never estimated.
 - Platform trade prices are cached in memory for 60 seconds per token.
 - Visual/responsive layout was checked structurally (grid, scrollable tables), not in a real browser.

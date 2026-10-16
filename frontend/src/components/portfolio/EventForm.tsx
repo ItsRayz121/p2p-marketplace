@@ -56,7 +56,7 @@ interface Props {
   onSubmit: (input: PortfolioEventInput) => Promise<void> | void
   onCancel: () => void
   /** The latest proven RupChain price per token, if the token has one. Offered only for new entries dated now. */
-  platformPrice?: { price: string; quote: Currency } | null
+  platformPrices?: Partial<Record<Currency, string>> | null
   /** Values to start from when recording something that is already known (for example a RupChain trade). */
   prefill?: Partial<Pick<PortfolioEventInput, 'type' | 'occurredAt' | 'quantity' | 'consideration' | 'quote'>>
   /** The type cannot be changed (a trade was a buy or a sell for you, whichever you prefer). */
@@ -69,7 +69,7 @@ interface Props {
   warn?: (input: PortfolioEventInput) => string | null
 }
 
-export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrice }: Props) {
+export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrices }: Props) {
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const requestId = useRef(newRequestId())
@@ -91,7 +91,7 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
   const [zeroCost, setZeroCost] = useState(initial?.zeroCost ?? false)
   const [note, setNote] = useState(initial?.note ?? '')
   const [warning, setWarning] = useState<string | null>(null)
-  const [basisChoice, setBasisChoice] = useState<PriceBasis>(platformPrice && !initial && !prefill ? 'platform' : 'own')
+  const [basisChoice, setBasisChoice] = useState<PriceBasis>(platformPrices && !initial && !prefill ? 'platform' : 'own')
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -100,11 +100,12 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
   // The RupChain price is offered for a new buy/sell dated about now, in the currency that price is quoted in.
   const whenMs = Date.parse(when)
   const nowish = !Number.isNaN(whenMs) && whenMs <= Date.now() + 5 * 60 * 1000 && Date.now() - whenMs <= PLATFORM_PRICE_WINDOW_MS
-  const offerPlatform = Boolean(platformPrice) && !initial && !prefill && trade && quote === platformPrice?.quote && nowish
+  const platformPrice = platformPrices?.[quote]
+  const offerPlatform = platformPrice !== undefined && !initial && !prefill && trade && nowish
   const usePlatform = offerPlatform && basisChoice === 'platform'
   const AMOUNT_OK = (v: string) => AMOUNT_RE.test(v) && !isZeroAmount(v)
   // quantity x RupChain price, exact, to 8 places (the same precision quantities are shown with).
-  const platformTotal = usePlatform && AMOUNT_OK(quantity.trim()) ? new D(quantity.trim()).times(platformPrice!.price).toDecimalPlaces(8).toFixed() : null
+  const platformTotal = usePlatform && AMOUNT_OK(quantity.trim()) ? new D(quantity.trim()).times(platformPrice!).toDecimalPlaces(8).toFixed() : null
   // What the user's own total works out to per token, shown so the two prices can be compared.
   const ownUnit = trade && !usePlatform && AMOUNT_OK(quantity.trim()) && AMOUNT_RE.test(consideration.trim()) && !isZeroAmount(consideration.trim())
     ? new D(consideration.trim()).div(quantity.trim()).toDecimalPlaces(8).toFixed().replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
@@ -218,12 +219,12 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
 
       {trade ? (
         <>
-          {offerPlatform && platformPrice && (
+          {offerPlatform && platformPrice !== undefined && (
             <fieldset className="space-y-2">
               <legend className="text-sm font-medium text-text-primary">Price used</legend>
               <label className="flex items-start gap-2 text-sm text-text-primary">
                 <input type="radio" name={id('basis')} checked={basisChoice === 'platform'} onChange={() => setBasisChoice('platform')} className="mt-1" />
-                <span>RupChain price <span className="text-text-muted">({platformPrice.quote} {formatQuantity(platformPrice.price)} per token, latest trade)</span></span>
+                <span>RupChain price <span className="text-text-muted">({quote} {formatQuantity(platformPrice)} per token, latest trade)</span></span>
               </label>
               <label className="flex items-start gap-2 text-sm text-text-primary">
                 <input type="radio" name={id('basis')} checked={basisChoice === 'own'} onChange={() => setBasisChoice('own')} className="mt-1" />

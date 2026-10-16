@@ -18,72 +18,97 @@ export interface MarkRow {
   source?: string
 }
 
-/** How many of a token's most recent settled trades are examined to find one that is proven. */
-export const PRICE_LOOKBACK_TRADES = 100
-const MAX_ROWS = 2000
+/** How many of a token's most recent settled trades are examined for proven prices. */
+export const PRICE_LOOKBACK_TRADES = 200
+const LOOKUP_PARALLEL = 5
 const CACHE_TTL_MS = 60_000
 
-interface CachedMark { at: number; mark: { price: string; observedAt: Date } | null }
-const cache = new Map<string, CachedMark>()
+interface Point { price: string; observedAt: Date }
+/** Proven trade prices of a token, newest first. */
+const cache = new Map<string, { at: number; series: Point[] }>()
 /** Test hook. */
 export function resetPlatformMarkCache(): void { cache.clear() }
 
 /**
- * Latest platform trade price (PKR per token) for each linked tracker token.
+ * Proven trade prices (PKR per token, newest first) for each token.
  *
  * A price comes only from a trade the portfolio import would also accept as settled: not disputed,
  * not auto-completed by the timer, not force-completed by an administrator, and, for on-chain
  * settlement, with a verified token transfer. A status of "completed" alone does not prove that
  * money and tokens both moved, and one unproven trade must not set what everyone's holdings are
- * worth. When none of a token's recent trades is proven, the token has no platform price.
+ * worth. A token with no proven trade among its recent ones has an empty series.
  */
-export async function platformMarksFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<MarkRow[]> {
+async function provenSeries(tokenIds: string[]): Promise<Map<string, Point[]>> {
+  const now = Date.now()
+  const out = new Map<string, Point[]>()
+  const missing: string[] = []
+  for (const tokenId of tokenIds) {
+    const c = cache.get(tokenId)
+    if (c && now - c.at < CACHE_TTL_MS) out.set(tokenId, c.series)
+    else missing.push(tokenId)
+  }
+  // One query per token (a few at a time), so a very busy token cannot crowd out the others' recent trades.
+  for (let i = 0; i < missing.length; i += LOOKUP_PARALLEL) {
+    await Promise.all(missing.slice(i, i + LOOKUP_PARALLEL).map(async (tokenId) => {
+      const trades = await db.ctmTrade.findMany({
+        where: { tokenId, status: 'completed', completedAt: { not: null } },
+        orderBy: { completedAt: 'desc' },
+        take: PRICE_LOOKBACK_TRADES,
+        select: TRADE_FACTS_SELECT,
+      })
+      const forced = await forcedReleaseRefs(trades.map((t) => t.tradeRef))
+      const series: Point[] = []
+      for (const t of trades) {
+        // The buyer's view is used only to ask "did this trade settle?"; the price is the same for both sides.
+        if (classifyTrade(factsFromTrade(t, t.buyerId, forced)).kind !== 'eligible') continue
+        const qty = new D(t.tokenAmount.toFixed())
+        const fiat = new D(t.fiatAmount.toFixed())
+        if (!qty.gt(0) || !fiat.gt(0) || !t.completedAt) continue
+        const price = fiat.div(qty).toDecimalPlaces(ALLOC_DP, ROUND)
+        if (!price.gt(0)) continue
+        series.push({ price: price.toFixed(), observedAt: t.completedAt })
+      }
+      cache.set(tokenId, { at: now, series })
+      out.set(tokenId, series)
+    }))
+  }
+  return out
+}
+
+function tokenLinks(links: Array<{ id: string; ctmTokenId: string | null }>): Map<string, string[]> {
   const byToken = new Map<string, string[]>()
   for (const l of links) {
     if (l.ctmTokenId) byToken.set(l.ctmTokenId, [...(byToken.get(l.ctmTokenId) ?? []), l.id])
   }
+  return byToken
+}
+
+/** Latest proven platform trade price (PKR per token) for each linked tracker token. */
+export async function platformMarksFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<MarkRow[]> {
+  const byToken = tokenLinks(links)
   if (byToken.size === 0) return []
-
-  const now = Date.now()
-  const found = new Map<string, CachedMark['mark']>()
-  const missing: string[] = []
-  for (const tokenId of byToken.keys()) {
-    const c = cache.get(tokenId)
-    if (c && now - c.at < CACHE_TTL_MS) found.set(tokenId, c.mark)
-    else missing.push(tokenId)
-  }
-
-  if (missing.length > 0) {
-    const trades = await db.ctmTrade.findMany({
-      where: { tokenId: { in: missing }, status: 'completed', completedAt: { not: null } },
-      orderBy: { completedAt: 'desc' },
-      take: Math.min(MAX_ROWS, PRICE_LOOKBACK_TRADES * missing.length),
-      select: TRADE_FACTS_SELECT,
-    })
-    const forced = await forcedReleaseRefs(trades.map((t) => t.tradeRef))
-    const result = new Map<string, CachedMark['mark']>(missing.map((id) => [id, null]))
-    for (const t of trades) {
-      if (result.get(t.tokenId)) continue // newest proven trade already chosen
-      // The buyer's view is used only to ask "did this trade settle?"; the price is the same for both sides.
-      if (classifyTrade(factsFromTrade(t, t.buyerId, forced)).kind !== 'eligible') continue
-      const qty = new D(t.tokenAmount.toFixed())
-      const fiat = new D(t.fiatAmount.toFixed())
-      if (!qty.gt(0) || !fiat.gt(0) || !t.completedAt) continue
-      const price = fiat.div(qty).toDecimalPlaces(ALLOC_DP, ROUND)
-      if (!price.gt(0)) continue
-      result.set(t.tokenId, { price: price.toFixed(), observedAt: t.completedAt })
-    }
-    for (const [tokenId, mark] of result) {
-      cache.set(tokenId, { at: now, mark })
-      found.set(tokenId, mark)
-    }
-  }
-
+  const series = await provenSeries([...byToken.keys()])
   const out: MarkRow[] = []
-  for (const [tokenId, mark] of found) {
-    if (!mark) continue
-    for (const assetId of byToken.get(tokenId) ?? []) {
-      out.push({ assetId, price: mark.price, quote: 'PKR', observedAt: mark.observedAt, source: 'platform' })
+  for (const [tokenId, assetIds] of byToken) {
+    const latest = series.get(tokenId)?.[0]
+    if (!latest) continue
+    for (const assetId of assetIds) out.push({ assetId, price: latest.price, quote: 'PKR', observedAt: latest.observedAt, source: 'platform' })
+  }
+  return out
+}
+
+/**
+ * Every proven trade price of each linked token (newest first), as dated observations, so the
+ * value-over-time chart can use the price that was current on past dates. Nothing is interpolated.
+ */
+export async function platformHistoryFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<MarkRow[]> {
+  const byToken = tokenLinks(links)
+  if (byToken.size === 0) return []
+  const series = await provenSeries([...byToken.keys()])
+  const out: MarkRow[] = []
+  for (const [tokenId, assetIds] of byToken) {
+    for (const point of series.get(tokenId) ?? []) {
+      for (const assetId of assetIds) out.push({ assetId, price: point.price, quote: 'PKR', observedAt: point.observedAt, source: 'platform' })
     }
   }
   return out

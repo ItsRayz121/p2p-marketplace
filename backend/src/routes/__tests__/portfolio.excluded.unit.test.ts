@@ -22,7 +22,7 @@ vi.mock('../../services/portfolioImport.service', () => ({
   ensureLinkedAsset: m.ensure,
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
-vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], logosFor: async () => new Map() }))
+vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], platformHistoryFor: async () => [], logosFor: async () => new Map() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {

@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { EventListQuery, EventsPage, HistoryEvent, PortfolioEventType } from '@/lib/portfolio/types'
 import { D } from '@/lib/portfolio/engine/decimal'
 import { formatDecimal, formatQuantity, isZeroAmount } from '@/lib/portfolio/format'
@@ -48,6 +48,7 @@ export function TransactionHistory({
   const [offset, setOffset] = useState(0)
   const [page, setPage] = useState<EventsPage | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const seq = useRef(0)
 
   // Typing waits a moment before searching, and a new search starts from the first page.
   useEffect(() => {
@@ -62,8 +63,10 @@ export function TransactionHistory({
     if (type) query.type = type
     if (source) query.source = source
     if (status) query.status = status
-    try { setPage(await load(query)) }
-    catch (e) { setError(e instanceof Error ? e.message : 'Could not load your transactions.') }
+    // Only the newest request may update the screen, so a slow older search cannot overwrite a newer one.
+    const mine = ++seq.current
+    try { const r = await load(query); if (mine === seq.current) setPage(r) }
+    catch (e) { if (mine === seq.current) setError(e instanceof Error ? e.message : 'Could not load your transactions.') }
   }, [load, offset, q, type, source, status])
   useEffect(() => { void reload() }, [reload])
 

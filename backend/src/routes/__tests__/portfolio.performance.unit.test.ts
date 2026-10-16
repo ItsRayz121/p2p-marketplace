@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import Fastify from 'fastify'
 import { Prisma } from '@prisma/client'
 
-const m = vi.hoisted(() => ({ evFindMany: vi.fn(), prFindMany: vi.fn(), cfg: vi.fn() }))
+const m = vi.hoisted(() => ({ evFindMany: vi.fn(), prFindMany: vi.fn(), cfg: vi.fn(), history: vi.fn() }))
 
 vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
@@ -13,7 +13,7 @@ vi.mock('../../lib/prisma', () => ({
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
 // The only platform data the tracker reads is a token's latest settled trade price and logo (read-only); covered in portfolioMarks tests.
-vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], logosFor: async () => new Map() }))
+vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], platformHistoryFor: (...a: unknown[]) => m.history(...a), logosFor: async () => new Map() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
@@ -51,6 +51,7 @@ beforeEach(() => {
   for (const f of Object.values(m)) f.mockReset()
   m.evFindMany.mockResolvedValue(stored())
   m.prFindMany.mockResolvedValue([])
+  m.history.mockResolvedValue([])
   m.cfg.mockResolvedValue('')
 })
 
@@ -86,6 +87,12 @@ describe('GET /portfolio/performance', () => {
     // 60 units x (4 USDT x 300) = 72,000 PKR at today's rate; history before "now" stays a gap
     expect(d.points.at(-1).value).toBe('72000')
     expect(d.points[0].value).toBeNull()
+  })
+  it('past dates use the proven RupChain trade prices that were current then, not just prices the user typed', async () => {
+    m.history.mockResolvedValue([{ assetId: 'MEC', price: '1200', quote: 'PKR', observedAt: new Date('2026-01-05T00:00:00Z'), source: 'platform' }])
+    const d = (await get('?from=2026-01-01T00:00:00Z&to=2026-01-20T00:00:00Z')).json().data
+    expect(d.points.at(-1).value).toBe('72000')
+    expect(d.points[0].value).toBeNull() // before the first trade price there is still a gap, never an estimate
   })
   it('supports USDT, listing tokens that have no recorded rate', async () => {
     m.evFindMany.mockResolvedValue([row({ id: 'x', assetId: 'OLD', fxRate: null })])

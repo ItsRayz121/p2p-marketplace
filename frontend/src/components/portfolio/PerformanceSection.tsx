@@ -167,7 +167,7 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
           )}
           <LineChart
             title="Portfolio Value Over Time"
-            description="Value of what you held, only on dates when every token you held had a price recorded. The latest point uses today's price, including the latest RupChain trade price."
+            description="Value of what you held, only on dates when every token you held had a price: one you entered, or a proven RupChain trade price that was current then. The latest point uses today's price."
             currency={cur}
             emptyMessage={valueEmpty.message}
             emptyAction={valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}

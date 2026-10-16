@@ -279,7 +279,9 @@ export function TokenDetail(p: TokenDetailProps) {
             assetName={asset.name}
             defaultType={mode.type}
             defaultCurrency={currency}
-            platformPrice={price && price.source === 'platform' ? { price: price.original, quote: price.quote } : null}
+            platformPrices={price && price.source === 'platform'
+              ? { [price.quote]: price.original, ...(price.price !== null ? { [currency]: price.price } : {}) }
+              : null}
             onCancel={closeForm}
             onSubmit={async (input) => { await p.onRecordEvent(asset.id, input); await reload(); closeForm() }}
           />

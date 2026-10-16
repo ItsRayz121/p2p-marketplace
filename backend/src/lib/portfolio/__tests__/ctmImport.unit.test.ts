@@ -143,10 +143,11 @@ describe('a trade the user already recorded by hand is never imported as well', 
     expect(plan.toCreate).toHaveLength(1)
     expect(plan.recordedManually).toBe(0)
   })
-  it('a linked trade that is still excluded is just excluded, not counted as recorded here', () => {
-    const plan = makePlan([trade({ id: 'x', hasDispute: true })], [], new Set(['x']))
-    expect(plan.recordedManually).toBe(0)
+  it('a left-out trade the user recorded by hand no longer needs attention, but an unrecorded one still does', () => {
+    const plan = makePlan([trade({ id: 'x', hasDispute: true }), trade({ id: 'y', hasDispute: true })], [], new Set(['x']))
+    expect(plan.recordedManually).toBe(1)
     expect(plan.attention).toEqual([{ reason: 'disputed', count: 1 }])
+    expect(plan.toCreate).toEqual([])
   })
   it('is idempotent: running the plan again with the same link set changes nothing', () => {
     const t = [trade({ id: 'x' })]

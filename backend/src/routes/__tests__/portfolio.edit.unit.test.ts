@@ -23,7 +23,7 @@ vi.mock('../../lib/prisma', () => ({
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: m.cfg, getBoolConfig: async () => true }))
-vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], logosFor: async () => new Map() }))
+vi.mock('../../services/portfolioMarks.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioMarks.service')>()), platformMarksFor: async () => [], platformHistoryFor: async () => [], logosFor: async () => new Map() }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
@@ -156,6 +156,17 @@ describe('PATCH /portfolio/assets/:id/events/:eventId', () => {
   it('a rate typed by the user is stored as entered by the user', async () => {
     await patch(body({ quote: 'USDT', fxRate: '282' }))
     expect(m.evUpdateMany.mock.calls[0]![0].data).toMatchObject({ fxRate: '282', fxSource: 'manual' })
+  })
+
+  it('an entry recorded for a RupChain trade keeps its side', async () => {
+    m.evFindFirst.mockReset()
+    m.evFindFirst.mockResolvedValue(row({ linkedTradeRef: 'trade1' }))
+    const res = await patch(body({ type: 'SELL' }))
+    expect(res.statusCode).toBe(400)
+    expect(res.json().error.message).toMatch(/stays a buy/)
+    expect(m.evUpdateMany).not.toHaveBeenCalled()
+    m.evFindFirst.mockResolvedValueOnce(row({ linkedTradeRef: 'trade1' })).mockResolvedValue(row())
+    expect((await patch(body({ quantity: '5' }))).statusCode).toBe(200)
   })
 
   it('turning an entry into an opening holding clears the money fields', async () => {

@@ -231,6 +231,22 @@ describe('Price used: RupChain price or the price I got', () => {
     expect(screen.getByLabelText('Amount paid (PKR)')).toBeInTheDocument()
   })
 
+  it('when the portfolio is shown in USDT the RupChain price is offered in USDT too (converted at the current rate)', async () => {
+    api.summary.mockResolvedValue(sum(
+      [pos('MEC', { quantity: '10', knownRemainingBasis: '4', price: '0.04', value: '0.4', unrealized: '0.1' })],
+      { MEC: { price: '0.04', original: '12', quote: 'PKR', observedAt: iso(0), source: 'platform' } },
+      {}, { currency: 'USDT' },
+    ))
+    const user = await openBuy()
+    expect(screen.getByLabelText('Currency of the amounts')).toHaveValue('USDT')
+    expect(screen.getByRole('radio', { name: /USDT 0.04 per token/ })).toBeChecked()
+    await user.type(screen.getByLabelText('Quantity'), '100')
+    expect(screen.getByTestId('platform-total')).toHaveTextContent('4.00 USDT')
+    await user.selectOptions(screen.getByLabelText('Currency of the amounts'), 'PKR')
+    expect(screen.getByRole('radio', { name: /PKR 12 per token/ })).toBeInTheDocument()
+    expect(screen.getByTestId('platform-total')).toHaveTextContent('1,200.00 PKR')
+  })
+
   it('a token with no RupChain price (or a price the user typed) offers no choice and states no basis', async () => {
     api.summary.mockResolvedValue(sum(
       [pos('MEC', { quantity: '10', knownRemainingBasis: '100', price: '12', value: '120', unrealized: '20' })],

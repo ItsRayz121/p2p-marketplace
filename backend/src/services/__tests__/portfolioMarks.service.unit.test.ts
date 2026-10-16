@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const m = vi.hoisted(() => ({ trades: vi.fn(), tokens: vi.fn(), audit: vi.fn() }))
 vi.mock('../../lib/prisma', () => ({ db: { ctmTrade: { findMany: m.trades }, ctmToken: { findMany: m.tokens }, auditLog: { findMany: m.audit } } }))
 
-import { platformMarksFor, mergeMarks, logosFor, resetPlatformMarkCache } from '../portfolioMarks.service'
+import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor, resetPlatformMarkCache } from '../portfolioMarks.service'
 
 beforeEach(() => {
   resetPlatformMarkCache()
@@ -67,14 +67,48 @@ describe('platformMarksFor', () => {
     await platformMarksFor(LINKS)
     expect(m.trades).toHaveBeenCalledTimes(1)
     const arg = m.trades.mock.calls[0]![0]
-    expect(arg.where).toMatchObject({ tokenId: { in: ['t1'] }, status: 'completed' })
+    expect(arg.where).toMatchObject({ tokenId: 't1', status: 'completed' })
     expect(arg.take).toBeGreaterThan(0)
+  })
+
+  it('looks each token up on its own, so a busy token cannot crowd out another one', async () => {
+    m.trades.mockImplementation(async (arg: { where: { tokenId: string } }) =>
+      arg.where.tokenId === 't1' ? [trade({ fiatAmount: dec('5000') })] : [trade({ id: 'y', tradeRef: 'ref-y', tokenId: 't2', fiatAmount: dec('4000') })])
+    const out = await platformMarksFor([{ id: 'a1', ctmTokenId: 't1' }, { id: 'a2', ctmTokenId: 't2' }])
+    expect(Object.fromEntries(out.map((r) => [r.assetId, r.price]))).toEqual({ a1: '25', a2: '20' })
+    expect(m.trades).toHaveBeenCalledTimes(2)
+    expect(m.trades.mock.calls.every(([a]) => a.take === 200)).toBe(true)
   })
 
   it('maps one platform price to every tracker asset that mirrors the token', async () => {
     m.trades.mockResolvedValue([trade()])
     const out = await platformMarksFor([{ id: 'a1', ctmTokenId: 't1' }, { id: 'a9', ctmTokenId: 't1' }])
     expect(out.map((r) => r.assetId).sort()).toEqual(['a1', 'a9'])
+  })
+})
+
+describe('platformHistoryFor', () => {
+  it('lists every proven trade price of a linked token as a dated observation, skipping unproven trades', async () => {
+    m.trades.mockResolvedValue([
+      trade({ id: 'n', tradeRef: 'ref-n', fiatAmount: dec('6000'), completedAt: at('2026-10-15T00:00:00Z') }),
+      trade({ id: 'u', tradeRef: 'ref-u', fiatAmount: dec('9000'), completedAt: at('2026-10-10T00:00:00Z'), messages: [{ id: 'm' }] }),
+      trade({ id: 'o', tradeRef: 'ref-o', fiatAmount: dec('4000'), completedAt: at('2026-10-01T00:00:00Z') }),
+    ])
+    const out = await platformHistoryFor([{ id: 'a1', ctmTokenId: 't1' }, { id: 'a2', ctmTokenId: null }])
+    expect(out.map((r) => [r.assetId, r.price, r.observedAt.toISOString().slice(0, 10), r.source])).toEqual([
+      ['a1', '30', '2026-10-15', 'platform'],
+      ['a1', '20', '2026-10-01', 'platform'],
+    ])
+  })
+  it('shares one lookup with the latest-price call (no second query within the cache window)', async () => {
+    m.trades.mockResolvedValue([trade()])
+    await platformMarksFor(LINKS)
+    await platformHistoryFor(LINKS)
+    expect(m.trades).toHaveBeenCalledTimes(1)
+  })
+  it('reads nothing when no token is linked', async () => {
+    expect(await platformHistoryFor([{ id: 'a', ctmTokenId: null }])).toEqual([])
+    expect(m.trades).not.toHaveBeenCalled()
   })
 })
 
