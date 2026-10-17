@@ -7,6 +7,7 @@ import { redis } from '../lib/redis'
 import { classifyNotification, type NotifGroup } from '../lib/adminNotifGroups'
 import { getPrefsForUsers } from './adminNotificationPrefs.service'
 import { sendTelegramAdminAlert } from '../lib/telegram.notify'
+import { recordTelegramMessage } from '../lib/telegram.messageLog'
 import { buildGasKeyboard } from './telegramGasActions.service'
 import { sendAdminAlertEmail } from './email.service'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
@@ -139,6 +140,8 @@ async function dispatchExternal(payload: AdminNotifPayload): Promise<void> {
           const rows = payload.gasOrderId ? await buildGasKeyboard(payload.gasOrderId, tgId).catch(() => []) : []
           sendTelegramAdminAlert(tgId, payload.title, payload.body, href, rows)
             .then((r) => {
+              // Gas-order alerts are remembered so they can be deleted once the order is delivered.
+              if (r.ok && payload.gasOrderId) void recordTelegramMessage(tgId, r, { kind: 'gas', refKey: payload.gasOrderId })
               if (r.blocked) {
                 db.user.updateMany({ where: { telegramId: tgId }, data: { telegramBlockedAt: new Date() } }).catch(() => {})
               }

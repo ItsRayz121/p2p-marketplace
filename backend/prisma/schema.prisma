@@ -1227,6 +1227,21 @@ model Notification {
   @@index([userId, isRead])
 }
 
+// Telegram DMs we sent about a trade / gas order, remembered ONLY so the cleanup sweep can delete them
+// once that trade is cleanly finished (see lib/telegram.messageLog.ts). Rows are removed as soon as the
+// message is deleted, or after 47h when Telegram no longer lets a bot delete it, so the table stays tiny.
+model TelegramSentMessage {
+  id        String   @id @default(cuid())
+  chatId    BigInt
+  messageId Int
+  kind      String   // 'usdt' (refKey = Trade.id) | 'ctm' (CtmTrade.tradeRef) | 'gas' (GasFeeOrder.id)
+  refKey    String
+  sentAt    DateTime @default(now())
+
+  @@index([kind, refKey])
+  @@index([sentAt])
+}
+
 // ── BROADCAST ANNOUNCEMENTS ────────────────────────────────────────────────
 // Admin-composed announcements fanned out to all users across up to three
 // channels: a dismissible website banner ("web"), the in-app bell ("bell"),

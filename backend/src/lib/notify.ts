@@ -8,6 +8,7 @@ import { sseEmit } from './sse'
 import { sendPushToUser } from './push.service'
 import { sendTelegramNotification } from './telegram.notify'
 import { logger } from './logger'
+import { recordTelegramMessage, refFromNotificationMetadata } from './telegram.messageLog'
 
 export interface NotifyOptions {
   /**
@@ -137,6 +138,8 @@ export function notify(
           const tgId = u.telegramId
           sendTelegramNotification(tgId, title, body, url)
             .then((r) => {
+              // Trade-related DMs are remembered so the cleanup sweep can delete them once the trade finishes cleanly.
+              if (r.ok) void recordTelegramMessage(tgId, r, refFromNotificationMetadata(metadata))
               if (r.blocked) {
                 db.user.updateMany({ where: { telegramId: tgId }, data: { telegramBlockedAt: new Date() } }).catch(() => {})
               } else if (!r.ok) {

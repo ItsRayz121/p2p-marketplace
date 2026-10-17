@@ -3,6 +3,7 @@ import { redis } from '../lib/redis'
 import { logger } from '../lib/logger'
 import { QUEUE_NAMES, queues } from './definitions'
 import { scheduleSweep } from './scheduler'
+import { runTelegramMessageCleanup } from '../lib/telegram.messageLog'
 import { processOcrVerification } from '../jobs/ocrVerification.job'
 import { updateRates } from '../jobs/rateUpdater.job'
 import { runTradeEscalation } from '../jobs/tradeEscalation.job'
@@ -248,6 +249,9 @@ export function startWorkers() {
   // inactive-pause/bid-expiry all ran with BullMQ attempts:1 — plain-interval
   // sweeps below. Dispute-escalation retains real BullMQ retry/backoff
   // (default attempts:3), so it stays a Queue+Worker.
+  // Deletes the bot's Telegram DMs for cleanly finished trades (see lib/telegram.messageLog.ts).
+  scheduleSweep('telegram-message-cleanup', () => runTelegramMessageCleanup(), 5 * 60 * 1000)
+
   scheduleSweep('ctm-trade-expiry', runCtmTradeExpiry, 5 * 60 * 1000)
   scheduleSweep('ctm-proof-deadline', runCtmProofDeadline, 5 * 60 * 1000)
   // CTM's terminal confirm window is a fixed 30 minutes (much shorter than USDT's

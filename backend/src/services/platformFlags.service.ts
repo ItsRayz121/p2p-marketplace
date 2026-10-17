@@ -233,7 +233,18 @@ export const FLAGS = {
    * removes them). Read with `isFlagEnabled(FLAGS.VOICE_MESSAGES, true)`.
    */
   VOICE_MESSAGES: 'voice_messages_enabled',
+  /**
+   * Telegram clean-up of finished trades. DEFAULT ON — an admin kill-switch: set
+   * `telegram_auto_cleanup_enabled=false` to stop deleting the bot's DMs about completed USDT trades,
+   * completed CTM trades and delivered gas orders. Disputed, pending, failed, cancelled and expired
+   * trades are never touched either way. Read with `isFlagEnabled(FLAGS.TELEGRAM_AUTO_CLEANUP, true)`.
+   */
+  TELEGRAM_AUTO_CLEANUP: 'telegram_auto_cleanup_enabled',
 } as const
+
+/** Minutes to wait after a trade finishes (and after the message was sent) before its Telegram DMs are deleted. */
+export const TELEGRAM_CLEANUP_DELAY_MINUTES_KEY = 'telegram_cleanup_delay_minutes'
+export const TELEGRAM_CLEANUP_DELAY_MINUTES_DEFAULT = 60
 
 /** How many times a seller may bounce a buyer's payment proof before the next rejection auto-disputes. */
 export const TRADE_PROOF_REJECT_MAX_KEY = 'trade_proof_reject_max'
