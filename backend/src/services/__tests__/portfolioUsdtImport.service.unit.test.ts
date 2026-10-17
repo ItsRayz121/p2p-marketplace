@@ -69,6 +69,18 @@ describe('runUsdtImport', () => {
     expect(r.created).toBe(0)
     expect(m.evCreateMany).not.toHaveBeenCalled()
   })
+  it('an open dispute keeps the trade out; once resolved with no fault it is added automatically; a ruling keeps it out', async () => {
+    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'under_review', resolutionType: null } })])
+    expect((await runUsdtImport('u1', LIMITS)).created).toBe(0)
+    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'resolved', resolutionType: 'settled_by_parties' } })])
+    expect((await runUsdtImport('u1', LIMITS)).created).toBe(1)
+    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'resolved', resolutionType: 'buyer_wins' } })])
+    expect((await runUsdtImport('u1', LIMITS)).created).toBe(0)
+  })
+  it('records no fee on a trade: the marketplace charges none', async () => {
+    await runUsdtImport('u1', LIMITS)
+    expect(m.evCreateMany.mock.calls[0]![0].data[0].fee).toBe('0')
+  })
   it('is idempotent: a trade already imported is not added again', async () => {
     m.evFindMany.mockResolvedValue([{ id: 'e1', sourceRef: 't1', voidedAt: null }])
     const r = await runUsdtImport('u1', LIMITS)
