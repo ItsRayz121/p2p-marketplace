@@ -2419,7 +2419,7 @@ export async function adminRoutes(app: FastifyInstance) {
     // /admin/moralis-streams/status reflects progress in real time. Errors
     // on individual rows are logged and counted but never abort the loop —
     // a single problematic address must not block the rest of the backfill.
-    ;(async () => {
+    void (async () => {
       const batchSize = 100
       let cursor: string | undefined
       let scanned = 0
