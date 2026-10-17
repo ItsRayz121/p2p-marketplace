@@ -67,18 +67,23 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
 
   useEffect(() => { void load(variant) }, [load, variant])
 
-  // While a post is under review, watch for the automated check to finish.
+  // While a post is under review, watch for the automated check to finish. It normally takes seconds, so
+  // poll briefly (about 3 minutes) and then stop: a post waiting for a person is shown again on next visit.
   const status = info?.reward?.status
   useEffect(() => {
     if (status !== 'submitted') return
-    const id = setInterval(() => { void shareApi.getInfo(orderRef, variant).then((r) => { if (alive.current) setInfo((prev) => (prev ? { ...prev, reward: r.reward, eligible: r.eligible } : r)) }).catch(() => {}) }, POLL_MS)
+    let polls = 0
+    const id = setInterval(() => {
+      if (++polls > 22) { clearInterval(id); return }
+      void shareApi.getInfo(orderRef, variant).then((r) => { if (alive.current) setInfo((prev) => (prev ? { ...prev, reward: r.reward, eligible: r.eligible } : r)) }).catch(() => {})
+    }, POLL_MS)
     return () => clearInterval(id)
   }, [status, orderRef, variant])
 
   if (!info) return null
   if (!info.eligible) {
     if (info.reward) return <RewardStatus info={info} url="" setUrl={() => {}} busy={false} onSubmit={() => {}} />
-    return info.reason ? <p className="rounded-2xl border border-border bg-surface px-4 py-3 text-left text-xs text-text-muted">The Share &amp; Earn offer for this order has ended.</p> : null
+    return null
   }
 
   const reward = info.reward
