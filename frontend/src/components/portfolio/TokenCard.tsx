@@ -16,18 +16,30 @@ export function averageCost(p: PortfolioPosition | undefined): string | null {
   return avg.abs().gte(1) ? formatDecimal(avg.toFixed(), 2) : formatQuantity(avg.toDecimalPlaces(6).toFixed())
 }
 
+/** Small clock: the price behind this value is old. Understated on purpose; the text is in the tooltip. */
+export function StaleClock({ label }: { label: string }) {
+  return (
+    <span role="img" aria-label={`Price ${label}; it may be out of date`} title={`Price ${label}; it may be out of date`} className="inline-flex flex-shrink-0 text-amber-600 dark:text-amber-400">
+      <svg aria-hidden viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+        <circle cx="8" cy="8" r="6.25" /><path d="M8 4.5V8l2.25 1.5" />
+      </svg>
+    </span>
+  )
+}
+
 /**
- * One token as a single clickable row: what is held, what it is worth and how it is doing. Every
- * action (buy, sell, price, history) lives on the token's own page, so the row carries none.
+ * One token as a compact clickable card: what is held, what it is worth and how it is doing. Every
+ * action (record, price, history) lives on the token's own page, so the card carries none.
  */
 export function TokenCard({
-  asset, position, price, shown, fxUnavailable, onOpen, buttonRef, now = new Date(),
+  asset, position, price, shown, onOpen, buttonRef, now = new Date(),
 }: {
   asset: PortfolioAsset
   position: PortfolioPosition | undefined
   price: PortfolioPriceView | undefined
   shown: Currency
-  fxUnavailable: boolean
+  /** Kept for callers that still pass it; the card never hides a held token any more. */
+  fxUnavailable?: boolean
   onOpen: () => void
   buttonRef?: (el: HTMLButtonElement | null) => void
   now?: Date
@@ -35,40 +47,43 @@ export function TokenCard({
   const archived = Boolean(asset.archivedAt)
   const age = price && price.price !== null ? priceAge(price.observedAt, now) : null
   const hasPrice = price !== undefined && price.price !== null
+  const isHeld = position ? held(position.quantity) : false
 
   return (
-    <li className="group">
+    <li className="group min-w-0">
       <button
         ref={buttonRef} type="button" onClick={onOpen}
-        className="w-full text-left px-4 py-3.5 flex items-center gap-3 rounded-2xl border border-border bg-surface shadow-card transition hover:border-primary/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        aria-label={`${asset.name}${asset.symbol ? ` (${asset.symbol})` : ''}${archived ? ', Archived' : ''}`}
+        className="flex h-full w-full flex-col gap-2.5 rounded-2xl border border-border bg-surface p-3 text-left shadow-card transition hover:border-primary/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
       >
-        <TokenMonogram name={asset.name} size="md" logoUrl={asset.logoUrl} />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-text-primary break-words">
-            {asset.name}{archived && <span className="ml-2 text-xs font-normal text-text-muted">Archived</span>}
+        <span className="flex items-center gap-2.5">
+          <TokenMonogram name={asset.name} size="md" logoUrl={asset.logoUrl} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold leading-tight text-text-primary">{asset.name}</span>
+            <span className="block truncate text-[11px] leading-tight text-text-muted">
+              {asset.symbol ?? ' '}{archived && <span>{asset.symbol ? ' · ' : ''}Archived</span>}
+            </span>
           </span>
-          <span className="block text-xs text-text-muted break-words">
-            {asset.symbol ? `${asset.symbol} · ` : ''}
-            {position && !fxUnavailable
-              ? hasPrice && age
-                ? <>Price {age.label}{age.stale && <span title="This price may be out of date" className="ml-1 inline-flex items-center gap-1 text-amber-700"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />May be out of date</span>}</>
-                : 'No current price'
-              : null}
-          </span>
+          {age?.stale && <StaleClock label={age.label} />}
         </span>
-        {!position && fxUnavailable && (
-          <span className="text-right text-xs text-amber-800 flex-shrink-0">No {shown} rate</span>
-        )}
-        {position && (
-          <span className="text-right flex-shrink-0 tabular-nums">
-            <span className="block text-sm font-semibold text-text-primary">{position.value === null ? 'No price' : `${shown} ${formatDecimal(position.value)}`}</span>
-            <span className="block text-xs text-text-muted">{formatQuantity(position.quantity)} held</span>
-            {position.unrealized !== null
-              ? <span className={`block text-xs ${isNegative(position.unrealized) ? 'text-danger' : 'text-success'}`}>{formatSigned(position.unrealized)}</span>
-              : hasPrice && held(position.quantity) ? <span className="block text-xs text-text-muted">P/L not known yet</span> : null}
+
+        {position ? (
+          <span className="block tabular-nums">
+            <span className="block truncate text-sm font-semibold text-text-primary">
+              {position.value === null ? <span className="font-medium text-text-muted">No price</span> : `${shown} ${formatDecimal(position.value)}`}
+            </span>
+            <span className="mt-0.5 flex items-baseline justify-between gap-2 text-[11px]">
+              <span className="truncate text-text-muted">{formatQuantity(position.quantity)} held</span>
+              {position.unrealized !== null ? (
+                <span className={`flex-shrink-0 font-medium ${isNegative(position.unrealized) ? 'text-danger' : 'text-success'}`}>{formatSigned(position.unrealized)}</span>
+              ) : isHeld && hasPrice ? (
+                <span title="Profit/loss is not known yet" className="flex-shrink-0 text-text-muted">P/L —</span>
+              ) : null}
+            </span>
           </span>
+        ) : (
+          <span className="block text-[11px] text-text-muted">No entries yet</span>
         )}
-        <span aria-hidden className="text-text-muted group-hover:text-primary">›</span>
       </button>
     </li>
   )

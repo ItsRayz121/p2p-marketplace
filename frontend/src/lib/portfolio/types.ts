@@ -102,7 +102,7 @@ export interface PortfolioSummaryResponse {
   method: 'FIFO'
   fx: { usdtPkr: string | null }
   summary: PortfolioSummary
-  /** Tokens left out because a record has no exchange rate for this currency. */
+  /** Tokens that are still held, but whose cost or profit is partly unknown because a record has no exchange rate for this currency. */
   fxUnavailableAssets: string[]
   prices: Record<string, PortfolioPriceView>
   asOf: string
@@ -152,6 +152,8 @@ export interface PortfolioAsset {
   linkedToRupChainToken?: boolean
   /** Logo of the RupChain token this one mirrors (platform-uploaded). Absent for tokens the user typed in. */
   logoUrl?: string | null
+  /** Public catalog page of the RupChain token this one mirrors (approved tokens only). Used for the "view details" link. */
+  catalogSlug?: string | null
   name: string
   symbol?: string | null
   sourceUrl?: string | null

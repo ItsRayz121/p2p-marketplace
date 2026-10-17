@@ -61,7 +61,7 @@ describe('Review center', () => {
     expect(screen.getByText('Prices needing attention')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add price: Meta Earth' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Add price: Sidra' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Add opening holding: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add previous holdings: Sidra' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'View transactions: Meta Earth' })).toBeInTheDocument()
     expect(screen.getByLabelText(/never counted as zero/)).toBeInTheDocument()
   })
@@ -81,7 +81,7 @@ describe('Review center', () => {
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Review/ }))
     await user.click(await screen.findByRole('button', { name: 'Add price: Meta Earth' }))
-    expect(await screen.findByLabelText(/Current price per unit/)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/Price per unit/)).toBeInTheDocument()
     expect(api.setPrice).not.toHaveBeenCalled()
     expect(api.addEvent).not.toHaveBeenCalled()
   })
@@ -91,8 +91,10 @@ describe('Review center', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Review/ }))
-    await user.click(await screen.findByRole('button', { name: 'Add opening holding: Sidra' }))
-    expect(await screen.findByLabelText('Type')).toHaveValue('OPENING')
+    await user.click(await screen.findByRole('button', { name: 'Add previous holdings: Sidra' }))
+    expect(await screen.findByRole('dialog', { name: 'Add previous holdings' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Total cost/)).toBeInTheDocument()
+    expect(screen.queryByRole('radio', { name: 'Buy' })).toBeNull() // a previous holding is not a buy or a sell
   })
 
   it('flags a price older than a week and asks for an update', async () => {
@@ -145,7 +147,7 @@ describe('token cards', () => {
     expect(card).toHaveTextContent('60 held')
     expect(card).toHaveTextContent('PKR 72,000.00')
     expect(card).toHaveTextContent('+11,400.00')
-    expect(card).toHaveTextContent('Price today')
+    expect(screen.queryByRole('img', { name: /out of date/ })).toBeNull() // a fresh price carries no marker
   })
 
   it('rows carry no action buttons: everything is done on the token page', async () => {
@@ -153,7 +155,7 @@ describe('token cards', () => {
     render(<PortfolioPanel />)
     await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(screen.queryByRole('group', { name: /Actions for/ })).toBeNull()
-    for (const name of ['Record buy', 'Record sell', 'Add opening holdings', 'History', 'Update price', 'Add price']) {
+    for (const name of ['Record Transaction', 'Record buy', 'Record sell', 'Add previous holdings', 'History', 'Update price', 'Add price']) {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
   })
@@ -161,16 +163,20 @@ describe('token cards', () => {
   it('a stale price is flagged on the row', async () => {
     api.summary.mockResolvedValue(priced(iso(15)))
     render(<PortfolioPanel />)
-    expect(await screen.findByText('May be out of date')).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: /Price 15 days ago; it may be out of date/ })).toBeInTheDocument()
   })
 
-  it('the token page opens on the matching form from its action bar', async () => {
+  it('the token page has one Record Transaction form with a Buy / Sell switch', async () => {
     api.summary.mockResolvedValue(priced(iso(0)))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
-    await user.click(await screen.findByRole('button', { name: 'Record sell' }))
-    expect(await screen.findByLabelText('Type')).toHaveValue('SELL')
+    await user.click(await screen.findByRole('button', { name: 'Record Transaction' }))
+    expect(await screen.findByRole('dialog', { name: 'Record transaction' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: 'Buy' })).toHaveAttribute('aria-checked', 'true')
+    await user.click(screen.getByRole('radio', { name: 'Sell' }))
+    expect(screen.getByRole('radio', { name: 'Sell' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByLabelText('Amount received (PKR)')).toBeInTheDocument()
   })
 
   it('an unknown cost shows no average cost, and unknown profit is not printed as zero', async () => {
@@ -180,7 +186,7 @@ describe('token cards', () => {
     ))
     render(<PortfolioPanel />)
     const card = await screen.findByRole('button', { name: /^Meta Earth/ })
-    expect(card).toHaveTextContent('P/L not known yet')
+    expect(card).toHaveTextContent('P/L —')
     expect(card).not.toHaveTextContent('Avg cost')
     expect(averageCost({ quantity: '10', basisComplete: false, knownRemainingBasis: '0' } as never)).toBeNull()
     expect(averageCost({ quantity: '0', basisComplete: true, knownRemainingBasis: '0' } as never)).toBeNull()
@@ -202,8 +208,8 @@ describe('Price used: RupChain price or the price I got', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
-    await user.click(await screen.findByRole('button', { name: 'Record buy' }))
-    await screen.findByLabelText('Type')
+    await user.click(await screen.findByRole('button', { name: 'Record Transaction' }))
+    await screen.findByRole('dialog')
     return user
   }
 
@@ -216,20 +222,20 @@ describe('Price used: RupChain price or the price I got', () => {
     expect(screen.getByTestId('platform-total')).toHaveTextContent('Enter a quantity')
     await user.type(screen.getByLabelText('Quantity'), '100')
     expect(screen.getByTestId('platform-total')).toHaveTextContent('1,200.00 PKR')
-    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
     expect(api.addEvent.mock.calls[0]![1]).toMatchObject({ type: 'BUY', quantity: '100', consideration: '1200', priceBasis: 'platform' })
   })
 
-  it('"Price I got" lets the user enter their own amount and shows the price per token it implies', async () => {
+  it('"My actual price" lets the user enter their own amount and shows the price per token it implies', async () => {
     api.summary.mockResolvedValue(withPlatform())
     api.addEvent.mockResolvedValue({})
     const user = await openBuy()
-    await user.click(screen.getByRole('radio', { name: /^Price I got/ }))
+    await user.click(screen.getByRole('radio', { name: /^My actual price/ }))
     await user.type(screen.getByLabelText('Quantity'), '100')
     await user.type(screen.getByLabelText('Amount paid (PKR)'), '1300')
-    expect(screen.getByText(/That is PKR 13 per token/)).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    expect(screen.getByText(/PKR 13 per token, before the fee/)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
     expect(api.addEvent.mock.calls[0]![1]).toMatchObject({ consideration: '1300', priceBasis: 'own' })
   })
@@ -238,10 +244,11 @@ describe('Price used: RupChain price or the price I got', () => {
     api.summary.mockResolvedValue(withPlatform())
     const user = await openBuy()
     expect(screen.getByRole('radio', { name: /^RupChain price/ })).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'USDT')
+    await user.click(screen.getByRole('radio', { name: 'USDT' }))
     expect(screen.queryByRole('radio', { name: /^RupChain price/ })).toBeNull()
-    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'PKR')
+    await user.click(screen.getByRole('radio', { name: 'PKR' }))
     expect(screen.getByRole('radio', { name: /^RupChain price/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'Different date' }))
     fireEvent.change(screen.getByLabelText('Date and time'), { target: { value: '2026-01-01T10:00' } })
     expect(screen.queryByRole('radio', { name: /^RupChain price/ })).toBeNull()
     expect(screen.getByLabelText('Amount paid (PKR)')).toBeInTheDocument()
@@ -254,12 +261,13 @@ describe('Price used: RupChain price or the price I got', () => {
       {}, { currency: 'USDT' },
     ))
     const user = await openBuy()
-    expect(screen.getByLabelText('Enter amounts in')).toHaveValue('USDT')
-    expect(screen.getByRole('radio', { name: /USDT 0.04 per token/ })).toBeChecked()
+    expect(screen.getByRole('radio', { name: 'USDT' })).toHaveAttribute('aria-checked', 'true')
+    expect(screen.getByRole('radio', { name: /^RupChain price/ })).toBeChecked()
+    expect(screen.getByText(/USDT 0.04 per token/)).toBeInTheDocument()
     await user.type(screen.getByLabelText('Quantity'), '100')
     expect(screen.getByTestId('platform-total')).toHaveTextContent('4.00 USDT')
-    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'PKR')
-    expect(screen.getByRole('radio', { name: /PKR 12 per token/ })).toBeInTheDocument()
+    await user.click(screen.getByRole('radio', { name: 'PKR' }))
+    expect(screen.getByText(/PKR 12 per token/)).toBeInTheDocument()
     expect(screen.getByTestId('platform-total')).toHaveTextContent('1,200.00 PKR')
   })
 
@@ -270,19 +278,23 @@ describe('Price used: RupChain price or the price I got', () => {
     ))
     api.addEvent.mockResolvedValue({})
     const user = await openBuy()
-    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.queryByRole('radio', { name: /RupChain price|My actual price/ })).toBeNull()
     await user.type(screen.getByLabelText('Quantity'), '5')
     await user.type(screen.getByLabelText('Amount paid (PKR)'), '70')
-    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    await user.click(screen.getByRole('button', { name: 'Save' }))
     await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
     expect(api.addEvent.mock.calls[0]![1]).not.toHaveProperty('priceBasis')
   })
 
   it('an opening holding never has a price basis', async () => {
     api.summary.mockResolvedValue(withPlatform())
-    const user = await openBuy()
-    await user.selectOptions(screen.getByLabelText('Type'), 'OPENING')
-    expect(screen.queryByRole('radio')).toBeNull()
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Add previous holdings' }))
+    await screen.findByRole('dialog', { name: 'Add previous holdings' })
+    expect(screen.queryByRole('radio', { name: /RupChain price|My actual price/ })).toBeNull()
   })
 })
 

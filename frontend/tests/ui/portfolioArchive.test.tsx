@@ -24,6 +24,11 @@ const emptySummary = {
   currency: 'PKR', method: 'FIFO', fx: { usdtPkr: null }, fxUnavailableAssets: [], prices: {}, asOf: '2026-10-16T00:00:00Z',
   summary: { positions: [], pricedValue: '0', knownRemainingBasis: '0', knownUnrealized: '0', knownRealized: '0', knownTotalPnl: '0', unpricedAssets: [], unknownBasisAssets: [], unresolvedAssets: [], partial: false },
 }
+// Archive and delete live in the token's three-dot menu.
+async function pickFromMenu(user: ReturnType<typeof userEvent.setup>, item: string) {
+  await user.click(await screen.findByRole('button', { name: 'More actions' }))
+  await user.click(await screen.findByRole('menuitem', { name: item }))
+}
 const ev = { id: 'e1', assetId: 'a1', type: 'BUY', occurredAt: '2026-01-01T10:00:00Z', quantity: '1', consideration: '10', fee: '0', basis: null, zeroCost: false, quote: 'PKR', fxRate: null, fxSource: null, note: null, source: 'manual', voided: false, voidReason: null }
 
 beforeEach(() => {
@@ -46,8 +51,10 @@ describe('archive and restore', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Alpha/ }))
-    await user.click(await screen.findByRole('button', { name: 'Archive token' }))
-    expect(api.archiveAsset).toHaveBeenCalledWith('a1')
+    await pickFromMenu(user, 'Archive asset')
+    expect(api.archiveAsset).not.toHaveBeenCalled() // explained first, nothing changes until confirmed
+    await user.click(await screen.findByRole('button', { name: 'Archive asset' }))
+    await vi.waitFor(() => expect(api.archiveAsset).toHaveBeenCalledWith('a1'))
     expect(await screen.findByText('Beta')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^Alpha/ })).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Show archived tokens (1)' }))
@@ -62,14 +69,18 @@ describe('archive and restore', () => {
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: 'Show archived tokens (1)' }))
     await user.click(screen.getByRole('button', { name: /^Alpha/ }))
-    expect(await screen.findByText(/still count in your totals/)).toBeInTheDocument()
-    for (const name of ['Record buy', 'Record sell', 'Add opening holding', 'Update current price', 'Archive token']) {
+    expect(await screen.findByText(/still counts in your totals/)).toBeInTheDocument()
+    for (const name of ['Record Transaction', 'Update price']) {
       expect(screen.queryByRole('button', { name })).toBeNull()
     }
-    await user.click(screen.getByRole('button', { name: 'Restore token' }))
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Archive asset' })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: 'Add previous holdings' })).toBeNull()
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: 'Restore' }))
     expect(api.unarchiveAsset).toHaveBeenCalledWith('a1')
-    expect(await screen.findByRole('button', { name: 'Record buy' })).toBeInTheDocument()
-    expect(screen.queryByText(/still count in your totals/)).toBeNull()
+    expect(await screen.findByRole('button', { name: 'Record Transaction' })).toBeInTheDocument()
+    expect(screen.queryByText(/still counts in your totals/)).toBeNull()
   })
   it('shows a clear message when every token is archived', async () => {
     api.listAssets.mockResolvedValue([asset('a1', 'Alpha', { archivedAt: '2026-10-01T00:00:00Z' })])
@@ -81,7 +92,8 @@ describe('archive and restore', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Alpha/ }))
-    await user.click(await screen.findByRole('button', { name: 'Archive token' }))
+    await pickFromMenu(user, 'Archive asset')
+    await user.click(await screen.findByRole('button', { name: 'Archive asset' }))
     expect(await screen.findByText('Network down')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /back to portfolio/i })).toBeInTheDocument()
   })
@@ -93,11 +105,11 @@ describe('delete', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Alpha/ }))
-    await user.click(await screen.findByRole('button', { name: 'Delete token' }))
+    await pickFromMenu(user, 'Delete token')
     expect(api.deleteAsset).not.toHaveBeenCalled()
     await user.click(screen.getByRole('button', { name: 'Keep token' }))
     expect(api.deleteAsset).not.toHaveBeenCalled()
-    await user.click(screen.getByRole('button', { name: 'Delete token' }))
+    await pickFromMenu(user, 'Delete token')
     await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
     expect(api.deleteAsset).toHaveBeenCalledWith('a1')
     expect(await screen.findByText('Beta')).toBeInTheDocument()
@@ -109,15 +121,16 @@ describe('delete', () => {
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Alpha/ }))
     expect(await screen.findByText(/can be archived but not deleted/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Delete token' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Archive token' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    expect(screen.queryByRole('menuitem', { name: 'Delete token' })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: 'Archive asset' })).toBeInTheDocument()
   })
   it('shows the server message if the delete is refused', async () => {
     api.deleteAsset.mockRejectedValue(new Error('This token has records. Archive it instead so your history is kept.'))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Alpha/ }))
-    await user.click(await screen.findByRole('button', { name: 'Delete token' }))
+    await pickFromMenu(user, 'Delete token')
     await user.click(screen.getByRole('button', { name: 'Confirm delete' }))
     expect(await screen.findByText(/Archive it instead/)).toBeInTheDocument()
   })

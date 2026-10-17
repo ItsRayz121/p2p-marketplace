@@ -36,6 +36,11 @@ export interface TradeEvent {
    */
   basis?: string | null
   zeroCost?: boolean
+  /**
+   * BUY/SELL only: the amount could not be converted into this quote (no exchange rate was recorded).
+   * The units still count toward quantity and value, but the cost / proceeds stay UNKNOWN (never zero).
+   */
+  costUnknown?: boolean
 }
 
 export interface Mark {
@@ -157,11 +162,12 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
       continue
     }
 
-    const gross = dec('consideration', e.consideration, { positive: false })
-    const fee = e.fee === undefined ? new D(0) : dec('fee', e.fee, { positive: false })
+    const unknownCost = e.costUnknown === true
+    const gross = unknownCost ? new D(0) : dec('consideration', e.consideration, { positive: false })
+    const fee = unknownCost || e.fee === undefined ? new D(0) : dec('fee', e.fee, { positive: false })
 
     if (e.type === 'BUY') {
-      lots.push({ eventId: e.id, qty, basis: gross.plus(fee) })
+      lots.push({ eventId: e.id, qty, basis: unknownCost ? null : gross.plus(fee) })
       continue
     }
 
@@ -196,7 +202,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
       const isLastOfAll = i === pieces.length - 1 && toSell.isZero()
       const share = isLastOfAll ? net.minus(allocated) : q8(net.times(p.qty).div(qty))
       allocated = allocated.plus(share)
-      if (p.basis === null) { realizedComplete = false; evComplete = false }
+      if (p.basis === null || unknownCost) { realizedComplete = false; evComplete = false }
       else { realized = realized.plus(share.minus(p.basis)); evRealized = evRealized.plus(share.minus(p.basis)) }
     })
     realizedByEvent.push({ eventId: e.id, at: e.at, realized: out(evRealized), complete: evComplete })

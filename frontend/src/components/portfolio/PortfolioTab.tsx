@@ -12,6 +12,7 @@ import { ExportMenu } from './ExportMenu'
 import { ImportBackupDialog } from './ImportBackupDialog'
 import { ExcludedTradesView } from './ExcludedTradesView'
 import { ImportBanner } from './ImportBanner'
+import { InfoTip } from './InfoTip'
 import { PerformanceSection } from './PerformanceSection'
 import { PortfolioHeadline } from './PortfolioHeadline'
 import { AllocationBar } from './AllocationBar'
@@ -166,6 +167,7 @@ export function PortfolioTab({
           <ReviewCenter
             sections={reviewSections}
             waiting={waitingTrades}
+            tokens={activeAssets.map((a) => ({ id: a.id, name: a.name }))}
             backRef={backRef}
             onBack={() => { lastRowRef.current = null; setView({ name: 'overview' }) }}
             onOpenToken={(assetId, action) => { lastRowRef.current = assetId; setView({ name: 'token', assetId, start: action }) }}
@@ -234,7 +236,10 @@ export function PortfolioTab({
         {view.name === 'overview' && (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
-              <h2 id="tracked-portfolio-heading" className="text-xl font-bold text-text-primary">Portfolio</h2>
+              <span className="inline-flex items-center">
+                <h2 id="tracked-portfolio-heading" className="text-xl font-bold text-text-primary">Portfolio</h2>
+                <InfoTip text="A tracked estimate from the transactions you record. Separate from your RupChain wallet balance below; the two are never added together." />
+              </span>
               <span className="inline-flex flex-wrap items-center gap-2">
                 {summary && (
                   <button type="button" onClick={() => setView({ name: 'review' })} className="relative inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-semibold text-text-primary hover:bg-surface-hover">
@@ -254,10 +259,6 @@ export function PortfolioTab({
                 )}
               </span>
             </div>
-            <p className="text-xs text-text-muted mb-3">
-              A tracked estimate from the transactions you record. Separate from your RupChain wallet balance below; the two are never added together.
-            </p>
-
             {importReport && onImportTrades && onDismissImport && (
               <div className="mb-4">
                 <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} />
@@ -280,7 +281,7 @@ export function PortfolioTab({
 
             {summary && (summary.summary.positions.length > 0 || summary.fxUnavailableAssets.length > 0) && (
               <div className="mb-4 space-y-6">
-                <PortfolioHeadline data={summary} trackedHeld={trackedHeld} trackedTotal={activeAssets.length} />
+                <PortfolioHeadline data={summary} trackedHeld={trackedHeld} />
                 {loadPerformance && summary.summary.positions.length > 0 && (
                   <PerformanceSection
                     currency={shown}
@@ -315,7 +316,7 @@ export function PortfolioTab({
                 All your tracked tokens are archived. Their history still counts in the totals above.
               </div>
             ) : (
-              <ul className="grid grid-cols-1 gap-2.5">
+              <ul className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                 {listed.map((a) => (
                   <TokenCard
                     key={a.id}
@@ -323,7 +324,6 @@ export function PortfolioTab({
                     position={positions.get(a.id)}
                     price={summary?.prices[a.id]}
                     shown={shown}
-                    fxUnavailable={Boolean(summary?.fxUnavailableAssets.includes(a.id))}
                     buttonRef={(el) => { rowRefs.current[a.id] = el }}
                     onOpen={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
                   />

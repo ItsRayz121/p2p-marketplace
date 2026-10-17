@@ -85,7 +85,7 @@ describe('PortfolioTab', () => {
   it('renders the existing wallet section untouched next to an empty tracked portfolio', () => {
     render(<PortfolioTab walletSection={wallet} />)
     expect(screen.getByRole('heading', { name: 'Portfolio' })).toBeInTheDocument()
-    expect(screen.getByText(/never added together/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/never added together/i)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Deposit' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Withdraw' })).toBeInTheDocument()
   })

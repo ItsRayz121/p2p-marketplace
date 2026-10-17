@@ -45,25 +45,51 @@ describe('USDT reporting (each record at its own rate)', () => {
     expect(p.value).toBe('30') // 20 units x 1.5 USDT
     expect(p.unrealized).toBe('10')
   })
-  it('a record with no rate leaves its token out and flags it; it is never zero or converted at today\'s rate', () => {
+  it('a record with no rate keeps its token held and valued, flags it, and never turns the cost into zero or a different rate', () => {
     const events = [
       row({ assetId: 'OLD', type: 'BUY', quantity: '5', consideration: '1400', fxRate: null }),
       row({ assetId: 'OK', type: 'BUY', quantity: '5', consideration: '1400', fxRate: '280' }),
     ]
     const r = buildSummary({ events, prices: [price('OLD', '1', 'USDT'), price('OK', '1', 'USDT')], currency: 'USDT', platformRate: '280' })
     expect(r.fxUnavailableAssets).toEqual(['OLD'])
-    expect(r.summary.positions.map((p) => p.assetId)).toEqual(['OK'])
+    expect(r.summary.positions.map((p) => p.assetId)).toEqual(['OK', 'OLD'].sort())
+    const old = r.summary.positions.find((p) => p.assetId === 'OLD')!
+    expect(old.quantity).toBe('5')
+    expect(old.value).toBe('5') // current price x quantity needs no historical rate
+    expect(old.unrealized).toBeNull() // the cost is unknown, so no profit is invented
     expect(r.summary.partial).toBe(true)
-    expect(r.summary.pricedValue).toBe('5')
+    expect(r.summary.pricedValue).toBe('10')
   })
-  it('one unconvertible record excludes the whole token, not just that record', () => {
+  it('one unconvertible record keeps the token; only that sale becomes unknown', () => {
     const events = [
       row({ assetId: 'A', type: 'BUY', quantity: '5', consideration: '1400', fxRate: '280' }),
       row({ assetId: 'A', type: 'SELL', quantity: '1', consideration: '300', fxRate: null }),
     ]
     const r = buildSummary({ events, prices: [], currency: 'USDT', platformRate: '280' })
     expect(r.fxUnavailableAssets).toEqual(['A'])
-    expect(r.summary.positions).toEqual([])
+    const p = r.summary.positions[0]!
+    expect(p.assetId).toBe('A')
+    expect(p.quantity).toBe('4')
+    expect(p.realizedComplete).toBe(false)
+    expect(p.realizedKnown).toBe('0')
+  })
+  it('switching PKR <-> USDT never changes which tokens are held or their quantities', () => {
+    const events = [
+      row({ assetId: 'A', type: 'BUY', quantity: '10', consideration: '2800', fxRate: '280' }),
+      row({ assetId: 'B', type: 'BUY', quantity: '7', consideration: '700', fxRate: null }), // old PKR record, no rate
+      row({ assetId: 'C', type: 'BUY', quantity: '3', consideration: '30', quote: 'USDT', fxRate: '280' }),
+      row({ assetId: 'D', type: 'BUY', quantity: '9', consideration: '90', fxRate: null }), // no price either
+      row({ assetId: 'D', type: 'SELL', quantity: '9', consideration: '99', fxRate: null }), // fully sold
+    ]
+    const prices = [price('A', '300'), price('B', '100'), price('C', '1', 'USDT')]
+    const pkr = buildSummary({ events, prices, currency: 'PKR', platformRate: '280' })
+    const usdt = buildSummary({ events, prices, currency: 'USDT', platformRate: '280' })
+    const held = (r: typeof pkr) => r.summary.positions.filter((p) => Number(p.quantity) > 0).map((p) => [p.assetId, p.quantity])
+    expect(held(usdt)).toEqual(held(pkr))
+    expect(held(pkr)).toEqual([['A', '10'], ['B', '7'], ['C', '3']])
+    // Current values convert at today's platform rate: 7 x 100 PKR = 700 PKR = 2.5 USDT.
+    expect(pkr.summary.positions.find((p) => p.assetId === 'B')!.value).toBe('700')
+    expect(Number(usdt.summary.positions.find((p) => p.assetId === 'B')!.value)).toBeCloseTo(2.5, 6)
   })
   it('USDT records shown in PKR use their own rate; USDT records shown in USDT need none', () => {
     const events = [row({ assetId: 'U', type: 'BUY', quantity: '400', consideration: '400', quote: 'USDT', fxRate: '278' })]

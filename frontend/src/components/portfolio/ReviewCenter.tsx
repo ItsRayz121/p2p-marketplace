@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import type { ImportReport, PortfolioAsset, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import { ATTENTION_TEXT } from '@/lib/portfolio/importText'
 import { formatQuantity } from '@/lib/portfolio/format'
@@ -44,16 +45,17 @@ export function buildReview(
   const oversold = mine(s.unresolvedAssets)
   if (oversold.length > 0) {
     sections.push({
-      id: 'history', title: 'Incomplete transaction history',
-      tip: 'You recorded selling more than your history shows. No profit is counted for the excess. Add an opening holding to complete the history.',
+      id: 'history', title: 'Fix transaction history',
+      tip: 'You recorded selling more than your history shows. No profit is counted for the excess. Add the holdings you had before your first record to complete the history.',
       rows: oversold.map((id) => {
         const units = s.positions.find((p) => p.assetId === id)?.unresolvedSales.map((u) => formatQuantity(u.quantity)).join(', ')
-        return { key: `history-${id}`, title: name(id), detail: units ? `Sold ${units} more than recorded` : 'Sales larger than recorded purchases', actionLabel: 'Add opening holding', token: { assetId: id, action: 'opening' as const } }
+        return { key: `history-${id}`, title: name(id), detail: units ? `Sold ${units} more than recorded` : 'Sales larger than recorded purchases', actionLabel: 'Add previous holdings', token: { assetId: id, action: 'opening' as const } }
       }),
     })
   }
 
-  const noCost = mine(s.unknownBasisAssets.filter((id) => !s.unresolvedAssets.includes(id)))
+  // A token whose cost is unknown only for want of an exchange rate is listed once, under the rate issue below.
+  const noCost = mine(s.unknownBasisAssets.filter((id) => !s.unresolvedAssets.includes(id) && !summary.fxUnavailableAssets.includes(id)))
   if (noCost.length > 0) {
     sections.push({
       id: 'costs', title: 'Missing acquisition costs',
@@ -81,8 +83,8 @@ export function buildReview(
   if (noRate.length > 0) {
     sections.push({
       id: 'other', title: 'Other data quality issues',
-      tip: `Some entries were recorded without an exchange rate for their date, so they cannot be shown in ${summary.currency}.`,
-      rows: noRate.map((id) => ({ key: `fx-${id}`, title: name(id), detail: `Some entries cannot be shown in ${summary.currency}`, actionLabel: 'View transactions', token: { assetId: id, action: 'history' as const } })),
+      tip: `Some entries were recorded without an exchange rate for their date, so their cost cannot be shown in ${summary.currency}. The token and its current value are still counted; only its profit is partial.`,
+      rows: noRate.map((id) => ({ key: `fx-${id}`, title: name(id), detail: `Cost of some entries is unknown in ${summary.currency}`, actionLabel: 'View transactions', token: { assetId: id, action: 'history' as const } })),
     })
   }
   return sections
@@ -94,9 +96,11 @@ export function reviewCount(sections: ReviewSection[]): number {
 }
 
 export function ReviewCenter({
-  sections, waiting = 0, onOpenToken, onReviewTrades, onBack, backRef,
+  sections, waiting = 0, tokens = [], onOpenToken, onReviewTrades, onBack, backRef,
 }: {
   sections: ReviewSection[]
+  /** Tokens that can be given previous holdings from here (the fix for a gap in the history). */
+  tokens?: Array<{ id: string; name: string }>
   /** Trades still in progress: informational only. */
   waiting?: number
   onOpenToken: (assetId: string, action: TokenAction) => void
@@ -139,7 +143,29 @@ export function ReviewCenter({
           </ul>
         </details>
       ))}
+      {tokens.length > 0 && <PreviousHoldings tokens={tokens} onPick={(id) => onOpenToken(id, 'opening')} />}
       {waiting > 0 && <p className="text-xs text-text-muted">{plural(waiting, 'RupChain trade is', 'RupChain trades are')} still in progress and will be added once confirmed.</p>}
     </div>
+  )
+}
+
+/** The tool for a gap in the history: units held before the first record. Not offered anywhere more prominent. */
+function PreviousHoldings({ tokens, onPick }: { tokens: Array<{ id: string; name: string }>; onPick: (assetId: string) => void }) {
+  const [id, setId] = useState(tokens[0]!.id)
+  const chosen = tokens.some((t) => t.id === id) ? id : tokens[0]!.id
+  return (
+    <details className="rounded-2xl border border-border bg-surface shadow-card">
+      <summary className="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-text-primary">
+        Add previous holdings
+        <InfoTip text="For units you already held before your first record. It adds a holding with the cost you give (or an unknown cost); nothing is invented and your actual transactions are untouched." />
+      </summary>
+      <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+        <label htmlFor="previous-holdings-token" className="sr-only">Token</label>
+        <select id="previous-holdings-token" value={chosen} onChange={(e) => setId(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary">
+          {tokens.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+        <button type="button" onClick={() => onPick(chosen)} className="rounded-lg bg-primary px-3 py-2 text-sm font-semibold text-white">Continue</button>
+      </div>
+    </details>
   )
 }

@@ -43,17 +43,27 @@ export interface SummaryResult {
   /** Current platform rate used for valuing marks; null when unavailable. */
   fx: { usdtPkr: string | null }
   summary: Omit<PortfolioSummary, 'positions'> & { positions: SummaryPosition[] }
-  /** Tokens left out because a record has no usable exchange rate for the chosen currency. */
+  /** Tokens still held but with some cost / proceeds unknown, because a record has no usable exchange rate for the chosen currency. */
   fxUnavailableAssets: string[]
   prices: Record<string, PriceView>
   asOf: string
 }
 
 /**
- * Convert every record into `currency` at ITS OWN stored rate. A token with ANY unconvertible
- * record is excluded entirely (all of its records), and reported in `unavailable`.
+ * Convert every record into `currency` at ITS OWN stored rate.
+ *
+ * A record with no usable rate cannot be priced in `currency`, and its token is reported in `unavailable`.
+ * What happens to that token depends on `keepUnknownCost`:
+ * - false (default, used by the performance chart): the whole token is left out, as before.
+ * - true (used by the portfolio summary): the token STAYS, so its quantity and current value are still
+ *   counted. Only the unconvertible record's cost / proceeds become unknown (never zero), which makes
+ *   that token's profit figures partial. Switching currency therefore never changes which tokens are held.
  */
-export function convertEvents(rows: EventRow[], currency: Quote): { events: TradeEvent[]; unavailable: Set<string> } {
+export function convertEvents(
+  rows: EventRow[],
+  currency: Quote,
+  opts: { keepUnknownCost?: boolean } = {},
+): { events: TradeEvent[]; unavailable: Set<string> } {
   const unavailable = new Set<string>()
   const converted: TradeEvent[] = []
 
@@ -65,9 +75,10 @@ export function convertEvents(rows: EventRow[], currency: Quote): { events: Trad
     const consideration = conv(r.consideration)
     const fee = conv(r.fee)
     const basis = conv(r.basis)
-    if (consideration === null || fee === null || basis === null) {
+    const unconvertible = consideration === null || fee === null || basis === null
+    if (unconvertible) {
       unavailable.add(r.assetId)
-      return
+      if (!opts.keepUnknownCost) return
     }
     const e: TradeEvent = {
       id: r.id,
@@ -77,24 +88,29 @@ export function convertEvents(rows: EventRow[], currency: Quote): { events: Trad
       seq: i,
       quantity: r.quantity,
     }
-    if (consideration !== undefined) e.consideration = consideration
-    if (fee !== undefined) e.fee = fee
-    if (r.type === 'OPENING') {
-      e.basis = basis === undefined ? null : basis
-      e.zeroCost = r.zeroCost
+    if (unconvertible) {
+      if (r.type === 'OPENING') { e.basis = null; e.zeroCost = false } else e.costUnknown = true
+    } else {
+      if (consideration !== undefined) e.consideration = consideration
+      if (fee !== undefined) e.fee = fee
+      if (r.type === 'OPENING') {
+        e.basis = basis === undefined ? null : basis
+        e.zeroCost = r.zeroCost
+      }
     }
     converted.push(e)
   })
 
-  return { events: converted.filter((e) => !unavailable.has(e.assetId)), unavailable }
+  return { events: opts.keepUnknownCost ? converted : converted.filter((e) => !unavailable.has(e.assetId)), unavailable }
 }
 /**
  * Build the summary in `currency`.
  *
  * - Every record is converted at ITS OWN stored rate, so an old PKR trade shown in USDT uses the
  *   rate recorded for that trade, never today's.
- * - If any record of a token cannot be converted (no rate), the WHOLE token is left out of the
- *   engine and listed in `fxUnavailableAssets`; it is never valued at zero or at another rate.
+ * - If a record of a token cannot be converted (no rate), the token STAYS in the portfolio with its
+ *   quantity and current value, its cost / proceeds for that record are unknown (never zero, never
+ *   another rate), and the token is listed in `fxUnavailableAssets` so its profit is reported as partial.
  * - Marks ("current prices") are valued now, so they use the current platform rate.
  */
 export function buildSummary(args: {
@@ -107,7 +123,7 @@ export function buildSummary(args: {
   const { currency } = args
   const platformRate = cleanRate(args.platformRate)
 
-  const { events: usable, unavailable } = convertEvents(args.events, currency)
+  const { events: usable, unavailable } = convertEvents(args.events, currency, { keepUnknownCost: true })
 
   const marks: Record<string, Mark> = {}
   const prices: Record<string, PriceView> = {}

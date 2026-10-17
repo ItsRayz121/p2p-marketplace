@@ -52,10 +52,10 @@ afterEach(() => vi.restoreAllMocks())
 
 async function recordBuy(user: ReturnType<typeof userEvent.setup>) {
   await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
-  await user.click(await screen.findByRole('button', { name: 'Record buy' }))
+  await user.click(await screen.findByRole('button', { name: 'Record Transaction' }))
   await user.type(screen.getByLabelText('Quantity'), '10')
   await user.type(screen.getByLabelText('Amount paid (PKR)'), '1000')
-  await user.click(screen.getByRole('button', { name: 'Save entry' }))
+  await user.click(screen.getByRole('button', { name: 'Save' }))
 }
 
 describe('saved copy', () => {
@@ -190,10 +190,10 @@ describe('entries recorded offline', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel userId="u1" />)
     await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
-    await user.click(await screen.findByRole('button', { name: 'Update current price' }))
+    await user.click(await screen.findByRole('button', { name: 'Update price' }))
     setOnline(false)
     act(() => { window.dispatchEvent(new Event('offline')) })
-    await user.type(screen.getByLabelText(/Current price per unit/), '1200')
+    await user.type(screen.getByLabelText(/Price per unit/), '1200')
     await user.click(screen.getByRole('button', { name: 'Save price' }))
     expect(await screen.findByText(/Prices need a connection/)).toBeInTheDocument()
     expect(api.setPrice).not.toHaveBeenCalled()

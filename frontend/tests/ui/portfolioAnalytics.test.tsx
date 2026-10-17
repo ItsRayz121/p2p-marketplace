@@ -83,7 +83,7 @@ describe('charts that have nothing to draw say what is missing and offer the fix
     expect(screen.getByText(/never estimated|rather than being estimated/)).toBeInTheDocument()
     expect(container.querySelector('svg[aria-label="Portfolio Value Over Time"] polyline')).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Add a price' }))
-    expect(await screen.findByLabelText(/Current price per unit/)).toBeInTheDocument()
+    expect(await screen.findByLabelText(/Price per unit/)).toBeInTheDocument()
   })
 
   it('priced on some dates only: no total is drawn for the unpriced ones, and it says why', async () => {

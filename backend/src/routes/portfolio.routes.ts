@@ -10,7 +10,7 @@ import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
 import { runCtmImport, listExcludedTrades, recordExcludedBatch, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
-import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
+import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor, slugsFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
 import { restorePortfolioBackup } from '../services/portfolioRestore.service'
@@ -204,8 +204,10 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const interested = new Set(
       (await db.portfolioListingInterest.findMany({ where: { userId, withdrawnAt: null }, select: { assetId: true } })).map((r) => r.assetId),
     )
-    const logos = await logosFor(items.map((a) => ({ id: a.id, ctmTokenId: a.ctmTokenId })))
-    return reply.send({ success: true, data: items.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), listingInterest: interested.has(a.id), linkedToRupChainToken: Boolean(ctmTokenId), logoUrl: logos.get(a.id) ?? null })) })
+    const links = items.map((a) => ({ id: a.id, ctmTokenId: a.ctmTokenId }))
+    const logos = await logosFor(links)
+    const slugs = await slugsFor(links)
+    return reply.send({ success: true, data: items.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), listingInterest: interested.has(a.id), linkedToRupChainToken: Boolean(ctmTokenId), logoUrl: logos.get(a.id) ?? null, catalogSlug: slugs.get(a.id) ?? null })) })
   })
 
   // Same name / symbol / link as an existing token is allowed and creates a separate asset.

@@ -5,11 +5,12 @@ import type { Currency, PortfolioEvent, PortfolioEventInput, PortfolioEventType,
 import { D } from '@/lib/portfolio/engine/decimal'
 import { convertAmount } from '@/lib/portfolio/engine/currency'
 import { AMOUNT_RE, formatDecimal, formatQuantity, isZeroAmount } from '@/lib/portfolio/format'
+import { InfoTip } from './InfoTip'
 
 export const RECORD_ONLY_NOTICE =
   'This only adds a record to your own tracker. It does not buy or sell anything on RupChain and never changes your wallet balance.'
 
-const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Opening holding' }
+const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Previous holding' }
 
 /** A record dated within this long of now may use the latest RupChain price (it is not a historical price). */
 const PLATFORM_PRICE_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -34,6 +35,9 @@ const inputCls = (bad: boolean) =>
   `w-full rounded-lg border bg-surface text-text-primary text-base px-3 py-2.5 focus:outline-none focus:ring-2 ${
     bad ? 'border-danger focus:ring-danger/30' : 'border-border focus:ring-primary/30 focus:border-primary'
   }`
+
+const segCls = (on: boolean) =>
+  `flex-1 px-3 py-1.5 text-sm font-semibold transition ${on ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`
 
 function Row({ id, label, help, error, children }: { id: string; label: string; help?: string; error?: string; children: ReactNode }) {
   return (
@@ -67,22 +71,23 @@ interface Props {
   usdtPkr?: string | null
   /** Returns a warning to show before saving (the user can still save anyway), or null. */
   warn?: (input: PortfolioEventInput) => string | null
+  /** The moment a new entry starts from instead of "now" (for example just before the earliest record, for a previous holding). */
+  defaultWhen?: Date
 }
 
-export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrices, usdtPkr }: Props) {
+export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrices, usdtPkr, defaultWhen }: Props) {
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const requestId = useRef(newRequestId())
-  const firstRef = useRef<HTMLSelectElement>(null)
-  // A locked type select is disabled and cannot take focus, so focus the quantity instead.
-  useEffect(() => { (lockType ? document.getElementById(`${uid}-quantity`) : firstRef.current)?.focus() }, [lockType, uid])
+  // Start on the quantity: it is the first thing every entry needs.
+  useEffect(() => { document.getElementById(`${uid}-quantity`)?.focus() }, [uid])
 
   // The moment the form starts from: the entry being corrected, or the trade being recorded.
   const seedAt = initial?.occurredAt ?? prefill?.occurredAt
   const initialWhen = seedAt ? localValue(new Date(seedAt)) : ''
   const [type, setType] = useState<PortfolioEventType>(initial?.type ?? prefill?.type ?? defaultType)
   const [quote, setQuote] = useState<Currency>(initial?.quote ?? prefill?.quote ?? defaultCurrency)
-  const [when, setWhen] = useState(seedAt ? initialWhen : nowLocal)
+  const [when, setWhen] = useState(seedAt ? initialWhen : defaultWhen ? localValue(defaultWhen) : nowLocal)
   const [quantity, setQuantity] = useState(initial?.quantity ?? prefill?.quantity ?? '')
   const [consideration, setConsideration] = useState(initial?.consideration ?? prefill?.consideration ?? '')
   const [fee, setFee] = useState(initial?.fee && !isZeroAmount(initial.fee) ? initial.fee : '')
@@ -94,6 +99,9 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
   const [errors, setErrors] = useState<Partial<Record<Field, string>>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // The date is "now" unless the user asks otherwise. Existing entries, trades being recorded and previous holdings show it.
+  const [showWhen, setShowWhen] = useState(Boolean(seedAt) || defaultType === 'OPENING' || Boolean(defaultWhen))
+  const [moreOpen, setMoreOpen] = useState(Boolean(initial?.fee && !isZeroAmount(initial.fee)) || Boolean(initial?.note) || Boolean(prefill))
 
   const trade = type !== 'OPENING'
   // The RupChain price is offered for a new buy/sell dated about now, in the currency that price is quoted in.
@@ -141,9 +149,12 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
     }
     if (Object.keys(errs).length) {
       setErrors(errs)
+      // The field with the problem may be tucked away; open it so the message is visible.
+      if (errs.occurredAt) setShowWhen(true)
+      if (errs.fee) setMoreOpen(true)
       const order: Field[] = ['occurredAt', 'quantity', 'consideration', 'fee', 'basis']
       const first = order.find((k) => errs[k])
-      if (first) document.getElementById(id(first))?.focus()
+      if (first) setTimeout(() => document.getElementById(id(first))?.focus(), 0)
       return
     }
     setErrors({})
@@ -191,93 +202,130 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
     'aria-describedby': [helpId ? `${id(k)}-help` : '', errors[k] ? `${id(k)}-error` : ''].filter(Boolean).join(' ') || undefined,
   })
 
+  const currencyToggle = (
+    <div role="radiogroup" aria-label="Currency" className="inline-flex flex-shrink-0 overflow-hidden rounded-lg border border-border">
+      {(['PKR', 'USDT'] as const).map((c) => (
+        <button
+          key={c} type="button" role="radio" aria-checked={quote === c} onClick={() => setQuote(c)}
+          className={`px-3 py-1 text-xs font-semibold ${quote === c ? 'bg-primary text-white' : 'bg-surface text-text-secondary hover:bg-surface-hover'}`}
+        >
+          {c}
+        </button>
+      ))}
+    </div>
+  )
+  const hasMore = fee.trim() !== '' || note.trim() !== ''
+
   return (
     <form onSubmit={submit} noValidate className="space-y-4" aria-label={initial ? `Correct an entry for ${assetName}` : `Record an entry for ${assetName}`}>
-      <p className="text-xs text-text-muted">{RECORD_ONLY_NOTICE}</p>
-      {initial && <p className="text-xs text-text-muted">The earlier version of this entry is kept in its history.</p>}
-      {extraNotice && <p className="text-xs text-text-muted">{extraNotice}</p>}
+      {(initial || extraNotice) && (
+        <p className="text-xs text-text-muted">{[initial ? 'The earlier version of this entry is kept in its history.' : '', extraNotice ?? ''].filter(Boolean).join(' ')}</p>
+      )}
 
-      <Row id={id('type')} label="Type">
-        <select
-          ref={firstRef} id={id('type')} value={type} className={inputCls(false)} disabled={lockType}
-          onChange={(e) => setType(e.target.value as PortfolioEventType)}
-        >
-          {(Object.keys(TYPE_LABEL) as PortfolioEventType[]).map((t) => (
-            <option key={t} value={t}>{TYPE_LABEL[t]}</option>
+      {type === 'OPENING' || lockType ? (
+        <p className="text-sm font-semibold text-text-primary">
+          {TYPE_LABEL[type]}
+          <InfoTip text={type === 'OPENING' ? 'Units you already held before your first record. Add their cost if you know it; an unknown cost is never counted as zero.' : RECORD_ONLY_NOTICE} />
+        </p>
+      ) : (
+        <div role="radiogroup" aria-label="Type" className="flex overflow-hidden rounded-lg border border-border">
+          {(['BUY', 'SELL'] as const).map((t) => (
+            <button key={t} type="button" role="radio" aria-checked={type === t} onClick={() => setType(t)} className={segCls(type === t)}>{TYPE_LABEL[t]}</button>
           ))}
-        </select>
-      </Row>
-
-      <Row id={id('occurredAt')} label="Date and time" error={errors.occurredAt}>
-        <input id={id('occurredAt')} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls(!!errors.occurredAt)} {...d('occurredAt', false)} />
-      </Row>
+        </div>
+      )}
 
       <Row id={id('quantity')} label="Quantity" error={errors.quantity}>
         <input id={id('quantity')} type="text" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inputCls(!!errors.quantity)} {...d('quantity', false)} />
       </Row>
 
-      <Row id={id('quote')} label="Enter amounts in">
-        <select id={id('quote')} value={quote} onChange={(e) => setQuote(e.target.value as Currency)} className={inputCls(false)}>
-          <option value="PKR">PKR</option>
-          <option value="USDT">USDT</option>
-        </select>
-      </Row>
-
       {trade ? (
         <>
           {offerPlatform && platformPrice !== undefined && (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium text-text-primary">Price used</legend>
-              <label className="flex items-start gap-2 text-sm text-text-primary">
-                <input type="radio" name={id('basis')} checked={basisChoice === 'platform'} onChange={() => setBasisChoice('platform')} className="mt-1" />
-                <span>RupChain price <span className="text-text-muted">({quote} {formatQuantity(platformPrice)} per token, latest trade)</span></span>
-              </label>
-              <label className="flex items-start gap-2 text-sm text-text-primary">
-                <input type="radio" name={id('basis')} checked={basisChoice === 'own'} onChange={() => setBasisChoice('own')} className="mt-1" />
-                <span>Price I got <span className="text-text-muted">(a different price, for example from a trade outside RupChain)</span></span>
-              </label>
-            </fieldset>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-text-primary" id={id('basis-label')}>
+                Price
+                <InfoTip text={`RupChain price is the latest community-market trade price (${quote} ${formatQuantity(platformPrice)} per token). It is a platform reference, not an on-chain price. Choose My actual price to enter what you really paid or received.`} />
+              </span>
+              <div role="radiogroup" aria-labelledby={id('basis-label')} className="flex overflow-hidden rounded-lg border border-border">
+                <button type="button" role="radio" aria-checked={basisChoice === 'platform'} onClick={() => setBasisChoice('platform')} className={segCls(basisChoice === 'platform')}>RupChain price</button>
+                <button type="button" role="radio" aria-checked={basisChoice === 'own'} onClick={() => setBasisChoice('own')} className={segCls(basisChoice === 'own')}>My actual price</button>
+              </div>
+            </div>
           )}
           {usePlatform ? (
             <div className="flex flex-col gap-1.5">
-              <p className="text-sm font-medium text-text-primary">{amountLabel}</p>
-              <p className="text-sm text-text-primary" data-testid="platform-total">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-text-primary">{amountLabel}</p>
+                {currencyToggle}
+              </div>
+              <p className="rounded-lg border border-border bg-surface-hover/40 px-3 py-2.5 text-base text-text-primary tabular-nums" data-testid="platform-total">
                 {platformTotal === null ? 'Enter a quantity to see the amount' : `${formatDecimal(platformTotal)} ${quote}`}
               </p>
-              <p className="text-xs text-text-muted">Quantity times the RupChain price, before the fee.</p>
+              <p className="text-xs text-text-muted">{quote} {formatQuantity(platformPrice!)} per token, before the fee.</p>
               {errors.consideration && <p role="alert" className="text-sm text-danger">{errors.consideration}</p>}
             </div>
           ) : (
-            <Row id={id('consideration')} label={amountLabel} help={ownUnit ? `That is ${quote} ${ownUnit} per token. Total for the whole quantity, before the fee.` : 'Total for the whole quantity, before the fee.'} error={errors.consideration}>
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <label htmlFor={id('consideration')} className="text-sm font-medium text-text-primary">{amountLabel}</label>
+                {currencyToggle}
+              </div>
               <input id={id('consideration')} type="text" inputMode="decimal" autoComplete="off" value={consideration} onChange={(e) => setConsideration(e.target.value)} className={inputCls(!!errors.consideration)} {...d('consideration')} />
-            </Row>
+              <p id={`${id('consideration')}-help`} className="text-xs text-text-muted">{ownUnit ? `${quote} ${ownUnit} per token, before the fee.` : 'Total for the whole quantity, before the fee.'}</p>
+              {errors.consideration && <p id={`${id('consideration')}-error`} role="alert" className="text-sm text-danger">{errors.consideration}</p>}
+            </div>
           )}
           {conversionNote && <p data-testid="conversion-note" className="-mt-2 text-xs text-text-secondary">{conversionNote}</p>}
-          <Row
-            id={id('fee')} label={`Fee (${quote}), optional`} error={errors.fee}
-            help={type === 'BUY' ? 'Added to your cost.' : 'Deducted from what you received.'}
-          >
-            <input id={id('fee')} type="text" inputMode="decimal" autoComplete="off" value={fee} onChange={(e) => setFee(e.target.value)} className={inputCls(!!errors.fee)} {...d('fee')} />
-          </Row>
         </>
       ) : (
         <>
-          <Row
-            id={id('basis')} label={`Total cost (${quote}), optional`} error={errors.basis}
-            help="Leave blank if you do not know. An unknown cost is never treated as zero, so profit and loss for these units stays unavailable."
-          >
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <label htmlFor={id('basis')} className="text-sm font-medium text-text-primary">Total cost ({quote}), optional</label>
+              {currencyToggle}
+            </div>
             <input id={id('basis')} type="text" inputMode="decimal" autoComplete="off" disabled={zeroCost} value={zeroCost ? '' : basis} onChange={(e) => setBasis(e.target.value)} className={inputCls(!!errors.basis)} {...d('basis')} />
-          </Row>
+            <p id={`${id('basis')}-help`} className="text-xs text-text-muted">Leave blank if unknown. It is never counted as zero.</p>
+            {errors.basis && <p id={`${id('basis')}-error`} role="alert" className="text-sm text-danger">{errors.basis}</p>}
+          </div>
           <label className="flex items-center gap-2 text-sm text-text-primary">
             <input type="checkbox" checked={zeroCost} onChange={(e) => setZeroCost(e.target.checked)} />
-            These units cost me nothing (confirmed zero cost)
+            These units cost me nothing
           </label>
         </>
       )}
 
-      <Row id={id('note')} label="Note, optional">
-        <input id={id('note')} type="text" maxLength={200} autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls(false)} />
-      </Row>
+      {showWhen ? (
+        <Row id={id('occurredAt')} label={type === 'OPENING' ? 'Held since (before your first record)' : 'Date and time'} error={errors.occurredAt}>
+          <input id={id('occurredAt')} type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls(!!errors.occurredAt)} {...d('occurredAt', false)} />
+        </Row>
+      ) : (
+        <p className="text-sm text-text-secondary">
+          Now{' · '}
+          <button type="button" onClick={() => setShowWhen(true)} className="font-medium text-primary hover:underline">Different date</button>
+        </p>
+      )}
+
+      {trade && (
+        <div>
+          <button type="button" aria-expanded={moreOpen} onClick={() => setMoreOpen((v) => !v)} className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+            More options{hasMore && !moreOpen ? ' •' : ''} <span aria-hidden className={`transition-transform ${moreOpen ? 'rotate-90' : ''}`}>›</span>
+          </button>
+        </div>
+      )}
+      {(moreOpen || !trade) && (
+        <div className="space-y-4">
+          {trade && (
+            <Row id={id('fee')} label={`Fee (${quote}), optional`} error={errors.fee} help={type === 'BUY' ? 'Added to your cost.' : 'Deducted from what you received.'}>
+              <input id={id('fee')} type="text" inputMode="decimal" autoComplete="off" value={fee} onChange={(e) => setFee(e.target.value)} className={inputCls(!!errors.fee)} {...d('fee')} />
+            </Row>
+          )}
+          <Row id={id('note')} label="Note, optional">
+            <input id={id('note')} type="text" maxLength={200} autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls(false)} />
+          </Row>
+        </div>
+      )}
 
       {warning && <p role="alert" className="text-sm text-amber-800 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">{warning}</p>}
       {formError && <p role="alert" className="text-sm text-danger">{formError}</p>}
@@ -285,7 +333,7 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
       <div className="flex gap-2 justify-end">
         <button type="button" onClick={onCancel} className="px-4 py-2 text-sm font-semibold rounded-lg border border-border text-text-secondary hover:bg-surface-hover">Cancel</button>
         <button type="submit" disabled={busy} className="px-4 py-2 text-sm font-semibold rounded-lg bg-primary text-white disabled:opacity-60">
-          {busy ? 'Saving…' : warning ? 'Save anyway' : initial ? 'Save changes' : 'Save entry'}
+          {busy ? 'Saving…' : warning ? 'Save anyway' : initial ? 'Save changes' : 'Save'}
         </button>
       </div>
     </form>

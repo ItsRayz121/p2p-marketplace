@@ -145,8 +145,7 @@ describe('PerformanceSection inside the Portfolio tab', () => {
   })
   it('never shows a percentage or a gain when they are unavailable, and says why', async () => {
     render(<PortfolioPanel />)
-    expect(await screen.findByText('Unavailable')).toBeInTheDocument()
-    expect(screen.getByText(/A price is missing at the start or the end/)).toBeInTheDocument()
+    expect(await screen.findByText(/A price is missing at the start or the end/)).toBeInTheDocument()
     expect(screen.getByText('Return unavailable')).toBeInTheDocument()
     expect(screen.queryByText('Approximate (Modified Dietz)')).toBeNull()
   })

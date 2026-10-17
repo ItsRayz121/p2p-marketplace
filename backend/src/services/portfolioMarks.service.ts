@@ -134,3 +134,15 @@ export async function logosFor(links: Array<{ id: string; ctmTokenId: string | n
   const logo = new Map(tokens.flatMap((t) => (t.logoUrl ? [[t.id, t.logoUrl] as const] : [])))
   return new Map(links.flatMap((l) => (l.ctmTokenId && logo.has(l.ctmTokenId) ? [[l.id, logo.get(l.ctmTokenId)!] as const] : [])))
 }
+
+/**
+ * Public catalog page slug of the linked platform token, by tracker asset id. Only approved tokens are
+ * exposed (their page is public); the platform token id itself is never returned.
+ */
+export async function slugsFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<Map<string, string>> {
+  const ids = [...new Set(links.flatMap((l) => (l.ctmTokenId ? [l.ctmTokenId] : [])))]
+  if (ids.length === 0) return new Map()
+  const tokens = await db.ctmToken.findMany({ where: { id: { in: ids }, status: 'approved' }, select: { id: true, slug: true } })
+  const slug = new Map(tokens.map((t) => [t.id, t.slug] as const))
+  return new Map(links.flatMap((l) => (l.ctmTokenId && slug.has(l.ctmTokenId) ? [[l.id, slug.get(l.ctmTokenId)!] as const] : [])))
+}

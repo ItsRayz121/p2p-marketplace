@@ -13,7 +13,7 @@ async function submitted(type: PortfolioEventType, fill: (u: ReturnType<typeof u
   const onSubmit = vi.fn()
   render(<EventForm assetName="X" defaultType={type} onSubmit={onSubmit} onCancel={() => {}} />)
   await fill(user)
-  await user.click(screen.getByRole('button', { name: 'Save entry' }))
+  await user.click(screen.getByRole('button', { name: 'Save' }))
   expect(onSubmit).toHaveBeenCalledTimes(1)
   return onSubmit.mock.calls[0]![0] as PortfolioEventInput
 }
@@ -23,6 +23,7 @@ describe('what the entry form sends is accepted by the server\'s own validation'
     const input = await submitted('BUY', async (u) => {
       await u.type(screen.getByLabelText('Quantity'), '12.5')
       await u.type(screen.getByLabelText('Amount paid (PKR)'), '25000.75')
+      await u.click(screen.getByRole('button', { name: /More options/ }))
       await u.type(screen.getByLabelText(/Fee/), '10')
       await u.type(screen.getByLabelText('Note, optional'), 'bought on a dip')
     })
@@ -31,7 +32,7 @@ describe('what the entry form sends is accepted by the server\'s own validation'
   })
   it('a sell in USDT sends no rate', async () => {
     const input = await submitted('SELL', async (u) => {
-      await u.selectOptions(screen.getByLabelText('Enter amounts in'), 'USDT')
+      await u.click(screen.getByRole('radio', { name: 'USDT' }))
       await u.type(screen.getByLabelText('Quantity'), '3')
       await u.type(screen.getByLabelText('Amount received (USDT)'), '36.5')
     })

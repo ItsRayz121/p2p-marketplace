@@ -161,6 +161,7 @@ describe('safe rendering and no remote requests', () => {
     const user = userEvent.setup()
     const { container } = render(<PortfolioTab assets={hostile} />)
     await user.click(screen.getByText('<img src=x onerror=alert(1)>'))
+    await user.click(screen.getByRole('button', { name: 'Token information' }))
     const link = screen.getByRole('link', { name: 'evil.example' })
     expect(link).toHaveAttribute('href', 'https://evil.example/logo.png')
     expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'))
@@ -189,7 +190,8 @@ describe('safe rendering and no remote requests', () => {
     rerender(<PortfolioTab assets={[...assets]} onAddAsset={onAdd} onEditAsset={async () => {}} />)
     await user.click(await screen.findByText('Meta Earth'))
     expect(within(container).getAllByTestId('token-monogram').length).toBeGreaterThan(0)
-    await user.click(screen.getByRole('button', { name: 'Edit details' }))
+    await user.click(screen.getByRole('button', { name: 'More actions' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit details' }))
 
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(xhrOpen).not.toHaveBeenCalled()

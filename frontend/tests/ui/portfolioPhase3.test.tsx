@@ -123,6 +123,7 @@ describe('automatic conversion in the entry form', () => {
     const user = userEvent.setup()
     form()
     await user.type(screen.getByLabelText('Amount paid (PKR)'), '2800')
+    await user.click(screen.getByRole('button', { name: 'Different date' }))
     const date = screen.getByLabelText('Date and time')
     await user.clear(date)
     await user.type(date, '2026-01-02T10:00')
