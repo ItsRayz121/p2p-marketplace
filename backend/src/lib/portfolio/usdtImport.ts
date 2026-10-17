@@ -31,7 +31,11 @@ export interface UsdtTradeFacts {
   amount: string
   fiatAmount: string
   releasedAt: Date | null
+  /** A dispute that keeps the trade out: still open, a split, or one with unknown details. */
   hasDispute: boolean
+  /** The admin's ruling on a resolved dispute: buyer_wins counts (dated at the ruling), seller_wins means nothing was exchanged. */
+  ruling?: 'buyer_wins' | 'seller_wins' | null
+  resolvedAt?: Date | null
 }
 
 export type UsdtClass =
@@ -43,6 +47,8 @@ export function classifyUsdtTrade(f: UsdtTradeFacts): UsdtClass {
   if (f.coin.toUpperCase() !== 'USDT') return { kind: 'ignore' }
   if (f.status === 'cancelled') return { kind: 'ignore' }
   if (f.userId !== f.buyerId && f.userId !== f.sellerId) return { kind: 'ignore' }
+  if (f.ruling === 'seller_wins') return { kind: 'ignore' } // the ruling means nothing was exchanged
+  if (f.ruling === 'buyer_wins' && f.resolvedAt && toUsdtEventSpec(f) !== null) return { kind: 'eligible' }
   if (f.status === 'disputed' || f.status === 'dispute_resolved' || f.hasDispute) return { kind: 'left_out', reason: 'disputed' }
   if (IN_PROGRESS.has(f.status)) return { kind: 'left_out', reason: 'in_progress' }
   if (f.status !== 'crypto_released' || !f.releasedAt) return { kind: 'left_out', reason: 'in_progress' }
@@ -65,7 +71,8 @@ export interface UsdtEventSpec {
 
 /** The tracker entry for this trade from `f.userId`'s side; null if it cannot be represented safely. */
 export function toUsdtEventSpec(f: UsdtTradeFacts): UsdtEventSpec | null {
-  if (!f.releasedAt) return null
+  const at = f.ruling === 'buyer_wins' ? (f.resolvedAt ?? null) : f.releasedAt
+  if (!at) return null
   const type = f.userId === f.buyerId ? 'BUY' : f.userId === f.sellerId ? 'SELL' : null
   if (!type) return null
   if (!AMOUNT_RE.test(f.amount) || !AMOUNT_RE.test(f.fiatAmount)) return null
@@ -75,7 +82,7 @@ export function toUsdtEventSpec(f: UsdtTradeFacts): UsdtEventSpec | null {
   const rate = fiat.div(qty).toDecimalPlaces(ALLOC_DP, ROUND)
   if (!rate.gt(0)) return null
   return {
-    sourceRef: f.id, type, occurredAt: f.releasedAt, quantity: qty.toFixed(), consideration: fiat.toFixed(), quote: 'PKR',
+    sourceRef: f.id, type, occurredAt: at, quantity: qty.toFixed(), consideration: fiat.toFixed(), quote: 'PKR',
     fxRate: rate.toFixed(), note: `Imported from RupChain P2P trade ${f.orderRef}`,
   }
 }

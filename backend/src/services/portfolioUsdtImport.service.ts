@@ -1,6 +1,6 @@
 import { db } from '../lib/prisma'
 import { planUsdtImport, USDT_ASSET_KEY, USDT_SOURCE, type UsdtTradeFacts } from '../lib/portfolio/usdtImport'
-import { disputeBlocksImport } from '../lib/portfolio/disputeRule'
+import { disputeBlocksImport, disputeKind } from '../lib/portfolio/disputeRule'
 import type { ImportPreviewItem } from './portfolioImport.service'
 
 /**
@@ -45,12 +45,14 @@ async function loadFacts(userId: string): Promise<UsdtTradeFacts[]> {
     take: MAX_USDT_TRADES_SCANNED,
     select: {
       id: true, orderRef: true, buyerId: true, sellerId: true, coin: true, status: true, amount: true, fiatAmount: true, releasedAt: true,
-      dispute: { select: { id: true, status: true, resolutionType: true } },
+      dispute: { select: { id: true, status: true, resolutionType: true, resolvedAt: true } },
     },
   })
   return trades.map((t) => ({
     id: t.id, orderRef: t.orderRef, userId, buyerId: t.buyerId, sellerId: t.sellerId, coin: t.coin, status: t.status,
     amount: t.amount.toFixed(), fiatAmount: t.fiatAmount.toFixed(), releasedAt: t.releasedAt, hasDispute: disputeBlocksImport(t.dispute),
+    ruling: disputeKind(t.dispute) === 'buyer_wins' ? 'buyer_wins' : disputeKind(t.dispute) === 'seller_wins' ? 'seller_wins' : null,
+    resolvedAt: t.dispute?.resolvedAt ?? null,
   }))
 }
 

@@ -1,6 +1,6 @@
 import { db } from '../lib/prisma'
 import type { CtmTradeFacts } from '../lib/portfolio/ctmImport'
-import { disputeBlocksImport } from '../lib/portfolio/disputeRule'
+import { disputeBlocksImport, disputeKind } from '../lib/portfolio/disputeRule'
 
 /**
  * Read-only helpers that turn CTM trade rows into the facts the portfolio's settlement rules need.
@@ -13,7 +13,7 @@ const AUDIT_CHUNK = 100
 export const TRADE_FACTS_SELECT = {
   id: true, tradeRef: true, displayRef: true, buyerId: true, sellerId: true, status: true, settlementType: true,
   completedAt: true, createdAt: true, tokenId: true, tokenAmount: true, fiatAmount: true, paymentCurrency: true, usdtAmount: true,
-  dispute: { select: { id: true, status: true, resolutionType: true } },
+  dispute: { select: { id: true, status: true, resolutionType: true, resolvedAt: true } },
   messages: { where: { isSystem: true, message: { startsWith: 'Trade auto-completed' } }, select: { id: true }, take: 1 },
   proofs: { where: { proofType: 'txhash', txVerificationStatus: 'verified' }, select: { id: true }, take: 1 },
 } as const
@@ -40,7 +40,7 @@ interface TradeForFacts {
   settlementType: CtmTradeFacts['settlementType']; completedAt: Date | null; createdAt?: Date | null; tokenId: string
   tokenAmount: { toFixed(): string }; fiatAmount: { toFixed(): string }; paymentCurrency: string
   usdtAmount: { toFixed(): string } | null
-  dispute: { id: string; status?: string | null; resolutionType?: string | null } | null; messages: unknown[]; proofs: unknown[]
+  dispute: { id: string; status?: string | null; resolutionType?: string | null; resolvedAt?: Date | null } | null; messages: unknown[]; proofs: unknown[]
 }
 
 /** Facts for one trade from the point of view of `userId` (the buyer is a fine choice when only the price matters). */
@@ -62,6 +62,8 @@ export function factsFromTrade(t: TradeForFacts, userId: string, forced: Set<str
     usdtAmount: t.usdtAmount ? t.usdtAmount.toFixed() : null,
     // Only an open dispute, or one an admin ruled on, keeps a trade out; a no-fault close does not (see disputeRule).
     hasDispute: disputeBlocksImport(t.dispute),
+    ruling: disputeKind(t.dispute) === 'buyer_wins' || disputeKind(t.dispute) === 'seller_wins' ? (disputeKind(t.dispute) as 'buyer_wins' | 'seller_wins') : null,
+    resolvedAt: t.dispute?.resolvedAt ?? null,
     adminForceCompleted: forced.has(t.tradeRef),
     autoCompleted: t.messages.length > 0,
     verifiedTokenProof: t.proofs.length > 0,

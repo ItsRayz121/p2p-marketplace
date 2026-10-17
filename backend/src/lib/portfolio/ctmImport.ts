@@ -19,7 +19,7 @@ export type AttentionReason =
   | 'unverified_transfer'  // on-chain settlement without a verified token-transfer proof
   | 'invalid_amounts'      // amounts cannot be represented safely
 
-export type Evidence = 'on_chain_verified' | 'buyer_confirmed'
+export type Evidence = 'on_chain_verified' | 'buyer_confirmed' | 'admin_ruling'
 
 export interface CtmTradeFacts {
   id: string
@@ -38,7 +38,11 @@ export interface CtmTradeFacts {
   fiatAmount: string
   paymentCurrency: string
   usdtAmount: string | null
+  /** A dispute that keeps the trade out: still open, a split, or one with unknown details. */
   hasDispute: boolean
+  /** The admin's ruling on a resolved dispute, when it decides the exchange: buyer_wins counts, seller_wins means nothing was exchanged. */
+  ruling?: 'buyer_wins' | 'seller_wins' | null
+  resolvedAt?: Date | null
   adminForceCompleted: boolean
   autoCompleted: boolean
   verifiedTokenProof: boolean
@@ -57,6 +61,9 @@ const AMOUNT_RE = /^\d{1,28}(\.\d{1,18})?$/
 export function classifyTrade(f: CtmTradeFacts): Classification {
   if (f.status === 'cancelled' || f.status === 'expired') return { kind: 'ignore' } // nothing was exchanged
   if (IN_PROGRESS.has(f.status)) return { kind: 'attention', reason: 'in_progress' }
+  // A resolved dispute decides it: seller wins = nothing was exchanged; buyer wins = the exchange stands (dated at the ruling).
+  if (f.ruling === 'seller_wins') return { kind: 'ignore' }
+  if (f.ruling === 'buyer_wins' && f.resolvedAt && toEventSpec(f) !== null) return { kind: 'eligible', evidence: 'admin_ruling' }
   if (f.status === 'disputed' || f.status === 'dispute_resolved' || f.hasDispute) return { kind: 'attention', reason: 'disputed' }
   if (f.status !== 'completed' || !f.completedAt) return { kind: 'attention', reason: 'in_progress' }
   if (f.adminForceCompleted) return { kind: 'attention', reason: 'admin_completed' }
@@ -113,7 +120,8 @@ export interface ImportedEventSpec {
 
 /** The tracker entry for this trade, from the point of view of `f.userId`; null if it cannot be represented safely. */
 export function toEventSpec(f: CtmTradeFacts): ImportedEventSpec | null {
-  if (!f.completedAt) return null
+  const at = f.ruling === 'buyer_wins' ? (f.resolvedAt ?? null) : f.completedAt
+  if (!at) return null
   let type: 'BUY' | 'SELL'
   if (f.userId === f.buyerId) type = 'BUY'
   else if (f.userId === f.sellerId) type = 'SELL'
@@ -137,7 +145,7 @@ export function toEventSpec(f: CtmTradeFacts): ImportedEventSpec | null {
     sourceRef: f.id,
     assetKey: f.tokenId,
     type,
-    occurredAt: f.completedAt,
+    occurredAt: at,
     quantity: new D(f.tokenAmount).toFixed(),
     consideration: new D(consideration).toFixed(),
     quote,

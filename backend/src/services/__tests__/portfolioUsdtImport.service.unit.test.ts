@@ -69,12 +69,24 @@ describe('runUsdtImport', () => {
     expect(r.created).toBe(0)
     expect(m.evCreateMany).not.toHaveBeenCalled()
   })
-  it('an open dispute keeps the trade out; once resolved with no fault it is added automatically; a ruling keeps it out', async () => {
-    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'under_review', resolutionType: null } })])
+  it('an open dispute keeps the trade out; once resolved it is added automatically', async () => {
+    const resolvedAt = new Date('2026-10-05T12:00:00Z')
+    m.tradeFindMany.mockResolvedValue([trade({ status: 'disputed', releasedAt: null, dispute: { id: 'd', status: 'under_review', resolutionType: null, resolvedAt: null } })])
     expect((await runUsdtImport('u1', LIMITS)).created).toBe(0)
-    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'resolved', resolutionType: 'settled_by_parties' } })])
+    // Settled by the parties: the trade completed on its own, dated when it was released.
+    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'resolved', resolutionType: 'settled_by_parties', resolvedAt } })])
     expect((await runUsdtImport('u1', LIMITS)).created).toBe(1)
-    m.tradeFindMany.mockResolvedValue([trade({ dispute: { id: 'd', status: 'resolved', resolutionType: 'buyer_wins' } })])
+    // Admin ruled for the buyer: the trade ended as resolved; it is added, dated at the ruling.
+    m.evCreateMany.mockClear()
+    m.tradeFindMany.mockResolvedValue([trade({ status: 'dispute_resolved', releasedAt: null, dispute: { id: 'd', status: 'resolved', resolutionType: 'buyer_wins', resolvedAt } })])
+    expect((await runUsdtImport('u1', LIMITS)).created).toBe(1)
+    expect(m.evCreateMany.mock.calls[0]![0].data[0]).toMatchObject({ type: 'BUY', occurredAt: resolvedAt, quantity: '100', consideration: '28100' })
+  })
+  it('a ruling for the seller means nothing was exchanged, and a split cannot be added automatically', async () => {
+    const resolvedAt = new Date('2026-10-05T12:00:00Z')
+    m.tradeFindMany.mockResolvedValue([trade({ status: 'dispute_resolved', releasedAt: null, dispute: { id: 'd', status: 'resolved', resolutionType: 'seller_wins', resolvedAt } })])
+    expect((await runUsdtImport('u1', LIMITS)).created).toBe(0)
+    m.tradeFindMany.mockResolvedValue([trade({ status: 'dispute_resolved', releasedAt: null, dispute: { id: 'd', status: 'resolved', resolutionType: 'split', resolvedAt } })])
     expect((await runUsdtImport('u1', LIMITS)).created).toBe(0)
   })
   it('records no fee on a trade: the marketplace charges none', async () => {

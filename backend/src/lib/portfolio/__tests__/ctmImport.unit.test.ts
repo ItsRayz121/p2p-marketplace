@@ -24,6 +24,15 @@ describe('what counts as settled', () => {
   ])('%s is still in progress, never imported', (status) => {
     expect(classifyTrade(trade({ status, completedAt: null }))).toEqual({ kind: 'attention', reason: 'in_progress' })
   })
+  it('a disputed trade is added once the dispute is resolved: buyer wins counts at the ruling date, seller wins is nothing exchanged, a split stays out', () => {
+    const resolvedAt = new Date('2026-10-05T09:00:00Z')
+    const ruled = { status: 'dispute_resolved', completedAt: null, hasDispute: false, resolvedAt }
+    expect(classifyTrade(trade({ ...ruled, ruling: 'buyer_wins' }))).toEqual({ kind: 'eligible', evidence: 'admin_ruling' })
+    expect(toEventSpec(trade({ ...ruled, ruling: 'buyer_wins' }))).toMatchObject({ type: 'BUY', occurredAt: resolvedAt, quantity: '100', consideration: '125000' })
+    expect(classifyTrade(trade({ ...ruled, ruling: 'seller_wins' }))).toEqual({ kind: 'ignore' })
+    expect(classifyTrade(trade({ ...ruled, hasDispute: true }))).toEqual({ kind: 'attention', reason: 'disputed' })
+    expect(classifyTrade(trade({ status: 'disputed', completedAt: null, hasDispute: true }))).toEqual({ kind: 'attention', reason: 'disputed' })
+  })
   it('disputed and dispute-resolved trades are never imported', () => {
     expect(classifyTrade(trade({ status: 'disputed', completedAt: null }))).toEqual({ kind: 'attention', reason: 'disputed' })
     expect(classifyTrade(trade({ status: 'dispute_resolved' }))).toEqual({ kind: 'attention', reason: 'disputed' })
