@@ -127,14 +127,21 @@ describe('PATCH (metadata edits)', () => {
     const res = await app.inject({ method: 'PATCH', url: '/api/v1/portfolio/assets/a1', headers: as('u1'), payload: { name: 'Renamed', symbol: 'RN' } })
     expect(res.statusCode).toBe(200)
     const call = mocks.updateMany.mock.calls[0]![0]
-    expect(call.where).toEqual({ id: 'a1', userId: 'u1' })
+    expect(call.where).toEqual({ id: 'a1', userId: 'u1', ctmTokenId: null })
     expect(Object.keys(call.data).sort()).toEqual(['contractAddress', 'name', 'network', 'sourceUrl', 'symbol'])
   })
   it('another user\'s asset id is indistinguishable from a missing one (404)', async () => {
     mocks.updateMany.mockResolvedValue({ count: 0 })
+    mocks.findFirst.mockResolvedValue(null)
     const res = await app.inject({ method: 'PATCH', url: '/api/v1/portfolio/assets/theirs', headers: as('u1'), payload: { name: 'Hijack' } })
     expect(res.statusCode).toBe(404)
-    expect(mocks.findFirst).not.toHaveBeenCalled()
+  })
+  it('refuses to edit a token that mirrors a RupChain-listed token (409)', async () => {
+    mocks.updateMany.mockResolvedValue({ count: 0 })
+    mocks.findFirst.mockResolvedValue({ id: 'a1' })
+    const res = await app.inject({ method: 'PATCH', url: '/api/v1/portfolio/assets/a1', headers: as('u1'), payload: { name: 'Renamed' } })
+    expect(res.statusCode).toBe(409)
+    expect(mocks.updateMany.mock.calls.at(-1)![0].where).toEqual({ id: 'a1', userId: 'u1', ctmTokenId: null })
   })
   it('rejects invalid metadata without writing', async () => {
     const res = await app.inject({ method: 'PATCH', url: '/api/v1/portfolio/assets/a1', headers: as('u1'), payload: { name: 'X', sourceUrl: 'javascript:alert(1)' } })

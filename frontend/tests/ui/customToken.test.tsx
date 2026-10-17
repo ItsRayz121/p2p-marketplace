@@ -182,7 +182,7 @@ describe('safe rendering and no remote requests', () => {
     const assets: PortfolioAsset[] = []
     const onAdd = vi.fn(async (v) => { assets.push({ id: 'n1', ...v }) })
     const { container, rerender } = render(<PortfolioTab assets={assets} onAddAsset={onAdd} onEditAsset={async () => {}} />)
-    await user.click(screen.getByRole('button', { name: 'Add custom token' }))
+    await user.click(screen.getByRole('button', { name: 'Add asset' }))
     await user.type(screen.getByLabelText('Token name'), 'Meta Earth')
     await user.type(screen.getByLabelText(/Official website/), 'https://metaearth.example')
     await user.click(screen.getByRole('button', { name: 'Add token' }))

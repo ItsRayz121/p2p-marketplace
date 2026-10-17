@@ -9,6 +9,7 @@ import { AMOUNT_RE, formatDecimal, formatQuantity, formatSigned, isZeroAmount } 
 import { parseSourceUrl, sourceHostname } from '@/lib/portfolio/customAsset'
 import { VOID_TEXT } from '@/lib/portfolio/importText'
 import { PRICE_SOURCE_CHOICES, priceAge, priceSourceLabel, type PriceSourceChoice } from '@/lib/portfolio/priceStatus'
+import { averageCost } from './TokenCard'
 import { EventForm } from './EventForm'
 import { ListingInterestBlock } from './ListingInterestBlock'
 import { TokenMonogram } from './TokenMonogram'
@@ -23,6 +24,8 @@ export interface TokenDetailProps {
   price?: PortfolioPriceView
   /** Currency the portfolio is currently shown in. */
   currency: Currency
+  /** Today's RupChain rate (PKR per 1 USDT), for the conversion shown while recording. */
+  usdtPkr?: string | null
   /** True when this token's entries cannot be shown in `currency` (a record has no exchange rate). */
   fxUnavailable?: boolean
   backRef: React.RefObject<HTMLButtonElement>
@@ -59,11 +62,11 @@ function describeBefore(b: EventRevision['before']): string {
   return parts.join(' · ')
 }
 
-function Stat({ label, value, note }: { label: string; value: ReactNode; note?: string }) {
+function Stat({ label, value, note, big, tone }: { label: string; value: ReactNode; note?: string; big?: boolean; tone?: 'good' | 'bad' }) {
   return (
     <div>
       <dt className="text-xs text-text-muted">{label}</dt>
-      <dd className="text-sm font-semibold text-text-primary break-words">{value}</dd>
+      <dd className={`${big ? 'text-lg' : 'text-sm'} font-semibold break-words tabular-nums ${tone === 'bad' ? 'text-danger' : tone === 'good' ? 'text-success' : 'text-text-primary'}`}>{value}</dd>
       {note && <p className="text-xs text-text-muted">{note}</p>}
     </div>
   )
@@ -135,6 +138,11 @@ function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetNa
   )
 }
 
+/** Newest entry first for display. The list itself stays oldest-first because the oversold checks depend on that order. */
+function newestFirst(events: PortfolioEvent[]): PortfolioEvent[] {
+  return [...events].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || (a.id < b.id ? -1 : 1))
+}
+
 export function TokenDetail(p: TokenDetailProps) {
   const { asset, position, price, currency } = p
   const [events, setEvents] = useState<PortfolioEvent[] | null>(null)
@@ -183,51 +191,60 @@ export function TokenDetail(p: TokenDetailProps) {
 
       <div className="flex items-center gap-3">
         <TokenMonogram name={asset.name} size="lg" logoUrl={asset.logoUrl} />
-        <h2 id="tracked-portfolio-heading" className="text-base font-semibold text-text-primary break-words min-w-0">{asset.name}</h2>
+        <div className="min-w-0">
+          <h2 id="tracked-portfolio-heading" className="text-lg font-bold text-text-primary break-words">{asset.name}</h2>
+          <p className="text-xs text-text-muted break-words">{[asset.symbol, asset.network].filter(Boolean).join(' · ') || 'Tracked manually'}</p>
+        </div>
       </div>
 
-      <div className="bg-surface shadow-card rounded-xl border border-border p-5 space-y-3">
-        <dl className="text-sm space-y-1">
-          {asset.symbol && <div className="flex gap-2"><dt className="text-text-muted">Symbol</dt><dd className="text-text-primary break-words">{asset.symbol}</dd></div>}
-          {asset.network && <div className="flex gap-2"><dt className="text-text-muted">Network</dt><dd className="text-text-primary break-words">{asset.network}</dd></div>}
-          {asset.contractAddress && <div className="flex gap-2"><dt className="text-text-muted">Contract</dt><dd className="text-text-primary break-all font-mono text-xs">{asset.contractAddress}</dd></div>}
-        </dl>
-        {asset.sourceUrl && <SourceLink href={asset.sourceUrl} />}
-        {!asset.network && !asset.contractAddress && <p className="text-xs text-text-muted">Tracked manually. No network or contract recorded.</p>}
-        {p.onEdit && <button type="button" onClick={p.onEdit} className="text-sm font-medium text-primary hover:underline">Edit details</button>}
-      </div>
-
-      <section aria-label="Position" className="bg-surface shadow-card rounded-xl border border-border p-5">
+      <section aria-label="Position" className="bg-surface shadow-card rounded-2xl border border-border p-5 space-y-4">
         {position ? (
-          <dl className="grid grid-cols-2 gap-4">
-            <Stat label="Recorded quantity" value={formatQuantity(position.quantity)} note="Based on your recorded history" />
-            <Stat
-              label={`Remaining cost (${currency})`}
-              value={position.basisComplete ? formatDecimal(position.knownRemainingBasis) : 'Not known yet'}
-              note={position.basisComplete ? 'FIFO' : 'Some units have no recorded cost'}
-            />
-            <Stat
-              label={`Current price (${currency})`}
-              value={price && price.price !== null ? formatDecimal(price.price, 8).replace(/\.?0+$/, '') : 'No price'}
-              note={
-                price
-                  ? price.price === null
-                    ? `Entered in ${price.quote}; no USDT/PKR rate is available to convert it`
-                    : `${priceSourceLabel(price.source)}, ${new Date(price.observedAt).toLocaleString()}${price.quote !== currency ? `, as ${formatDecimal(price.original, 8).replace(/\.?0+$/, '')} ${price.quote}` : ''}`
-                  : 'Enter one to see value and unrealized profit/loss'
-              }
-            />
-            <Stat label={`Marked value (${currency})`} value={position.value === null ? 'Unavailable' : formatDecimal(position.value)} note="Not a promise you could sell at this price" />
-            <Stat label="Unrealized profit / loss" value={position.unrealized === null ? 'Unavailable' : `${currency} ${formatSigned(position.unrealized)}`} />
-            <Stat
-              label="Realized profit / loss"
-              value={!position.realizedComplete && /^-?0+(\.0+)?$/.test(position.realizedKnown) ? 'Not known yet' : `${currency} ${formatSigned(position.realizedKnown)}`}
-              note={position.realizedComplete ? undefined : 'Leaves out sales of units whose cost is not recorded'}
-            />
-          </dl>
+          <>
+            <dl className="grid grid-cols-3 gap-4">
+              <Stat big label={`Value (${currency})`} value={position.value === null ? 'No price' : formatDecimal(position.value)} />
+              <Stat
+                big label="Profit / loss"
+                value={position.unrealized === null ? 'Not known yet' : `${currency} ${formatSigned(position.unrealized)}`}
+                tone={position.unrealized === null ? undefined : /^-/.test(position.unrealized) ? 'bad' : 'good'}
+              />
+              <Stat big label="Quantity" value={formatQuantity(position.quantity)} />
+            </dl>
+            <details className="group">
+              <summary className="cursor-pointer select-none text-sm font-medium text-primary">Accounting details</summary>
+              <dl className="mt-3 grid grid-cols-2 gap-4">
+                <Stat
+                  label="Average cost"
+                  value={(() => { const avg = averageCost(position); return avg === null ? 'Not known yet' : `${currency} ${avg}` })()}
+                  note={position.basisComplete ? undefined : 'Some units have no recorded cost'}
+                />
+                <Stat
+                  label={`Remaining cost (${currency})`}
+                  value={position.basisComplete ? formatDecimal(position.knownRemainingBasis) : 'Not known yet'}
+                  note={position.basisComplete ? 'FIFO' : undefined}
+                />
+                <Stat
+                  label={`Current price (${currency})`}
+                  value={price && price.price !== null ? formatDecimal(price.price, 8).replace(/\.?0+$/, '') : 'No price'}
+                  note={
+                    price
+                      ? price.price === null
+                        ? `Entered in ${price.quote}; no USDT/PKR rate is available to convert it`
+                        : `${priceSourceLabel(price.source)}, ${new Date(price.observedAt).toLocaleString()}${price.quote !== currency ? `, as ${formatDecimal(price.original, 8).replace(/\.?0+$/, '')} ${price.quote}` : ''}`
+                      : 'Enter one to see value and profit/loss'
+                  }
+                />
+                <Stat
+                  label="Realized profit / loss"
+                  value={!position.realizedComplete && /^-?0+(\.0+)?$/.test(position.realizedKnown) ? 'Not known yet' : `${currency} ${formatSigned(position.realizedKnown)}`}
+                  note={position.realizedComplete ? undefined : 'Leaves out sales of units whose cost is not recorded'}
+                />
+              </dl>
+              <p className="mt-3 text-xs text-text-muted">Value is an estimate at the latest price, not a promise you could sell at it.</p>
+            </details>
+          </>
         ) : p.fxUnavailable ? (
           <p role="alert" className="text-sm text-amber-800">
-            Some entries for this token have no USDT/PKR rate recorded, so they cannot be shown in {currency}. Remove and re-add them with the rate for their date, or switch the currency above.
+            Some entries for this token have no USDT/PKR rate recorded, so they cannot be shown in {currency}. Switch the currency above to see them.
           </p>
         ) : (
           <p className="text-sm text-text-muted">No entries yet. Record a buy or an opening holding to see quantity and profit/loss.</p>
@@ -236,16 +253,18 @@ export function TokenDetail(p: TokenDetailProps) {
           const age = priceAge(price.observedAt)
           if (!age) return null
           return age.stale ? (
-            <p role="alert" className="mt-3 text-xs text-amber-800 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
-              This price was recorded {age.label} and may be out of date. Update it to keep your value current.
+            <p role="alert" className="flex items-center gap-2 text-xs text-text-secondary">
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              Price recorded {age.label}; it may be out of date. Update it to keep your value current.
             </p>
           ) : (
-            <p className="mt-3 text-xs text-text-muted">Price recorded {age.label}.</p>
+            <p className="text-xs text-text-muted">Price recorded {age.label}.</p>
           )
         })()}
         {position && position.unresolvedSales.length > 0 && (
-          <p role="alert" className="mt-3 text-xs text-amber-800 bg-amber-500/10 border border-amber-500/40 rounded-lg px-3 py-2">
-            You recorded selling more than your history shows ({position.unresolvedSales.map((u) => formatQuantity(u.quantity)).join(', ')} units). No profit is counted for the excess. Add an opening holding to complete the history.
+          <p role="alert" className="flex items-center gap-2 text-xs text-text-secondary">
+            <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            You recorded selling more than your history shows ({position.unresolvedSales.map((u) => formatQuantity(u.quantity)).join(', ')} units), so no profit is counted for the excess. Add an opening holding to complete the history.
           </p>
         )}
       </section>
@@ -279,6 +298,7 @@ export function TokenDetail(p: TokenDetailProps) {
             assetName={asset.name}
             defaultType={mode.type}
             defaultCurrency={currency}
+            usdtPkr={p.usdtPkr}
             platformPrices={price && price.source === 'platform'
               ? { [price.quote]: price.original, ...(price.price !== null ? { [currency]: price.price } : {}) }
               : null}
@@ -296,6 +316,7 @@ export function TokenDetail(p: TokenDetailProps) {
               assetName={asset.name}
               initial={target}
               defaultCurrency={currency}
+              usdtPkr={p.usdtPkr}
               onCancel={closeForm}
               warn={(input) => {
                 const extra = newlyOversold(events ?? [], { replace: { id: target.id, type: input.type, occurredAt: input.occurredAt, quantity: input.quantity } })
@@ -311,6 +332,20 @@ export function TokenDetail(p: TokenDetailProps) {
           <PriceForm assetName={asset.name} defaultCurrency={currency} onCancel={closeForm} onSubmit={async (v, q, src) => { await p.onSetPrice(asset.id, v, q, src); closeForm() }} />
         </div>
       )}
+
+      <details className="bg-surface shadow-card rounded-2xl border border-border px-5 py-3">
+        <summary className="cursor-pointer select-none text-sm font-medium text-text-primary">About this token</summary>
+        <div className="mt-3 space-y-3">
+          <dl className="text-sm space-y-1">
+            {asset.symbol && <div className="flex gap-2"><dt className="text-text-muted">Symbol</dt><dd className="text-text-primary break-words">{asset.symbol}</dd></div>}
+            {asset.network && <div className="flex gap-2"><dt className="text-text-muted">Network</dt><dd className="text-text-primary break-words">{asset.network}</dd></div>}
+            {asset.contractAddress && <div className="flex gap-2"><dt className="text-text-muted">Contract</dt><dd className="text-text-primary break-all font-mono text-xs">{asset.contractAddress}</dd></div>}
+          </dl>
+          {asset.sourceUrl && <SourceLink href={asset.sourceUrl} />}
+          {!asset.network && !asset.contractAddress && <p className="text-xs text-text-muted">Tracked manually. No network or contract recorded.</p>}
+          {p.onEdit && <button type="button" onClick={p.onEdit} className="text-sm font-medium text-primary hover:underline">Edit details</button>}
+        </div>
+      </details>
 
       <ListingInterestBlock asset={asset} onSuggest={p.onSuggestListing} onWithdraw={p.onWithdrawListing} />
 
@@ -372,7 +407,7 @@ export function TokenDetail(p: TokenDetailProps) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {events.map((ev) => (
+                {newestFirst(events).map((ev) => (
                   <Fragment key={ev.id}>
                   <tr>
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(ev.occurredAt).toLocaleString()}</td>

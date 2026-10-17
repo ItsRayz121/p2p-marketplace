@@ -142,7 +142,7 @@ export function LineChart({ title, description, series, currency, emptyMessage, 
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
-              {allTimes.map((t) => (
+              {[...allTimes].reverse().map((t) => (
                 <tr key={t}>
                   <th scope="row" className="py-1 pr-3 text-left font-normal whitespace-nowrap">{fmtDate(t)}</th>
                   {series.map((s) => {

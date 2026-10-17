@@ -7,7 +7,7 @@ import { formatDecimal, formatSigned } from '@/lib/portfolio/format'
 import { InfoTip } from './InfoTip'
 import { LineChart } from './LineChart'
 
-const PRESETS: PeriodPreset[] = ['month', '7d', '30d', '90d', 'all', 'custom']
+const PRESETS: PeriodPreset[] = ['7d', '30d', '90d', '1y', 'all', 'custom']
 
 interface Props {
   currency: Currency
@@ -78,7 +78,7 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
 
   return (
     <section aria-labelledby="performance-heading" className="space-y-3">
-      <h3 id="performance-heading" className="text-sm font-semibold text-text-primary">Results over time</h3>
+      <h3 id="performance-heading" className="text-sm font-semibold text-text-primary">Performance</h3>
 
       <div role="radiogroup" aria-label="Period" className="flex flex-wrap gap-1.5">
         {PRESETS.map((id) => (
@@ -113,9 +113,20 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
       ) : data && p ? (
         <div className="space-y-3" aria-busy={loading}>
           <p className="text-xs text-text-muted">
-            {day(data.from)} to {day(data.to)} in your device&apos;s time zone. Entries on the start day count in the starting position; entries after it count in this period.
+            {day(data.from)} to {day(data.to)}<InfoTip text="Shown in your device's time zone. Entries on the start day count in the starting position; entries after it count in this period." />
           </p>
 
+          <LineChart
+            title="Portfolio Value Over Time"
+            description="Value of what you held, only on dates when every token you held had a price: one you entered, or a proven RupChain trade price that was current then. The latest point uses today's price."
+            currency={cur}
+            emptyMessage={valueEmpty.message}
+            emptyAction={valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}
+            series={[{ name: 'Marked value', marker: 'circle', className: 'stroke-primary fill-primary', points: data.points.map((q) => ({ t: q.t, v: q.value })) }]}
+          />
+          <details className="group rounded-xl border border-border bg-surface">
+            <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-text-primary">Period details</summary>
+            <div className="space-y-3 px-4 pb-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <Card
               label="Known Realized Profit / Loss"
@@ -165,14 +176,8 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
               {onFixCost && <> <button type="button" onClick={onFixCost} className="font-semibold text-primary hover:underline">Review history</button></>}
             </p>
           )}
-          <LineChart
-            title="Portfolio Value Over Time"
-            description="Value of what you held, only on dates when every token you held had a price: one you entered, or a proven RupChain trade price that was current then. The latest point uses today's price."
-            currency={cur}
-            emptyMessage={valueEmpty.message}
-            emptyAction={valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}
-            series={[{ name: 'Marked value', marker: 'circle', className: 'stroke-primary fill-primary', points: data.points.map((q) => ({ t: q.t, v: q.value })) }]}
-          />
+            </div>
+          </details>
         </div>
       ) : null}
     </section>

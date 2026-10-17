@@ -6,7 +6,7 @@ import type { PortfolioApiLike } from '@/lib/portfolio/apiTypes'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
 import { claimCacheOwner, loadSnapshot, saveSnapshot } from '@/lib/portfolio/offline/cache'
 import { useOfflineSync } from '@/lib/portfolio/offline/useOfflineSync'
-import type { Currency, ImportReport, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
+import type { BatchSelection, Currency, ImportReport, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import { OfflineBanner } from './OfflineBanner'
 import { PortfolioTab } from './PortfolioTab'
 
@@ -167,6 +167,13 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
     await refreshAll() // the first entry for a token also creates its tracker token
     void syncTrades()
   }
+  const recordBatch = async (selection: BatchSelection) => {
+    if (offlineOn && !sync.online) throw new Error('Recording trades needs a connection. Please try again when you are back online.')
+    const report = await apiRef.current.recordExcludedBatch!(selection)
+    await refreshAll()
+    void syncTrades()
+    return report
+  }
   // A correction needs the server (it keeps the earlier version), so it is not queued while offline.
   const correct = async (assetId: string, eventId: string, input: PortfolioEventInput) => {
     if (offlineOn && !sync.online) throw new Error('Correcting an entry needs a connection. Please try again when you are back online.')
@@ -229,14 +236,14 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
       loadAllEvents={apiRef.current.listAllEvents ? (query) => apiRef.current.listAllEvents!(query) : undefined}
       loadExcluded={apiRef.current.listExcluded ? (limit, offset) => apiRef.current.listExcluded!(limit, offset) : undefined}
       onRecordExcluded={apiRef.current.recordExcluded ? recordExcluded : undefined}
+      onRecordBatch={apiRef.current.recordExcludedBatch ? recordBatch : undefined}
       loadHistory={apiRef.current.eventHistory ? (assetId, eventId) => apiRef.current.eventHistory!(assetId, eventId) : undefined}
       loadPerformance={(r) => apiRef.current.performance(r)}
       onArchive={archive}
       onUnarchive={unarchive}
       onDeleteAsset={deleteAsset}
       loadExport={() => apiRef.current.exportAll()}
-      onRestoreBackup={apiRef.current.restoreBackup ? (d) => apiRef.current.restoreBackup!(d) : undefined}
-      onBackupRestored={() => { void load() }}
+      showBackupDownload={!apiRef.current.restoreBackup}
       onSuggestListing={api.suggestListing ? suggest : undefined}
       onWithdrawListing={api.withdrawListingSuggestion ? withdrawSuggestion : undefined}
       importReport={importReport}

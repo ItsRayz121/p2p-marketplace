@@ -7,10 +7,12 @@ import {
 
 interface Props {
   load: () => Promise<ExportData>
+  /** The JSON backup is only useful where the user can bring it back (the on-device tracker). */
+  includeBackup?: boolean
 }
 
 /** Downloads everything the user recorded. Files are built in the browser from the user's own data. */
-export function ExportMenu({ load }: Props) {
+export function ExportMenu({ load, includeBackup = true }: Props) {
   const [busy, setBusy] = useState<'csv' | 'json' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -34,9 +36,11 @@ export function ExportMenu({ load }: Props) {
       <button type="button" disabled={busy !== null} onClick={() => run('csv')} className="font-medium text-primary hover:underline disabled:opacity-60">
         {busy === 'csv' ? 'Preparing…' : 'Download CSV'}
       </button>
-      <button type="button" disabled={busy !== null} onClick={() => run('json')} className="font-medium text-primary hover:underline disabled:opacity-60">
-        {busy === 'json' ? 'Preparing…' : 'Download backup (JSON)'}
-      </button>
+      {includeBackup && (
+        <button type="button" disabled={busy !== null} onClick={() => run('json')} className="font-medium text-primary hover:underline disabled:opacity-60">
+          {busy === 'json' ? 'Preparing…' : 'Download backup (JSON)'}
+        </button>
+      )}
       {error && <span role="alert" className="text-danger">{error}</span>}
     </div>
   )

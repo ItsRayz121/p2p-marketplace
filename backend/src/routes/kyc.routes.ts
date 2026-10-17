@@ -2,6 +2,8 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { authenticate } from '../middleware/auth.middleware'
 import { getKycStatus, submitKyc, getUserSubmissions } from '../services/kyc.service'
+import { resubmitItems } from '../services/kycReview.service'
+import { ITEM_LABEL } from '../lib/kycItems'
 import { AppError } from '../lib/errors'
 import { createAdminNotif } from '../services/adminNotification.service'
 import { alertOnSharedContacts } from '../services/riskAlerts.service'
@@ -93,6 +95,34 @@ export async function kycRoutes(app: FastifyInstance) {
       metadata: { userId, submissionId: submission.id, tier },
     })
     return reply.code(201).send({ success: true, data: submission })
+  })
+
+  // POST /api/kyc/submissions/:id/resubmit — send back ONLY the items a reviewer flagged.
+  const resubmitSchema = z.object({
+    frontUrl: z.string().url().optional(),
+    backUrl: z.string().url().optional(),
+    selfieUrl: z.string().url().optional(),
+    legalName: z.string().trim().max(100).optional(),
+    socialLinks: z.array(z.object({ platform: z.string().min(1), url: z.string().url() })).max(10).optional(),
+    whatsappNumber: z.string().trim().max(32).optional(),
+    communityLinks: z.array(z.object({ url: z.string().trim().max(300) })).max(5).optional(),
+    referenceUrl: z.string().trim().max(500).optional(),
+  }).strict()
+  app.post('/kyc/submissions/:id/resubmit', { preHandler: [authenticate], config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = resubmitSchema.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    // exactOptionalPropertyTypes: pass only what was sent.
+    const fields = Object.fromEntries(Object.entries(parsed.data).filter(([, v]) => v !== undefined))
+    const r = await resubmitItems(req.user!.id, id, fields)
+    return reply.send({
+      success: true,
+      data: {
+        basicState: r.parts.basicState,
+        enhancedState: r.parts.enhancedState,
+        items: r.items.map((i) => ({ item: i.item, label: ITEM_LABEL[i.item], part: i.part, status: i.status, reason: i.reason })),
+      },
+    })
   })
 
   // GET /api/kyc/submissions

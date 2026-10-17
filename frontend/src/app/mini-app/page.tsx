@@ -11,6 +11,8 @@ import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
 import { loadTelegramSdk, getInitData, getStartParam, parseStartParamToPath } from '@/lib/telegram'
 
+const STAFF_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent', 'support_agent'])
+
 export default function MiniAppBridge() {
   const router = useRouter()
   const user = useAuthStore((s) => s.user)
@@ -27,7 +29,9 @@ export default function MiniAppBridge() {
   // only honour internal absolute paths and otherwise land on the dashboard.
   useEffect(() => {
     if (!user) return
-    let dest = '/dashboard'
+    // Staff open the Mini App from admin alerts: they belong in the admin panel, not the user dashboard
+    // (the same rule the homepage applies to staff). The admin layout still re-checks the role itself.
+    let dest = STAFF_ROLES.has(user.role) ? '/admin' : '/dashboard'
     try {
       const p = new URLSearchParams(window.location.search).get('path')
       if (p && p.startsWith('/') && !p.startsWith('//')) dest = p

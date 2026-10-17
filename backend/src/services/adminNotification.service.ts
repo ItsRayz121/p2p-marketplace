@@ -7,6 +7,7 @@ import { redis } from '../lib/redis'
 import { classifyNotification, type NotifGroup } from '../lib/adminNotifGroups'
 import { getPrefsForUsers } from './adminNotificationPrefs.service'
 import { sendTelegramAdminAlert } from '../lib/telegram.notify'
+import { buildGasKeyboard } from './telegramGasActions.service'
 import { sendAdminAlertEmail } from './email.service'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
 
@@ -16,6 +17,8 @@ export interface AdminNotifPayload {
   body: string
   href?: string
   metadata?: Record<string, unknown>
+  /** A gas order this alert is about: the Telegram message then carries the buttons that fit its state. */
+  gasOrderId?: string
   /**
    * Staff roles that should receive this externally (push + Telegram). Defaults
    * to a per-category map so sub-admins only get their own domain's events
@@ -133,7 +136,8 @@ async function dispatchExternal(payload: AdminNotifPayload): Promise<void> {
         for (const s of staff) {
           if (!s.telegramId || s.telegramBlockedAt || !prefs.get(s.id)![group].telegram) continue
           const tgId = s.telegramId
-          sendTelegramAdminAlert(tgId, payload.title, payload.body, href)
+          const rows = payload.gasOrderId ? await buildGasKeyboard(payload.gasOrderId, tgId).catch(() => []) : []
+          sendTelegramAdminAlert(tgId, payload.title, payload.body, href, rows)
             .then((r) => {
               if (r.blocked) {
                 db.user.updateMany({ where: { telegramId: tgId }, data: { telegramBlockedAt: new Date() } }).catch(() => {})

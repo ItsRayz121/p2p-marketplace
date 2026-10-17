@@ -3,20 +3,18 @@
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { Currency, PortfolioEvent, PortfolioEventInput, PortfolioEventType, PriceBasis } from '@/lib/portfolio/types'
 import { D } from '@/lib/portfolio/engine/decimal'
+import { convertAmount } from '@/lib/portfolio/engine/currency'
 import { AMOUNT_RE, formatDecimal, formatQuantity, isZeroAmount } from '@/lib/portfolio/format'
 
 export const RECORD_ONLY_NOTICE =
   'This only adds a record to your own tracker. It does not buy or sell anything on RupChain and never changes your wallet balance.'
-
-export const RATE_HELP =
-  "Used to show this entry in the other currency. Leave blank to use RupChain's current rate for entries dated now. For older entries, enter the rate for that date, otherwise this entry cannot be shown in the other currency."
 
 const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Opening holding' }
 
 /** A record dated within this long of now may use the latest RupChain price (it is not a historical price). */
 const PLATFORM_PRICE_WINDOW_MS = 24 * 60 * 60 * 1000
 
-type Field = 'quantity' | 'consideration' | 'fee' | 'basis' | 'occurredAt' | 'fxRate'
+type Field = 'quantity' | 'consideration' | 'fee' | 'basis' | 'occurredAt'
 
 function newRequestId(): string {
   const c = typeof crypto !== 'undefined' ? crypto : undefined
@@ -65,16 +63,19 @@ interface Props {
   extraNotice?: string
   /** Correct an existing entry instead of recording a new one. */
   initial?: PortfolioEvent
+  /** Today's RupChain rate (PKR per 1 USDT), used only to show what an entry dated now comes to in the other currency. */
+  usdtPkr?: string | null
   /** Returns a warning to show before saving (the user can still save anyway), or null. */
   warn?: (input: PortfolioEventInput) => string | null
 }
 
-export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrices }: Props) {
+export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'PKR', onSubmit, onCancel, initial, warn, prefill, lockType, extraNotice, platformPrices, usdtPkr }: Props) {
   const uid = useId()
   const id = (k: string) => `${uid}-${k}`
   const requestId = useRef(newRequestId())
   const firstRef = useRef<HTMLSelectElement>(null)
-  useEffect(() => { firstRef.current?.focus() }, [])
+  // A locked type select is disabled and cannot take focus, so focus the quantity instead.
+  useEffect(() => { (lockType ? document.getElementById(`${uid}-quantity`) : firstRef.current)?.focus() }, [lockType, uid])
 
   // The moment the form starts from: the entry being corrected, or the trade being recorded.
   const seedAt = initial?.occurredAt ?? prefill?.occurredAt
@@ -86,8 +87,6 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
   const [consideration, setConsideration] = useState(initial?.consideration ?? prefill?.consideration ?? '')
   const [fee, setFee] = useState(initial?.fee && !isZeroAmount(initial.fee) ? initial.fee : '')
   const [basis, setBasis] = useState(initial && !initial.zeroCost ? (initial.basis ?? '') : '')
-  // A rate the user typed is shown for correction; one stamped from the platform stays on the entry unless a new one is typed.
-  const [fxRate, setFxRate] = useState(initial?.fxSource === 'manual' ? (initial.fxRate ?? '') : '')
   const [zeroCost, setZeroCost] = useState(initial?.zeroCost ?? false)
   const [note, setNote] = useState(initial?.note ?? '')
   const [warning, setWarning] = useState<string | null>(null)
@@ -110,6 +109,15 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
   const ownUnit = trade && !usePlatform && AMOUNT_OK(quantity.trim()) && AMOUNT_RE.test(consideration.trim()) && !isZeroAmount(consideration.trim())
     ? new D(consideration.trim()).div(quantity.trim()).toDecimalPlaces(8).toFixed().replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '')
     : null
+  // What this entry comes to in the other currency, from RupChain's own rate. Only for entries dated now:
+  // an older date has no rate stored, and today's rate is never passed off as the rate of that day.
+  const otherQuote: Currency = quote === 'PKR' ? 'USDT' : 'PKR'
+  const enteredTotal = usePlatform ? platformTotal : AMOUNT_RE.test(consideration.trim()) ? consideration.trim() : null
+  const converted = trade && enteredTotal && usdtPkr && nowish ? convertAmount(enteredTotal, quote, otherQuote, usdtPkr) : null
+  const conversionNote: string | null = !trade || !enteredTotal || initial ? null
+    : converted !== null ? `About ${otherQuote} ${formatDecimal(converted, otherQuote === 'USDT' ? 4 : 2)} at today's RupChain rate (${formatDecimal(usdtPkr!)} PKR per USDT).`
+    : !nowish && !prefill ? `No exchange rate is stored for past dates, so this entry will be shown in ${quote} only.`
+    : null
   const amountLabel = type === 'BUY' ? `Amount paid (${quote})` : `Amount received (${quote})`
 
   async function submit(e: FormEvent) {
@@ -117,7 +125,7 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
     if (busy) return
     setFormError(null)
     const errs: Partial<Record<Field, string>> = {}
-    const q = quantity.trim(), f = fee.trim(), b = basis.trim(), r = fxRate.trim()
+    const q = quantity.trim(), f = fee.trim(), b = basis.trim()
     const c = usePlatform ? (platformTotal ?? '') : consideration.trim()
 
     const ts = new Date(when).getTime()
@@ -131,12 +139,9 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
     } else if (!zeroCost && b && !AMOUNT_RE.test(b)) {
       errs.basis = 'Enter the total cost as a plain number, or leave it blank if unknown.'
     }
-    if (r && (!AMOUNT_RE.test(r) || isZeroAmount(r))) {
-      errs.fxRate = 'Enter the rate as a plain number greater than zero, for example 280.5, or leave it blank.'
-    }
     if (Object.keys(errs).length) {
       setErrors(errs)
-      const order: Field[] = ['occurredAt', 'quantity', 'consideration', 'fee', 'basis', 'fxRate']
+      const order: Field[] = ['occurredAt', 'quantity', 'consideration', 'fee', 'basis']
       const first = order.find((k) => errs[k])
       if (first) document.getElementById(id(first))?.focus()
       return
@@ -147,7 +152,8 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
     const occurredAt = seedAt && when === initialWhen ? seedAt : new Date(when).toISOString()
     const input: PortfolioEventInput = { type, occurredAt, quantity: q, quote }
     if (!initial) input.clientRequestId = requestId.current
-    if (r) input.fxRate = r
+    // The rate is never typed: a rate the user entered earlier is kept, anything else is stamped by the server from the platform rate.
+    if (initial?.fxSource === 'manual' && initial.fxRate) input.fxRate = initial.fxRate
     if (trade) {
       input.consideration = c
       if (offerPlatform) input.priceBasis = basisChoice
@@ -210,7 +216,7 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
         <input id={id('quantity')} type="text" inputMode="decimal" autoComplete="off" value={quantity} onChange={(e) => setQuantity(e.target.value)} className={inputCls(!!errors.quantity)} {...d('quantity', false)} />
       </Row>
 
-      <Row id={id('quote')} label="Currency of the amounts">
+      <Row id={id('quote')} label="Enter amounts in">
         <select id={id('quote')} value={quote} onChange={(e) => setQuote(e.target.value as Currency)} className={inputCls(false)}>
           <option value="PKR">PKR</option>
           <option value="USDT">USDT</option>
@@ -246,6 +252,7 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
               <input id={id('consideration')} type="text" inputMode="decimal" autoComplete="off" value={consideration} onChange={(e) => setConsideration(e.target.value)} className={inputCls(!!errors.consideration)} {...d('consideration')} />
             </Row>
           )}
+          {conversionNote && <p data-testid="conversion-note" className="-mt-2 text-xs text-text-secondary">{conversionNote}</p>}
           <Row
             id={id('fee')} label={`Fee (${quote}), optional`} error={errors.fee}
             help={type === 'BUY' ? 'Added to your cost.' : 'Deducted from what you received.'}
@@ -267,10 +274,6 @@ export function EventForm({ assetName, defaultType = 'BUY', defaultCurrency = 'P
           </label>
         </>
       )}
-
-      <Row id={id('fxRate')} label="USDT/PKR rate for this date (PKR per 1 USDT), optional" help={RATE_HELP} error={errors.fxRate}>
-        <input id={id('fxRate')} type="text" inputMode="decimal" autoComplete="off" value={fxRate} onChange={(e) => setFxRate(e.target.value)} className={inputCls(!!errors.fxRate)} {...d('fxRate')} />
-      </Row>
 
       <Row id={id('note')} label="Note, optional">
         <input id={id('note')} type="text" maxLength={200} autoComplete="off" value={note} onChange={(e) => setNote(e.target.value)} className={inputCls(false)} />

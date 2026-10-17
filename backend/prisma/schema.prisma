@@ -999,9 +999,32 @@ model KycSubmission {
   reviewedAt      DateTime?
   reviewedBy      String?
   createdAt       DateTime          @default(now())
+  // Basic (identity) and Enhanced (ad posting) are decided separately.
+  // States: pending | changes_requested | approved | rejected | not_requested (Enhanced only).
+  basicState      String            @default("pending") @db.VarChar(20)
+  enhancedState   String            @default("not_requested") @db.VarChar(20)
+  itemReviews     KycItemReview[]
 
   @@index([userId])
   @@index([cnicNumberHash])
+}
+
+// One line per decision about one part of a submission (a document or an answer), never edited or
+// deleted: this is the document-level history. A resubmission keeps the value it replaced.
+model KycItemReview {
+  id            String        @id @default(cuid())
+  submissionId  String
+  submission    KycSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  // id_front | id_back | selfie | legal_name | social | whatsapp | community | reference
+  item          String        @db.VarChar(30)
+  // approved | resubmit | rejected | resubmitted
+  status        String        @db.VarChar(20)
+  reason        String?       @db.VarChar(300)
+  previousValue String?
+  actorId       String
+  createdAt     DateTime      @default(now())
+
+  @@index([submissionId, item, createdAt])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

@@ -25,7 +25,7 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 async function addToken(user: ReturnType<typeof userEvent.setup>, name: string) {
-  await user.click(await screen.findByRole('button', { name: 'Add custom token' }))
+  await user.click(await screen.findByRole('button', { name: 'Add asset' }))
   await user.type(screen.getByLabelText('Token name'), name)
   await user.click(screen.getByRole('button', { name: 'Add token' }))
   await screen.findByRole('button', { name: new RegExp(name) })

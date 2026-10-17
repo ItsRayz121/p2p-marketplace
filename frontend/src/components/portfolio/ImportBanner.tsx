@@ -2,7 +2,6 @@
 
 import { useState } from 'react'
 import type { ImportReport } from '@/lib/portfolio/types'
-import { ATTENTION_TEXT } from '@/lib/portfolio/importText'
 import { formatDecimal, formatQuantity } from '@/lib/portfolio/format'
 
 interface Props {
@@ -12,21 +11,18 @@ interface Props {
   error: string | null
   onImport: () => void
   onDismiss: () => void
-  /** Open the list of trades that were left out (signed-in only). */
-  onReview?: () => void
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
 
 /**
- * Shown when there are RupChain trades to add (first time: needs an explicit yes) and/or trades that
- * were deliberately NOT added. Nothing here changes a trade, a wallet or a payout.
+ * Shown when there are RupChain trades to add (first time: needs an explicit yes). Trades that were
+ * deliberately NOT added are handled in the Review center. Nothing here changes a trade, a wallet or a payout.
  */
-export function ImportBanner({ report, busy, error, onImport, onDismiss, onReview }: Props) {
+export function ImportBanner({ report, busy, error, onImport, onDismiss }: Props) {
   const [open, setOpen] = useState(false)
   const toAdd = report.created + report.restored
-  const attentionCount = report.attention.reduce((n, a) => n + a.count, 0)
-  if (toAdd === 0 && attentionCount === 0 && report.skippedForLimit === 0) return null
+  if (toAdd === 0 && report.skippedForLimit === 0) return null
 
   return (
     <section aria-label="RupChain trades" className="rounded-xl border border-border bg-surface p-4 space-y-3">
@@ -68,25 +64,6 @@ export function ImportBanner({ report, busy, error, onImport, onDismiss, onRevie
               Not now
             </button>
           </div>
-        </div>
-      )}
-
-      {attentionCount > 0 && (
-        <div className="space-y-1">
-          <p className="text-sm font-semibold text-text-primary">
-            {plural(attentionCount, 'RupChain trade was', 'RupChain trades were')} not added
-          </p>
-          <ul className="text-xs text-text-muted list-disc pl-5">
-            {report.attention.map((a) => (
-              <li key={a.reason}>{plural(a.count, 'trade', 'trades')}: {ATTENTION_TEXT[a.reason]}</li>
-            ))}
-          </ul>
-          <p className="text-xs text-text-muted">
-            These are left out because a trade status alone does not prove both sides were settled. If you really did buy or sell, you can record it yourself.
-          </p>
-          {onReview && (
-            <button type="button" onClick={onReview} className="text-xs font-semibold text-primary hover:underline">Review these trades</button>
-          )}
         </div>
       )}
 

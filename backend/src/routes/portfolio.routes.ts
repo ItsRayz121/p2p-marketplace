@@ -9,7 +9,7 @@ import { buildSummary, type EventRow as SummaryEvent } from '../lib/portfolio/su
 import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
-import { runCtmImport, listExcludedTrades, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
+import { runCtmImport, listExcludedTrades, recordExcludedBatch, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
 import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
@@ -226,9 +226,14 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
     const value = parseBody(req.body)
-    // updateMany scoped by userId: another user's id behaves exactly like a missing id (404),
-    // so ids cannot be probed across accounts.
-    const res = await db.portfolioAsset.updateMany({ where: { id, userId }, data: value })
+    // Tokens that mirror a RupChain-listed token take their details from the platform catalog, so only
+    // the user's own custom tokens match here. updateMany scoped by userId: another user's id behaves
+    // exactly like a missing id (404), so ids cannot be probed across accounts.
+    const res = await db.portfolioAsset.updateMany({ where: { id, userId, ctmTokenId: null }, data: value })
+    if (res.count === 0) {
+      const linked = await db.portfolioAsset.findFirst({ where: { id, userId, ctmTokenId: { not: null } }, select: { id: true } })
+      if (linked) throw Errors.CONFLICT('This token is listed on RupChain, so its details are managed by RupChain and cannot be changed.')
+    }
     if (res.count === 0) throw Errors.NOT_FOUND('Token')
     const item = await db.portfolioAsset.findFirst({ where: { id, userId }, select: SELECT })
     if (!item) throw Errors.NOT_FOUND('Token')
@@ -685,6 +690,34 @@ export async function portfolioRoutes(app: FastifyInstance) {
     }
   })
 
+  // Record many left-out trades in one go ("Record all"). The caller must confirm explicitly, and each
+  // trade is recorded with the amounts the platform holds for it. Safe to retry: one entry per trade.
+  const batchBody = z.object({
+    confirmed: z.literal(true),
+    all: z.literal(true).optional(),
+    tradeIds: z.array(z.string().min(1).max(64)).min(1).max(500).optional(),
+  }).refine((b) => Boolean(b.all) !== Boolean(b.tradeIds), { message: 'Choose either all trades or a list of trades' })
+  app.post('/portfolio/excluded-trades/record-batch', {
+    preHandler: [authenticate],
+    config: { rateLimit: { max: 6, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
+    const userId = req.user!.id
+    const parsed = batchBody.safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.issues[0]?.message ?? 'Please confirm to record these trades', 400)
+    const b = parsed.data
+    try {
+      const report = await recordExcludedBatch(
+        userId,
+        b.all ? { all: true } : { tradeIds: b.tradeIds! },
+        { maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS },
+      )
+      return reply.send({ success: true, data: report })
+    } catch (err) {
+      req.log.error({ err }, 'portfolio record-batch failed')
+      throw new AppError('PORTFOLIO_IMPORT_FAILED', 'Could not record these trades right now. Please try again.', 500)
+    }
+  })
+
   // Record, by hand, a finished trade that was left out of automatic tracking. The caller confirms
   // the amounts. The trade itself (and anything about settlement) is only read, never changed, and
   // the entry is linked to the trade so it can be recorded once and the importer never adds it again.
@@ -717,12 +750,14 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const assetId = await ensureLinkedAsset(userId, check.token, { maxAssets: MAX_PORTFOLIO_ASSETS })
     if (!assetId) throw new AppError('PORTFOLIO_ASSET_LIMIT', `You can track up to ${MAX_PORTFOLIO_ASSETS} custom tokens`, 400)
 
-    const stamp = chooseFxStamp({
+    const chosen = chooseFxStamp({
       userRate: e.fxRate,
       platformRate: e.fxRate ? null : await getStringConfig('rate_USDT_PKR', ''),
       occurredAtMs: Date.parse(e.occurredAt),
       nowMs: Date.now(),
     })
+    // A trade paid in USDT carries the rate it was actually done at: use that instead of leaving an older entry without one.
+    const stamp = chosen.fxRate === null && check.fxRate ? { fxRate: check.fxRate, fxSource: 'platform' as const } : chosen
     try {
       const row = await db.portfolioEvent.create({
         data: {

@@ -1,7 +1,7 @@
 import type { PortfolioAssetDto, PortfolioAssetInput } from '@/lib/api'
 import type { ExportData, RestoreSummary } from './exportFile'
 import type {
-  Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from './types'
 
 /**
@@ -36,6 +36,7 @@ export interface PortfolioApiLike {
   listExcluded?(limit: number, offset: number): Promise<ExcludedTradesPage>
   /** Signed-in only: record one of those trades by hand (linked to the trade, so it is never counted twice). */
   recordExcluded?(tradeId: string, data: PortfolioEventInput): Promise<PortfolioEvent>
+  recordExcludedBatch?(selection: BatchSelection): Promise<BatchReport>
   /** Signed-in only: the earlier versions of one entry (kept when it is corrected or removed). */
   eventHistory?(assetId: string, eventId: string): Promise<EventRevision[]>
   /** Signed-in only: put a full backup back into this account, with edit history and trade links. */

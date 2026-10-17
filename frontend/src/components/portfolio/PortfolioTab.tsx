@@ -2,21 +2,21 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
-  Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from '@/lib/portfolio/types'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
-import type { ExportData, RestoreSummary } from '@/lib/portfolio/exportFile'
+import type { ExportData } from '@/lib/portfolio/exportFile'
 import type { PortfolioApiLike } from '@/lib/portfolio/apiTypes'
 import { CustomTokenForm } from './CustomTokenForm'
 import { ExportMenu } from './ExportMenu'
 import { ImportBackupDialog } from './ImportBackupDialog'
-import { RestoreBackupDialog } from './RestoreBackupDialog'
 import { ExcludedTradesView } from './ExcludedTradesView'
 import { ImportBanner } from './ImportBanner'
 import { PerformanceSection } from './PerformanceSection'
 import { PortfolioHeadline } from './PortfolioHeadline'
-import { NeedsAttention } from './NeedsAttention'
-import { TokenCard, type CardAction } from './TokenCard'
+import { AllocationBar } from './AllocationBar'
+import { ReviewCenter, buildReview, reviewCount } from './ReviewCenter'
+import { TokenCard } from './TokenCard'
 import { TokenDetail, type StartWith } from './TokenDetail'
 import { TransactionHistory } from './TransactionHistory'
 
@@ -27,6 +27,7 @@ type View =
   | { name: 'history' }
   | { name: 'edit'; assetId: string }
   | { name: 'excluded' }
+  | { name: 'review' }
 
 interface Props {
   /** Existing custody wallet UI (spendable balance, deposit/withdraw, history). Rendered unchanged. */
@@ -64,6 +65,7 @@ interface Props {
   /** Every entry across all tokens, with search, filters and paging. */
   loadAllEvents?: (query: EventListQuery) => Promise<EventsPage>
   onRecordExcluded?: (tradeId: string, input: PortfolioEventInput) => Promise<void>
+  onRecordBatch?: (selection: BatchSelection) => Promise<BatchReport>
   onDismissImport?: () => void
   loadExport?: () => Promise<ExportData>
   onSuggestListing?: (assetId: string) => Promise<void>
@@ -71,9 +73,8 @@ interface Props {
   /** Account only: lets the user bring a backup file (e.g. from the local tracker) into this account. */
   backupImportApi?: Pick<PortfolioApiLike, 'addAsset' | 'addEvent' | 'listEvents'>
   onBackupImported?: () => void
-  /** Account only: put a full backup (edit history and trade links included) back into this account. */
-  onRestoreBackup?: (data: ExportData) => Promise<RestoreSummary>
-  onBackupRestored?: () => void
+  /** Offer the JSON backup download. Off for signed-in accounts, which keep their data on the server. */
+  showBackupDownload?: boolean
 }
 
 const noEvents = async (): Promise<PortfolioEvent[]> => []
@@ -86,8 +87,8 @@ const noop = async () => {}
 export function PortfolioTab({
   notice, walletSection, assets = [], summary = null, currency = 'PKR', onCurrencyChange, loading = false, error = null, onRetry,
   onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onUpdateEvent, loadHistory, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
-  importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport, loadExcluded, onRecordExcluded, loadAllEvents,
-  onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported, onRestoreBackup, onBackupRestored,
+  importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport, loadExcluded, onRecordExcluded, onRecordBatch, loadAllEvents,
+  onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported, showBackupDownload = true,
 }: Props) {
   const [view, setView] = useState<View>({ name: 'overview' })
   const lastRowRef = useRef<string | null>(null)
@@ -97,13 +98,12 @@ export function PortfolioTab({
   const rowRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const first = useRef(true)
   const [showBackupImport, setShowBackupImport] = useState(false)
-  const [showRestore, setShowRestore] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   // Move focus into a view when it opens, and back to where the user came from when it closes.
   useEffect(() => {
     if (first.current) { first.current = false; return }
-    if (view.name === 'token' || view.name === 'excluded' || view.name === 'history') backRef.current?.focus()
+    if (view.name === 'token' || view.name === 'excluded' || view.name === 'history' || view.name === 'review') backRef.current?.focus()
     else if (view.name === 'add' || view.name === 'edit') headingRef.current?.focus()
     else if (lastRowRef.current) rowRefs.current[lastRowRef.current]?.focus()
     else addBtnRef.current?.focus()
@@ -124,6 +124,13 @@ export function PortfolioTab({
     const first = (ids: string[] | undefined) => ids?.find((id) => activeIds.has(id))
     return { price: first(summary?.summary.unpricedAssets), cost: first(summary?.summary.unknownBasisAssets) }
   }, [summary, activeAssets])
+  const canReviewTrades = Boolean(loadExcluded && onRecordExcluded)
+  const reviewSections = useMemo(
+    () => (summary ? buildReview(summary, assets, importReport, canReviewTrades) : []),
+    [summary, assets, importReport, canReviewTrades],
+  )
+  const toReview = reviewCount(reviewSections)
+  const waitingTrades = importReport?.attention.find((a) => a.reason === 'in_progress')?.count ?? 0
   // Labels follow the data on screen, not the switch: right after a click the numbers are still in the previous currency until the reply arrives.
   const shown: Currency = summary?.currency ?? currency
   const current = view.name === 'token' || view.name === 'edit' ? assets.find((a) => a.id === view.assetId) : undefined
@@ -148,9 +155,21 @@ export function PortfolioTab({
           <ExcludedTradesView
             load={loadExcluded}
             onRecord={onRecordExcluded}
+            onRecordBatch={onRecordBatch}
             currency={shown}
             backRef={backRef}
+            onBack={() => { lastRowRef.current = null; setView({ name: 'review' }) }}
+          />
+        )}
+
+        {view.name === 'review' && (
+          <ReviewCenter
+            sections={reviewSections}
+            waiting={waitingTrades}
+            backRef={backRef}
             onBack={() => { lastRowRef.current = null; setView({ name: 'overview' }) }}
+            onOpenToken={(assetId, action) => { lastRowRef.current = assetId; setView({ name: 'token', assetId, start: action }) }}
+            onReviewTrades={canReviewTrades ? () => setView({ name: 'excluded' }) : undefined}
           />
         )}
 
@@ -187,10 +206,11 @@ export function PortfolioTab({
               position={positions.get(current.id)}
               price={summary?.prices[current.id]}
               currency={shown}
+              usdtPkr={summary?.fx.usdtPkr ?? null}
               fxUnavailable={summary?.fxUnavailableAssets.includes(current.id)}
               backRef={backRef}
               onBack={() => setView({ name: 'overview' })}
-              onEdit={onEditAsset ? () => setView({ name: 'edit', assetId: current.id }) : undefined}
+              onEdit={onEditAsset && !current.linkedToRupChainToken ? () => setView({ name: 'edit', assetId: current.id }) : undefined}
               loadEvents={loadEvents}
               onRecordEvent={onRecordEvent}
               onDeleteEvent={onDeleteEvent}
@@ -213,28 +233,34 @@ export function PortfolioTab({
 
         {view.name === 'overview' && (
           <>
-            <div className="flex items-start justify-between gap-3 mb-1">
-              <h2 id="tracked-portfolio-heading" className="text-base font-semibold text-text-primary">Tracked portfolio</h2>
-              <span className="inline-flex items-center gap-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-1">
+              <h2 id="tracked-portfolio-heading" className="text-xl font-bold text-text-primary">Portfolio</h2>
+              <span className="inline-flex flex-wrap items-center gap-2">
+                {summary && (
+                  <button type="button" onClick={() => setView({ name: 'review' })} className="relative inline-flex items-center gap-1.5 rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-semibold text-text-primary hover:bg-surface-hover">
+                    Review
+                    {toReview > 0 && <span aria-label={`${toReview} to review`} className="rounded-full bg-amber-500 px-1.5 text-[11px] font-bold leading-4 text-white">{toReview}</span>}
+                  </button>
+                )}
                 {loadAllEvents && assets.length > 0 && (
-                  <button type="button" onClick={() => setView({ name: 'history' })} className="text-sm font-semibold text-primary hover:underline whitespace-nowrap">
-                    All transactions
+                  <button type="button" onClick={() => setView({ name: 'history' })} className="rounded-lg border border-border bg-surface px-3 py-1.5 text-sm font-semibold text-text-primary hover:bg-surface-hover whitespace-nowrap">
+                    Transactions
                   </button>
                 )}
                 {onAddAsset && (
-                  <button ref={addBtnRef} type="button" onClick={() => setView({ name: 'add' })} className="text-sm font-semibold text-primary hover:underline whitespace-nowrap">
-                    Add custom token
+                  <button ref={addBtnRef} type="button" onClick={() => setView({ name: 'add' })} className="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-white hover:opacity-90 whitespace-nowrap">
+                    Add asset
                   </button>
                 )}
               </span>
             </div>
             <p className="text-xs text-text-muted mb-3">
-              Estimates based on transactions you record. Separate from your RupChain wallet balance below; the two are never added together.
+              A tracked estimate from the transactions you record. Separate from your RupChain wallet balance below; the two are never added together.
             </p>
 
             {importReport && onImportTrades && onDismissImport && (
               <div className="mb-4">
-                <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} onReview={loadExcluded && onRecordExcluded ? () => setView({ name: 'excluded' }) : undefined} />
+                <ImportBanner report={importReport} busy={importBusy} error={importError} onImport={onImportTrades} onDismiss={onDismissImport} />
               </div>
             )}
 
@@ -255,13 +281,6 @@ export function PortfolioTab({
             {summary && (summary.summary.positions.length > 0 || summary.fxUnavailableAssets.length > 0) && (
               <div className="mb-4 space-y-6">
                 <PortfolioHeadline data={summary} trackedHeld={trackedHeld} trackedTotal={activeAssets.length} />
-                <NeedsAttention
-                  summary={summary}
-                  assets={assets}
-                  importReport={importReport}
-                  onOpenToken={(assetId, action) => { lastRowRef.current = assetId; setView({ name: 'token', assetId, start: action }) }}
-                  onReviewExcluded={loadExcluded && onRecordExcluded ? () => setView({ name: 'excluded' }) : undefined}
-                />
                 {loadPerformance && summary.summary.positions.length > 0 && (
                   <PerformanceSection
                     currency={shown}
@@ -271,9 +290,11 @@ export function PortfolioTab({
                     onFixCost={firstToFix.cost ? () => { lastRowRef.current = firstToFix.cost!; setView({ name: 'token', assetId: firstToFix.cost!, start: 'history' }) } : undefined}
                   />
                 )}
+                <AllocationBar positions={summary.summary.positions} assets={activeAssets} currency={shown} />
               </div>
             )}
 
+            {listed.length > 0 && !loading && !error && <h3 className="text-sm font-semibold text-text-primary mb-2">Holdings</h3>}
             {loading ? (
               <div role="status" className="bg-surface shadow-card rounded-xl border border-border p-5 text-sm text-text-muted">
                 Loading your tracked tokens…
@@ -294,7 +315,7 @@ export function PortfolioTab({
                 All your tracked tokens are archived. Their history still counts in the totals above.
               </div>
             ) : (
-              <ul className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <ul className="grid grid-cols-1 gap-2.5">
                 {listed.map((a) => (
                   <TokenCard
                     key={a.id}
@@ -304,16 +325,13 @@ export function PortfolioTab({
                     shown={shown}
                     fxUnavailable={Boolean(summary?.fxUnavailableAssets.includes(a.id))}
                     buttonRef={(el) => { rowRefs.current[a.id] = el }}
-                    onAction={(action: CardAction) => {
-                      lastRowRef.current = a.id
-                      setView({ name: 'token', assetId: a.id, ...(action === 'details' ? {} : { start: action }) })
-                    }}
+                    onOpen={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
                   />
                 ))}
               </ul>
             )}
             {!loading && !error && loadExport && assets.length > 0 && (
-              <div className="mt-3"><ExportMenu load={loadExport} /></div>
+              <div className="mt-3"><ExportMenu load={loadExport} includeBackup={showBackupDownload} /></div>
             )}
             {!loading && !error && backupImportApi && (
               showBackupImport ? (
@@ -322,15 +340,6 @@ export function PortfolioTab({
                 </div>
               ) : (
                 <button type="button" onClick={() => setShowBackupImport(true)} className="mt-3 block text-xs font-medium text-primary hover:underline">Import from a backup file</button>
-              )
-            )}
-            {!loading && !error && onRestoreBackup && (
-              showRestore ? (
-                <div className="mt-3">
-                  <RestoreBackupDialog restore={onRestoreBackup} onClose={() => setShowRestore(false)} onDone={() => onBackupRestored?.()} />
-                </div>
-              ) : (
-                <button type="button" onClick={() => setShowRestore(true)} className="mt-3 block text-xs font-medium text-primary hover:underline">Restore from a backup file</button>
               )
             )}
             {!loading && !error && archivedAssets.length > 0 && (

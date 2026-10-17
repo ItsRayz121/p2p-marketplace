@@ -12,6 +12,8 @@ import { sendKycEmail } from './email.service'
 import { assertCloudinaryUrl } from '../lib/upload'
 import { FLAGS, isFlagEnabled } from './platformFlags.service'
 import { normalizeWhatsapp, normalizeCommunityUrl } from '../lib/makerGate'
+import { ITEM_LABEL } from '../lib/kycItems'
+import { reviewState } from './kycReview.service'
 
 export async function getKycStatus(userId: string) {
   const [user, submission] = await Promise.all([
@@ -24,7 +26,15 @@ export async function getKycStatus(userId: string) {
       orderBy: { createdAt: 'desc' },
     }),
   ])
-  return { status: user?.kycStatus, level: user?.kycLevel, latestSubmission: submission }
+  // What the applicant has to fix, if anything: only items a reviewer sent back, with the reason.
+  const review = submission
+    ? await reviewState(submission.id).then((r) => ({
+        basicState: r.parts.basicState,
+        enhancedState: r.parts.enhancedState,
+        items: r.items.map((i) => ({ item: i.item, label: ITEM_LABEL[i.item], part: i.part, status: i.status, reason: i.reason })),
+      }))
+    : null
+  return { status: user?.kycStatus, level: user?.kycLevel, latestSubmission: submission, review }
 }
 
 export async function submitKyc(
@@ -163,6 +173,9 @@ export async function submitKyc(
       whatsappNumber,
       communityLinks,
       referenceUrl,
+      // Reused identity documents were approved earlier, so only the Enhanced answers are new.
+      basicState: approvedBasic ? 'approved' : 'pending',
+      enhancedState: data.tier === 'enhanced' ? 'pending' : 'not_requested',
     },
   })
   if (whatsappNumber) await db.user.update({ where: { id: userId }, data: { whatsappNumber } })

@@ -10,8 +10,10 @@ import { buildGasOrderWhere } from '../lib/gas/gas.orderQuery'
 import { redis } from '../lib/redis'
 import { env } from '../lib/env'
 import { AppError, Errors } from '../lib/errors'
-import { sendKycEmail, sendWithdrawalEmail } from '../services/email.service'
+import { sendWithdrawalEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
+import { approvePart, rejectPart, recordItemDecision, requestChanges, reviewState } from '../services/kycReview.service'
+import { approveManualGasPayment, rejectManualGasPayment, retryGasDelivery, type AdminActor } from '../services/gasAdminActions.service'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
 import { clawbackTradePoints } from '../services/airdrop.service'
@@ -22,9 +24,8 @@ import { getStreamStatusSummary, ensureSubscriptionRows, enqueuePendingSubscript
 import { getPublicConfig, getAds } from '../services/marketplace.service'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
-import { FLAGS, isFlagEnabled, clearFlagCache } from '../services/platformFlags.service'
+import { clearFlagCache } from '../services/platformFlags.service'
 import { resetPortfolioFlagCache } from '../lib/portfolio/flag'
-import { approveMakerFromKyc } from '../services/maker.service'
 import { isSyntheticEmail } from '../services/auth.service'
 import { previewAccountMerge, adminMergeAccounts, adminEraseIdentity } from '../services/accountLink.service'
 import { getChainById, getRpcUrl, getAllChains, invalidateCache } from '../services/chainRegistry.service'
@@ -127,6 +128,14 @@ function clientIp(req: FastifyRequest): string {
   return req.ip
 }
 
+/** KYC submissions a reviewer still has to look at (not those waiting for the applicant to send something again). */
+const KYC_NEEDS_REVIEW: Prisma.KycSubmissionWhereInput = { status: 'pending', OR: [{ basicState: 'pending' }, { enhancedState: 'pending' }] }
+
+/** Who is clicking, for the shared gas actions (the same ones the Telegram buttons run). */
+function adminActor(req: FastifyRequest): AdminActor {
+  return { id: req.user!.id, via: 'web', ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined }
+}
+
 async function createAuditLog(
   adminId: string,
   action: string,
@@ -153,7 +162,6 @@ async function createAuditLog(
 }
 
 import { notify } from '../lib/notify'
-import { mergeVerifiedFromKyc } from '../services/socialLinks.service'
 import { computeModerationStatus, recordModerationAction, notifyModeration, moderationStatusLabel } from '../lib/moderation'
 import { pauseUserListings } from '../lib/tradingHold'
 import { restoreAfterNoFaultClose } from '../services/disputeResume'
@@ -224,7 +232,7 @@ export async function adminRoutes(app: FastifyInstance) {
         totalWithdrawalFeesResult,
         recentGasActivity,
       ] = await Promise.all([
-        db.kycSubmission.count({ where: { status: 'pending' } }),
+        db.kycSubmission.count({ where: KYC_NEEDS_REVIEW }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
         db.withdrawal.count({ where: { status: { in: ['pending', 'first_approved'] } } }),
         db.instantBuyOrder.count({ where: { status: 'admin_review' } }),
@@ -1489,7 +1497,14 @@ export async function adminRoutes(app: FastifyInstance) {
     const where: Prisma.KycSubmissionWhereInput = {}
 
     const status = query.status
-    if (status && status !== 'all' && ['pending', 'approved', 'rejected'].includes(status)) {
+    if (status === 'pending') {
+      // The work queue: something still needs a reviewer. Submissions waiting for the applicant are not in it.
+      Object.assign(where, KYC_NEEDS_REVIEW)
+    } else if (status === 'waiting') {
+      where.status = 'pending'
+      where.OR = [{ basicState: 'changes_requested' }, { enhancedState: 'changes_requested' }]
+      where.AND = [{ basicState: { not: 'pending' } }, { enhancedState: { not: 'pending' } }]
+    } else if (status && status !== 'all' && ['approved', 'rejected'].includes(status)) {
       where.status = status as Prisma.EnumKycStatusFilter
     }
 
@@ -1512,7 +1527,7 @@ export async function adminRoutes(app: FastifyInstance) {
     // Pending = work queue → oldest first (longest waiting). Otherwise show
     // the most recent submissions first.
     const orderBy: Prisma.KycSubmissionOrderByWithRelationInput =
-      where.status === 'pending' ? { createdAt: 'asc' } : { createdAt: 'desc' }
+      status === 'pending' ? { createdAt: 'asc' } : { createdAt: 'desc' }
 
     const [submissions, total] = await Promise.all([
       db.kycSubmission.findMany({
@@ -1601,10 +1616,12 @@ export async function adminRoutes(app: FastifyInstance) {
       .map((r) => ({ userId: r.userId, username: r.user?.username ?? null, email: r.user?.email ?? null, status: r.status }))
     const shared = (await findSharedContacts([submission])).get(submission.id)
 
+    const review = await reviewState(id)
     return reply.send({
       success: true,
       data: {
         ...submission,
+        items: review.items.map((i) => ({ item: i.item, part: i.part, status: i.status, reason: i.reason })),
         frontUrl: signCloudinaryDeliveryUrl(submission.frontUrl),
         backUrl: signCloudinaryDeliveryUrl(submission.backUrl),
         selfieUrl: signCloudinaryDeliveryUrl(submission.selfieUrl),
@@ -1651,121 +1668,49 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/admin/kyc/:id/approve', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
-
-    const submission = await db.kycSubmission.findUnique({
-      where: { id },
-      include: { user: { select: { email: true } } },
-    })
-    if (!submission) throw Errors.NOT_FOUND('KYC submission')
-    if (submission.status !== 'pending') {
-      throw new AppError('INVALID_STATUS', 'Submission is not pending', 400)
-    }
-
-    // Hard guard: never approve a CNIC that is already verified on a DIFFERENT
-    // account. This is the safety net for a reviewer approving many KYCs in a
-    // row — a duplicate CNIC can't slip through even if it's visually missed.
-    if (submission.cnicNumberHash) {
-      const conflict = await db.kycSubmission.findFirst({
-        where: {
-          cnicNumberHash: submission.cnicNumberHash,
-          status: 'approved',
-          userId: { not: submission.userId },
-        },
-        include: { user: { select: { username: true, email: true } } },
-      })
-      if (conflict) {
-        const who = conflict.user?.username || conflict.user?.email || conflict.userId
-        throw new AppError(
-          'CNIC_DUPLICATE',
-          `This CNIC is already verified on another account (${who}). Reject this submission instead of approving it.`,
-          409,
-        )
-      }
-    }
-
-    const kycLevel = submission.tier === 'enhanced' ? 'enhanced' : 'basic'
-
-    // Apply the tier's daily transaction limit so Enhanced KYC actually grants
-    // higher limits (single source of truth: platform config, with safe defaults).
-    const cfg = await getPublicConfig()
-    const dailyLimit = kycLevel === 'enhanced' ? cfg.kycLimitEnhancedDaily : cfg.kycLimitBasicDaily
-
-    // Non-custodial mode: on approval, lock the user's display name to the CNIC
-    // legal name so it is canonical everywhere and can no longer be self-edited.
-    // Flag OFF (default) leaves the name untouched, preserving current behavior.
-    const nonCustodial = await isFlagEnabled(FLAGS.NONCUSTODIAL_P2P)
-    const lockLegalName = nonCustodial && !!submission.legalName?.trim()
-
-    await db.$transaction(async (tx) => {
-      await tx.kycSubmission.update({
-        where: { id },
-        data: { status: 'approved', reviewedAt: new Date(), reviewedBy: req.user!.id },
-      })
-      await tx.user.update({
-        where: { id: submission.userId },
-        data: {
-          kycStatus: 'approved',
-          kycLevel,
-          dailyBuyLimit: dailyLimit,
-          dailySellLimit: dailyLimit,
-          ...(lockLegalName
-            ? { fullName: submission.legalName!.trim(), legalNameLockedAt: new Date() }
-            : {}),
-        },
-      })
-    })
-
-    // Promote the submission's social links to the user's permanent VERIFIED set
-    // (they can hide but never delete these). Best-effort — never blocks approval.
-    try {
-      const submitted = Array.isArray(submission.socialLinks)
-        ? (submission.socialLinks as Array<{ platform?: unknown; url?: unknown }>)
-            .filter((l) => typeof l?.platform === 'string' && typeof l?.url === 'string')
-            .map((l) => ({ platform: l.platform as string, url: l.url as string }))
-        : []
-      await mergeVerifiedFromKyc(submission.userId, submitted)
-    } catch { /* best-effort — social sync must not fail approval */ }
-
-    // Level 2 doubles as the maker review: approving it approves the user as a maker.
-    if (kycLevel === 'enhanced') {
-      try { await approveMakerFromKyc(req.user!.id, submission.userId) } catch { /* best-effort — never blocks KYC approval */ }
-    }
-
-    await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: submission.userId, level: kycLevel }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    await sendKycEmail('approved', submission.user.email, { level: kycLevel })
-    notify(submission.userId, 'kyc', 'KYC Approved', 'Your identity has been verified. You now have full platform access.', { tier: kycLevel })
-
+    const by = { id: req.user!.id, ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined }
+    // Approve everything the applicant asked for: Basic, and Enhanced when they applied for it. Each part
+    // is checked and decided on its own, so an item that was sent back still blocks this.
+    const before = await reviewState(id)
+    if (before.submission.status !== 'pending') throw new AppError('INVALID_STATUS', 'Submission is not pending', 400)
+    const wantsEnhanced = before.submission.enhancedState !== 'not_requested' && before.submission.enhancedState !== 'approved'
+    if (before.submission.basicState !== 'approved') await approvePart(id, 'basic', by, { silent: wantsEnhanced })
+    if (wantsEnhanced) await approvePart(id, 'enhanced', by)
+    await createAuditLog(req.user!.id, 'KYC_APPROVED', 'KycSubmission', id, { userId: before.submission.userId, level: wantsEnhanced ? 'enhanced' : 'basic' }, clientIp(req), req.headers['user-agent'] as string | undefined)
     return reply.send({ success: true })
+  })
+
+  // Approve ONE part: Basic (identity) or Enhanced (ad posting).
+  app.post('/admin/kyc/:id/approve-part', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const parsed = z.object({ part: z.enum(['basic', 'enhanced']) }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Choose basic or enhanced', 400)
+    const r = await approvePart(id, parsed.data.part, { id: req.user!.id, ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined })
+    return reply.send({ success: true, data: r })
+  })
+
+  // A decision about one document or answer: approved, send again, or rejected (with a reason).
+  app.post('/admin/kyc/:id/items/:item', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id, item } = req.params as { id: string; item: string }
+    const parsed = z.object({ status: z.enum(['approved', 'resubmit', 'rejected']), reason: z.string().trim().max(300).optional() }).safeParse(req.body)
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
+    const items = await recordItemDecision(id, item, parsed.data.status, parsed.data.reason, { id: req.user!.id, ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined })
+    return reply.send({ success: true, data: { items: items.map((i) => ({ item: i.item, part: i.part, status: i.status, reason: i.reason })) } })
+  })
+
+  // Send the flagged items back to the applicant (one notification for all of them).
+  app.post('/admin/kyc/:id/request-changes', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const items = await requestChanges(id, { id: req.user!.id, ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined })
+    return reply.send({ success: true, data: { items: items.map((i) => ({ item: i.item, part: i.part, status: i.status, reason: i.reason })) } })
   })
 
   app.post('/admin/kyc/:id/reject', { preHandler: [authenticate, adminOrSuperOrKyc], config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
     const { id } = req.params as { id: string }
-    const bodySchema = z.object({ reason: z.string().min(1).max(500) })
+    const bodySchema = z.object({ reason: z.string().trim().min(1, 'A rejection reason is required').max(500), part: z.enum(['basic', 'enhanced', 'all']).default('all') })
     const parsed = bodySchema.safeParse(req.body)
     if (!parsed.success) throw new AppError('VALIDATION_ERROR', parsed.error.errors[0]?.message ?? 'Invalid input', 400)
-
-    const submission = await db.kycSubmission.findUnique({
-      where: { id },
-      include: { user: { select: { email: true } } },
-    })
-    if (!submission) throw Errors.NOT_FOUND('KYC submission')
-
-    await db.kycSubmission.update({
-      where: { id },
-      data: { status: 'rejected', rejectionReason: parsed.data.reason, reviewedAt: new Date(), reviewedBy: req.user!.id },
-    })
-    await db.user.update({
-      where: { id: submission.userId },
-      // Also revoke the public-profile opt-in — it requires KYC-approved status
-      // (see PATCH /users/me/social-profile), so a user whose approval is
-      // rejected (e.g. a later re-verification) must not stay publicly listed.
-      data: { kycStatus: 'rejected', socialLinksPublic: false },
-    })
-
-    await createAuditLog(req.user!.id, 'KYC_REJECTED', 'KycSubmission', id, { reason: parsed.data.reason }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    await sendKycEmail('rejected', submission.user.email, { reason: parsed.data.reason })
-    notify(submission.userId, 'kyc', 'KYC Rejected', `Your KYC submission was rejected. Reason: ${parsed.data.reason}`, { rejectionReason: parsed.data.reason })
-
+    await rejectPart(id, parsed.data.part, parsed.data.reason, { id: req.user!.id, ip: clientIp(req), userAgent: req.headers['user-agent'] as string | undefined })
     return reply.send({ success: true })
   })
 
@@ -4910,65 +4855,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/admin/gas/orders/:id/retry', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-
-    // STRICT no-double-delivery gate: if an earlier delivery tx was ever broadcast, Retry is
-    // only allowed once that attempt is PROVEN unable to land. A landed one is adopted instead.
-    const pre = await db.gasFeeOrder.findUnique({ where: { id } })
-    if (!pre) throw Errors.NOT_FOUND('Gas fee order')
-    if (pre.unconfirmedDeliveryTxHash) {
-      const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
-      const prior = await assessPriorAttempt(pre)
-      if (prior.verdict === 'landed' && prior.txHash) {
-        await handBackLandedDelivery(id, prior.txHash)
-        await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY_BLOCKED_LANDED', 'GasFeeOrder', id, { txHash: prior.txHash }, clientIp(req), req.headers['user-agent'] as string | undefined)
-        return reply.send({ success: true, message: 'The earlier delivery transaction had actually landed on-chain — the order is being finalized as delivered. Nothing was resent.' })
-      }
-      if (prior.verdict === 'unresolved') {
-        throw new AppError('CONFLICT', `Retry blocked to prevent a double delivery. ${prior.detail} Wait and use "Verify on-chain", or deliver manually only after confirming the earlier tx cannot land.`, 409)
-      }
-      // dead: archive the proven-dead attempt in the audit trail, then clear the journal so the worker may send once more.
-      await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY_AFTER_PROVEN_DEAD', 'GasFeeOrder', id, { deadTxHash: prior.txHash, nonce: pre.deliveryNonce, detail: prior.detail }, clientIp(req), req.headers['user-agent'] as string | undefined)
-      await db.gasFeeOrder.updateMany({
-        where: { id, unconfirmedDeliveryTxHash: pre.unconfirmedDeliveryTxHash },
-        data: { unconfirmedDeliveryTxHash: null, deliveryNonce: null, deliveryAttemptAt: null },
-      })
-    }
-
-    // CAS: transition failed/awaiting_refund → payment_detected so the delivery
-    // worker can re-claim it. For awaiting_refund we also clear the refund window.
-    // Concurrent retries find count=0 on the second call and fall through below.
-    // A 'failed' order is only retryable when payment was actually accepted
-    // (PAID_FAILED_WHERE) — never a rejected/cancelled proof.
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, deliveryTxHash: null, OR: [{ status: 'awaiting_refund' }, PAID_FAILED_WHERE] },
-      data: { status: 'payment_detected', failureReason: null, refundEligibleAt: null, retryCount: { increment: 1 } },
-    })
-
-    let previousStatus = 'failed'
-    if (claimed.count === 0) {
-      const order = await db.gasFeeOrder.findUnique({ where: { id } })
-      if (!order) throw Errors.NOT_FOUND('Gas fee order')
-      // An order paused on insufficient hot-wallet balance sits in payment_detected
-      // (not failed). After the admin refills the wallet, "Retry" simply re-enqueues
-      // the delivery job — the order is already in the claimable state.
-      if (order.status === 'payment_detected') {
-        previousStatus = 'payment_detected'
-        await db.gasFeeOrder.update({ where: { id }, data: { failureReason: null } })
-      } else {
-        throw new AppError('CONFLICT', order.status === 'failed'
-          ? 'This order never had a payment accepted (rejected or cancelled) — it cannot be retried.'
-          : `Order is in '${order.status}' — only failed, stuck (payment_detected), or awaiting_refund orders can be retried`, 409)
-      }
-    } else {
-      // Came from awaiting_refund (or failed): drop the pending safety-net auto-refund
-      // so it can't fire after a manual retry. The retry-delivery chain self-stops.
-      try { await queues.gasFee.remove(`gas-auto-refund-${id}`) } catch { /* non-fatal */ }
-    }
-
-    await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_ORDER_RETRY', 'GasFeeOrder', id, { previousStatus, oldStatus: previousStatus, newStatus: 'payment_detected' }, clientIp(req), req.headers['user-agent'] as string | undefined)
-
-    return reply.send({ success: true })
+    const r = await retryGasDelivery(id, adminActor(req))
+    return reply.send({ success: true, ...(r.message ? { message: r.message } : {}) })
   })
 
   app.post('/admin/gas/orders/:id/refund', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
@@ -6881,37 +6769,8 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/admin/gas/orders/:id/approve-pkr', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
     const { id } = req.params as { id: string }
-
-    // Read first so we can check expiry before queuing delivery
-    const order = await db.gasFeeOrder.findUnique({ where: { id } })
-    if (!order) throw Errors.NOT_FOUND('Gas fee order')
-
-    // Manual-proof orders: PKR transfers and exchange (internal USDT) transfers.
-    if (order.status !== 'payment_uploaded' || !(order.paymentCoin === 'PKR' || order.paymentNetwork === 'EXCHANGE')) {
-      throw new AppError('CONFLICT', `Order is in '${order.status}' — can only approve payment_uploaded PKR or exchange-transfer orders`, 409)
-    }
-
-    if (order.expiresAt < new Date()) {
-      throw new AppError('ORDER_EXPIRED', 'Order has expired. The user must create a new order.', 409)
-    }
-
-    // CAS: transition payment_uploaded → payment_detected (guards against race with another admin)
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: 'payment_uploaded', OR: [{ paymentCoin: 'PKR' }, { paymentNetwork: 'EXCHANGE' }] },
-      data:  { status: 'payment_detected' },
-    })
-    if (claimed.count === 0) {
-      throw new AppError('CONFLICT', 'Order was already processed by another admin', 409)
-    }
-    await queues.gasFee.add('deliver', { orderId: id }, { priority: 1 })
-    await createAuditLog(req.user!.id, 'GAS_PKR_APPROVED', 'GasFeeOrder', id, {
-      orderRef:   order.orderRef,
-      oldStatus:  'payment_uploaded',
-      newStatus:  'payment_detected',
-      paymentCoin: order.paymentCoin,
-      pkrAmount:  order.pkrAmount?.toString() ?? null,
-    }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    return reply.send({ success: true, data: { status: 'payment_detected' } })
+    const r = await approveManualGasPayment(id, adminActor(req))
+    return reply.send({ success: true, data: { status: r.status } })
   })
 
   // ── POST /admin/gas/orders/:id/reject — reject a submitted payment proof ────────────
@@ -6922,30 +6781,8 @@ export async function adminRoutes(app: FastifyInstance) {
   async function rejectGasProof(req: FastifyRequest, reply: FastifyReply) {
     const { id } = req.params as { id: string }
     const body = (req.body ?? {}) as { reason?: string }
-    const reason = (typeof body.reason === 'string' ? body.reason.trim() : '').slice(0, 300) || 'Payment proof rejected by admin'
-
-    const order = await db.gasFeeOrder.findUnique({ where: { id }, select: { id: true, orderRef: true, status: true, paymentCoin: true, paymentNetwork: true, userId: true } })
-    if (!order) throw Errors.NOT_FOUND('Gas fee order')
-
-    const claimed = await db.gasFeeOrder.updateMany({
-      where: { id, status: REJECTABLE_STATUS, ...MANUAL_PROOF_WHERE },
-      data:  { status: 'cancelled', cancelledAt: new Date(), cancelReason: `admin_rejected: ${reason}`, failureReason: reason },
-    })
-    if (claimed.count === 0) {
-      const fresh = await db.gasFeeOrder.findUnique({ where: { id }, select: { status: true } })
-      throw new AppError('CONFLICT', `Order is in '${fresh?.status ?? order.status}' — only a PKR or exchange-transfer order with a submitted proof can be rejected.`, 409)
-    }
-    // The 24h expiry job is moot now.
-    try { await queues.gasFee.remove(`gas-expire-${id}`) } catch { /* non-fatal */ }
-    const { recordGasAudit } = await import('../lib/gas/gas.matching')
-    await recordGasAudit({ orderId: id }, { source: 'admin', event: 'proof_rejected', reason, detail: `Rejected by admin ${req.user!.id}` })
-    await createAuditLog(req.user!.id, 'GAS_PKR_REJECTED', 'GasFeeOrder', id, {
-      orderRef: order.orderRef, oldStatus: order.status, newStatus: 'cancelled', paymentNetwork: order.paymentNetwork, reason,
-    }, clientIp(req), req.headers['user-agent'] as string | undefined)
-    if (order.userId) {
-      notify(order.userId, 'gas', 'Gas payment not verified', `We could not verify the payment for order ${order.orderRef}: ${reason}. No gas was sent and the order was closed.`, { orderRef: order.orderRef })
-    }
-    return reply.send({ success: true, data: { status: 'cancelled' } })
+    const r = await rejectManualGasPayment(id, body.reason, adminActor(req))
+    return reply.send({ success: true, data: { status: r.status } })
   }
   app.post('/admin/gas/orders/:id/reject', { preHandler: [authenticate, adminOrSuper] }, rejectGasProof)
   // Legacy alias — kept so older admin clients keep working.

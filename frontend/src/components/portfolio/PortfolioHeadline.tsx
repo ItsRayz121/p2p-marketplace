@@ -10,17 +10,17 @@ const UNAVAILABLE: Record<Kind, string> = { value: 'Value unavailable', realized
 
 function Card({ label, tip, children, note }: { label: string; tip: string; children: React.ReactNode; note: string }) {
   return (
-    <div className="bg-surface shadow-card rounded-xl border border-border p-4">
-      <p className="text-xs text-text-muted">{label}<InfoTip text={tip} /></p>
-      <p className="text-lg font-bold text-text-primary mt-1 break-words">{children}</p>
-      <p className="text-xs text-text-muted mt-1">{note}</p>
+    <div className="bg-surface shadow-card rounded-2xl border border-border p-4">
+      <p className="text-xs font-medium text-text-muted">{label}<InfoTip text={tip} /></p>
+      <p className="text-xl font-bold text-text-primary mt-1.5 break-words tabular-nums">{children}</p>
+      <p className="text-xs text-text-muted mt-1.5">{note}</p>
     </div>
   )
 }
 
 function Partial({ f, noun }: { f: Figure; noun: string }) {
   return (
-    <span className="ml-2 align-middle inline-block rounded-full bg-amber-500/10 border border-amber-500/40 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+    <span className="ml-2 align-middle inline-block rounded-full bg-surface-hover border border-border px-2 py-0.5 text-[11px] font-medium text-text-secondary">
       Partial · {f.covered} of {f.total} {noun}
     </span>
   )
@@ -66,45 +66,35 @@ export function PortfolioHeadline({
 
   const valueNote = fig.value.state === 'unavailable'
     ? 'Add a current price to see it'
-    : fig.value.state === 'partial' ? 'Counts only tokens that have a price' : 'From the prices you entered and RupChain trades'
+    : fig.value.state === 'partial' ? 'Only tokens with a price' : 'Latest known prices'
   const realizedNote = fig.realized.total === 0
-    ? 'No sales recorded yet'
-    : fig.realized.state === 'unavailable' ? 'The cost of what you sold is not recorded' : 'From sales you recorded (FIFO)'
+    ? 'No sales yet'
+    : fig.realized.state === 'unavailable' ? 'Cost of what you sold is missing' : 'From your recorded sales'
   const unrealizedNote = fig.unrealized.state === 'unavailable'
-    ? 'Needs a price and a recorded cost'
-    : fig.unrealized.state === 'partial' ? 'Counts only tokens with a price and a cost' : 'Value now minus what you paid'
+    ? 'Needs a price and a cost'
+    : fig.unrealized.state === 'partial' ? 'Only tokens with a price and cost' : 'Value now minus cost'
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-        <Card label="Estimated Portfolio Value" tip="Quantity times the current price, for tokens that have a price. An estimate, not an amount you could sell for." note={valueNote}>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <Card label="Portfolio Value" tip="Quantity times the current price, for tokens that have a price. An estimate, not an amount you could sell for." note={valueNote}>
           <FigureText f={fig.value} kind="value" cur={cur} signed={false} />
         </Card>
-        <Card label="Known Realized Profit / Loss" tip="Profit or loss on units you already sold, using FIFO. Only sales whose cost is recorded are counted." note={realizedNote}>
+        <Card label="Realized Profit / Loss" tip="Profit or loss on units you already sold, using FIFO. Only sales whose cost is recorded are counted." note={realizedNote}>
           <FigureText f={fig.realized} kind="realized" cur={cur} signed />
         </Card>
         <Card label="Unrealized Profit / Loss" tip="What you hold now, valued at the current price, minus what it cost you. Not locked in until you sell." note={unrealizedNote}>
           <FigureText f={fig.unrealized} kind="unrealized" cur={cur} signed />
         </Card>
-        <Card label="Total Tracked Assets" tip="Tokens you currently hold according to your records. Archived tokens are not counted." note={`${trackedTotal} ${trackedTotal === 1 ? 'token' : 'tokens'} tracked in total`}>
+        <Card label="Assets" tip="Tokens you currently hold according to your records. Archived tokens are not counted." note={`${trackedTotal} ${trackedTotal === 1 ? 'token' : 'tokens'} tracked`}>
           {trackedHeld}
         </Card>
       </div>
 
-      {fig.total.state === 'known' && fig.total.total > 0 && fig.total.amount !== null && (
-        <p className="text-xs text-text-secondary">
-          Realized plus unrealized: <span className="font-semibold">{cur} {formatSigned(fig.total.amount)}</span>
-        </p>
-      )}
-
-      {s.partial
-        ? <p className="text-xs text-text-muted">Some figures leave out what is missing. See what needs attention below. Missing values are never counted as zero.</p>
-        : <p className="text-xs text-text-muted">Every recorded token is priced and has a recorded cost.</p>}
-
       <p className="text-xs text-text-muted">
-        Based on your transactions and prices (RupChain trades use the latest platform trade price), in {cur}, as of {asOf}.
-        {data.fx.usdtPkr !== null && <> Current prices use today&apos;s RupChain rate of {formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry uses the rate recorded with it, and imported RupChain trades without one use today&apos;s rate.</>}
-        {' '}This is not verified ownership, an exit price, or tax advice. Method: FIFO.
+        {s.partial ? 'Some figures are partial; open Review to complete them. ' : ''}
+        {cur} · as of {asOf}
+        <InfoTip text={`Based on your transactions and prices (RupChain trades use the latest platform trade price). Missing values are never counted as zero.${data.fx.usdtPkr !== null ? ` Current prices use today's RupChain rate of ${formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry keeps the rate recorded with it.` : ''} Method: FIFO. Not verified ownership, an exit price, or tax advice.`} />
       </p>
     </div>
   )

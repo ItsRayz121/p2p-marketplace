@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     const webhookUrl = `${env.TELEGRAM_WEBHOOK_URL.replace(/\/$/, '')}/api/v1/telegram/webhook`
     await call('setWebhook', {
       url: webhookUrl,
-      allowed_updates: ['message'],
+      allowed_updates: ['message', 'callback_query'],
       ...(env.TELEGRAM_WEBHOOK_SECRET ? { secret_token: env.TELEGRAM_WEBHOOK_SECRET } : {}),
     })
     console.log(`✓ Webhook set → ${webhookUrl}${env.TELEGRAM_WEBHOOK_SECRET ? ' (secured)' : ' (no secret!)'}`)

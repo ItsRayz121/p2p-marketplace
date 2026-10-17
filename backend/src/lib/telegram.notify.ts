@@ -51,23 +51,33 @@ export async function sendTelegramNotification(
 }
 
 /**
- * Send an ADMIN alert to one staff member's Telegram. Unlike user notifications
- * (which deep-link into the Mini App), admins work in the web admin panel — so
- * the "Open" button is an absolute https link to FRONTEND_URL + the admin href.
- * `href` is an in-app admin path like "/admin/kyc".
+ * Send an ADMIN alert to one staff member's Telegram. The button opens the admin page INSIDE Telegram as
+ * a Mini App (so Telegram shows no "Open this link?" prompt) and signs in as the admin's own linked
+ * account, then lands on `href`, an in-app admin path like "/admin/kyc". Pass `rows` to replace the
+ * default button with action buttons (gas orders).
  */
 export async function sendTelegramAdminAlert(
   telegramId: bigint,
   title: string,
   body: string,
   href?: string,
+  rows?: ReadonlyArray<ReadonlyArray<object>>,
 ): Promise<TelegramSendResult> {
   const safeHref = href && href.startsWith('/') && !href.startsWith('//') ? href : '/admin'
-  const url = `${env.FRONTEND_URL}${safeHref}`
-  const button = /^https?:\/\//i.test(url)
-    ? { text: '🔗 Open admin panel', url }
-    : { text: '🔗 Open admin panel', web_app: { url: miniAppUrl() } }
-  return sendMessage(telegramId, `🔔 ${title}\n\n${body}`, button)
+  const base = miniAppUrl()
+  const miniUrl = `${base}${base.includes('?') ? '&' : '?'}path=${encodeURIComponent(safeHref)}`
+  // A Mini App button must be https; in local development fall back to a plain link.
+  const button = /^https:\/\//i.test(miniUrl)
+    ? { text: '🔗 Open admin panel', web_app: { url: miniUrl } }
+    : { text: '🔗 Open admin panel', url: `${env.FRONTEND_URL}${safeHref}` }
+  return telegramRequest('sendMessage', {
+    chat_id: telegramId.toString(),
+    text: `🔔 ${title}
+
+${body}`,
+    reply_markup: { inline_keyboard: rows && rows.length > 0 ? rows : [[button]] },
+    disable_web_page_preview: true,
+  })
 }
 
 /**

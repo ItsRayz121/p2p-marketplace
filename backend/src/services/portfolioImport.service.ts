@@ -1,6 +1,8 @@
 import { db } from '../lib/prisma'
 import { parseSourceUrl, validateCustomAsset } from '../lib/portfolioAsset'
 import { forcedReleaseRefs, factsFromTrade, TRADE_FACTS_SELECT } from './ctmTradeFacts.service'
+import { chooseFxStamp } from '../lib/portfolio/currency'
+import { getStringConfig } from './platformFlags.service'
 import { classifyTrade, describeTrade, makePlan, type AttentionReason, type CtmTradeFacts, type ImportPlan } from '../lib/portfolio/ctmImport'
 
 /**
@@ -221,14 +223,20 @@ export interface ExcludedTrade {
   canRecord: boolean
 }
 
-/** Trades that were not added automatically, newest first, for the review list (read-only). */
-export async function listExcludedTrades(userId: string, opts: { limit: number; offset: number }): Promise<{ total: number; items: ExcludedTrade[] }> {
+interface ExcludedInternal extends ExcludedTrade {
+  /** PKR per 1 USDT the trade itself was done at (USDT-paid trades only). */
+  fxRate: string | null
+  token: TokenMeta | undefined
+}
+
+/** Every trade of the user that was left out of automatic tracking, newest first (read-only). */
+async function computeExcluded(userId: string): Promise<ExcludedInternal[]> {
   const { facts, tokens, refs } = await loadFacts(userId)
   const byHand = new Set(
     (await db.portfolioEvent.findMany({ where: { userId, source: 'manual', linkedTradeRef: { not: null } }, select: { linkedTradeRef: true } }))
       .flatMap((e) => (e.linkedTradeRef ? [e.linkedTradeRef] : [])),
   )
-  const all: ExcludedTrade[] = []
+  const all: ExcludedInternal[] = []
   for (const f of facts) {
     const c = classifyTrade(f)
     if (c.kind !== 'attention') continue
@@ -246,14 +254,85 @@ export async function listExcludedTrades(userId: string, opts: { limit: number; 
       reason: c.reason,
       recorded: byHand.has(f.id),
       canRecord: c.reason !== 'in_progress' && c.reason !== 'invalid_amounts' && d.consideration !== null,
+      fxRate: d.fxRate,
+      token: tokens.get(f.tokenId),
     })
   }
   all.sort((a, b) => Date.parse(b.date ?? '') - Date.parse(a.date ?? '') || (a.tradeId < b.tradeId ? -1 : 1))
-  return { total: all.length, items: all.slice(opts.offset, opts.offset + opts.limit) }
+  return all
+}
+
+const isRecordable = (t: ExcludedTrade) => t.canRecord && !t.recorded
+
+/** Trades that were not added automatically, newest first, for the review list (read-only). */
+export async function listExcludedTrades(userId: string, opts: { limit: number; offset: number }): Promise<{ total: number; recordable: number; items: ExcludedTrade[] }> {
+  const all = await computeExcluded(userId)
+  const items = all.slice(opts.offset, opts.offset + opts.limit).map(({ fxRate: _fx, token: _t, ...t }) => t)
+  return { total: all.length, recordable: all.filter(isRecordable).length, items }
+}
+
+export type BatchOutcome = 'recorded' | 'already_recorded' | 'skipped' | 'failed'
+export interface BatchResult { tradeId: string; tradeRef: string; outcome: BatchOutcome; message?: string }
+export interface BatchReport { recorded: number; alreadyRecorded: number; skipped: number; failed: number; results: BatchResult[] }
+
+/**
+ * Record several left-out trades in the caller's own tracker, using the amounts the platform holds
+ * for each trade. Every trade is its own unit of work: the database lets exactly one entry per trade
+ * through (unique userId + linkedTradeRef), so a retry after a partial failure never duplicates an
+ * entry. Nothing here changes a trade, a dispute, a wallet or a payment.
+ */
+export async function recordExcludedBatch(
+  userId: string,
+  selection: { all: true } | { tradeIds: string[] },
+  opts: { maxAssets: number; maxEvents: number },
+): Promise<BatchReport> {
+  const everything = await computeExcluded(userId)
+  const byId = new Set('tradeIds' in selection ? selection.tradeIds : [])
+  const wanted = 'all' in selection ? everything.filter(isRecordable) : everything.filter((t) => byId.has(t.tradeId))
+  const known = new Set(everything.map((t) => t.tradeId))
+  const results: BatchResult[] = []
+  for (const id of byId) {
+    if (!known.has(id)) results.push({ tradeId: id, tradeRef: id, outcome: 'failed', message: 'Trade not found, or it already counts automatically.' })
+  }
+
+  let room = Math.max(0, opts.maxEvents - (await db.portfolioEvent.count({ where: { userId } })))
+  const platformRate = await getStringConfig('rate_USDT_PKR', '')
+  for (const t of wanted) {
+    const base = { tradeId: t.tradeId, tradeRef: t.tradeRef }
+    if (t.recorded) { results.push({ ...base, outcome: 'already_recorded' }); continue }
+    if (!t.canRecord || t.consideration === null || !t.token || !t.date) {
+      results.push({ ...base, outcome: 'skipped', message: t.reason === 'in_progress' ? 'Not finished yet.' : 'The amounts of this trade cannot be used.' })
+      continue
+    }
+    if (room <= 0) { results.push({ ...base, outcome: 'failed', message: 'Entry limit reached.' }); continue }
+    try {
+      const assetId = await ensureLinkedAsset(userId, t.token, { maxAssets: opts.maxAssets })
+      if (!assetId) { results.push({ ...base, outcome: 'failed', message: 'Token limit reached.' }); continue }
+      const occurredAt = new Date(t.date)
+      const stamp = t.fxRate
+        ? { fxRate: t.fxRate, fxSource: 'platform' as const }
+        : chooseFxStamp({ userRate: null, platformRate, occurredAtMs: occurredAt.getTime(), nowMs: Date.now() })
+      await db.portfolioEvent.create({
+        data: {
+          userId, assetId, type: t.side, occurredAt, quantity: t.quantity, consideration: t.consideration, fee: '0',
+          basis: null, zeroCost: false, quote: t.quote, fxRate: stamp.fxRate, fxSource: stamp.fxSource,
+          note: `Recorded from RupChain trade ${t.tradeRef}`, linkedTradeRef: t.tradeId,
+        },
+        select: { id: true },
+      })
+      room -= 1
+      results.push({ ...base, outcome: 'recorded' })
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') results.push({ ...base, outcome: 'already_recorded' })
+      else results.push({ ...base, outcome: 'failed', message: 'Could not be saved. Try again.' })
+    }
+  }
+  const count = (o: BatchOutcome) => results.filter((r) => r.outcome === o).length
+  return { recorded: count('recorded'), alreadyRecorded: count('already_recorded'), skipped: count('skipped'), failed: count('failed'), results }
 }
 
 export type RecordCheck =
-  | { ok: true; side: 'BUY' | 'SELL'; token: TokenMeta; tradeId: string }
+  | { ok: true; side: 'BUY' | 'SELL'; token: TokenMeta; tradeId: string; fxRate: string | null }
   | { ok: false; status: 404 | 409; message: string }
 
 /**
@@ -278,7 +357,7 @@ export async function checkExcludedTradeRecordable(userId: string, tradeId: stri
   if (c.reason === 'in_progress') return { ok: false, status: 409, message: 'This trade has not finished yet. Record it once it has.' }
   const d = describeTrade(facts)
   if (!d || c.reason === 'invalid_amounts') return { ok: false, status: 409, message: 'The amounts of this trade cannot be used. Record it as a normal entry instead.' }
-  return { ok: true, side: d.side, token: trade.token, tradeId: trade.id }
+  return { ok: true, side: d.side, token: trade.token, tradeId: trade.id, fxRate: d.fxRate }
 }
 
 /** The caller's tracker token that mirrors this platform token, created on first use (their own tables only). */

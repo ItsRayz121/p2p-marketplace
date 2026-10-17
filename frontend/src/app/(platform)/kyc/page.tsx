@@ -1,7 +1,8 @@
 'use client'
 import { useState, useEffect, useCallback } from 'react'
 import { kycApi, marketplaceApi, socialLinksApi } from '@/lib/api'
-import type { KycDocument } from '@/lib/api'
+import type { KycDocument, KycReview } from '@/lib/api'
+import { KycChangesCard, isFlagged } from '@/components/kyc/KycChangesCard'
 import { analytics } from '@/lib/analytics'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
@@ -223,6 +224,7 @@ export default function KycPage() {
   const [kycStatus, setKycStatus] = useState<string>('none')
   const [kycLevel, setKycLevel] = useState<string>('none')
   const [latestSubmission, setLatestSubmission] = useState<KycDocument | null>(null)
+  const [review, setReview] = useState<KycReview | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   // Non-custodial mode gates the new Level-1 requirements (legal name + social).
   // When OFF, the form looks/behaves exactly as before.
@@ -263,6 +265,7 @@ export default function KycPage() {
       setKycStatus(res.status ?? 'none')
       setKycLevel(res.level ?? 'none')
       setLatestSubmission(res.latestSubmission)
+      setReview(res.review ?? null)
       setMakerContact(res.makerContactTelegram ?? '')
 
       const s = res.status ?? 'none'
@@ -414,6 +417,11 @@ export default function KycPage() {
     <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
       <h1 className="text-2xl font-bold text-text-primary mb-2">KYC Verification</h1>
       <p className="text-sm text-text-muted mb-6">KYC is not required to buy, sell, trade or buy gas. You only need it to post an ad.</p>
+
+      {/* A reviewer sent specific items back: only those need to be replaced. */}
+      {review && latestSubmission && review.items.some(isFlagged) && (
+        <KycChangesCard submissionId={latestSubmission.id} review={review} onSent={fetchStatus} />
+      )}
 
       {/* ── Approved ── */}
       {/* ── Approved ── */}

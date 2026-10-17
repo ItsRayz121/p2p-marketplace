@@ -102,11 +102,12 @@ describe('trades that need attention', () => {
       hasImportedBefore: true,
       attention: [{ reason: 'auto_completed', count: 2 }, { reason: 'disputed', count: 1 }, { reason: 'in_progress', count: 1 }],
     }))
+    const user = userEvent.setup()
     render(<PortfolioPanel />)
-    expect(await screen.findByText('4 RupChain trades were not added')).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(await screen.findByText('3 RupChain trades were not added')).toBeInTheDocument()
     expect(screen.getByText(/2 trades: closed automatically because the buyer never confirmed receipt/)).toBeInTheDocument()
     expect(screen.getByText(/1 trade: in or after a dispute/)).toBeInTheDocument()
-    expect(screen.getByText(/a trade status alone does not prove both sides were settled/)).toBeInTheDocument()
     expect(api.importCtm).toHaveBeenCalledTimes(1)
   })
   it('warns when the tracker limit stopped some trades', async () => {

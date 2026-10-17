@@ -19,7 +19,7 @@ export const API_BASE = resolveApiBase()
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
 import type { ExportData, RestoreSummary } from '@/lib/portfolio/exportFile'
-import type { Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
+import type { BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -952,6 +952,16 @@ export interface MarketRatesSummary {
   updatedAt: string
 }
 
+export type KycItemStatus = 'pending' | 'approved' | 'resubmit' | 'rejected' | 'resubmitted'
+export interface KycReviewItem { item: string; part: 'basic' | 'enhanced'; status: KycItemStatus; reason: string | null; label?: string }
+export type KycPartState = 'pending' | 'changes_requested' | 'approved' | 'rejected' | 'not_requested'
+export interface KycReview { basicState: KycPartState; enhancedState: KycPartState; items: KycReviewItem[] }
+export interface KycResubmitFields {
+  frontUrl?: string; backUrl?: string; selfieUrl?: string; legalName?: string
+  socialLinks?: Array<{ platform: string; url: string }>
+  whatsappNumber?: string; communityLinks?: Array<{ url: string }>; referenceUrl?: string
+}
+
 export interface KycDocument {
   id: string
   userId: string
@@ -1649,6 +1659,8 @@ export const portfolioApi = {
     apiRequest<ExcludedTradesPage>(`/portfolio/import/excluded?limit=${limit}&offset=${offset}`),
   recordExcluded: (tradeId: string, data: PortfolioEventInput) =>
     apiRequest<PortfolioEvent>(`/portfolio/excluded-trades/${encodeURIComponent(tradeId)}/record`, { method: 'POST', body: JSON.stringify(data) }),
+  recordExcludedBatch: (selection: BatchSelection) =>
+    apiRequest<BatchReport>('/portfolio/excluded-trades/record-batch', { method: 'POST', body: JSON.stringify({ confirmed: true, ...selection }) }),
   eventHistory: (assetId: string, eventId: string) =>
     apiRequest<EventRevision[]>(`/portfolio/assets/${encodeURIComponent(assetId)}/events/${encodeURIComponent(eventId)}/history`),
   setPrice: (assetId: string, price: string, quote: Currency = 'PKR', source?: string) =>
@@ -1692,7 +1704,10 @@ export interface SavedDeliveryAddress {
 
 export const kycApi = {
   getStatus: () =>
-    apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null; makerContactTelegram?: string }>('/kyc/status'),
+    apiRequest<{ status: string; level: string | null; latestSubmission: KycDocument | null; review?: KycReview | null; makerContactTelegram?: string }>('/kyc/status'),
+  /** Send back ONLY the items a reviewer flagged. */
+  resubmit: (submissionId: string, data: KycResubmitFields) =>
+    apiRequest<KycReview>(`/kyc/submissions/${encodeURIComponent(submissionId)}/resubmit`, { method: 'POST', body: JSON.stringify(data) }),
   submit: (data: {
     tier: 'basic' | 'enhanced'
     // CNIC + document photos are required for Basic only; Enhanced reuses the
@@ -2732,8 +2747,15 @@ export const adminApi = {
     apiRequestBlob(`/admin/kyc/${id}/doc/${kind}`),
   approveKyc: (id: string, data: { notes?: string }) =>
     apiRequest<void>(`/admin/kyc/${id}/approve`, { method: 'POST', body: JSON.stringify(data) }),
-  rejectKyc: (id: string, data: { reason: string }) =>
+  rejectKyc: (id: string, data: { reason: string; part?: 'basic' | 'enhanced' | 'all' }) =>
     apiRequest<void>(`/admin/kyc/${id}/reject`, { method: 'POST', body: JSON.stringify(data) }),
+  // Document-level review: decide one item, send the flagged ones back, approve one part.
+  reviewKycItem: (id: string, item: string, data: { status: 'approved' | 'resubmit' | 'rejected'; reason?: string }) =>
+    apiRequest<{ items: KycReviewItem[] }>(`/admin/kyc/${id}/items/${encodeURIComponent(item)}`, { method: 'POST', body: JSON.stringify(data) }),
+  requestKycChanges: (id: string) =>
+    apiRequest<{ items: KycReviewItem[] }>(`/admin/kyc/${id}/request-changes`, { method: 'POST' }),
+  approveKycPart: (id: string, part: 'basic' | 'enhanced') =>
+    apiRequest<{ status: string }>(`/admin/kyc/${id}/approve-part`, { method: 'POST', body: JSON.stringify({ part }) }),
 
 
   // Trades

@@ -98,6 +98,7 @@ async function finalizeDeliverySuccess(
     title: `Gas Sent — ${Number(order.gasAmountNative).toFixed(6)} ${order.chain}`,
     body: `Order ${order.orderRef} delivered to ${order.toAddress.slice(0, 10)}… Tx: ${deliveryTxHash.slice(0, 12)}…`,
     href: `/admin/gas/orders/${order.orderRef}`,
+    gasOrderId: order.id,
     metadata: { txHash: deliveryTxHash, orderId, chain: order.chain, toAddress: order.toAddress, amount: order.gasAmountNative },
   })
 }
@@ -188,6 +189,7 @@ async function markNeedsManual(orderId: string, order: GasFeeOrder, reason: stri
     title: 'Gas Delivery Needs Manual Review — NOT auto-retried',
     body: `Order Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative}\n\n${reason}\n\nNothing will be resent or refunded automatically (to rule out a double delivery). Open the order: Verify on-chain, then Retry (only when proven safe), Manual deliver, or Refund.`,
     href: `/admin/gas/orders/${order.orderRef}`,
+    gasOrderId: order.id,
     telegram: true,
   })
 }
@@ -345,6 +347,7 @@ export async function processGasFeeOrder(job: Job<{ orderId: string }>) {
         title: `Gas Delivery Paused — Insufficient Hot Wallet Balance`,
         body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\n\nThe hot wallet does not have enough native balance to deliver this order. A refill request should be raised. Delivery will resume once the balance is restored.\n\nError: ${errMsg}`,
         href: `/admin/gas/orders/${order.orderRef}`,
+        gasOrderId: order.id,
         telegram: true,
       })
       return
@@ -397,6 +400,7 @@ async function enterRefundWindow(orderId: string, order: GasFeeOrder, errMsg: st
       title: `Gas Fee Delivery Failed After ${maxAttempts} Attempts`,
       body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\nNext status: failed (no payment on record)`,
       href: `/admin/gas/orders/${order.orderRef}`,
+      gasOrderId: order.id,
       telegram: true,
     })
     return
@@ -427,6 +431,7 @@ async function enterRefundWindow(orderId: string, order: GasFeeOrder, errMsg: st
     title: `Gas Fee Delivery Failed — Awaiting Refund Window`,
     body: `Order ID: ${orderId}\nOrder Ref: ${order.orderRef}\nChain: ${order.chain}\nTo: ${order.toAddress}\nAmount: ${order.gasAmountNative} ${order.chain}\nError: ${errMsg}\n\nThe system will keep retrying delivery for ${Math.round(REFUND_WINDOW_MS / 60000)} min. The user can request a refund after that; an automatic refund fires at ${Math.round(AUTO_REFUND_SAFETY_MS / 60000)} min if not delivered.`,
     href: `/admin/gas/orders/${order.orderRef}`,
+    gasOrderId: order.id,
     telegram: true,
   })
 }

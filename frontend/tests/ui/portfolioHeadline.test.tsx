@@ -29,8 +29,8 @@ describe('headline never prints 0 for something that is not known', () => {
   it('nothing held and nothing sold is a genuine zero', () => {
     render(<PortfolioHeadline data={data([])} trackedHeld={0} trackedTotal={0} />)
     expect(screen.getAllByText('PKR 0.00').length).toBeGreaterThan(0)
-    expect(screen.getByText('No sales recorded yet')).toBeInTheDocument()
-    expect(screen.getByText('0 tokens tracked in total')).toBeInTheDocument()
+    expect(screen.getByText('No sales yet')).toBeInTheDocument()
+    expect(screen.getByText('0 tokens tracked')).toBeInTheDocument()
   })
 
   it('a partly priced portfolio shows the sum with a Partial badge', () => {
@@ -54,11 +54,4 @@ describe('headline never prints 0 for something that is not known', () => {
     expect(screen.queryByText(/Realized plus unrealized/)).toBeNull()
   })
 
-  it('shows the combined result only when every part is known', () => {
-    render(<PortfolioHeadline
-      data={data([pos('a', { quantity: '10', value: '100', unrealized: '20', realizedKnown: '5', soldCount: 1 })], { pricedValue: '100', knownUnrealized: '20', knownRealized: '5', knownTotalPnl: '25' })}
-      trackedHeld={1} trackedTotal={1}
-    />)
-    expect(screen.getByText('PKR +25.00')).toBeInTheDocument()
-  })
 })

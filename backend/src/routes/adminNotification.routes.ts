@@ -77,7 +77,7 @@ export async function adminNotificationRoutes(app: FastifyInstance) {
     { preHandler: [authenticate, requireRole('admin', 'super_admin', 'kyc_reviewer')] },
     async (_req, reply) => {
       const [kyc, appeals, disputes, ctmDisputes, withdrawals, gasRequests, makers, adReview, paymentProofs] = await Promise.all([
-        db.kycSubmission.count({ where: { status: 'pending' } }),
+        db.kycSubmission.count({ where: { status: 'pending', OR: [{ basicState: 'pending' }, { enhancedState: 'pending' }] } }),
         db.appeal.count({ where: { status: { in: ['pending', 'more_info_requested'] } } }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
         db.ctmDispute.count({ where: { status: { in: ['open', 'escalated'] } } }),

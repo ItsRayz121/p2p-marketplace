@@ -6,8 +6,6 @@ import { formatDecimal, formatQuantity, formatSigned, isNegative } from '@/lib/p
 import { priceAge } from '@/lib/portfolio/priceStatus'
 import { TokenMonogram } from './TokenMonogram'
 
-export type CardAction = 'details' | 'price' | 'buy' | 'sell' | 'opening' | 'history'
-
 const held = (q: string | undefined) => /[1-9]/.test(q ?? '0')
 
 /** Average cost per unit of what is held now, only when every held unit has a recorded cost. */
@@ -19,72 +17,59 @@ export function averageCost(p: PortfolioPosition | undefined): string | null {
 }
 
 /**
- * One token: what is held, what it is worth, how it is doing and how current its price is, with
- * only the actions that make sense for it right now. The whole header opens the details.
+ * One token as a single clickable row: what is held, what it is worth and how it is doing. Every
+ * action (buy, sell, price, history) lives on the token's own page, so the row carries none.
  */
 export function TokenCard({
-  asset, position, price, shown, fxUnavailable, onAction, buttonRef, now = new Date(),
+  asset, position, price, shown, fxUnavailable, onOpen, buttonRef, now = new Date(),
 }: {
   asset: PortfolioAsset
   position: PortfolioPosition | undefined
   price: PortfolioPriceView | undefined
   shown: Currency
   fxUnavailable: boolean
-  onAction: (a: CardAction) => void
+  onOpen: () => void
   buttonRef?: (el: HTMLButtonElement | null) => void
   now?: Date
 }) {
   const archived = Boolean(asset.archivedAt)
   const age = price && price.price !== null ? priceAge(price.observedAt, now) : null
   const hasPrice = price !== undefined && price.price !== null
-  const avg = averageCost(position)
-  const oversold = (position?.unresolvedSales.length ?? 0) > 0
-
-  const btn = 'px-2.5 py-1 text-xs font-semibold rounded-lg border border-border text-text-primary hover:bg-surface-hover'
-  const act = (a: CardAction, label: string) => (
-    <button key={a} type="button" className={btn} onClick={() => onAction(a)}>{label}</button>
-  )
 
   return (
-    <li className="bg-surface shadow-card rounded-xl border border-border overflow-hidden">
-      <button ref={buttonRef} type="button" onClick={() => onAction('details')} className="w-full text-left px-4 py-3 flex items-start gap-3 hover:bg-surface-hover">
+    <li className="group">
+      <button
+        ref={buttonRef} type="button" onClick={onOpen}
+        className="w-full text-left px-4 py-3.5 flex items-center gap-3 rounded-2xl border border-border bg-surface shadow-card transition hover:border-primary/40 hover:shadow-md focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+      >
         <TokenMonogram name={asset.name} size="md" logoUrl={asset.logoUrl} />
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-text-primary break-words">
+          <span className="block text-sm font-semibold text-text-primary break-words">
             {asset.name}{archived && <span className="ml-2 text-xs font-normal text-text-muted">Archived</span>}
           </span>
-          {asset.symbol && <span className="block text-xs text-text-muted break-words">{asset.symbol}</span>}
-          {position && !fxUnavailable && (
-            <span className="mt-1 block text-xs text-text-muted">
-              {hasPrice && age
-                ? <>Price {age.label}{price?.source === 'platform' ? ', RupChain trade' : ', entered by you'}{age.stale && <span className="ml-1 rounded-full bg-amber-500/10 border border-amber-500/40 px-1.5 text-[11px] font-medium text-amber-800">May be out of date</span>}</>
-                : hasPrice ? null : 'No current price'}
-            </span>
-          )}
+          <span className="block text-xs text-text-muted break-words">
+            {asset.symbol ? `${asset.symbol} · ` : ''}
+            {position && !fxUnavailable
+              ? hasPrice && age
+                ? <>Price {age.label}{age.stale && <span title="This price may be out of date" className="ml-1 inline-flex items-center gap-1 text-amber-700"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-amber-500" />May be out of date</span>}</>
+                : 'No current price'
+              : null}
+          </span>
         </span>
         {!position && fxUnavailable && (
           <span className="text-right text-xs text-amber-800 flex-shrink-0">No {shown} rate</span>
         )}
         {position && (
-          <span className="text-right text-xs text-text-muted flex-shrink-0">
-            <span className="block text-text-primary">{formatQuantity(position.quantity)} held</span>
-            <span className="block">{position.value === null ? 'No price' : `${shown} ${formatDecimal(position.value)}`}</span>
+          <span className="text-right flex-shrink-0 tabular-nums">
+            <span className="block text-sm font-semibold text-text-primary">{position.value === null ? 'No price' : `${shown} ${formatDecimal(position.value)}`}</span>
+            <span className="block text-xs text-text-muted">{formatQuantity(position.quantity)} held</span>
             {position.unrealized !== null
-              ? <span className={`block ${isNegative(position.unrealized) ? 'text-danger' : ''}`}>P/L {formatSigned(position.unrealized)}</span>
-              : hasPrice && held(position.quantity) ? <span className="block">P/L not known yet</span> : null}
-            {avg !== null && <span className="block">Avg cost {shown} {avg}</span>}
+              ? <span className={`block text-xs ${isNegative(position.unrealized) ? 'text-danger' : 'text-success'}`}>{formatSigned(position.unrealized)}</span>
+              : hasPrice && held(position.quantity) ? <span className="block text-xs text-text-muted">P/L not known yet</span> : null}
           </span>
         )}
+        <span aria-hidden className="text-text-muted group-hover:text-primary">›</span>
       </button>
-      {!archived && (
-        <div role="group" aria-label={`Actions for ${asset.name}`} className="flex flex-wrap gap-2 px-4 pb-3">
-          {(!hasPrice || age?.stale) && act('price', hasPrice ? 'Update price' : 'Add price')}
-          {act('buy', 'Record buy')}
-          {held(position?.quantity) && act('sell', 'Record sell')}
-          {oversold && act('opening', 'Add opening holdings')}
-          {position && act('history', 'History')}
-        </div>
-      )}
     </li>
   )
 }

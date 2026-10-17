@@ -184,7 +184,7 @@ export async function sendTradeEmail(
 }
 
 export async function sendKycEmail(
-  type: 'submitted' | 'approved' | 'rejected',
+  type: 'submitted' | 'approved' | 'rejected' | 'changes_requested',
   email: string,
   data?: { reason?: string; dailyLimit?: number; level?: string },
 ): Promise<void> {
@@ -198,6 +198,11 @@ export async function sendKycEmail(
       subject: 'KYC approved — account verified',
       heading: 'KYC Approved',
       body: `Your identity has been verified${data?.level ? ` at <strong>${data.level}</strong> level` : ''}. You can now post ads on RupChain${data?.dailyLimit ? `, with a daily limit of PKR ${data.dailyLimit.toLocaleString()}` : ''}.`,
+    },
+    changes_requested: {
+      subject: 'KYC: please send a few things again',
+      heading: 'KYC: Changes Needed',
+      body: `Most of your KYC is fine and was kept. Please send these again: <em>${data?.reason ?? ''}</em>. Open the KYC page and replace only those items.`,
     },
     rejected: {
       subject: 'KYC submission rejected',

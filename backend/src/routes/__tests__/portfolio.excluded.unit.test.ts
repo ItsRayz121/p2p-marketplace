@@ -3,7 +3,7 @@ import Fastify from 'fastify'
 import { Prisma } from '@prisma/client'
 
 const m = vi.hoisted(() => ({
-  list: vi.fn(), check: vi.fn(), ensure: vi.fn(),
+  list: vi.fn(), batch: vi.fn(), check: vi.fn(), ensure: vi.fn(),
   evFindFirst: vi.fn(), evCount: vi.fn(), evCreate: vi.fn(),
   cfg: vi.fn(),
 }))
@@ -18,6 +18,7 @@ vi.mock('../../lib/prisma', () => ({
 vi.mock('../../services/portfolioImport.service', () => ({
   runCtmImport: vi.fn(),
   listExcludedTrades: m.list,
+  recordExcludedBatch: m.batch,
   checkExcludedTradeRecordable: m.check,
   ensureLinkedAsset: m.ensure,
 }))
@@ -58,7 +59,7 @@ const created = () => ({
 beforeEach(() => {
   for (const f of Object.values(m)) f.mockReset()
   m.cfg.mockResolvedValue('280')
-  m.check.mockResolvedValue({ ok: true, side: 'BUY', token: { id: 'tok1' }, tradeId: 'trade1' })
+  m.check.mockResolvedValue({ ok: true, side: 'BUY', token: { id: 'tok1' }, tradeId: 'trade1', fxRate: null })
   m.ensure.mockResolvedValue('asset1')
   m.evFindFirst.mockResolvedValue(null)
   m.evCount.mockResolvedValue(0)
@@ -158,5 +159,54 @@ describe('POST /portfolio/excluded-trades/:tradeId/record', () => {
     expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ fxRate: '282', fxSource: 'manual' })
     await record(body({ quote: 'USDT' })) // dated long ago, no rate typed
     expect(m.evCreate.mock.calls[1]![0].data).toMatchObject({ fxRate: null, fxSource: null })
+  })
+})
+
+describe('POST /portfolio/excluded-trades/record-batch', () => {
+  const batch = (payload: unknown, headers: Record<string, string> = U) =>
+    app.inject({ method: 'POST', url: '/api/v1/portfolio/excluded-trades/record-batch', headers, payload: payload as object })
+  const report = { recorded: 2, alreadyRecorded: 0, skipped: 0, failed: 0, results: [] }
+
+  it('requires sign-in', async () => {
+    expect((await batch({ confirmed: true, all: true }, {})).statusCode).toBe(401)
+    expect(m.batch).not.toHaveBeenCalled()
+  })
+  it('requires an explicit confirmation', async () => {
+    expect((await batch({ all: true })).statusCode).toBe(400)
+    expect((await batch({ confirmed: false, all: true })).statusCode).toBe(400)
+    expect(m.batch).not.toHaveBeenCalled()
+  })
+  it('takes either all trades or a list, never both or neither', async () => {
+    expect((await batch({ confirmed: true })).statusCode).toBe(400)
+    expect((await batch({ confirmed: true, all: true, tradeIds: ['a'] })).statusCode).toBe(400)
+    expect((await batch({ confirmed: true, tradeIds: [] })).statusCode).toBe(400)
+    expect(m.batch).not.toHaveBeenCalled()
+  })
+  it('records all of the caller trades, scoped to the signed-in user', async () => {
+    m.batch.mockResolvedValue(report)
+    const res = await batch({ confirmed: true, all: true })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toEqual(report)
+    expect(m.batch).toHaveBeenCalledWith('u1', { all: true }, expect.objectContaining({ maxAssets: expect.any(Number), maxEvents: MAX_PORTFOLIO_EVENTS }))
+  })
+  it('records a chosen list', async () => {
+    m.batch.mockResolvedValue(report)
+    await batch({ confirmed: true, tradeIds: ['a', 'b'] })
+    expect(m.batch).toHaveBeenCalledWith('u1', { tradeIds: ['a', 'b'] }, expect.anything())
+  })
+  it('answers with a clear error when the service fails', async () => {
+    m.batch.mockRejectedValue(new Error('db down'))
+    const res = await batch({ confirmed: true, all: true })
+    expect(res.statusCode).toBe(500)
+    expect(res.json().error.message).toMatch(/Could not record these trades/)
+  })
+})
+
+describe('recording one trade stamps the rate the trade was done at', () => {
+  it('uses the trade rate when no current rate applies (an old USDT-paid trade)', async () => {
+    m.check.mockResolvedValue({ ok: true, side: 'BUY', token: { id: 'tok1' }, tradeId: 'trade1', fxRate: '278' })
+    const res = await record(body({ quote: 'USDT', consideration: '500' }))
+    expect(res.statusCode).toBe(201)
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ fxRate: '278', fxSource: 'platform' })
   })
 })

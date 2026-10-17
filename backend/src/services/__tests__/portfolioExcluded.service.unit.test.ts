@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client'
 
 const m = vi.hoisted(() => ({
   tradeFindMany: vi.fn(), tradeFindFirst: vi.fn(), auditFindMany: vi.fn(),
-  evFindMany: vi.fn(), evCount: vi.fn(), evCreateMany: vi.fn(), evUpdateMany: vi.fn(),
+  evFindMany: vi.fn(), evCount: vi.fn(), evCreateMany: vi.fn(), evUpdateMany: vi.fn(), evCreate: vi.fn(), rate: vi.fn(),
   aFindMany: vi.fn(), aFindFirst: vi.fn(), aCount: vi.fn(), aCreate: vi.fn(),
 }))
 
@@ -13,7 +13,7 @@ vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
     ctmTrade: { findMany: m.tradeFindMany, findFirst: m.tradeFindFirst },
     auditLog: { findMany: m.auditFindMany },
-    portfolioEvent: { findMany: m.evFindMany, count: m.evCount, createMany: m.evCreateMany, updateMany: m.evUpdateMany },
+    portfolioEvent: { findMany: m.evFindMany, count: m.evCount, createMany: m.evCreateMany, updateMany: m.evUpdateMany, create: m.evCreate },
     portfolioAsset: { findMany: m.aFindMany, findFirst: m.aFindFirst, count: m.aCount, create: m.aCreate },
   }, {
     get(t, p: string) {
@@ -23,7 +23,9 @@ vi.mock('../../lib/prisma', () => ({
   }),
 }))
 
-import { runCtmImport, listExcludedTrades, checkExcludedTradeRecordable, ensureLinkedAsset } from '../portfolioImport.service'
+vi.mock('../platformFlags.service', () => ({ getStringConfig: m.rate }))
+
+import { runCtmImport, listExcludedTrades, recordExcludedBatch, checkExcludedTradeRecordable, ensureLinkedAsset } from '../portfolioImport.service'
 
 const dec = (s: string) => new Prisma.Decimal(s)
 const token = { id: 'tok1', name: 'Meta Earth', symbol: 'MEC', network: 'BEP20', contractAddress: '0xabc', officialWebsite: null }
@@ -45,6 +47,8 @@ beforeEach(() => {
   m.aCount.mockResolvedValue(0)
   m.aCreate.mockResolvedValue({ id: 'asset1' })
   m.evCreateMany.mockResolvedValue({ count: 1 })
+  m.evCreate.mockResolvedValue({ id: 'ev1' })
+  m.rate.mockResolvedValue('280')
 })
 
 describe('a trade the user already recorded by hand', () => {
@@ -153,5 +157,85 @@ describe('ensureLinkedAsset', () => {
     m.aCount.mockResolvedValue(200)
     expect(await ensureLinkedAsset('u1', token, { maxAssets: 200 })).toBeNull()
     expect(m.aCreate).not.toHaveBeenCalled()
+  })
+})
+
+describe('Record all (batch)', () => {
+  const disputed = (id: string, o: Record<string, unknown> = {}) => trade({ id, displayRef: `CTM-${id}`, status: 'dispute_resolved', ...o })
+  const LIM = { maxAssets: 200, maxEvents: 5000 }
+
+  it('lists how many trades could be recorded', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1'), disputed('t2'), trade({ id: 't3', status: 'awaiting_payment', completedAt: null })])
+    const r = await listExcludedTrades('u1', { limit: 1, offset: 0 })
+    expect(r.total).toBe(3)
+    expect(r.recordable).toBe(2) // the unfinished one cannot be recorded
+    expect(r.items).toHaveLength(1)
+    expect(r.items[0]).not.toHaveProperty('fxRate')
+  })
+
+  it('records every recordable trade with the amounts the platform holds, linked to the trade', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1'), disputed('t2'), trade({ id: 't3', status: 'awaiting_payment', completedAt: null })])
+    const r = await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(r).toMatchObject({ recorded: 2, alreadyRecorded: 0, skipped: 0, failed: 0 })
+    expect(m.evCreate).toHaveBeenCalledTimes(2)
+    const data = m.evCreate.mock.calls[0]![0].data
+    expect(data).toMatchObject({ userId: 'u1', type: 'BUY', quantity: '100', consideration: '125000', quote: 'PKR', fee: '0' })
+    expect(['t1', 't2']).toContain(data.linkedTradeRef)
+    expect(data.source).toBeUndefined() // a manual entry linked to the trade, not an imported one
+  })
+
+  it('never creates a second entry for a trade that was already recorded', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1')])
+    m.evFindMany.mockImplementation(async (arg: { where: { linkedTradeRef?: unknown } }) => (arg.where.linkedTradeRef ? [{ linkedTradeRef: 't1' }] : []))
+    const r = await recordExcludedBatch('u1', { tradeIds: ['t1'] }, LIM)
+    expect(r).toMatchObject({ recorded: 0, alreadyRecorded: 1 })
+    expect(m.evCreate).not.toHaveBeenCalled()
+  })
+
+  it('treats a lost race as already recorded, so a retry is safe', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1')])
+    m.evCreate.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }))
+    const r = await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(r).toMatchObject({ recorded: 0, alreadyRecorded: 1, failed: 0 })
+  })
+
+  it('reports a partial failure per trade and keeps the rest', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1', { completedAt: new Date('2026-10-02T10:00:00Z') }), disputed('t2')])
+    m.evCreate.mockRejectedValueOnce(new Error('db down')).mockResolvedValue({ id: 'ev' })
+    const r = await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(r).toMatchObject({ recorded: 1, failed: 1 })
+    expect(r.results.find((x) => x.outcome === 'failed')?.message).toBe('Could not be saved. Try again.')
+  })
+
+  it('stamps the rate a USDT-paid trade was done at, even for an old trade', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1', { paymentCurrency: 'USDT', usdtAmount: dec('500'), fiatAmount: dec('139000') })])
+    await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ quote: 'USDT', consideration: '500', fxRate: '278', fxSource: 'platform' })
+  })
+
+  it('does not stamp today\'s rate on an old PKR trade', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1')])
+    await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(m.evCreate.mock.calls[0]![0].data).toMatchObject({ fxRate: null, fxSource: null })
+  })
+
+  it('refuses ids that are not a left-out trade of the caller', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1')])
+    const r = await recordExcludedBatch('u1', { tradeIds: ['someone-elses'] }, LIM)
+    expect(r).toMatchObject({ recorded: 0, failed: 1 })
+    expect(m.evCreate).not.toHaveBeenCalled()
+  })
+
+  it('stops at the entry limit instead of failing half-way silently', async () => {
+    m.tradeFindMany.mockResolvedValue([disputed('t1'), disputed('t2')])
+    m.evCount.mockResolvedValue(4999)
+    const r = await recordExcludedBatch('u1', { all: true }, LIM)
+    expect(r).toMatchObject({ recorded: 1, failed: 1 })
+  })
+
+  it('the single record check exposes the trade rate for USDT-paid trades', async () => {
+    m.tradeFindFirst.mockResolvedValue(disputed('t1', { paymentCurrency: 'USDT', usdtAmount: dec('500'), fiatAmount: dec('139000') }))
+    const c = await checkExcludedTradeRecordable('u1', 't1')
+    expect(c).toMatchObject({ ok: true, fxRate: '278' })
   })
 })

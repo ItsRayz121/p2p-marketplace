@@ -203,7 +203,23 @@ export interface ExcludedTrade {
   canRecord: boolean
 }
 
-export interface ExcludedTradesPage { total: number; items: ExcludedTrade[] }
+export interface ExcludedTradesPage {
+  total: number
+  /** Trades across all pages that could be recorded now. Absent from older servers. */
+  recordable?: number
+  items: ExcludedTrade[]
+}
+
+/** Which left-out trades to record in one go. */
+export type BatchSelection = { all: true } | { tradeIds: string[] }
+
+export interface BatchReport {
+  recorded: number
+  alreadyRecorded: number
+  skipped: number
+  failed: number
+  results: Array<{ tradeId: string; tradeRef: string; outcome: 'recorded' | 'already_recorded' | 'skipped' | 'failed'; message?: string }>
+}
 
 /** Filters for the all-transactions list. Empty/absent means "all". */
 export interface EventListQuery {

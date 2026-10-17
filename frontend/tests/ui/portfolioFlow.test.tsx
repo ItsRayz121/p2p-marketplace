@@ -90,10 +90,9 @@ describe('overview numbers', () => {
     expect(await screen.findByText('PKR 207,000.00')).toBeInTheDocument()
     expect(screen.getByText('PKR +11,200.00')).toBeInTheDocument()
     expect(screen.getByText('PKR +13,200.00')).toBeInTheDocument()
-    expect(screen.getByText('PKR +24,400.00')).toBeInTheDocument()
     expect(screen.queryByText(/missing information/)).toBeNull()
-    expect(screen.getByText(/not verified ownership/i)).toBeInTheDocument()
-    expect(screen.getByText(/Method: FIFO/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/not verified ownership/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Method: FIFO/)).toBeInTheDocument()
   })
   it('flags partial data by token name and says nothing was counted as zero', async () => {
     api.summary.mockResolvedValue(sum(
@@ -101,14 +100,13 @@ describe('overview numbers', () => {
       [pos('MEC'), pos('SDA')],
     ))
     render(<PortfolioPanel />)
-    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
-    expect(panel).toHaveTextContent('never counted as zero')
-    expect(within(panel).getByText(/1 token needs a current price/)).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Add price: Sidra' })).toBeInTheDocument()
-    expect(within(panel).getByText(/1 token has units whose cost is not recorded/)).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Review history: Meta Earth' })).toBeInTheDocument()
-    expect(within(panel).getByText(/1 token has sales larger than your recorded purchases/)).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Add opening holdings: Sidra' })).toBeInTheDocument()
+    expect(await screen.findByText(/Some figures are partial/)).toBeInTheDocument()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /^Review/ }))
+    expect(screen.getByRole('button', { name: 'Add price: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add opening holding: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View transactions: Meta Earth' })).toBeInTheDocument()
+    expect(screen.getByText('Cost of some units is not recorded')).toBeInTheDocument()
   })
   it('rows show quantity, value or "No price", and signed profit/loss', async () => {
     api.summary.mockResolvedValue(sum({}, [pos('MEC', { quantity: '60', value: '72000', unrealized: '11400' }), pos('SDA', { quantity: '5' })]))
@@ -116,7 +114,7 @@ describe('overview numbers', () => {
     const mec = await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(mec).toHaveTextContent('60 held')
     expect(mec).toHaveTextContent('PKR 72,000.00')
-    expect(mec).toHaveTextContent('P/L +11,400.00')
+    expect(mec).toHaveTextContent('+11,400.00')
     expect(screen.getByRole('button', { name: /^Sidra/ })).toHaveTextContent('No price')
   })
   it('a token with no records yet shows no position numbers (and no invented zero)', async () => {
@@ -138,25 +136,23 @@ describe('token detail', () => {
 
   it('shows the position from the engine, with labels instead of colour alone', async () => {
     await openMec()
-    expect(await screen.findByText('Recorded quantity')).toBeInTheDocument()
+    expect(await screen.findByText('Quantity')).toBeInTheDocument()
     expect(screen.getByText('60')).toBeInTheDocument()
     expect(screen.getByText('60,600.00')).toBeInTheDocument()
     expect(screen.getByText('72,000.00')).toBeInTheDocument()
     expect(screen.getByText('PKR +11,400.00')).toBeInTheDocument()
     expect(screen.getAllByText('PKR +11,200.00').length).toBeGreaterThan(0)
-    expect(screen.getByText(/Based on your recorded history/)).toBeInTheDocument()
   })
   it('unknown cost and missing price read as Not known yet / Unavailable, never zero', async () => {
     api.summary.mockResolvedValue(sum({}, [pos('MEC', { quantity: '10', basisComplete: false, realizedComplete: false })]))
     await openMec()
-    expect((await screen.findAllByText('Not known yet', { selector: 'dd' })).length).toBe(2)
-    expect(screen.getByText('No price')).toBeInTheDocument()
-    expect(screen.getAllByText('Unavailable').length).toBe(2)
+    expect((await screen.findAllByText('Not known yet', { selector: 'dd' })).length).toBe(4)
+    expect(screen.getAllByText('No price').length).toBe(2)
   })
   it('explains an oversold history instead of showing imaginary profit', async () => {
     api.summary.mockResolvedValue(sum({}, [pos('MEC', { unresolvedSales: [{ eventId: 'x', quantity: '5' }] })]))
     await openMec()
-    expect(await screen.findByText(/No profit is counted for the excess/)).toBeInTheDocument()
+    expect(await screen.findByText(/no profit is counted for the excess/)).toBeInTheDocument()
   })
   it('renders history in a semantic table and shows hostile notes as plain text', async () => {
     api.listEvents.mockResolvedValue([ev({ note: '<img src=x onerror=alert(1)>' }), ev({ id: 'e2', type: 'OPENING', consideration: null, fee: null, basis: null })])
@@ -304,7 +300,7 @@ describe('price source and age', () => {
   it('flags a price older than a week as possibly out of date, and a fresh one is not flagged', async () => {
     api.summary.mockResolvedValue(priced(ageIso(12)))
     await openMec()
-    expect(await screen.findByText(/recorded 12 days ago and may be out of date/)).toBeInTheDocument()
+    expect(await screen.findByText(/recorded 12 days ago; it may be out of date/)).toBeInTheDocument()
   })
   it('a fresh price only states its age', async () => {
     api.summary.mockResolvedValue(priced(ageIso(0)))
@@ -363,7 +359,7 @@ describe('PKR / USDT switch', () => {
     expect(api.summary).toHaveBeenLastCalledWith('USDT')
     expect(screen.getByRole('radio', { name: 'USDT' })).toHaveAttribute('aria-checked', 'true')
     expect(screen.getByRole('radio', { name: 'PKR' })).toHaveAttribute('aria-checked', 'false')
-    expect(screen.getByText(/280.00 PKR per USDT/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/280.00 PKR per USDT/)).toBeInTheDocument()
   })
   it('labels keep matching the numbers on screen while a currency switch is still loading', async () => {
     let release: (v: unknown) => void = () => {}
@@ -382,9 +378,10 @@ describe('PKR / USDT switch', () => {
     api.summary.mockResolvedValue(usdtSummary({ fxUnavailableAssets: ['SDA'], summary: { ...usdtSummary().summary, partial: true } }))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
-    expect(panel).toHaveTextContent('entries without a USDT/PKR rate')
-    expect(within(panel).getByRole('button', { name: 'Review history: Sidra' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(screen.getByText('Some entries cannot be shown in USDT')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View transactions: Sidra' })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '← Back to portfolio' }))
     expect(screen.getByRole('button', { name: /^Sidra/ })).toHaveTextContent('No USDT rate')
     await user.click(screen.getByRole('button', { name: /^Sidra/ }))
     expect(await screen.findByText(/cannot be shown in USDT/)).toBeInTheDocument()
@@ -419,31 +416,17 @@ describe('PKR / USDT switch', () => {
     await user.click(await screen.findByRole('button', { name }))
     return user
   }
-  it('the entry form starts in the currency being viewed and sends currency and rate as strings', async () => {
+  it('the entry form starts in the currency being viewed and sends the currency without a typed rate', async () => {
     api.addEvent.mockResolvedValue(ev())
     const user = await openRecord('Record buy')
-    expect(screen.getByLabelText('Currency of the amounts')).toHaveValue('USDT')
+    expect(screen.getByLabelText('Enter amounts in')).toHaveValue('USDT')
     expect(screen.getByLabelText('Amount paid (USDT)')).toBeInTheDocument()
-    expect(screen.getByText(/otherwise this entry cannot be shown in the other currency/)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/USDT\/PKR rate for this date/)).not.toBeInTheDocument()
     await user.type(screen.getByLabelText('Quantity'), '10')
     await user.type(screen.getByLabelText('Amount paid (USDT)'), '36')
-    await user.type(screen.getByLabelText(/USDT\/PKR rate for this date/), '278.5')
     await user.click(screen.getByRole('button', { name: 'Save entry' }))
     await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
-    expect(api.addEvent.mock.calls[0]![1]).toMatchObject({ quote: 'USDT', consideration: '36', fxRate: '278.5' })
-  })
-  it('the rate is optional and omitted when blank; a bad rate is rejected', async () => {
-    api.addEvent.mockResolvedValue(ev())
-    const user = await openRecord('Record buy')
-    await user.type(screen.getByLabelText('Quantity'), '1')
-    await user.type(screen.getByLabelText('Amount paid (USDT)'), '5')
-    await user.type(screen.getByLabelText(/USDT\/PKR rate for this date/), '0')
-    await user.click(screen.getByRole('button', { name: 'Save entry' }))
-    expect(await screen.findByText(/Enter the rate as a plain number greater than zero/)).toBeInTheDocument()
-    expect(api.addEvent).not.toHaveBeenCalled()
-    await user.clear(screen.getByLabelText(/USDT\/PKR rate for this date/))
-    await user.click(screen.getByRole('button', { name: 'Save entry' }))
-    await vi.waitFor(() => expect(api.addEvent).toHaveBeenCalledTimes(1))
+    expect(api.addEvent.mock.calls[0]![1]).toMatchObject({ quote: 'USDT', consideration: '36' })
     expect(api.addEvent.mock.calls[0]![1]).not.toHaveProperty('fxRate')
   })
   it('the price form can enter a price in USDT', async () => {

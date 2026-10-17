@@ -46,14 +46,14 @@ describe('the metrics use plain, exact names', () => {
     for (const label of ['Buy Costs + Fees', 'Sales Proceeds After Fees', 'Portfolio Value Change After Cash Flows', 'Percentage Return']) {
       expect(await screen.findByText(label)).toBeInTheDocument()
     }
-    expect(screen.getAllByText('Known Realized Profit / Loss').length).toBe(2) // headline and period
+    expect(screen.getByText('Known Realized Profit / Loss')).toBeInTheDocument() // the period figure; the headline card is called Realized Profit / Loss
   })
 
   it('a period with sales whose cost is not recorded says so instead of printing zero', async () => {
     api.performance.mockResolvedValue(perf([point('2026-01-01T00:00:00Z')], { realized: '0', realizedComplete: false }))
     render(<PortfolioPanel />)
     await screen.findByText('Buy Costs + Fees')
-    const card = screen.getAllByText('Known Realized Profit / Loss')[1]!.closest('div')!
+    const card = screen.getByText('Known Realized Profit / Loss').closest('div')!
     expect(within(card).getByText('Not known yet')).toBeInTheDocument()
     expect(within(card).queryByText(/PKR/)).toBeNull()
   })

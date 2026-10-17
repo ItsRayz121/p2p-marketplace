@@ -1,7 +1,7 @@
-export type PeriodPreset = 'month' | '7d' | '30d' | '90d' | 'all' | 'custom'
+export type PeriodPreset = 'month' | '7d' | '30d' | '90d' | '1y' | 'all' | 'custom'
 
 export const PERIOD_LABEL: Record<PeriodPreset, string> = {
-  month: 'This month', '7d': '7D', '30d': '30D', '90d': '90D', all: 'All time', custom: 'Custom',
+  month: 'This month', '7d': '7D', '30d': '30D', '90d': '90D', '1y': '1Y', all: 'All time', custom: 'Custom',
 }
 
 export interface PeriodRange {
@@ -31,6 +31,8 @@ export function resolvePeriod(
       return { from: new Date(now.getTime() - 30 * DAY_MS), to: now }
     case '90d':
       return { from: new Date(now.getTime() - 90 * DAY_MS), to: now }
+    case '1y':
+      return { from: new Date(now.getTime() - 365 * DAY_MS), to: now }
     case 'all':
       return { from: undefined, to: now }
     case 'custom': {

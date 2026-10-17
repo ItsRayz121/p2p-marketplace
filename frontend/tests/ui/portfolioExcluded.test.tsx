@@ -11,7 +11,6 @@ vi.mock('@/lib/api', () => ({ portfolioApi: api }))
 
 import { PortfolioPanel } from '@/components/portfolio/PortfolioPanel'
 import { EXCLUDED_PAGE_SIZE } from '@/components/portfolio/ExcludedTradesView'
-import { ImportBanner } from '@/components/portfolio/ImportBanner'
 
 const summary = {
   currency: 'PKR', method: 'FIFO', fx: { usdtPkr: '280' }, fxUnavailableAssets: [], prices: {}, asOf: '2026-10-16T10:00:00Z',
@@ -40,7 +39,8 @@ beforeEach(() => {
 async function openReview() {
   const user = userEvent.setup()
   render(<PortfolioPanel />)
-  await user.click(await screen.findByRole('button', { name: 'Review these trades' }))
+  await user.click(await screen.findByRole('button', { name: /^Review/ }))
+  await user.click(await screen.findByRole('button', { name: 'Review trades' }))
   return user
 }
 
@@ -56,13 +56,27 @@ describe('reviewing trades that were left out', () => {
     expect(api.listExcluded).toHaveBeenCalledWith(EXCLUDED_PAGE_SIZE, 0)
   })
 
-  it('the notice offers the review only when the tracker can list the trades (not the local-only one)', () => {
-    const noop = () => {}
-    const { unmount } = render(<ImportBanner report={report as never} busy={false} error={null} onImport={noop} onDismiss={noop} />)
-    expect(screen.queryByRole('button', { name: 'Review these trades' })).toBeNull()
-    unmount()
-    render(<ImportBanner report={report as never} busy={false} error={null} onImport={noop} onDismiss={noop} onReview={noop} />)
-    expect(screen.getByRole('button', { name: 'Review these trades' })).toBeInTheDocument()
+  it('the Review center lists trades left out, with each reason, and offers the review only when the tracker can list them', async () => {
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(await screen.findByText(/26 RupChain trades were not added/)).toBeInTheDocument()
+    expect(screen.getByText(/21 trades: in or after a dispute/)).toBeInTheDocument()
+    expect(screen.getByText(/5 trades: closed automatically/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Review trades' })).toBeInTheDocument()
+  })
+
+  it('opening the record form scrolls it into view, focuses a field, and confirms after saving', async () => {
+    const scroll = vi.fn()
+    Element.prototype.scrollIntoView = scroll
+    window.scrollTo = vi.fn()
+    api.recordExcluded.mockResolvedValue({})
+    const user = await openReview()
+    await user.click(await screen.findByRole('button', { name: /Record trade CTM-1001 by hand/ }))
+    expect(scroll).toHaveBeenCalled()
+    expect(screen.getByLabelText('Quantity')).toHaveFocus()
+    await user.click(screen.getByRole('button', { name: 'Save entry' }))
+    expect(await screen.findByText('Recorded trade CTM-1001 in your portfolio.')).toBeInTheDocument()
   })
 
   it('says so plainly when nothing was left out', async () => {

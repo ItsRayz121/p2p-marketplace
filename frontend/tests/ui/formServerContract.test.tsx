@@ -29,14 +29,14 @@ describe('what the entry form sends is accepted by the server\'s own validation'
     const r = eventSchema.safeParse(input)
     expect(r.success, JSON.stringify(r.success ? '' : r.error.issues)).toBe(true)
   })
-  it('a sell in USDT with an entered rate', async () => {
+  it('a sell in USDT sends no rate', async () => {
     const input = await submitted('SELL', async (u) => {
-      await u.selectOptions(screen.getByLabelText('Currency of the amounts'), 'USDT')
+      await u.selectOptions(screen.getByLabelText('Enter amounts in'), 'USDT')
       await u.type(screen.getByLabelText('Quantity'), '3')
       await u.type(screen.getByLabelText('Amount received (USDT)'), '36.5')
-      await u.type(screen.getByLabelText(/USDT\/PKR rate for this date/), '278.5')
     })
-    expect(input).toMatchObject({ type: 'SELL', quote: 'USDT', fxRate: '278.5' })
+    expect(input).toMatchObject({ type: 'SELL', quote: 'USDT' })
+    expect(input).not.toHaveProperty('fxRate')
     const r = eventSchema.safeParse(input)
     expect(r.success, JSON.stringify(r.success ? '' : r.error.issues)).toBe(true)
   })

@@ -46,7 +46,7 @@ beforeEach(() => {
   api.summary.mockResolvedValue(sum([]))
 })
 
-describe('Portfolio Needs Attention', () => {
+describe('Review center', () => {
   const needy = () => sum(
     [pos('MEC', { quantity: '10', basisComplete: false, realizedComplete: false }), pos('SDA', { quantity: '5', unresolvedSales: [{ eventId: 'x', quantity: '2' }] })],
     {},
@@ -55,19 +55,31 @@ describe('Portfolio Needs Attention', () => {
 
   it('lists what is missing with a direct action each, and says nothing is counted as zero', async () => {
     api.summary.mockResolvedValue(needy())
+    const user = userEvent.setup()
     render(<PortfolioPanel />)
-    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
-    expect(within(panel).getByText('2 tokens need a current price.')).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Add price: Meta Earth' })).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Add opening holdings: Sidra' })).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Review history: Meta Earth' })).toBeInTheDocument()
-    expect(panel).toHaveTextContent('never counted as zero')
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(screen.getByText('Prices needing attention')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add price: Meta Earth' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add price: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Add opening holding: Sidra' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'View transactions: Meta Earth' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/never counted as zero/)).toBeInTheDocument()
+  })
+
+  it('the overview carries only a Review button with a count, not the explanations', async () => {
+    api.summary.mockResolvedValue(needy())
+    render(<PortfolioPanel />)
+    const btn = await screen.findByRole('button', { name: /^Review/ })
+    expect(btn).toHaveTextContent('4')
+    expect(screen.queryByText(/need a current price/)).toBeNull()
+    expect(screen.queryByText(/larger than your recorded purchases/)).toBeNull()
   })
 
   it('Add price opens that token straight on the price form, without creating anything', async () => {
     api.summary.mockResolvedValue(needy())
     const user = userEvent.setup()
     render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
     await user.click(await screen.findByRole('button', { name: 'Add price: Meta Earth' }))
     expect(await screen.findByLabelText(/Current price per unit/)).toBeInTheDocument()
     expect(api.setPrice).not.toHaveBeenCalled()
@@ -78,7 +90,8 @@ describe('Portfolio Needs Attention', () => {
     api.summary.mockResolvedValue(needy())
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: 'Add opening holdings: Sidra' }))
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    await user.click(await screen.findByRole('button', { name: 'Add opening holding: Sidra' }))
     expect(await screen.findByLabelText('Type')).toHaveValue('OPENING')
   })
 
@@ -87,10 +100,11 @@ describe('Portfolio Needs Attention', () => {
       [pos('MEC', { quantity: '10', price: '12', value: '120' })],
       { MEC: { price: '12', original: '12', quote: 'PKR', observedAt: iso(20) } },
     ))
+    const user = userEvent.setup()
     render(<PortfolioPanel />)
-    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
-    expect(within(panel).getByText('1 price may be out of date.')).toBeInTheDocument()
-    expect(within(panel).getByRole('button', { name: 'Update price: Meta Earth' })).toBeInTheDocument()
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(screen.getByText(/may be out of date/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Update price: Meta Earth' })).toBeInTheDocument()
   })
 
   it('counts RupChain trades left out and opens their review; unfinished ones only inform', async () => {
@@ -99,13 +113,13 @@ describe('Portfolio Needs Attention', () => {
     api.listExcluded.mockResolvedValue({ total: 0, items: [] })
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    const panel = await screen.findByRole('region', { name: 'Portfolio Needs Attention' })
-    expect(within(panel).getByText('26 RupChain trades were left out of automatic tracking.')).toBeInTheDocument()
-    expect(within(panel).getByText('2 RupChain trades are still in progress and will be added once confirmed.')).toBeInTheDocument()
-    expect(within(panel).queryByRole('button', { name: /in progress/ })).toBeNull()
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(screen.getByText('26 RupChain trades were not added')).toBeInTheDocument()
+    expect(screen.getByText('2 RupChain trades are still in progress and will be added once confirmed.')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /in progress/ })).toBeNull()
   })
 
-  it('archived tokens are not nagged about, and a complete portfolio shows no panel', async () => {
+  it('archived tokens are not nagged about, and a complete portfolio shows no count', async () => {
     api.listAssets.mockResolvedValue([asset('MEC', 'Meta Earth', { archivedAt: '2026-10-01T00:00:00Z' }), asset('SDA', 'Sidra')])
     api.summary.mockResolvedValue(sum(
       [pos('MEC', { quantity: '10' }), pos('SDA', { quantity: '5', price: '2', value: '10' })],
@@ -114,7 +128,7 @@ describe('Portfolio Needs Attention', () => {
     ))
     render(<PortfolioPanel />)
     await screen.findByRole('button', { name: /^Sidra/ })
-    expect(screen.queryByRole('region', { name: 'Portfolio Needs Attention' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Review' })).toBeInTheDocument() // no count badge
   })
 })
 
@@ -130,36 +144,32 @@ describe('token cards', () => {
     const card = await screen.findByRole('button', { name: /^Meta Earth/ })
     expect(card).toHaveTextContent('60 held')
     expect(card).toHaveTextContent('PKR 72,000.00')
-    expect(card).toHaveTextContent('P/L +11,400.00')
-    expect(card).toHaveTextContent('Avg cost PKR 1,010')
-    expect(card).toHaveTextContent('Price today, RupChain trade')
+    expect(card).toHaveTextContent('+11,400.00')
+    expect(card).toHaveTextContent('Price today')
   })
 
-  it('offers only the actions that fit: Add price when there is none, Record sell only when something is held', async () => {
+  it('rows carry no action buttons: everything is done on the token page', async () => {
     api.summary.mockResolvedValue(priced(iso(0)))
     render(<PortfolioPanel />)
     await screen.findByRole('button', { name: /^Meta Earth/ })
-    const mec = screen.getByRole('group', { name: 'Actions for Meta Earth' })
-    expect(within(mec).queryByRole('button', { name: /price/i })).toBeNull() // fresh price: nothing to do
-    expect(within(mec).getByRole('button', { name: 'Record sell' })).toBeInTheDocument()
-    const sda = screen.getByRole('group', { name: 'Actions for Sidra' })
-    expect(within(sda).getByRole('button', { name: 'Add price' })).toBeInTheDocument()
-    expect(within(sda).queryByRole('button', { name: 'Record sell' })).toBeNull() // nothing held
+    expect(screen.queryByRole('group', { name: /Actions for/ })).toBeNull()
+    for (const name of ['Record buy', 'Record sell', 'Add opening holdings', 'History', 'Update price', 'Add price']) {
+      expect(screen.queryByRole('button', { name })).toBeNull()
+    }
   })
 
-  it('a stale price gets an Update price action and a visible warning', async () => {
+  it('a stale price is flagged on the row', async () => {
     api.summary.mockResolvedValue(priced(iso(15)))
     render(<PortfolioPanel />)
     expect(await screen.findByText('May be out of date')).toBeInTheDocument()
-    expect(within(screen.getByRole('group', { name: 'Actions for Meta Earth' })).getByRole('button', { name: 'Update price' })).toBeInTheDocument()
   })
 
-  it('quick actions open the token on the matching form', async () => {
+  it('the token page opens on the matching form from its action bar', async () => {
     api.summary.mockResolvedValue(priced(iso(0)))
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await screen.findByRole('button', { name: /^Meta Earth/ })
-    await user.click(within(screen.getByRole('group', { name: 'Actions for Meta Earth' })).getByRole('button', { name: 'Record sell' }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: 'Record sell' }))
     expect(await screen.findByLabelText('Type')).toHaveValue('SELL')
   })
 
@@ -191,8 +201,8 @@ describe('Price used: RupChain price or the price I got', () => {
   async function openBuy() {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await screen.findByRole('button', { name: /^Meta Earth/ })
-    await user.click(within(screen.getByRole('group', { name: 'Actions for Meta Earth' })).getByRole('button', { name: 'Record buy' }))
+    await user.click(await screen.findByRole('button', { name: /^Meta Earth/ }))
+    await user.click(await screen.findByRole('button', { name: 'Record buy' }))
     await screen.findByLabelText('Type')
     return user
   }
@@ -228,9 +238,9 @@ describe('Price used: RupChain price or the price I got', () => {
     api.summary.mockResolvedValue(withPlatform())
     const user = await openBuy()
     expect(screen.getByRole('radio', { name: /^RupChain price/ })).toBeInTheDocument()
-    await user.selectOptions(screen.getByLabelText('Currency of the amounts'), 'USDT')
+    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'USDT')
     expect(screen.queryByRole('radio', { name: /^RupChain price/ })).toBeNull()
-    await user.selectOptions(screen.getByLabelText('Currency of the amounts'), 'PKR')
+    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'PKR')
     expect(screen.getByRole('radio', { name: /^RupChain price/ })).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Date and time'), { target: { value: '2026-01-01T10:00' } })
     expect(screen.queryByRole('radio', { name: /^RupChain price/ })).toBeNull()
@@ -244,11 +254,11 @@ describe('Price used: RupChain price or the price I got', () => {
       {}, { currency: 'USDT' },
     ))
     const user = await openBuy()
-    expect(screen.getByLabelText('Currency of the amounts')).toHaveValue('USDT')
+    expect(screen.getByLabelText('Enter amounts in')).toHaveValue('USDT')
     expect(screen.getByRole('radio', { name: /USDT 0.04 per token/ })).toBeChecked()
     await user.type(screen.getByLabelText('Quantity'), '100')
     expect(screen.getByTestId('platform-total')).toHaveTextContent('4.00 USDT')
-    await user.selectOptions(screen.getByLabelText('Currency of the amounts'), 'PKR')
+    await user.selectOptions(screen.getByLabelText('Enter amounts in'), 'PKR')
     expect(screen.getByRole('radio', { name: /PKR 12 per token/ })).toBeInTheDocument()
     expect(screen.getByTestId('platform-total')).toHaveTextContent('1,200.00 PKR')
   })
@@ -285,7 +295,7 @@ describe('All transactions', () => {
   async function open() {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
-    await user.click(await screen.findByRole('button', { name: 'All transactions' }))
+    await user.click(await screen.findByRole('button', { name: 'Transactions' }))
     return user
   }
   beforeEach(() => {
@@ -349,12 +359,12 @@ describe('All transactions', () => {
     const table = await screen.findByRole('table')
     await user.click(within(table).getAllByRole('button', { name: 'Meta Earth' })[0]!)
     expect(await screen.findByRole('heading', { name: 'Meta Earth' })).toBeInTheDocument()
-    expect(screen.queryByText('All transactions')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Transactions' })).toBeNull()
   })
 
   it('is not offered where the tracker cannot list across tokens', () => {
     render(<PortfolioTab assets={[asset('MEC', 'Meta Earth') as never]} summary={sum([]) as never} />)
-    expect(screen.queryByRole('button', { name: 'All transactions' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Transactions' })).toBeNull()
   })
 })
 

@@ -1767,6 +1767,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       title:   `Exchange Transfer Submitted — $${Number(order.paymentAmount).toFixed(2)} USDT`,
       body:    `Order ${orderRef} via ${order.exchangeName ?? 'exchange'}: sender UID ${exchangeUserUid}, expected $${Number(order.paymentAmount).toFixed(2)} USDT. Verify it in the exchange history, then release gas.`,
       href:    `/admin/gas/orders/${orderRef}`,
+      gasOrderId: order.id,
       metadata: { orderRef, orderId: order.id, exchange: order.exchangeName ?? null, exchangeUserUid, exchangeOrderId },
     })
 
@@ -2737,6 +2738,7 @@ export async function gasFeeRoutes(app: FastifyInstance) {
       title:   `PKR Proof Submitted${pkrAmt != null ? ` — PKR ${pkrAmt.toLocaleString('en-PK', { maximumFractionDigits: 0 })}` : ''}`,
       body:    `Order ${orderRef} has a payment proof awaiting review (${order.pkrPaymentMethod ?? 'PKR'}). Verify the payment to release gas.`,
       href:    `/admin/gas/orders/${orderRef}`,
+      gasOrderId: order.id,
       metadata: { orderRef, orderId: order.id, pkrAmount: pkrAmt, method: order.pkrPaymentMethod ?? null },
     })
 

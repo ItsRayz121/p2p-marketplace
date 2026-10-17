@@ -15,6 +15,7 @@ import { db } from '../lib/prisma'
 import { parseReferralStartParam } from '../lib/telegram'
 import { linkTelegramViaToken } from './accountLink.service'
 import { telegramRequest } from '../lib/telegram.client'
+import { handleGasCallback, type TgCallbackQuery } from './telegramGasActions.service'
 
 const API_BASE = 'https://api.telegram.org'
 
@@ -33,6 +34,7 @@ interface TgMessage {
 interface TgUpdate {
   update_id: number
   message?: TgMessage
+  callback_query?: TgCallbackQuery
 }
 
 // Bot chat replies (welcome / help / link outcome). Routed through the SAME
@@ -168,6 +170,11 @@ async function handleAccountLink(
 // Process a single webhook update. Only /start is meaningful today; other
 // messages get a gentle nudge to open the Mini App.
 export async function handleTelegramUpdate(update: TgUpdate): Promise<void> {
+  // Button taps on admin gas alerts. Everything about who may do what is checked inside the handler.
+  if (update.callback_query) {
+    try { await handleGasCallback(update.callback_query) } catch (err) { logger.warn({ err }, 'Telegram callback handler error') }
+    return
+  }
   const msg = update.message
   if (!msg?.from || msg.from.is_bot || !msg.chat) return
 
@@ -270,7 +277,7 @@ export async function registerTelegramWebhook(): Promise<void> {
   const webhookUrl = `${env.TELEGRAM_WEBHOOK_URL.replace(/\/$/, '')}/api/v1/telegram/webhook`
   await callTelegram('setWebhook', {
     url: webhookUrl,
-    allowed_updates: ['message'],
+    allowed_updates: ['message', 'callback_query'],
     ...(env.TELEGRAM_WEBHOOK_SECRET ? { secret_token: env.TELEGRAM_WEBHOOK_SECRET } : {}),
   })
   logger.info({ webhookUrl }, 'Telegram webhook registered')
