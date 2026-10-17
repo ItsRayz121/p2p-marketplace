@@ -5,6 +5,8 @@ export interface PublicShareData {
   amount: string
   symbol: string
   chainName: string
+  chainKey: string
+  chainLogoUrl: string | null
   paidWith: 'PKR' | 'USDT'
   refCode: string | null
   discountPct: number

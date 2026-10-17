@@ -9,9 +9,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuthStore } from '@/store/auth.store'
-import { loadTelegramSdk, getInitData, getStartParam, parseStartParamToPath } from '@/lib/telegram'
-
-const STAFF_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent', 'support_agent'])
+import { loadTelegramSdk, getInitData, getStartParam, parseStartParamToPath, isStaffRole } from '@/lib/telegram'
 
 export default function MiniAppBridge() {
   const router = useRouter()
@@ -31,10 +29,16 @@ export default function MiniAppBridge() {
     if (!user) return
     // Staff open the Mini App from admin alerts: they belong in the admin panel, not the user dashboard
     // (the same rule the homepage applies to staff). The admin layout still re-checks the role itself.
-    let dest = STAFF_ROLES.has(user.role) ? '/admin' : '/dashboard'
+    const staff = isStaffRole(user.role)
+    let dest = staff ? '/admin' : '/dashboard'
     try {
-      const p = new URLSearchParams(window.location.search).get('path')
-      if (p && p.startsWith('/') && !p.startsWith('//')) dest = p
+      const q = new URLSearchParams(window.location.search)
+      const p = q.get('path')
+      if (p && p.startsWith('/') && !p.startsWith('//')) {
+        // A bare user landing page is not a real destination for staff: send them to the admin panel
+        // unless they asked for the user view on purpose (the bot's "User view" button).
+        dest = staff && q.get('view') !== 'user' && (p === '/' || p === '/dashboard') ? '/admin' : p
+      }
     } catch { /* ignore malformed query */ }
     // A shared-listing deep link launches the Mini App with startapp=L_usdt/ctm_<id>.
     // Translate that start parameter to the listing path (takes precedence over

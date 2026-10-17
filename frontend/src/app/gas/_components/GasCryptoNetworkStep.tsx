@@ -5,6 +5,55 @@ import { CardHeader, PaymentNetworkLogo } from './GasPrimitives'
 import { GasPromoField, GasAffiliateApplied } from './GasPromo'
 import { GasFreeCodeField } from './GasFreeCode'
 
+type NetworkKey = 'BEP20' | 'APTOS'
+
+/** Rough sender-side network fee in USD per payment network (what the sender's wallet pays, not a RupChain fee). */
+const EST_NETWORK_FEE_USD: Record<NetworkKey, number> = { BEP20: 0.29, APTOS: 0.01 }
+
+function NetworkRow({
+  networkKey, logoUrl, title, subtitle, fee, lowest, selected, disabled, soon, onSelect,
+}: {
+  networkKey: NetworkKey; logoUrl: string | null | undefined; title: string; subtitle: string; fee: number
+  lowest: boolean; selected: boolean; disabled?: boolean; soon?: boolean; onSelect: () => void
+}) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      disabled={disabled}
+      onClick={onSelect}
+      className={`flex w-full items-center gap-3 rounded-2xl border-2 p-3.5 text-left transition-colors ${
+        disabled ? 'cursor-not-allowed border-border bg-surface-alt opacity-60'
+        : selected ? 'border-primary bg-primary/5'
+        : 'border-border bg-surface hover:border-primary/30'
+      }`}
+    >
+      <PaymentNetworkLogo networkKey={networkKey} logoUrl={logoUrl} sizeCls="w-11 h-11" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-bold leading-tight text-text-primary">{title}</p>
+        <p className="truncate text-xs text-text-muted">{subtitle}</p>
+        {soon ? (
+          <p className="mt-0.5 text-xs text-text-muted">Coming soon</p>
+        ) : (
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="whitespace-nowrap text-xs text-text-secondary" title="What your wallet or exchange charges to send the payment. It is not paid to RupChain.">
+              Est. network fee: ~ ${fee.toFixed(2)}
+            </span>
+            {lowest && <span className="whitespace-nowrap rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-semibold text-success">Lowest fee</span>}
+          </div>
+        )}
+      </div>
+      <span
+        aria-hidden
+        className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 ${selected ? 'border-primary' : 'border-border'}`}
+      >
+        {selected && <span className="h-3 w-3 rounded-full bg-primary" />}
+      </span>
+    </button>
+  )
+}
+
 export function GasCryptoNetworkStep() {
   const {
     setPhase, cryptoMethods,
@@ -14,20 +63,21 @@ export function GasCryptoNetworkStep() {
   } = useGasCtx()
   const discounted = (!!promoApplied && promoDiscountUsd > 0) || affiliateDiscountUsd > 0
 
+  const bepShown = cryptoMethods?.bep20?.enabled !== false
+  const bepConfigured = !!cryptoMethods?.bep20?.address
+  const aptosShown = cryptoMethods?.aptos?.enabled !== false
+  // "Lowest fee" is only meaningful between networks that can actually be chosen right now.
+  const selectable = [bepShown && bepConfigured ? 'BEP20' : null, aptosShown ? 'APTOS' : null].filter((k): k is NetworkKey => k !== null)
+  const lowestKey = selectable.length > 1 ? selectable.reduce((a, b) => (EST_NETWORK_FEE_USD[a] <= EST_NETWORK_FEE_USD[b] ? a : b)) : null
+
   return (
-    <div className="p-5 space-y-4">
+    <div className="space-y-4 p-4 sm:p-5">
       <CardHeader onBack={() => setPhase(PHASE.USDT_METHOD)} title="Select Payment Network" sub="Choose a network to send your payment" />
 
-      <div className="flex items-center gap-2 flex-wrap text-xs">
-        <span className="text-text-muted">You pay</span>
-        {discounted ? (
-          <>
-            <span className="text-text-muted line-through">${computedUsd.toFixed(2)}</span>
-            <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${effectiveUsd.toFixed(2)} USDT</span>
-          </>
-        ) : (
-          <span className="bg-primary/10 text-primary rounded-full px-3 py-1 font-bold">${computedUsd.toFixed(2)} USDT</span>
-        )}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-text-muted">Total due</span>
+        {discounted && <span className="text-text-muted line-through">{computedUsd.toFixed(2)} USDT</span>}
+        <span className="rounded-full bg-primary/10 px-3 py-1 font-bold text-primary">{(discounted ? effectiveUsd : computedUsd).toFixed(2)} USDT</span>
       </div>
 
       {/* Affiliate auto-discount + promo code + KOL free-gas code — all apply to the
@@ -36,77 +86,45 @@ export function GasCryptoNetworkStep() {
       <GasFreeCodeField />
       <GasPromoField />
 
-      <div className="space-y-3">
-        {/* BEP20 */}
-        {cryptoMethods?.bep20?.enabled !== false && (() => {
-          const bepConfigured = !!cryptoMethods?.bep20?.address
-          const bepAddr       = cryptoMethods?.bep20?.address
-          return (
-            <button
-              onClick={() => bepConfigured && setSelectedCryptoNetwork('BEP20')}
-              disabled={!bepConfigured}
-              className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                !bepConfigured ? 'opacity-50 cursor-not-allowed border-border bg-surface-alt'
-                : selectedCryptoNetwork === 'BEP20' ? 'border-primary bg-primary/5'
-                : 'border-border bg-surface hover:border-primary/20'
-              }`}
-            >
-              <PaymentNetworkLogo networkKey="BEP20" logoUrl={cryptoMethods?.bep20?.logoUrl} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-text-primary">USDT BEP20</p>
-                <p className="text-xs text-text-muted">
-                  {bepConfigured ? 'BNB Smart Chain · est. ~$0.29 network fee' : 'Coming soon — not yet configured'}
-                </p>
-                {bepAddr && <p className="text-xs font-mono text-text-muted mt-0.5 truncate">{bepAddr.slice(0, 8)}...{bepAddr.slice(-6)}</p>}
-              </div>
-              {bepConfigured
-                ? selectedCryptoNetwork === 'BEP20'
-                  ? <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center flex-shrink-0"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                  : <span className="text-xs text-text-muted border border-border rounded-full px-2 py-0.5 flex-shrink-0">Select</span>
-                : <span className="text-xs bg-surface-alt text-text-muted font-semibold px-2 py-0.5 rounded-full flex-shrink-0">Soon</span>
-              }
-            </button>
-          )
-        })()}
-
-        {/* Aptos */}
-        {cryptoMethods?.aptos?.enabled !== false && (() => {
-          const aptosAddr = cryptoMethods?.aptos?.address
-          return (
-            <button
-              onClick={() => setSelectedCryptoNetwork('APTOS')}
-              className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all ${
-                selectedCryptoNetwork === 'APTOS' ? 'border-primary bg-primary/5' : 'border-border bg-surface hover:border-primary/20'
-              }`}
-            >
-              <PaymentNetworkLogo networkKey="APTOS" logoUrl={cryptoMethods?.aptos?.logoUrl} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-bold text-text-primary">USDT Aptos</p>
-                <p className="text-xs text-text-muted">Aptos Network · ~$0.01 network fee</p>
-                {aptosAddr && <p className="text-xs font-mono text-text-muted mt-0.5 truncate">{aptosAddr.slice(0, 8)}...{aptosAddr.slice(-6)}</p>}
-              </div>
-              <div className="flex items-center gap-2 flex-shrink-0">
-                <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 font-semibold px-2 py-0.5 rounded-full">Lowest Fee</span>
-                {selectedCryptoNetwork === 'APTOS'
-                  ? <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center"><svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg></div>
-                  : <span className="text-xs text-text-muted border border-border rounded-full px-2 py-0.5">Select</span>
-                }
-              </div>
-            </button>
-          )
-        })()}
+      <div className="space-y-2.5" role="radiogroup" aria-label="Payment network">
+        {bepShown && (
+          <NetworkRow
+            networkKey="BEP20" logoUrl={cryptoMethods?.bep20?.logoUrl}
+            title="USDT · BEP20" subtitle="BNB Smart Chain" fee={EST_NETWORK_FEE_USD.BEP20}
+            lowest={lowestKey === 'BEP20'} selected={selectedCryptoNetwork === 'BEP20'}
+            disabled={!bepConfigured} soon={!bepConfigured}
+            onSelect={() => setSelectedCryptoNetwork('BEP20')}
+          />
+        )}
+        {aptosShown && (
+          <NetworkRow
+            networkKey="APTOS" logoUrl={cryptoMethods?.aptos?.logoUrl}
+            title="USDT · Aptos" subtitle="Aptos network" fee={EST_NETWORK_FEE_USD.APTOS}
+            lowest={lowestKey === 'APTOS'} selected={selectedCryptoNetwork === 'APTOS'}
+            onSelect={() => setSelectedCryptoNetwork('APTOS')}
+          />
+        )}
       </div>
 
-      {cryptoError && <p className="text-sm text-red-500 bg-red-500/10 rounded-xl px-3 py-2">{cryptoError}</p>}
+      <div className="flex items-start gap-3 rounded-xl border border-border bg-surface-alt p-3">
+        <svg className="mt-0.5 h-5 w-5 flex-shrink-0 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.6-4.1A12 12 0 0112 2.9 12 12 0 016.4 5.9 12 12 0 004 12c0 5.2 3.3 9.6 8 11 4.7-1.4 8-5.8 8-11 0-2.4-.8-4.6-2.4-6.1z" /></svg>
+        <div>
+          <p className="text-sm font-semibold text-text-primary">Send only USDT on the selected network</p>
+          <p className="text-xs text-text-muted">Sending any other asset may result in permanent loss.</p>
+        </div>
+      </div>
+
+      {cryptoError && <p className="rounded-xl bg-red-500/10 px-3 py-2 text-sm text-red-500">{cryptoError}</p>}
 
       <Button
         className="w-full"
+        size="lg"
         disabled={!selectedCryptoNetwork || creatingCrypto}
         loading={creatingCrypto}
         onClick={handleCreateCryptoOrder}
       >
         {creatingCrypto ? 'Creating Order...' : 'Continue'}
-        {!creatingCrypto && <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>}
+        {!creatingCrypto && <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>}
       </Button>
     </div>
   )

@@ -63,12 +63,31 @@ function openAppKeyboard() {
   return { inline_keyboard: [[{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }]] }
 }
 
+const STAFF_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent', 'support_agent'])
+
+// Staff get an admin entry first. The user dashboard stays one tap away (`view=user` tells the
+// Mini App bridge not to send staff to /admin), so an admin never has to switch accounts.
+async function isStaffTelegramUser(telegramId: number): Promise<boolean> {
+  try {
+    const u = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) }, select: { role: true } })
+    return !!u && STAFF_ROLES.has(u.role)
+  } catch (err) {
+    logger.warn({ err, telegramId }, 'Staff lookup for Telegram menu failed')
+    return false
+  }
+}
+
 // Full action menu — the welcome screen. Every button opens the Mini App at the
 // relevant screen (auto sign-in).
-function mainMenuKeyboard() {
+function mainMenuKeyboard(staff = false) {
   return {
     inline_keyboard: [
-      [{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }],
+      ...(staff
+        ? [[
+            { text: '🛠 Admin panel', web_app: { url: miniAppUrlAt('/admin') } },
+            { text: '👤 User view', web_app: { url: `${miniAppUrlAt('/dashboard')}&view=user` } },
+          ]]
+        : [[{ text: '🚀 Open RupChain', web_app: { url: miniAppUrl() } }]]),
       [
         { text: '💱 USDT Market', web_app: { url: miniAppUrlAt('/marketplace') } },
         { text: '🪙 CTM Tokens', web_app: { url: miniAppUrlAt('/ctm') } },
@@ -87,6 +106,8 @@ function mainMenuKeyboard() {
 
 async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
   const name = firstName?.trim() || 'there'
+  // In a private chat the chat id is the user's Telegram id.
+  const staff = await isStaffTelegramUser(chatId)
   await callTelegram('sendMessage', {
     chat_id: chatId,
     text:
@@ -101,7 +122,7 @@ async function sendWelcome(chatId: number, firstName?: string): Promise<void> {
       `• 🎁 Invite friends and earn referral rewards in $ USDT\n\n` +
       `Tap a button below to jump straight in — you'll be signed in automatically. ` +
       `Send /help any time.`,
-    reply_markup: mainMenuKeyboard(),
+    reply_markup: mainMenuKeyboard(staff),
   })
 }
 

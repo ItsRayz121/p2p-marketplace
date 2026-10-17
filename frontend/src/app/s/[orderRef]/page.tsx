@@ -2,22 +2,27 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { fetchPublicShare } from '@/lib/shareCardServer'
 
-type Props = { params: Promise<{ orderRef: string }> }
+type Props = { params: Promise<{ orderRef: string }>; searchParams: Promise<{ v?: string }> }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://rupchain.com'
+
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { orderRef } = await params
+  const { v } = await searchParams
   const data = await fetchPublicShare(orderRef)
-  const title = data ? `I just bought ${data.amount} ${data.symbol} gas on RupChain` : 'Get crypto gas on RupChain'
+  const title = data ? `${data.amount} ${data.symbol} gas topped up on RupChain` : 'Get crypto gas on RupChain'
   const description = data
-    ? `Paid in ${data.paidWith}, delivered in minutes. Use my link to get ${data.discountPct}% off on every fee.`
-    : 'Pay in PKR or USDT, from an exchange or a wallet, and get gas in minutes.'
+    ? `Paid with ${data.paidWith} and delivered to the wallet. Use this link to get ${data.discountPct}% off on every fee.`
+    : 'Pay in PKR or USDT, from an exchange or a wallet, and top up crypto gas.'
+  // The unfurled card is the same graphic the sender previewed (their chosen template).
+  const image = `${SITE}/s/${encodeURIComponent(orderRef)}/image?v=${encodeURIComponent((v ?? '0').slice(0, 2))}`
   return {
     title,
     description,
     // Thin, per-order pages: let people share them, but keep them out of search results.
     robots: { index: false, follow: true },
-    openGraph: { title, description, type: 'website' },
-    twitter: { card: 'summary_large_image', title, description },
+    openGraph: { title, description, type: 'website', images: [{ url: image, width: 1200, height: 675, alt: title }] },
+    twitter: { card: 'summary_large_image', title, description, images: [image] },
   }
 }
 
@@ -31,10 +36,10 @@ export default async function SharePage({ params }: Props) {
     <main className="mx-auto flex min-h-[70vh] max-w-xl flex-col items-center justify-center gap-6 px-4 py-12 text-center">
       <div className="space-y-2">
         <h1 className="text-3xl font-black text-text-primary">
-          {data ? `${data.amount} ${data.symbol} gas, paid in ${data.paidWith}` : 'Crypto gas in minutes'}
+          {data ? `${data.amount} ${data.symbol} gas, paid with ${data.paidWith}` : 'Crypto gas, made simple'}
         </h1>
         <p className="text-text-muted">
-          Run out of gas to move your tokens? RupChain delivers it to your wallet in minutes. Pay in PKR or USDT, from an exchange or a wallet.
+          Run out of gas to move your tokens? RupChain delivers it to your wallet. Pay in PKR or USDT, from an exchange or a wallet.
         </p>
       </div>
       {data && (

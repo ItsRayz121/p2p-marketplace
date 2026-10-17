@@ -5,7 +5,7 @@ import * as ToastPrimitive from '@radix-ui/react-toast'
 import { authApi, miniAppAuthenticate, isNetworkError } from '@/lib/api'
 import { useAuthStore } from '@/store/auth.store'
 import { initPostHog, identifyUser } from '@/lib/analytics'
-import { isTelegramMiniApp } from '@/lib/telegram'
+import { isTelegramMiniApp, isStaffRole } from '@/lib/telegram'
 import { initConnectionWarmup } from '@/lib/connectionWarmup'
 import { ensureServiceWorker } from '@/lib/installApp'
 import { TotpPrompt } from '@/components/providers/TotpPrompt'
@@ -44,6 +44,20 @@ export default function Providers({ children }: ProvidersProps) {
   const setCsrfToken = useAuthStore((s) => s.setCsrfToken)
   const setLoading = useAuthStore((s) => s.setLoading)
   const clearAuth = useAuthStore((s) => s.clearAuth)
+
+  // ── Telegram staff landing ──
+  // A Telegram-linked admin whose Mini App opens straight on the user dashboard (an old bot button, a
+  // pinned menu URL) lands in the admin panel instead. Only the first screen of a session is redirected,
+  // so an admin can still go to /dashboard on purpose afterwards.
+  const authedUser = useAuthStore((s) => s.user)
+  useEffect(() => {
+    if (!authedUser || !isTelegramMiniApp()) return
+    try {
+      if (sessionStorage.getItem('tg_landed')) return
+      sessionStorage.setItem('tg_landed', '1')
+    } catch { return }
+    if (isStaffRole(authedUser.role) && pathname === '/dashboard') router.replace('/admin')
+  }, [authedUser, pathname, router])
 
   // ── Telegram route guard ──
   // Bounce guarded public routes to the auth bridge. Skips "/mini-app" itself.

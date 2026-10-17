@@ -175,12 +175,22 @@ export const TOKEN_LOGO_LOCAL: Record<string, string> = {
   USDC: '/logos/token/usdc.svg',
 }
 
+// Official marks, bundled so a chain never falls back to a placeholder letter (also used by the share image).
+const CHAIN_MARK_DIR = '/brand/share/chains'
 export const CHAIN_LOGO_LOCAL: Record<string, string> = {
-  BSC:   '/logos/chain/bsc.svg',
-  TRON:  '/logos/chain/tron.svg',
-  ETH:   '/logos/chain/eth.svg',
-  APTOS: '/logos/chain/aptos.svg',
-  APT:   '/logos/chain/aptos.svg',
+  BSC:   `${CHAIN_MARK_DIR}/bsc.png`,
+  TRON:  `${CHAIN_MARK_DIR}/tron.png`,
+  ETH:   `${CHAIN_MARK_DIR}/eth.png`,
+  MATIC: `${CHAIN_MARK_DIR}/matic.png`,
+  ARB:   `${CHAIN_MARK_DIR}/arb.png`,
+  OP:    `${CHAIN_MARK_DIR}/op.png`,
+  BASE:  `${CHAIN_MARK_DIR}/base.png`,
+  AVAX:  `${CHAIN_MARK_DIR}/avax.png`,
+  SOL:   `${CHAIN_MARK_DIR}/sol.png`,
+  TON:   `${CHAIN_MARK_DIR}/ton.png`,
+  SUI:   `${CHAIN_MARK_DIR}/sui.png`,
+  APTOS: `${CHAIN_MARK_DIR}/aptos.png`,
+  APT:   `${CHAIN_MARK_DIR}/aptos.png`,
 }
 
 // Generic fallback so any bank slug renders a bank glyph rather than initials.

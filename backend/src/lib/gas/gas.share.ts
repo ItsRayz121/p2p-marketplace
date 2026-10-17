@@ -4,7 +4,7 @@
  * end rare) off the platform MARGIN of the user's next gas order. Margin-only, so the base
  * gas cost is never touched and the platform can't lose money on a reward.
  *
- * Lifecycle: submitted → approved → reserved (held by an unpaid order) → used (delivered).
+ * Lifecycle: submitted (→ changes_required → submitted) → approved → reserved (held by an unpaid order) → used (delivered).
  * rejected is terminal. Reservations on orders that expire/cancel/refund are released by
  * `releaseStaleShareRewards()` (called from the 60s expiry sweep).
  */
@@ -16,7 +16,9 @@ import { notify } from '../notify'
 import { createAdminNotif } from '../../services/adminNotification.service'
 import { getBoolConfig, getNumberConfig, isFlagEnabled, FLAGS } from '../../services/platformFlags.service'
 import { getOrCreateOwnCode } from './gas.referral'
+import { Prisma } from '@prisma/client'
 import type { GasFeeOrder } from '@prisma/client'
+import { verifyShareReward, X_VERIFY_AUTO_APPROVE_KEY } from '../social/xVerification'
 
 export const SHARE_ENABLED_KEY = 'share_reward_enabled'          // default ON
 export const SHARE_TEST_EMAILS_KEY = 'share_reward_test_emails'  // comma list; '*' = everyone
@@ -98,41 +100,59 @@ export interface ShareTextInput {
   amount: string        // already formatted, e.g. "0.01"
   symbol: string        // e.g. "BNB"
   chainName: string     // e.g. "BNB Smart Chain"
+  chainKey: string      // chain slug/code, e.g. "BSC" (drives the #<Chain>GasFees hashtag)
   paidWith: 'PKR' | 'USDT'
   link: string
   handle?: string | null
-  /** Friend discount % shown in the post (the referral program's standard). */
-  discountPct?: number
 }
 
+const CHAIN_HASHTAG_WORD: Record<string, string> = {
+  BSC: 'BNB', TRON: 'Tron', ETH: 'ETH', SOL: 'Solana', MATIC: 'Polygon', ARB: 'Arbitrum', BASE: 'Base',
+  OP: 'Optimism', AVAX: 'Avalanche', TON: 'TON', SUI: 'Sui', APT: 'Aptos', APTOS: 'Aptos',
+}
+
+/** Relevant, small hashtag set: brand + the chain's gas tag + the incentive disclosure. */
+export function buildShareHashtags(chainKey: string, symbol: string): string[] {
+  const word = CHAIN_HASHTAG_WORD[chainKey.toUpperCase()] ?? (symbol.replace(/[^A-Za-z0-9]/g, '') || 'Crypto')
+  return ['#RupChain', `#${word}GasFees`, '#ad']
+}
+
+/** X counts every link as 23 characters; everything else is one per character (close enough for emoji-free text). */
+export function tweetWeightedLength(text: string): number {
+  return text.replace(/https?:\/\/\S+/g, 'x'.repeat(23)).length
+}
+
+/**
+ * Factual, first-person-neutral caption. It only states what the order record proves (amount,
+ * chain, payment currency, delivered), mentions the configured official handle (never a guess),
+ * discloses the incentive, and ends with the order link and hashtags.
+ */
 export function buildShareText(i: ShareTextInput): string {
   const rand = mulberry32(hashSeed(i.seed))
   const pick = <T>(arr: T[]): T => arr[Math.floor(rand() * arr.length)]!
-  const via = i.paidWith === 'PKR' ? ' by paying in PKR' : ' with USDT'
+  const brand = i.handle ? `@${i.handle.replace(/^@/, '')}` : 'RupChain'
+  const pay = i.paidWith
 
-  const openers = [
-    `Just picked up ${i.amount} ${i.symbol} for gas on ${i.chainName}${via}.`,
-    `Ran low on ${i.symbol} for ${i.chainName} fees, so I topped up ${i.amount} ${i.symbol}${via}.`,
-    `Needed ${i.symbol} to cover network fees on ${i.chainName}. Got ${i.amount} ${i.symbol}${via}.`,
-    `Topped up my ${i.chainName} wallet with ${i.amount} ${i.symbol} for gas${via}.`,
-    `Bought ${i.amount} ${i.symbol} to pay ${i.chainName} transaction fees${via}.`,
+  const bodies = [
+    `Topped up ${i.amount} ${i.symbol} for ${i.chainName} gas through ${brand}, paid with ${pay}. The order was delivered to my wallet.`,
+    `Needed ${i.symbol} for ${i.chainName} fees, so I bought ${i.amount} ${i.symbol} via ${brand} and paid with ${pay}. Order delivered.`,
+    `${i.amount} ${i.symbol} of ${i.chainName} gas, ordered through ${brand} and paid with ${pay}. Delivered to my wallet.`,
+    `Got ${i.amount} ${i.symbol} for ${i.chainName} network fees using ${brand}. Paid with ${pay}, delivered.`,
   ]
-  const middles = [
-    `It landed in my wallet within minutes. You can pay in PKR or USDT, from an exchange or straight from a wallet.`,
-    `The gas just showed up in my wallet, no waiting around. PKR or USDT both work, from an exchange or a wallet.`,
-    `Handy if you ever hold tokens but have no gas to send them. You can pay in PKR or USDT, from an exchange or a wallet.`,
-    `Simple and fast, and you can pay with PKR or USDT, whether it sits on an exchange or in a wallet.`,
-    `Saved me from being stuck with tokens I couldn't move. Paying in PKR or USDT, from an exchange or wallet, is easy.`,
+  const disclosures = [
+    `RupChain offered me a discount on my next order for sharing.`,
+    `I get a discount on my next order from RupChain for posting this.`,
+    `Sharing earns me a discount on my next RupChain order.`,
   ]
-  const d = i.discountPct ?? 10
-  const closers = [
-    `Use my link to get ${d}% off on every fee:`,
-    `Save ${d}% on every fee with my link:`,
-    `My link gets you ${d}% off every fee:`,
-    `Here is my link, ${d}% off on every fee:`,
-  ]
-  const tag = i.handle ? ` @${i.handle.replace(/^@/, '')}` : ''
-  return `${pick(openers)} ${pick(middles)}\n\n${pick(closers)} ${i.link}${tag}`
+  const tags = buildShareHashtags(i.chainKey, i.symbol).join(' ')
+  const body = pick(bodies)
+  const disclosure = pick(disclosures)
+
+  const compose = (b: string) => [`${b} ${disclosure}`, i.link, tags].join('\n\n')
+  let text = compose(body)
+  // Over the X limit (very long chain names): fall back to the shortest wording.
+  if (tweetWeightedLength(text) > 280) text = compose(bodies[2]!)
+  return text
 }
 
 const NATIVE_SYMBOL: Record<string, string> = { BSC: 'BNB', TRON: 'TRX', ETH: 'ETH', SOL: 'SOL', MATIC: 'POL', ARB: 'ETH', BASE: 'ETH', OP: 'ETH', AVAX: 'AVAX', TON: 'TON', SUI: 'SUI', APT: 'APT' }
@@ -144,24 +164,75 @@ function trimAmount(n: number): string {
 
 // ── User-facing: info + submit ───────────────────────────────────────────────
 
+export interface ShareCardFacts {
+  amount: string
+  symbol: string
+  chainName: string
+  /** Chain slug/code (BSC, ETH, TON…) — the frontend maps it to the right logo and colours. */
+  chainKey: string
+  /** Admin-uploaded chain logo, when there is one. */
+  chainLogoUrl: string | null
+  paidWith: 'PKR' | 'USDT'
+}
+
+export type ShareVerifyView = {
+  status: string
+  discountPct: number | null
+  rejectionReason: string | null
+  /** Plain-language reasons the post needs changes (verification found a mismatch). */
+  issues: string[]
+  postUrl: string | null
+}
+
 export interface ShareInfo {
   /** When the offer closes (ISO). Present while the offer is still open. */
   deadlineAt?: string
   /** The discount % this order unlocks if the post is approved. */
   rewardPct?: number
-  /** Minimal facts for the share image (amount, coin, chain, how they paid). */
-  card?: { amount: string; symbol: string; chainName: string; paidWith: 'PKR' | 'USDT' }
+  /** Real facts of the order, used by the image and the caption. */
+  card?: ShareCardFacts & { template: 'snapshot' | 'experience' | 'minimal' }
   eligible: boolean
   reason?: string
   text?: string
+  hashtags?: string[]
+  /** The public link inside the caption (also what X unfurls into the image card). */
+  link?: string
   tweetIntentUrl?: string
-  reward: { status: string; discountPct: number | null; rejectionReason: string | null } | null
+  /** Official X handle (without @) when configured. */
+  handle?: string | null
+  reward: ShareVerifyView | null
 }
+
+const TEMPLATES = ['snapshot', 'experience', 'minimal'] as const
 
 async function loadOwnedDeliveredOrder(userId: string, orderRef: string): Promise<GasFeeOrder> {
   const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
   if (!order || order.userId !== userId) throw new AppError('NOT_FOUND', 'Order not found', 404)
   return order
+}
+
+/** Facts of a gas order for the image/caption, from the order record only. */
+async function describeOrder(order: GasFeeOrder): Promise<ShareCardFacts> {
+  const tokenCfg = order.gasTokenConfigId
+    ? await db.gasTokenConfig.findUnique({
+        where: { id: order.gasTokenConfigId },
+        include: { chain: { select: { name: true, slug: true, logoUrl: true } } },
+      })
+    : null
+  return {
+    amount: trimAmount(Number(order.gasAmountNative)),
+    symbol: tokenCfg?.symbol ?? NATIVE_SYMBOL[order.chain] ?? String(order.chain),
+    chainName: tokenCfg?.chain.name ?? CHAIN_LABEL[order.chain] ?? String(order.chain),
+    chainKey: tokenCfg?.chain.slug ?? String(order.chain),
+    chainLogoUrl: tokenCfg?.chain.logoUrl ?? null,
+    paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT',
+  }
+}
+
+function rewardView(r: { status: string; discountPct: number | null; rejectionReason: string | null; postUrl: string; verifyIssues: unknown } | null): ShareVerifyView | null {
+  if (!r) return null
+  const issues = Array.isArray(r.verifyIssues) ? (r.verifyIssues as unknown[]).filter((x): x is string => typeof x === 'string') : []
+  return { status: r.status, discountPct: r.discountPct, rejectionReason: r.rejectionReason, issues, postUrl: r.postUrl }
 }
 
 export async function getShareInfo(userId: string, orderRef: string, variant: number): Promise<ShareInfo> {
@@ -170,47 +241,42 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
     loadOwnedDeliveredOrder(userId, orderRef),
   ])
   const reward = await db.gasShareReward.findUnique({ where: { sourceOrderId: order.id } })
-  const rewardView = reward ? { status: reward.status, discountPct: reward.discountPct, rejectionReason: reward.rejectionReason } : null
+  const view = rewardView(reward)
 
   if (!user || !(await isShareFeatureOn()) || !(await isUserAllowedToShare(user.email))) return { eligible: false, reward: null }
-  if (order.status !== 'delivered' || order.isFreeGrant) return { eligible: false, reward: rewardView }
+  if (order.status !== 'delivered' || order.isFreeGrant) return { eligible: false, reward: view }
   const windowHours = await getNumberConfig(SHARE_WINDOW_HOURS_KEY, 1)
   const deadline = new Date((order.deliveredAt ?? order.updatedAt).getTime() + windowHours * 3_600_000)
-  if (!reward && Date.now() > deadline.getTime()) {
-    return { eligible: false, reason: 'This offer has expired.', reward: rewardView }
+  // A post that needs changes may be fixed and resubmitted until the window closes.
+  const open = !reward || reward.status === 'changes_required'
+  if (open && Date.now() > deadline.getTime()) {
+    return { eligible: false, reason: 'This offer has expired.', reward: view }
   }
   const [minPct, maxPct] = await Promise.all([getNumberConfig(SHARE_MIN_PCT_KEY, 20), getNumberConfig(SHARE_MAX_PCT_KEY, 50)])
   const rewardPct = rewardPctForOrder(order.orderRef, minPct, maxPct)
-
-  const tokenCfg = order.gasTokenConfigId
-    ? await db.gasTokenConfig.findUnique({ where: { id: order.gasTokenConfigId }, include: { chain: { select: { name: true } } } })
-    : null
-  const symbol = tokenCfg?.symbol ?? NATIVE_SYMBOL[order.chain] ?? String(order.chain)
-  const chainName = tokenCfg?.chain.name ?? CHAIN_LABEL[order.chain] ?? String(order.chain)
+  const facts = await describeOrder(order)
 
   // The post links to our public share page: X unfurls it into a large card with the branded
-  // image, and the page carries the user's referral link. Falls back to /gas when referrals are off.
+  // image (the same variant the user picked), and the page carries the user's referral link.
+  // Falls back to /gas when referrals are off.
   const referralsOn = await isFlagEnabled(FLAGS.GAS_REFERRAL)
   // Make sure the user has a referral code so the share page can carry their link.
   if (referralsOn) await getOrCreateOwnCode(userId).catch(() => { /* non-fatal */ })
-  const link = referralsOn ? `${env.FRONTEND_URL}/s/${order.orderRef}` : `${env.FRONTEND_URL}/gas`
-  const discountPct = await getNumberConfig('gas_referral_user_discount_pct', 10)
-  const handle = await getStringConfig(SHARE_HANDLE_KEY)
-  const text = buildShareText({
-    seed: `${order.orderRef}:${variant}`,
-    amount: trimAmount(Number(order.gasAmountNative)),
-    symbol, chainName,
-    paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT',
-    link, handle, discountPct,
-  })
+  const template = TEMPLATES[variant % TEMPLATES.length]!
+  const link = referralsOn ? `${env.FRONTEND_URL}/s/${order.orderRef}?v=${variant % TEMPLATES.length}` : `${env.FRONTEND_URL}/gas`
+  const handle = (await getStringConfig(SHARE_HANDLE_KEY))?.replace(/^@/, '') ?? null
+  const text = buildShareText({ seed: `${order.orderRef}:${variant}`, ...facts, link, handle })
   return {
     eligible: true,
     deadlineAt: deadline.toISOString(),
     rewardPct,
-    card: { amount: trimAmount(Number(order.gasAmountNative)), symbol, chainName, paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT' },
+    card: { ...facts, template },
     text,
+    hashtags: buildShareHashtags(facts.chainKey, facts.symbol),
+    link,
+    handle,
     tweetIntentUrl: `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}`,
-    reward: rewardView,
+    reward: view,
   }
 }
 
@@ -219,11 +285,7 @@ export async function getShareInfo(userId: string, orderRef: string, variant: nu
  * amount, coin, chain, how it was paid and the owner's referral code. Never exposes the
  * address, user or tracking details.
  */
-export interface PublicShareData {
-  amount: string
-  symbol: string
-  chainName: string
-  paidWith: 'PKR' | 'USDT'
+export interface PublicShareData extends ShareCardFacts {
   refCode: string | null
   discountPct: number
 }
@@ -232,15 +294,9 @@ export async function getPublicShareData(orderRef: string): Promise<PublicShareD
   const order = await db.gasFeeOrder.findUnique({ where: { orderRef } })
   if (!order || order.status !== 'delivered' || order.isFreeGrant || !order.userId) return null
   if (!(await isFlagEnabled(FLAGS.GAS_REFERRAL))) return null
-  const tokenCfg = order.gasTokenConfigId
-    ? await db.gasTokenConfig.findUnique({ where: { id: order.gasTokenConfigId }, include: { chain: { select: { name: true } } } })
-    : null
   const code = await db.gasReferralCode.findFirst({ where: { ownerId: order.userId, deletedAt: null, isActive: true }, orderBy: { createdAt: 'asc' }, select: { code: true } })
   return {
-    amount: trimAmount(Number(order.gasAmountNative)),
-    symbol: tokenCfg?.symbol ?? NATIVE_SYMBOL[order.chain] ?? String(order.chain),
-    chainName: tokenCfg?.chain.name ?? CHAIN_LABEL[order.chain] ?? String(order.chain),
-    paidWith: order.paymentCoin === 'PKR' ? 'PKR' : 'USDT',
+    ...(await describeOrder(order)),
     refCode: code?.code ?? null,
     discountPct: await getNumberConfig('gas_referral_user_discount_pct', 10),
   }
@@ -249,28 +305,64 @@ export async function getPublicShareData(orderRef: string): Promise<PublicShareD
 export async function submitSharePost(userId: string, orderRef: string, url: string): Promise<{ status: string }> {
   const info = await getShareInfo(userId, orderRef, 0)
   if (!info.eligible) throw new AppError('SHARE_NOT_ELIGIBLE', info.reason ?? 'Sharing is not available for this order.', 400)
-  if (info.reward) throw new AppError('SHARE_ALREADY_SUBMITTED', 'You already submitted a post for this order.', 409)
+  if (info.reward && info.reward.status !== 'changes_required') throw new AppError('SHARE_ALREADY_SUBMITTED', 'You already submitted a post for this order.', 409)
   const norm = normalizeTweetUrl(url)
   if (!norm) throw new AppError('INVALID_POST_URL', 'Paste the link to your post, like https://x.com/yourname/status/123…', 400)
 
   const order = await loadOwnedDeliveredOrder(userId, orderRef)
+  let rewardId: string
   try {
-    await db.gasShareReward.create({
-      data: { userId, sourceOrderId: order.id, postUrl: norm.canonical, postKey: norm.postKey, status: 'submitted' },
-    })
-  } catch {
+    if (info.reward) {
+      // Fixing a post that needed changes: same reward row, new link, back into review.
+      const existing = await db.gasShareReward.findUnique({ where: { sourceOrderId: order.id }, select: { id: true } })
+      if (!existing) throw new AppError('NOT_FOUND', 'Reward not found', 404)
+      await db.gasShareReward.update({
+        where: { id: existing.id },
+        data: { postUrl: norm.canonical, postKey: norm.postKey, status: 'submitted', verifyStatus: null, verifyIssues: Prisma.DbNull },
+      })
+      rewardId = existing.id
+    } else {
+      const created = await db.gasShareReward.create({
+        data: { userId, sourceOrderId: order.id, postUrl: norm.canonical, postKey: norm.postKey, status: 'submitted' },
+        select: { id: true },
+      })
+      rewardId = created.id
+      const who = (await db.user.findUnique({ where: { id: userId }, select: { username: true } }))?.username ?? userId
+      void createAdminNotif({
+        category: 'GAS',
+        title: 'Share & Earn post to review',
+        body: `${who} submitted an X post for order ${orderRef}. Check it and approve or reject.`,
+        href: '/admin/gas/share-rewards',
+        roles: ['admin', 'super_admin'],
+        telegram: false,
+      })
+    }
+  } catch (e) {
+    if (e instanceof AppError) throw e
     throw new AppError('POST_ALREADY_USED', 'That post has already been submitted.', 409)
   }
-  const who = (await db.user.findUnique({ where: { id: userId }, select: { username: true } }))?.username ?? userId
-  void createAdminNotif({
-    category: 'GAS',
-    title: 'Share & Earn post to review',
-    body: `${who} submitted an X post for order ${orderRef}. Check it and approve or reject.`,
-    href: '/admin/gas/share-rewards',
-    roles: ['admin', 'super_admin'],
-    telegram: false,
-  })
+  void runShareVerification(rewardId, userId)
   return { status: 'submitted' }
+}
+
+/** Background check; a failure to verify never blocks the user, it just leaves the post for an admin. */
+async function runShareVerification(rewardId: string, userId: string): Promise<void> {
+  try {
+    const res = await verifyShareReward(rewardId)
+    if (!res.ran) return
+    const r = await db.gasShareReward.findUnique({ where: { id: rewardId }, select: { status: true, verifyIssues: true, verifyStatus: true } })
+    if (!r) return
+    if (r.status === 'changes_required') {
+      const issues = Array.isArray(r.verifyIssues) ? (r.verifyIssues as string[]) : []
+      notify(userId, 'gas', 'Your Share & Earn post needs a change', issues.join(' ') || 'Please check the post and resubmit it.', { rewardId }, undefined, '/gas/orders', { telegram: true })
+      return
+    }
+    if (r.verifyStatus === 'passed' && (await getBoolConfig(X_VERIFY_AUTO_APPROVE_KEY, false))) {
+      await approveShareReward(rewardId, 'system:x-verify').catch((err) => logger.warn({ err, rewardId }, 'auto-approve failed'))
+    }
+  } catch (err) {
+    logger.warn({ err, rewardId }, 'share verification crashed')
+  }
 }
 
 /** The user's usable reward (approved, or held by an unpaid order) — for the "discount ready" banner. */
@@ -299,6 +391,7 @@ export async function listShareRewards(status?: string) {
   const byId = new Map(orders.map((o) => [o.id, o]))
   return rows.map((r) => ({
     id: r.id, status: r.status, postUrl: r.postUrl, discountPct: r.discountPct, rejectionReason: r.rejectionReason,
+    verifyStatus: r.verifyStatus, verifyIssues: Array.isArray(r.verifyIssues) ? r.verifyIssues : [], postAuthor: r.postAuthor, postCreatedAt: r.postCreatedAt, verifyAttempts: r.verifyAttempts,
     createdAt: r.createdAt, reviewedAt: r.reviewedAt, usedAt: r.usedAt,
     user: r.user,
     order: byId.has(r.sourceOrderId) ? {
@@ -315,7 +408,7 @@ export async function approveShareReward(id: string, adminId: string): Promise<{
   const src = pending ? await db.gasFeeOrder.findUnique({ where: { id: pending.sourceOrderId }, select: { orderRef: true } }) : null
   const pct = src ? rewardPctForOrder(src.orderRef, min, max) : drawDiscountPct(min, max)
   const res = await db.gasShareReward.updateMany({
-    where: { id, status: 'submitted' },
+    where: { id, status: { in: ['submitted', 'changes_required'] } },
     data: { status: 'approved', discountPct: pct, reviewedById: adminId, reviewedAt: new Date() },
   })
   if (res.count === 0) throw new AppError('CONFLICT', 'This post was already reviewed.', 409)
@@ -329,7 +422,7 @@ export async function approveShareReward(id: string, adminId: string): Promise<{
 export async function rejectShareReward(id: string, adminId: string, reason: string): Promise<void> {
   const clean = reason.trim().slice(0, 300) || 'The post did not meet the requirements.'
   const res = await db.gasShareReward.updateMany({
-    where: { id, status: 'submitted' },
+    where: { id, status: { in: ['submitted', 'changes_required'] } },
     data: { status: 'rejected', rejectionReason: clean, reviewedById: adminId, reviewedAt: new Date() },
   })
   if (res.count === 0) throw new AppError('CONFLICT', 'This post was already reviewed.', 409)

@@ -7,6 +7,7 @@ import {
   approveShareReward, getActiveShareReward, getPublicShareData, getShareInfo, listShareRewards,
   rejectShareReward, submitSharePost,
 } from '../lib/gas/gas.share'
+import { getXSettings, saveXSettings, testXConnection, verifyShareReward } from '../lib/social/xVerification'
 
 const adminOrSuper = requireRole('admin', 'super_admin')
 
@@ -60,5 +61,38 @@ export async function gasShareRoutes(app: FastifyInstance) {
     await rejectShareReward(id, req.user!.id, reason)
     await recordAuditLog(req.user!.id, 'GAS_SHARE_REWARD_REJECTED', 'GasShareReward', id, { reason })
     return reply.send({ success: true, data: { status: 'rejected' } })
+  })
+
+  // ── X verification settings (admin) ───────────────────────────────────────
+  // The API key is write-only: it is stored encrypted and only its last four characters ever come back.
+  app.get('/admin/gas/share-rewards/x-settings', { preHandler: [authenticate, adminOrSuper] }, async (_req, reply) => {
+    return reply.send({ success: true, data: await getXSettings() })
+  })
+
+  app.put('/admin/gas/share-rewards/x-settings', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const parsed = z.object({
+      enabled: z.boolean().optional(),
+      autoApprove: z.boolean().optional(),
+      apiKey: z.string().min(8).max(200).optional(),
+      baseUrl: z.string().max(200).optional(),
+      dailyBudget: z.number().int().min(1).max(100_000).optional(),
+      lowCreditsAlert: z.number().int().min(0).max(100_000_000).optional(),
+      officialHandle: z.string().max(16).optional(),
+    }).strict().safeParse(req.body ?? {})
+    if (!parsed.success) throw new AppError('VALIDATION_ERROR', 'Check the settings and try again', 400)
+    await saveXSettings(parsed.data)
+    // Never log the key: only which fields changed.
+    await recordAuditLog(req.user!.id, 'GAS_SHARE_X_SETTINGS_UPDATED', 'PlatformConfig', 'x-verification', { fields: Object.keys(parsed.data) })
+    return reply.send({ success: true, data: await getXSettings() })
+  })
+
+  app.post('/admin/gas/share-rewards/x-settings/test', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (_req, reply) => {
+    return reply.send({ success: true, data: await testXConnection() })
+  })
+
+  // Re-run the automated check for one post (counts against the same attempt and daily limits).
+  app.post('/admin/gas/share-rewards/:id/recheck', { preHandler: [authenticate, adminOrSuper], config: { rateLimit: { max: 20, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    return reply.send({ success: true, data: await verifyShareReward(id, { force: true }) })
   })
 }

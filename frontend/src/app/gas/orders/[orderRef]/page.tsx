@@ -105,9 +105,9 @@ function getTimelineStep(status: string): number {
 function TxRow({ label, hash, network }: { label: string; hash: string; network: string }) {
   const url = explorerUrl(network, hash)
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3 py-3 border-b border-border last:border-0">
-      <span className="sm:w-36 shrink-0 text-xs text-text-muted font-medium">{label}</span>
-      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+    <div className="flex flex-col gap-0.5 py-2.5 sm:flex-row sm:items-center sm:gap-3 border-b border-border last:border-0">
+      <span className="shrink-0 text-xs font-medium text-text-muted sm:w-28">{label}</span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-xs font-mono text-text-primary break-all" title={hash}>{truncateHash(hash)}</span>
         <CopyButton text={hash} size="sm" />
         {url !== '#' && (
@@ -131,7 +131,7 @@ function TxRow({ label, hash, network }: { label: string; hash: string; network:
 function DetailRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-start gap-0.5 sm:gap-4 py-2.5 border-b border-border last:border-0">
-      <span className="sm:w-36 shrink-0 text-xs text-text-muted font-medium">{label}</span>
+      <span className="shrink-0 text-xs font-medium text-text-muted sm:w-28">{label}</span>
       <span className="text-sm text-text-primary break-words">{value}</span>
     </div>
   )

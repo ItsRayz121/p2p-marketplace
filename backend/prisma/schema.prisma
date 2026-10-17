@@ -3573,7 +3573,15 @@ model GasShareReward {
   sourceOrderId   String    @unique            // the delivered order the post is about
   postUrl         String
   postKey         String    @unique            // normalised tweet id → blocks reusing a post
-  status          String    @default("submitted") // submitted | approved | reserved | used | rejected
+  status          String    @default("submitted") // submitted | changes_required | approved | reserved | used | rejected
+  // Automated X check (provider read-only lookup). The result never approves on its own unless the
+  // admin turned auto-approve on; otherwise it only pre-fills the review queue.
+  verifyStatus    String?                      // passed | failed | inconclusive
+  verifyIssues    Json?                        // string[] of plain-language problems
+  verifyCheckedAt DateTime?
+  verifyAttempts  Int       @default(0)
+  postAuthor      String?                      // X handle of the post's author, as reported by the provider
+  postCreatedAt   DateTime?                    // when the post was published, per the provider
   discountPct     Float?                       // drawn at approval
   reservedOrderId String?                      // order currently holding / that consumed the reward
   rejectionReason String?

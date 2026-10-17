@@ -128,6 +128,13 @@ export function isTelegramMiniApp(): boolean {
   return !!window.Telegram?.WebApp?.initData
 }
 
+const STAFF_ROLES = new Set(['admin', 'super_admin', 'kyc_reviewer', 'dispute_agent', 'support_agent'])
+
+/** Staff roles belong in the admin panel when they open the Mini App without a specific destination. */
+export function isStaffRole(role: string | null | undefined): boolean {
+  return !!role && STAFF_ROLES.has(role)
+}
+
 /** The optional SDK object — may be undefined if the script hasn't loaded (or ever loads). */
 export function getWebApp(): TelegramWebApp | undefined {
   if (typeof window === 'undefined') return undefined

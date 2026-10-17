@@ -4011,12 +4011,29 @@ export const availabilityApi = {
 export interface ShareInfo {
   deadlineAt?: string
   rewardPct?: number
-  card?: { amount: string; symbol: string; chainName: string; paidWith: 'PKR' | 'USDT' }
+  card?: {
+    amount: string
+    symbol: string
+    chainName: string
+    chainKey: string
+    chainLogoUrl: string | null
+    paidWith: 'PKR' | 'USDT'
+    template: 'snapshot' | 'experience' | 'minimal'
+  }
   eligible: boolean
   reason?: string
   text?: string
+  hashtags?: string[]
+  link?: string
+  handle?: string | null
   tweetIntentUrl?: string
-  reward: { status: string; discountPct: number | null; rejectionReason: string | null } | null
+  reward: {
+    status: string
+    discountPct: number | null
+    rejectionReason: string | null
+    issues: string[]
+    postUrl: string | null
+  } | null
 }
 
 export interface ShareRewardAdminRow {
@@ -4025,11 +4042,31 @@ export interface ShareRewardAdminRow {
   postUrl: string
   discountPct: number | null
   rejectionReason: string | null
+  verifyStatus: string | null
+  verifyIssues: string[]
+  postAuthor: string | null
+  postCreatedAt: string | null
+  verifyAttempts: number
   createdAt: string
   reviewedAt: string | null
   usedAt: string | null
   user: { id: string; username: string; email: string }
   order: { orderRef: string; amount: string; chain: string } | null
+}
+
+export interface XSettings {
+  enabled: boolean
+  autoApprove: boolean
+  provider: string
+  baseUrl: string
+  hasKey: boolean
+  keyHint: string | null
+  dailyBudget: number
+  usedToday: number
+  lowCreditsAlert: number
+  officialHandle: string | null
+  lastError: string | null
+  lastCredits: number | null
 }
 
 export const shareApi = {
@@ -4043,6 +4080,12 @@ export const shareApi = {
     apiRequest<{ discountPct: number }>(`/admin/gas/share-rewards/${id}/approve`, { method: 'POST' }),
   adminReject: (id: string, reason: string) =>
     apiRequest<{ status: string }>(`/admin/gas/share-rewards/${id}/reject`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  adminRecheck: (id: string) =>
+    apiRequest<{ ran: boolean; outcome?: string; reason?: string }>(`/admin/gas/share-rewards/${id}/recheck`, { method: 'POST' }),
+  adminGetXSettings: () => apiRequest<XSettings>('/admin/gas/share-rewards/x-settings'),
+  adminSaveXSettings: (body: Partial<Pick<XSettings, 'enabled' | 'autoApprove' | 'baseUrl' | 'dailyBudget' | 'lowCreditsAlert'>> & { apiKey?: string; officialHandle?: string }) =>
+    apiRequest<XSettings>('/admin/gas/share-rewards/x-settings', { method: 'PUT', body: JSON.stringify(body) }),
+  adminTestX: () => apiRequest<{ ok: boolean; credits: number | null; message: string }>('/admin/gas/share-rewards/x-settings/test', { method: 'POST' }),
 }
 
 // ─── Points shop ──────────────────────────────────────────────────────────────
