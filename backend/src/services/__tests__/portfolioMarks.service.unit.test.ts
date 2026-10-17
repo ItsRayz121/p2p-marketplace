@@ -142,3 +142,17 @@ describe('logosFor', () => {
     expect([...out]).toEqual([['a1', 'https://cdn.example/t1.png']])
   })
 })
+
+describe('the USDT holding', () => {
+  const USDT = [{ id: 'u1', ctmTokenId: 'p2p-usdt' }]
+  it('is worth 1 USDT now, never looked up as a community token', async () => {
+    const out = await platformMarksFor(USDT)
+    expect(out).toHaveLength(1)
+    expect(out[0]).toMatchObject({ assetId: 'u1', price: '1', quote: 'USDT', source: 'platform' })
+    expect(m.trades).not.toHaveBeenCalled()
+  })
+  it('has a 1 USDT price for every past date too, so the value-over-time chart has no gaps', async () => {
+    const out = await platformHistoryFor(USDT)
+    expect(out).toEqual([{ assetId: 'u1', price: '1', quote: 'USDT', observedAt: at('2020-01-01T00:00:00Z'), source: 'platform' }])
+  })
+})

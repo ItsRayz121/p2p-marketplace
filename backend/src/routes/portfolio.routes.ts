@@ -9,6 +9,9 @@ import { buildSummary, type EventRow as SummaryEvent } from '../lib/portfolio/su
 import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
+import { runUsdtImport } from '../services/portfolioUsdtImport.service'
+import { USDT_ASSET_KEY, impliedUsdtRate } from '../lib/portfolio/usdtImport'
+import { mergeImportReports } from '../lib/portfolio/mergeImportReports'
 import { runCtmImport, listExcludedTrades, recordExcludedBatch, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
 import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor, slugsFor } from '../services/portfolioMarks.service'
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
@@ -122,7 +125,7 @@ type DbEvent = {
 }
 
 /** DB row -> plain strings for the pure calculation modules (rates validated, never trusted blindly). */
-function toSummaryRow(r: DbEvent, platformRate?: string | null): SummaryEvent {
+function toSummaryRow(r: DbEvent, platformRate?: string | null, usdtAssets?: ReadonlySet<string>): SummaryEvent {
   // Imported RupChain trades paid in PKR carry no USDT rate of their own: use the platform rate so the USDT view works.
   const own = cleanRate(r.fxRate?.toFixed())
   return {
@@ -136,7 +139,8 @@ function toSummaryRow(r: DbEvent, platformRate?: string | null): SummaryEvent {
     basis: r.basis?.toFixed() ?? null,
     zeroCost: r.zeroCost,
     quote: r.quote as Quote,
-    fxRate: own ?? (r.source === 'ctm' ? cleanRate(platformRate) : null),
+    // For the USDT holding the price per USDT is the rate itself, so an entry for USDT bought or sold elsewhere converts at what it traded at.
+    fxRate: own ?? (r.source === 'ctm' ? cleanRate(platformRate) : usdtAssets?.has(r.assetId) && r.quote === 'PKR' ? impliedUsdtRate(r.consideration?.toFixed() ?? null, r.quantity.toFixed()) : null),
   }
 }
 
@@ -304,7 +308,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     offset: z.coerce.number().int().min(0).max(100000).default(0),
     q: z.string().trim().max(60).optional(),
     type: z.enum(['BUY', 'SELL', 'OPENING']).optional(),
-    source: z.enum(['manual', 'ctm']).optional(),
+    source: z.enum(['manual', 'ctm', 'p2p']).optional(),
     status: z.enum(['counted', 'not_counted']).optional(),
     assetId: z.string().max(64).optional(),
   }).strict()
@@ -571,7 +575,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const q = currencyQuery.safeParse(req.query)
     if (!q.success) throw new AppError('VALIDATION_ERROR', 'currency must be PKR or USDT', 400)
 
-    const [events, prices, platformRate] = await Promise.all([
+    const [events, prices, platformRate, usdtRows] = await Promise.all([
       db.portfolioEvent.findMany({
         where: { userId, voidedAt: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
         select: EVENT_SELECT,
@@ -581,9 +585,11 @@ export async function portfolioRoutes(app: FastifyInstance) {
         select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
       }),
       getStringConfig('rate_USDT_PKR', ''),
+      db.portfolioAsset.findMany({ where: { userId, ctmTokenId: USDT_ASSET_KEY }, select: { id: true } }),
     ])
+    const usdtAssets = new Set(usdtRows.map((a) => a.id))
 
-    const rows = events.map((e) => toSummaryRow(e, platformRate))
+    const rows = events.map((e) => toSummaryRow(e, platformRate, usdtAssets))
     const marks = await withPlatformMarks(userId, prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt, source: p.source })))
 
     try {
@@ -606,7 +612,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const q = perfQuery.safeParse(req.query)
     if (!q.success) throw new AppError('VALIDATION_ERROR', 'Invalid date range or currency', 400)
 
-    const [events, prices, platformRate] = await Promise.all([
+    const [events, prices, platformRate, usdtRows] = await Promise.all([
       db.portfolioEvent.findMany({
         where: { userId, voidedAt: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
         select: EVENT_SELECT,
@@ -616,7 +622,9 @@ export async function portfolioRoutes(app: FastifyInstance) {
         select: { assetId: true, price: true, quote: true, observedAt: true },
       }),
       getStringConfig('rate_USDT_PKR', ''),
+      db.portfolioAsset.findMany({ where: { userId, ctmTokenId: USDT_ASSET_KEY }, select: { id: true } }),
     ])
+    const usdtAssets = new Set(usdtRows.map((a) => a.id))
 
     const now = new Date()
     const to = q.data.to ? new Date(q.data.to) : now
@@ -636,7 +644,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
 
     try {
       const data = computePerformance({
-        events: events.map((e) => toSummaryRow(e, platformRate)),
+        events: events.map((e) => toSummaryRow(e, platformRate, usdtAssets)),
         prices: priceRows,
         currency: q.data.currency,
         currentMarks: currentMarksIn([...latest.values()], q.data.currency, cleanRate(platformRate)),
@@ -660,12 +668,12 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const body = importBody.safeParse(req.body ?? {})
     if (!body.success) throw new AppError('VALIDATION_ERROR', 'Invalid request', 400)
     try {
-      const report = await runCtmImport(userId, {
-        dryRun: body.data.dryRun ?? false,
-        maxAssets: MAX_PORTFOLIO_ASSETS,
-        maxEvents: MAX_PORTFOLIO_EVENTS,
-      })
-      return reply.send({ success: true, data: report })
+      const limits = { dryRun: body.data.dryRun ?? false, maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS }
+      const ctm = await runCtmImport(userId, limits)
+      // P2P USDT trades join the same tracker (as the "Tether USDT" holding). The CTM step has already used part
+      // of the per-user room, so the USDT step re-reads it.
+      const usdt = await runUsdtImport(userId, limits)
+      return reply.send({ success: true, data: mergeImportReports(ctm, usdt) })
     } catch (err) {
       req.log.error({ err }, 'portfolio import failed')
       throw new AppError('PORTFOLIO_IMPORT_FAILED', 'Could not read your RupChain trades right now. Please try again later.', 500)

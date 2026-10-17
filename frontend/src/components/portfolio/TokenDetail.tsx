@@ -502,7 +502,7 @@ export function TokenDetail(p: TokenDetailProps) {
                   <tr>
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(ev.occurredAt).toLocaleString()}</td>
                     <td className={`px-3 py-2 whitespace-nowrap ${ev.voided ? 'text-text-muted line-through' : ''}`}>
-                      {TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted no-underline">· {ev.source === 'ctm' ? 'RupChain trade' : 'manual'}{ev.editedAt ? ', edited' : ''}{ev.priceBasis ? `, ${ev.priceBasis === 'platform' ? 'RupChain price' : 'own price'}` : ''}</span>
+                      {TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted no-underline">· {ev.source !== 'manual' ? 'RupChain trade' : 'manual'}{ev.editedAt ? ', edited' : ''}{ev.priceBasis ? `, ${ev.priceBasis === 'platform' ? 'RupChain price' : 'own price'}` : ''}</span>
                       {ev.voided && (
                         <span className="block text-xs text-amber-800 no-underline" style={{ textDecoration: 'none' }}>
                           Not counted: {VOID_TEXT[ev.voidReason ?? ''] ?? 'it no longer qualifies'}

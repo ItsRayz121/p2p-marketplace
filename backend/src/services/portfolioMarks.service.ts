@@ -3,6 +3,7 @@ import { D, ALLOC_DP, ROUND } from '../lib/portfolio/decimal'
 import type { Quote } from '../lib/portfolio/currency'
 import { classifyTrade } from '../lib/portfolio/ctmImport'
 import { forcedReleaseRefs, factsFromTrade, TRADE_FACTS_SELECT } from './ctmTradeFacts.service'
+import { USDT_ASSET_KEY } from '../lib/portfolio/usdtImport'
 
 /**
  * Read-only helpers that let a tracked token that mirrors a RupChain token use the platform's own data:
@@ -77,10 +78,16 @@ async function provenSeries(tokenIds: string[]): Promise<Map<string, Point[]>> {
   return out
 }
 
+/** USDT is worth 1 USDT by definition; in PKR it is converted at the platform rate like any other price. */
+const USDT_HISTORY_FROM = new Date('2020-01-01T00:00:00Z')
+function usdtAssetIds(links: Array<{ id: string; ctmTokenId: string | null }>): string[] {
+  return links.filter((l) => l.ctmTokenId === USDT_ASSET_KEY).map((l) => l.id)
+}
+
 function tokenLinks(links: Array<{ id: string; ctmTokenId: string | null }>): Map<string, string[]> {
   const byToken = new Map<string, string[]>()
   for (const l of links) {
-    if (l.ctmTokenId) byToken.set(l.ctmTokenId, [...(byToken.get(l.ctmTokenId) ?? []), l.id])
+    if (l.ctmTokenId && l.ctmTokenId !== USDT_ASSET_KEY) byToken.set(l.ctmTokenId, [...(byToken.get(l.ctmTokenId) ?? []), l.id])
   }
   return byToken
 }
@@ -88,9 +95,9 @@ function tokenLinks(links: Array<{ id: string; ctmTokenId: string | null }>): Ma
 /** Latest proven platform trade price (PKR per token) for each linked tracker token. */
 export async function platformMarksFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<MarkRow[]> {
   const byToken = tokenLinks(links)
-  if (byToken.size === 0) return []
+  const out: MarkRow[] = usdtAssetIds(links).map((assetId) => ({ assetId, price: '1', quote: 'USDT' as const, observedAt: new Date(), source: 'platform' }))
+  if (byToken.size === 0) return out
   const series = await provenSeries([...byToken.keys()])
-  const out: MarkRow[] = []
   for (const [tokenId, assetIds] of byToken) {
     const latest = series.get(tokenId)?.[0]
     if (!latest) continue
@@ -105,9 +112,9 @@ export async function platformMarksFor(links: Array<{ id: string; ctmTokenId: st
  */
 export async function platformHistoryFor(links: Array<{ id: string; ctmTokenId: string | null }>): Promise<MarkRow[]> {
   const byToken = tokenLinks(links)
-  if (byToken.size === 0) return []
+  const out: MarkRow[] = usdtAssetIds(links).map((assetId) => ({ assetId, price: '1', quote: 'USDT' as const, observedAt: USDT_HISTORY_FROM, source: 'platform' }))
+  if (byToken.size === 0) return out
   const series = await provenSeries([...byToken.keys()])
-  const out: MarkRow[] = []
   for (const [tokenId, assetIds] of byToken) {
     for (const point of series.get(tokenId) ?? []) {
       for (const assetId of assetIds) out.push({ assetId, price: point.price, quote: 'PKR', observedAt: point.observedAt, source: 'platform' })

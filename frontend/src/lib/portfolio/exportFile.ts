@@ -30,7 +30,7 @@ export interface ExportEvent {
   fxRate: string | null
   fxSource: 'platform' | 'manual' | null
   note: string | null
-  source: 'manual' | 'ctm'
+  source: 'manual' | 'ctm' | 'p2p'
   voided: boolean
   voidReason: string | null
   priceBasis?: PriceBasis | null
@@ -106,7 +106,7 @@ export function buildCsv(data: ExportData): string {
       csvCell(e.occurredAt), csvCell(e.type), csvCell(e.quantity, 'number'), csvCell(e.quote),
       csvCell(e.consideration, 'number'), csvCell(e.fee, 'number'), csvCell(e.basis, 'number'),
       csvCell(e.zeroCost ? 'yes' : 'no'), csvCell(e.fxRate, 'number'), csvCell(e.fxSource),
-      csvCell(e.source === 'ctm' ? 'RupChain trade' : 'manual'), csvCell(e.voided ? 'no' : 'yes'), csvCell(e.voidReason),
+      csvCell(e.source !== 'manual' ? 'RupChain trade' : 'manual'), csvCell(e.voided ? 'no' : 'yes'), csvCell(e.voidReason),
       csvCell(e.note), csvCell(e.assetId), csvCell(e.id), csvCell(e.priceBasis === 'platform' ? 'RupChain price' : e.priceBasis === 'own' ? 'own price' : ''),
     ].join(',')
   })
@@ -141,7 +141,7 @@ const eventSchema = z.object({
   id: text(64), assetId: text(64), type: z.enum(['BUY', 'SELL', 'OPENING']), occurredAt: iso, quantity: dec,
   consideration: dec.nullable(), fee: dec.nullable(), basis: dec.nullable(), zeroCost: z.boolean(), quote,
   fxRate: z.string().regex(/^\d{1,10}(\.\d{1,18})?$/).nullable(), fxSource: z.enum(['platform', 'manual']).nullable(),
-  note: text(400).nullable(), source: z.enum(['manual', 'ctm']), voided: z.boolean(), voidReason: text(60).nullable(),
+  note: text(400).nullable(), source: z.enum(['manual', 'ctm', 'p2p']), voided: z.boolean(), voidReason: text(60).nullable(),
   priceBasis: z.enum(['platform', 'own']).nullable().optional(),
   editedAt: iso.nullable().optional(), linkedTradeRef: text(64).nullable().optional(),
 }).strict()

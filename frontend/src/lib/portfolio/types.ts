@@ -18,7 +18,7 @@ export interface PortfolioEvent {
   fxSource: 'platform' | 'manual' | null
   note: string | null
   /** 'ctm' = read from a settled RupChain trade (read-only). Set by the server. */
-  source: 'manual' | 'ctm'
+  source: 'manual' | 'ctm' | 'p2p'
   /** Imported entry whose trade stopped qualifying: shown, but not counted. */
   voided: boolean
   voidReason: string | null
@@ -229,7 +229,7 @@ export interface EventListQuery {
   offset: number
   q?: string
   type?: PortfolioEventType
-  source?: 'manual' | 'ctm'
+  source?: 'manual' | 'ctm' | 'p2p'
   status?: 'counted' | 'not_counted'
   assetId?: string
 }

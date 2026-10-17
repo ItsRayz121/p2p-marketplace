@@ -7,6 +7,8 @@ import { validateCustomAsset, type CustomAssetInput } from '../lib/portfolioAsse
 import { eventSchema, cleanNote, PRICE_SOURCES, EARLIEST, FUTURE_SLACK_MS } from '../lib/portfolio/eventInput'
 import { cleanRate } from '../lib/portfolio/currency'
 import { linkedTokenRef } from '../lib/portfolio/linkedTokenRef'
+import { USDT_ASSET_KEY } from '../lib/portfolio/usdtImport'
+import { ensureUsdtAsset } from './portfolioUsdtImport.service'
 import { checkExcludedTradeRecordable, ensureLinkedAsset } from './portfolioImport.service'
 
 /**
@@ -54,7 +56,7 @@ const entrySchema = z.object({
   id: text(64), assetId: text(64), type: z.enum(['BUY', 'SELL', 'OPENING']), occurredAt: iso, quantity: dec,
   consideration: dec.nullable(), fee: dec.nullable(), basis: dec.nullable(), zeroCost: z.boolean(), quote,
   fxRate: z.string().regex(/^\d{1,10}(\.\d{1,18})?$/).nullable(), fxSource: z.enum(['platform', 'manual']).nullable(),
-  note: text(1000).nullable(), source: z.enum(['manual', 'ctm']), voided: z.boolean(), voidReason: text(60).nullable(),
+  note: text(1000).nullable(), source: z.enum(['manual', 'ctm', 'p2p']), voided: z.boolean(), voidReason: text(60).nullable(),
   priceBasis: z.enum(['platform', 'own']).nullable().optional(),
   editedAt: iso.nullable().optional(), linkedTradeRef: text(64).nullable().optional(),
 }).strict()
@@ -187,7 +189,13 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
     // Read-only: the platform's token list is only read, to recompute each reference and match it.
     const tokens = await db.ctmToken.findMany({ select: { id: true, name: true, symbol: true, network: true, contractAddress: true, officialWebsite: true } })
     const byRef = new Map(tokens.map((t) => [linkedTokenRef(t.id), t]))
+    const usdtRef = linkedTokenRef(USDT_ASSET_KEY)
     for (const a of needLinked) {
+      if (a.linkedTokenRef === usdtRef) {
+        const usdtId = await ensureUsdtAsset(userId, { maxAssets: limits.maxAssets })
+        if (usdtId) linkedTarget.set(a.id, usdtId)
+        continue
+      }
       const token = byRef.get(a.linkedTokenRef!)
       const id = token ? await ensureLinkedAsset(userId, token, { maxAssets: limits.maxAssets }) : null
       if (id) linkedTarget.set(a.id, id)
@@ -334,7 +342,7 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
     }
   }, { timeout: 60_000, maxWait: 10_000 })
 
-  const skippedTrades = b.events.filter((e) => e.source === 'ctm').length
+  const skippedTrades = b.events.filter((e) => e.source !== 'manual').length
   if (skippedTrades > 0) notes.push(`${skippedTrades} ${skippedTrades === 1 ? 'entry' : 'entries'} read from RupChain trades ${skippedTrades === 1 ? 'was' : 'were'} not copied: they are rebuilt from the platform's own records.`)
   const { tradeSkipped, noHome, ...counts } = result
   if (tradeSkipped > 0) notes.push(`${tradeSkipped} ${tradeSkipped === 1 ? 'entry' : 'entries'} recorded for a RupChain trade could not be matched to that trade now, so ${tradeSkipped === 1 ? 'it was' : 'they were'} left out to avoid counting the trade twice.`)

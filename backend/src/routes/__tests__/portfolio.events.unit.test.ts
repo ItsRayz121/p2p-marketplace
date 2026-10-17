@@ -12,7 +12,7 @@ const m = vi.hoisted(() => ({
 // orders) throws, which proves these routes cannot affect balances or settlement.
 vi.mock('../../lib/prisma', () => ({
   db: new Proxy({
-    portfolioAsset: { findFirst: m.assetFindFirst, findMany: vi.fn(), count: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
+    portfolioAsset: { findFirst: m.assetFindFirst, findMany: async () => [], count: vi.fn(), create: vi.fn(), updateMany: vi.fn() },
     portfolioEvent: { findMany: m.evFindMany, findFirst: m.evFindFirst, count: m.evCount, create: m.evCreate, deleteMany: m.evDeleteMany },
     portfolioEventRevision: { create: m.revCreate },
     $transaction: async (fn: (tx: unknown) => unknown) => fn({ portfolioEvent: { deleteMany: m.evDeleteMany }, portfolioEventRevision: { create: m.revCreate } }),

@@ -43,7 +43,7 @@ export function TransactionHistory({
   const [search, setSearch] = useState('')
   const [q, setQ] = useState('')
   const [type, setType] = useState<'' | PortfolioEventType>('')
-  const [source, setSource] = useState<'' | 'manual' | 'ctm'>('')
+  const [source, setSource] = useState<'' | 'manual' | 'ctm' | 'p2p'>('')
   const [status, setStatus] = useState<'' | 'counted' | 'not_counted'>('')
   const [offset, setOffset] = useState(0)
   const [page, setPage] = useState<EventsPage | null>(null)
@@ -140,7 +140,7 @@ export function TransactionHistory({
                         {total === null ? <span className="text-text-muted">Cost not recorded</span> : `${formatDecimal(total)} ${e.quote}`}
                       </td>
                       <td className="px-3 py-2 whitespace-nowrap">
-                        {e.source === 'ctm' ? 'RupChain trade' : 'Entered by me'}
+                        {e.source !== 'manual' ? 'RupChain trade' : 'Entered by me'}
                         {e.priceBasis && <span className="block text-xs text-text-muted">{e.priceBasis === 'platform' ? 'RupChain price' : 'Price I got'}</span>}
                       </td>
                       <td className="px-3 py-2 text-xs">

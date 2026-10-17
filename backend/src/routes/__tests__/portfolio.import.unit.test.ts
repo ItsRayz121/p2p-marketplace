@@ -1,8 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest'
 import Fastify from 'fastify'
 
-const m = vi.hoisted(() => ({ run: vi.fn() }))
+const m = vi.hoisted(() => ({ run: vi.fn(), usdt: vi.fn() }))
 vi.mock('../../services/portfolioImport.service', () => ({ runCtmImport: m.run }))
+vi.mock('../../services/portfolioUsdtImport.service', () => ({ runUsdtImport: m.usdt }))
 vi.mock('../../lib/prisma', () => ({ db: new Proxy({}, { get(_t, p: string) { throw new Error(`unexpected db access: ${p}`) } }) }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: async () => true }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
@@ -29,7 +30,8 @@ const post = (payload?: unknown, headers: Record<string, string> = { 'x-test-use
   app.inject({ method: 'POST', url: '/api/v1/portfolio/import/ctm', headers, ...(payload !== undefined ? { payload: payload as object } : {}) })
 const report = { dryRun: false, created: 2, restored: 0, voided: 0, alreadyImported: 0, attention: [], hasImportedBefore: true, preview: [], skippedForLimit: 0 }
 
-beforeEach(() => { m.run.mockReset(); m.run.mockResolvedValue(report) })
+const usdtReport = { created: 0, restored: 0, voided: 0, alreadyImported: 0, hasImportedBefore: false, preview: [], skippedForLimit: 0 }
+beforeEach(() => { m.run.mockReset(); m.run.mockResolvedValue(report); m.usdt.mockReset(); m.usdt.mockResolvedValue(usdtReport) })
 
 describe('POST /portfolio/import/ctm', () => {
   it('requires authentication', async () => {
@@ -41,6 +43,8 @@ describe('POST /portfolio/import/ctm', () => {
     expect(res.statusCode).toBe(200)
     expect(res.json().data).toMatchObject({ created: 2 })
     expect(m.run).toHaveBeenCalledWith('u1', { dryRun: false, maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS })
+    // P2P USDT trades are imported in the same request, for the same user and limits, and counted in the one report.
+    expect(m.usdt).toHaveBeenCalledWith('u1', { dryRun: false, maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS })
     expect(res.headers['cache-control']).toBe('private, no-store')
   })
   it('an empty body is fine; dryRun is passed through', async () => {
