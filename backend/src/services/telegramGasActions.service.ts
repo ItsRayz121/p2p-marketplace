@@ -78,8 +78,8 @@ export async function buildGasKeyboard(orderId: string, tgId: bigint): Promise<T
       [
         { text: '✅ Approve', callback_data: await makeToken(orderId, tgId, 'approve') },
         { text: '❌ Reject', callback_data: await makeToken(orderId, tgId, 'reject') },
+        review,
       ],
-      [review],
     ]
   }
   const stuck = order.status === 'payment_detected' && !!order.failureReason

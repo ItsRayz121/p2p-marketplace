@@ -55,8 +55,8 @@ beforeEach(() => {
 describe('buttons follow the order state', () => {
   it('a submitted PKR proof offers Approve, Reject and Review', async () => {
     const kb = await buildGasKeyboard('o1', ADMIN_TG)
-    expect(kb[0]!.map((b) => b.text)).toEqual(['✅ Approve', '❌ Reject'])
-    expect(kb[1]![0]!.web_app?.url).toContain('path=%2Fadmin%2Fgas%2Forders%2FGF-1')
+    expect(kb[0]!.map((b) => b.text)).toEqual(['✅ Approve', '❌ Reject', '🔍 Review'])
+    expect(kb[0]![2]!.web_app?.url).toContain('path=%2Fadmin%2Fgas%2Forders%2FGF-1')
     expect(kb.flat().every((b) => (b.callback_data ?? '').length <= 64)).toBe(true)
   })
   it('an expired proof, a delivered order and a card order offer only Review', async () => {
