@@ -4,8 +4,9 @@ import { Prisma } from '@prisma/client'
 import { db } from '../lib/prisma'
 import { AppError } from '../lib/errors'
 import { validateCustomAsset, type CustomAssetInput } from '../lib/portfolioAsset'
-import { eventSchema, cleanNote, PRICE_SOURCES } from '../lib/portfolio/eventInput'
+import { eventSchema, cleanNote, PRICE_SOURCES, EARLIEST, FUTURE_SLACK_MS } from '../lib/portfolio/eventInput'
 import { cleanRate } from '../lib/portfolio/currency'
+import { linkedTokenRef } from '../lib/portfolio/linkedTokenRef'
 import { checkExcludedTradeRecordable, ensureLinkedAsset } from './portfolioImport.service'
 
 /**
@@ -46,6 +47,7 @@ const assetSchema = z.object({
   id: text(64), name: text(200), symbol: text(64).nullable(), sourceUrl: text(2048).nullable(), network: text(100).nullable(),
   contractAddress: text(200).nullable(), createdAt: iso, archivedAt: iso.nullable(),
   linkedToRupChainToken: z.boolean().optional(),
+  linkedTokenRef: z.string().regex(/^[0-9a-f]{32}$/).nullable().optional(),
 }).strict()
 
 const entrySchema = z.object({
@@ -59,15 +61,10 @@ const entrySchema = z.object({
 
 const priceSchema = z.object({ assetId: text(64), price: dec, quote, observedAt: iso, source: z.enum(PRICE_SOURCES).optional() }).strict()
 
-const nullableText = text(64).nullable()
 const revisionSchema = z.object({
   eventId: text(40), assetId: text(64), action: z.enum(['edit', 'delete']), createdAt: iso,
-  before: z.object({
-    type: nullableText.optional(), occurredAt: nullableText.optional(), quantity: nullableText.optional(),
-    consideration: nullableText.optional(), fee: nullableText.optional(), basis: nullableText.optional(),
-    zeroCost: z.boolean().optional(), quote: nullableText.optional(), fxRate: nullableText.optional(),
-    fxSource: nullableText.optional(), note: text(1000).nullable().optional(), priceBasis: nullableText.optional(),
-  }),
+  // Keys are checked one by one in sanitizeBefore (a bad value is dropped, never stored); here it only has to be an object.
+  before: z.record(z.string().max(32), z.unknown()),
 }).strict()
 
 const backupSchema = z.object({
@@ -77,7 +74,7 @@ const backupSchema = z.object({
   assets: z.array(assetSchema).max(200),
   events: z.array(entrySchema).max(5000),
   prices: z.array(priceSchema).max(5000),
-  revisions: z.array(revisionSchema).max(5000).optional(),
+  revisions: z.array(revisionSchema).max(20000).optional(),
   /** True when the file was made from an account with more correction records than a file holds. */
   revisionsTruncated: z.boolean().optional(),
 }).strict()
@@ -100,6 +97,32 @@ function assetInput(a: BackupAsset): CustomAssetInput {
   return i
 }
 
+const DECIMAL = /^\d{1,28}(\.\d{1,18})?$/
+const RATE = /^\d{1,10}(\.\d{1,18})?$/
+const isIso = (v: unknown): v is string => typeof v === 'string' && iso.safeParse(v).success
+const inRange = (isoText: string, now: number) => { const t = Date.parse(isoText); return t >= EARLIEST && t <= now + FUTURE_SLACK_MS }
+
+/**
+ * The earlier version of a corrected entry, as the history screen will show it. Only known keys with
+ * plausible values are kept: a corrupted or hand-edited file cannot put junk (a made-up type, a date that
+ * is not a date, hidden characters in a note) into the history. A bad key is dropped, not an error.
+ */
+function sanitizeBefore(raw: Record<string, unknown>): Record<string, string | boolean | null> {
+  const out: Record<string, string | boolean | null> = {}
+  const pick = (key: string, ok: (v: unknown) => boolean) => { const v = raw[key]; if (v === null || ok(v)) out[key] = v as string | null }
+  pick('type', (v) => v === 'BUY' || v === 'SELL' || v === 'OPENING')
+  pick('occurredAt', (v) => isIso(v))
+  for (const k of ['quantity', 'consideration', 'fee', 'basis']) pick(k, (v) => typeof v === 'string' && DECIMAL.test(v))
+  pick('fxRate', (v) => typeof v === 'string' && RATE.test(v))
+  pick('quote', (v) => v === 'PKR' || v === 'USDT')
+  pick('fxSource', (v) => v === 'platform' || v === 'manual')
+  pick('priceBasis', (v) => v === 'platform' || v === 'own')
+  if (typeof raw.note === 'string') out.note = cleanNote(raw.note)
+  else if (raw.note === null) out.note = null
+  if (typeof raw.zeroCost === 'boolean') out.zeroCost = raw.zeroCost
+  return out
+}
+
 /** Whole-file checks. Nothing is partly accepted: the first problem rejects the file. */
 function validate(raw: unknown): Backup {
   const r = backupSchema.safeParse(raw)
@@ -109,10 +132,12 @@ function validate(raw: unknown): Backup {
     throw bad(`This file is not a valid RupChain portfolio backup${where}.`)
   }
   const b = r.data
+  const now = Date.now()
   const assetIds = new Set<string>()
   for (const a of b.assets) {
     if (assetIds.has(a.id)) throw bad('This backup lists the same token twice.')
     assetIds.add(a.id)
+    if (!inRange(a.createdAt, now) || (a.archivedAt !== null && !inRange(a.archivedAt, now))) throw bad('This backup has a token with an impossible date.')
     if (a.linkedToRupChainToken) continue // re-derived from RupChain's own record of the token
     const v = validateCustomAsset(assetInput(a))
     if (!v.ok || v.value.name !== a.name) throw bad('This backup contains a token with invalid or unsafe details.')
@@ -129,9 +154,18 @@ function validate(raw: unknown): Backup {
     })
     if (!p.success) throw bad(`Entry ${i + 1} cannot be restored: ${p.error.issues[0]?.message ?? 'invalid values'}.`)
     if (e.fxRate !== null && cleanRate(e.fxRate) === null) throw bad(`Entry ${i + 1} has an invalid exchange rate.`)
+    if (e.editedAt && !inRange(e.editedAt, now)) throw bad(`Entry ${i + 1} has an impossible edit date.`)
   })
-  for (const p of b.prices) if (!assetIds.has(p.assetId)) throw bad('A price in this file points at a token that is not in the file.')
-  for (const rv of b.revisions ?? []) if (!assetIds.has(rv.assetId)) throw bad('A correction record points at a token that is not in the file.')
+  for (const p of b.prices) {
+    if (!assetIds.has(p.assetId)) throw bad('A price in this file points at a token that is not in the file.')
+    // A saved price is "the latest price" by its date, so a date in the future (or a zero price) would stick forever.
+    if (!inRange(p.observedAt, now)) throw bad('This backup has a price with an impossible date.')
+    if (/^0+(\.0+)?$/.test(p.price)) throw bad('This backup has a price of zero.')
+  }
+  for (const rv of b.revisions ?? []) {
+    if (!assetIds.has(rv.assetId)) throw bad('A correction record points at a token that is not in the file.')
+    if (!inRange(rv.createdAt, now)) throw bad('This backup has a correction record with an impossible date.')
+  }
   if (b.events.filter((e) => e.source === 'manual' && e.linkedTradeRef).length > MAX_TRADE_LINKED) {
     throw bad('This backup has too many entries tied to RupChain trades.')
   }
@@ -144,6 +178,21 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
   const manual = b.events.filter((e) => e.source === 'manual')
 
   // ── Read-only preparation (before anything is written) ──
+  // Tokens that mirror a RupChain token: found again through their keyed reference (the backup never holds the
+  // platform's token id) and created exactly as the trade import does, only when they have entries or prices to restore.
+  const linkedTarget = new Map<string, string>() // backup asset id -> account asset id
+  const needLinked = b.assets.filter((a) => a.linkedToRupChainToken && a.linkedTokenRef
+    && (manual.some((e) => e.assetId === a.id && !e.linkedTradeRef) || b.prices.some((p) => p.assetId === a.id)))
+  if (needLinked.length) {
+    // Read-only: the platform's token list is only read, to recompute each reference and match it.
+    const tokens = await db.ctmToken.findMany({ select: { id: true, name: true, symbol: true, network: true, contractAddress: true, officialWebsite: true } })
+    const byRef = new Map(tokens.map((t) => [linkedTokenRef(t.id), t]))
+    for (const a of needLinked) {
+      const token = byRef.get(a.linkedTokenRef!)
+      const id = token ? await ensureLinkedAsset(userId, token, { maxAssets: limits.maxAssets }) : null
+      if (id) linkedTarget.set(a.id, id)
+    }
+  }
   // An entry recorded for a RupChain trade is restored only if that trade is still one the platform lets you record
   // by hand (yours, finished, and not already counted automatically): otherwise it could be counted twice.
   const tradeTarget = new Map<string, string>() // backup event id -> account asset id
@@ -167,8 +216,8 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
     const toCreate: Prisma.PortfolioAssetCreateManyInput[] = []
     let assetsAlready = 0
     for (const a of b.assets) {
-      // Tokens that mirror a RupChain token are rebuilt by the trade import; entries on them come back only through their trade link.
-      if (a.linkedToRupChainToken) continue
+      // Tokens that mirror a RupChain token were resolved above (or have no home, and their entries are reported as not restored).
+      if (a.linkedToRupChainToken) { const t = linkedTarget.get(a.id); if (t) target.set(a.id, t); continue }
       const hit = mine.find((m) => m.id === a.id)
         ?? mine.find((m) => m.ctmTokenId === null && m.name === a.name && same(m.symbol) === same(a.symbol) && same(m.network) === same(a.network)
           && same(m.contractAddress) === same(a.contractAddress) && m.createdAt.getTime() === Date.parse(a.createdAt))
@@ -272,7 +321,7 @@ export async function restorePortfolioBackup(userId: string, raw: unknown, limit
       haveRevKeys.add(key)
       perEvent.set(r.eventId, (perEvent.get(r.eventId) ?? 0) + 1)
       userRevs += 1
-      revRows.push({ userId, eventId: r.eventId, assetId: r.assetId, action: r.action, before: r.before, createdAt: new Date(r.createdAt) })
+      revRows.push({ userId, eventId: r.eventId, assetId: r.assetId, action: r.action, before: sanitizeBefore(r.before), createdAt: new Date(r.createdAt) })
     }
     if (revRows.length) await tx.portfolioEventRevision.createMany({ data: revRows })
 

@@ -6,9 +6,9 @@ export const AMOUNT_RE = /^\d{1,28}(\.\d{1,18})?$/
 
 const amount = z.string().regex(AMOUNT_RE, 'Enter a plain number, for example 1250.5')
 const isZero = (s: string) => /^0+(\.0+)?$/.test(s)
-const EARLIEST = Date.parse('2009-01-03T00:00:00Z')
+export const EARLIEST = Date.parse('2009-01-03T00:00:00Z')
 /** Clock-skew allowance; records dated in the future are rejected. */
-const FUTURE_SLACK_MS = 5 * 60 * 1000
+export const FUTURE_SLACK_MS = 5 * 60 * 1000
 
 const quoteEnum = z.enum(['PKR', 'USDT'])
 /** PKR per 1 USDT, plain positive decimal. */

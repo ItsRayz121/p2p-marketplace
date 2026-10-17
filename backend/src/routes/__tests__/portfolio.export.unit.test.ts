@@ -13,7 +13,7 @@ vi.mock('../../lib/prisma', () => ({
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: async () => true }))
 vi.mock('../../services/portfolioImport.service', () => ({ runCtmImport: vi.fn() }))
-vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
+vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test', CNIC_HASH_SECRET: 'unit-test-secret-0123456789abcdef0123' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {
     const id = req.headers['x-test-user']
@@ -84,15 +84,22 @@ describe('GET /portfolio/export', () => {
     expect(JSON.stringify(d)).not.toContain('stray')
   })
   it('says so when the file cannot hold every correction record (and drops the extra row)', async () => {
-    const row = (i: number) => ({ eventId: `e${i}`, assetId: 'a1', action: 'edit', before: {}, createdAt: new Date(2026, 0, 1, 0, 0, i) })
-    m.rvFindMany.mockResolvedValue(Array.from({ length: 5001 }, (_, i) => row(5000 - i))) // newest first, one over the cap
+    const row = (i: number) => ({ eventId: `e${i}`, assetId: 'a1', action: 'edit', before: {}, createdAt: new Date(Date.UTC(2026, 0, 1) + i * 1000) })
+    m.rvFindMany.mockResolvedValue(Array.from({ length: 20001 }, (_, i) => row(20000 - i))) // newest first, one over the cap
     const d = (await get()).json().data
-    expect(m.rvFindMany.mock.calls[0]![0].take).toBe(5001)
+    expect(m.rvFindMany.mock.calls[0]![0].take).toBe(20001)
     expect(d.revisionsTruncated).toBe(true)
-    expect(d.revisions).toHaveLength(5000)
+    expect(d.revisions).toHaveLength(20000)
   })
   it('does not flag a file that holds every correction record', async () => {
     expect((await get()).json().data.revisionsTruncated).toBe(false)
+  })
+  it('gives a RupChain-linked token an opaque reference (never the platform id) so a restore can find it again', async () => {
+    const d = (await get()).json().data
+    expect(d.assets[0].linkedTokenRef).toMatch(/^[0-9a-f]{32}$/)
+    expect(d.assets[0].linkedTokenRef).not.toContain('tok1')
+    expect(d.assets[1].linkedTokenRef).toBeNull() // a token you typed in has none
+    expect(JSON.stringify(d)).not.toContain('tok1')
   })
   it('decimals are strings and no owner or source-system id leaks', async () => {
     const d = (await get()).json().data

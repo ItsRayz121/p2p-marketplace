@@ -13,6 +13,8 @@ export interface ExportAsset {
   createdAt: string
   archivedAt: string | null
   linkedToRupChainToken?: boolean
+  /** Account backups: a keyed hash that lets a restore find the RupChain token again (never the platform's own id). */
+  linkedTokenRef?: string | null
 }
 export interface ExportEvent {
   id: string
@@ -132,6 +134,7 @@ const quote = z.enum(['PKR', 'USDT'])
 const assetSchema = z.object({
   id: text(64), name: text(200), symbol: text(64).nullable(), sourceUrl: text(2048).nullable(), network: text(100).nullable(),
   contractAddress: text(200).nullable(), createdAt: iso, archivedAt: iso.nullable(), linkedToRupChainToken: z.boolean().optional(),
+  linkedTokenRef: z.string().regex(/^[0-9a-f]{32}$/).nullable().optional(),
 }).strict()
 
 const eventSchema = z.object({
@@ -157,11 +160,11 @@ const backupSchema = z.object({
   assets: z.array(assetSchema).max(200),
   events: z.array(eventSchema).max(5000),
   prices: z.array(priceSchema).max(5000),
-  revisions: z.array(revisionSchema).max(5000).optional(),
+  revisions: z.array(revisionSchema).max(20000).optional(),
   revisionsTruncated: z.boolean().optional(),
 }).strict()
 
-export const MAX_BACKUP_BYTES = 8 * 1024 * 1024
+export const MAX_BACKUP_BYTES = 16 * 1024 * 1024
 
 export type ParsedBackup = { ok: true; data: ExportData } | { ok: false; error: string }
 
@@ -187,6 +190,11 @@ export function parseBackup(raw: string): ParsedBackup {
   }
   if (r.data.events.some((e) => e.note !== null && cleanText(e.note) !== e.note)) {
     return { ok: false, error: 'This backup contains an entry with hidden or unsafe characters in its note.' }
+  }
+  // A saved price is "the latest price" by its date, so a date in the future (or a price of zero) would stick forever.
+  const earliest = Date.parse('2009-01-03T00:00:00Z'), latest = Date.now() + 5 * 60 * 1000
+  if (r.data.prices.some((p) => { const t = Date.parse(p.observedAt); return t < earliest || t > latest || /^0+(\.0+)?$/.test(p.price) })) {
+    return { ok: false, error: 'This backup contains a price with an impossible date or a price of zero.' }
   }
   const ids = new Set(r.data.assets.map((a) => a.id))
   if (ids.size !== r.data.assets.length) return { ok: false, error: 'This backup lists the same token twice.' }

@@ -63,10 +63,18 @@ TEST_DATABASE_URL=postgresql://postgres:pw@localhost:54329/rup npm run test:inte
 - **Every non-GET request needs a CSRF token**: `GET /api/v1/auth/csrf`, send it as `x-csrf-token`.
 - **Encoding**: Postgres must be UTF-8 (`start-db.mjs` sets it); the default on Windows is not, and migrations fail.
 
-## Open question for production (read-only checks, run by the owner)
+## New environments and disaster recovery
 
-To decide whether the migration chain needs a catch-up migration, run these two read-only queries against the
-production database (they change nothing):
+`npm run db:bootstrap -- --yes-this-is-a-new-empty-database` (with `DATABASE_URL` set) builds a complete database
+from nothing: tables from `prisma/schema.prisma`, then every existing migration recorded as applied, then Prisma's
+own `migrate status` and `migrate diff` checks. It refuses unless the database is completely empty, so it can never
+change an existing (e.g. production) database. After it, `prisma migrate deploy` works as usual.
+Covered by `npm run test:integration` (`dbBootstrap.integration.test.ts`).
+
+## Optional production check (read-only, run by the owner)
+
+Not needed for the above. It only tells us whether production carries a stray `ctm_trades` table, and how the two
+migrations that name it were applied there:
 
 ```sql
 SELECT to_regclass('public."ctm_trades"') AS snake_case, to_regclass('public."CtmTrade"') AS pascal_case;
@@ -74,7 +82,3 @@ SELECT migration_name, finished_at, applied_steps_count, logs
   FROM _prisma_migrations
  WHERE migration_name IN ('20260520220000_ctm_phase2_escrow', '20261011110000_admin_notification_preferences');
 ```
-
-If `snake_case` is non-null, production has an extra `ctm_trades` table the schema does not know about.
-If both migrations show `finished_at` set and `snake_case` is null, they were marked as applied by hand.
-Either way a fresh database cannot be built from the chain, which is why the local stack uses `db:push:local`.

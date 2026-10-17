@@ -107,6 +107,12 @@ describe('backup file', () => {
     j.revisions[0]!.assetId = 'nope'
     expect(parseBackup(JSON.stringify(j)).ok).toBe(false)
   })
+  it('rejects a price dated in the future or a price of zero (it would stay the "latest price" forever)', () => {
+    const future = parseBackup(buildBackup(data({ prices: [{ assetId: 'a1', price: '1200', quote: 'PKR', observedAt: '2999-01-01T00:00:00.000Z' }] })))
+    expect(future).toEqual({ ok: false, error: expect.stringMatching(/impossible date/) })
+    const zero = parseBackup(buildBackup(data({ prices: [{ assetId: 'a1', price: '0.00', quote: 'PKR', observedAt: '2026-10-01T00:00:00.000Z' }] })))
+    expect(zero.ok).toBe(false)
+  })
   it('is labelled with a format and version', () => {
     expect(JSON.parse(buildBackup(data()))).toMatchObject({ format: 'rupchain-portfolio-backup', version: 1 })
   })

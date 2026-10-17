@@ -14,6 +14,7 @@ import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor } from '../s
 import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/interest'
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
 import { restorePortfolioBackup } from '../services/portfolioRestore.service'
+import { linkedTokenRef } from '../lib/portfolio/linkedTokenRef'
 
 /** Per-user cap so a client bug or abuse cannot grow this table without bound. */
 export const MAX_PORTFOLIO_ASSETS = 200
@@ -758,20 +759,21 @@ export async function portfolioRoutes(app: FastifyInstance) {
         where: { userId }, orderBy: { observedAt: 'asc' }, take: MAX_PORTFOLIO_EVENTS,
         select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
       }),
-      // The newest corrections, so a restore keeps each entry's history. Capped like everything else here.
+      // Every correction an account can hold (the per-account cap), so a restore keeps each entry's full history.
       db.portfolioEventRevision.findMany({
         // One more than the cap, only to learn whether the file is missing the oldest corrections.
-        where: { userId }, orderBy: { createdAt: 'desc' }, take: MAX_PORTFOLIO_EVENTS + 1,
+        where: { userId }, orderBy: { createdAt: 'desc' }, take: MAX_REVISIONS_PER_USER + 1,
         select: { eventId: true, assetId: true, action: true, before: true, createdAt: true },
       }),
     ])
-    const revisionsTruncated = revisions.length > MAX_PORTFOLIO_EVENTS
+    const revisionsTruncated = revisions.length > MAX_REVISIONS_PER_USER
     if (revisionsTruncated) revisions.pop() // the extra, oldest row
     return reply.send({
       success: true,
       data: {
         exportedAt: new Date().toISOString(),
-        assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null })),
+        // linkedTokenRef is a keyed hash of the platform token id, never the id itself: it lets a restore find the token again.
+        assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null, linkedTokenRef: ctmTokenId !== null ? linkedTokenRef(ctmTokenId) : null })),
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
         events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString(), source: p.source })),
@@ -785,7 +787,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
   // RupChain trades. Own portfolio tables only (see portfolioRestore.service.ts); idempotent; all or nothing.
   app.post('/portfolio/restore', {
     preHandler: [authenticate],
-    bodyLimit: 8 * 1024 * 1024,
+    bodyLimit: 16 * 1024 * 1024, // 5,000 entries + 5,000 prices + 20,000 correction records still fit
     config: { rateLimit: { max: 3, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     const userId = req.user!.id

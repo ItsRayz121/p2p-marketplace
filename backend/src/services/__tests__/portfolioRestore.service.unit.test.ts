@@ -6,6 +6,7 @@ import { Prisma } from '@prisma/client'
 const h = await vi.hoisted(async () => {
   const { Prisma: P } = await import('@prisma/client')
   type Row = Record<string, unknown>
+  const ctmTokens: Row[] = []
   const tables: Record<string, Row[]> = { portfolioAsset: [], portfolioEvent: [], portfolioPriceObservation: [], portfolioEventRevision: [] }
   let seq = 0
   const matches = (row: Row, where: Row | undefined): boolean => {
@@ -43,6 +44,7 @@ const h = await vi.hoisted(async () => {
   const locks: string[] = []
   const api = {
     ...models,
+    ctmToken: { findMany: async () => ctmTokens.map((t) => ({ ...t })) },
     $executeRaw: async (strings: TemplateStringsArray, ...vals: unknown[]) => { locks.push(`${strings.join('?')}|${vals.join(',')}`); return 1 },
     $transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
       const dec = Object.fromEntries(Object.entries(tables).map(([k, rows]) => [k, rows.map((r) => ({ ...r }))]))
@@ -50,15 +52,16 @@ const h = await vi.hoisted(async () => {
     },
   }
   const guarded = new Proxy(api, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } })
-  return { tables, guarded, locks, check: vi.fn(), ensure: vi.fn() }
+  return { tables, ctmTokens, guarded, locks, check: vi.fn(), ensure: vi.fn() }
 })
 
 vi.mock('../../lib/prisma', () => ({ db: h.guarded }))
 vi.mock('../portfolioImport.service', () => ({ checkExcludedTradeRecordable: h.check, ensureLinkedAsset: h.ensure }))
-vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
+vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test', CNIC_HASH_SECRET: 'unit-test-secret-0123456789abcdef0123' } }))
 
 import { restorePortfolioBackup, type RestoreLimits } from '../portfolioRestore.service'
 import { AppError } from '../../lib/errors'
+import { linkedTokenRef } from '../../lib/portfolio/linkedTokenRef'
 
 const LIMITS: RestoreLimits = { maxAssets: 200, maxEvents: 5000, maxRevisionsPerEvent: 50, maxRevisionsPerUser: 20000 }
 const past = '2026-09-01T10:00:00.000Z'
@@ -81,7 +84,7 @@ const rowsOf = (t: string, userId = 'u1') => h.tables[t]!.filter((r) => r.userId
 
 beforeEach(() => {
   for (const k of Object.keys(h.tables)) h.tables[k] = []
-  h.check.mockReset(); h.ensure.mockReset(); h.locks.length = 0
+  h.check.mockReset(); h.ensure.mockReset(); h.locks.length = 0; h.ctmTokens.length = 0
 })
 
 describe('restorePortfolioBackup', () => {
@@ -223,6 +226,46 @@ describe('restorePortfolioBackup', () => {
     })
   })
 
+  describe('entries you typed on a RupChain-linked token', () => {
+    const token = { id: 'tok-real', name: 'Real', symbol: 'REAL', network: null, contractAddress: null, officialWebsite: null }
+    const backup = (ref: string | null) => file({
+      assets: [asset({ id: 'l1', name: 'Real', linkedToRupChainToken: true, linkedTokenRef: ref })],
+      events: [entry({ id: 'm1', assetId: 'l1' })],
+      prices: [{ assetId: 'l1', price: '5', quote: 'PKR', observedAt: past, source: 'manual' }],
+    })
+
+    it('are put back on the right linked token, found through the keyed reference', async () => {
+      h.ctmTokens.push(token, { ...token, id: 'tok-other' })
+      h.ensure.mockResolvedValue('linkedAsset9')
+      const r = await restore(backup(linkedTokenRef('tok-real')))
+      expect(h.ensure).toHaveBeenCalledTimes(1)
+      expect(h.ensure.mock.calls[0]![1]).toMatchObject({ id: 'tok-real' })
+      expect(r.entries.restored).toBe(1)
+      expect(r.prices.restored).toBe(1)
+      expect(rowsOf('portfolioEvent')[0]).toMatchObject({ assetId: 'linkedAsset9', linkedTradeRef: null })
+      expect(rowsOf('portfolioPriceObservation')[0]).toMatchObject({ assetId: 'linkedAsset9' })
+    })
+    it('are left out, with a note, when the token no longer exists on the platform', async () => {
+      h.ctmTokens.push({ ...token, id: 'tok-other' })
+      const r = await restore(backup(linkedTokenRef('tok-real')))
+      expect(h.ensure).not.toHaveBeenCalled()
+      expect(r.entries).toMatchObject({ restored: 0, notRestored: 1 })
+      expect(r.notes.join(' ')).toMatch(/could not be placed on a token/)
+    })
+    it('are left out for an older backup that has no reference, and the platform token list is not even read', async () => {
+      h.ctmTokens.push(token)
+      const r = await restore(backup(null))
+      expect(h.ensure).not.toHaveBeenCalled()
+      expect(r.entries.notRestored).toBe(1)
+    })
+    it('a wrong reference matches nothing (it cannot be used to claim another token)', async () => {
+      h.ctmTokens.push(token)
+      const r = await restore(backup('0'.repeat(32)))
+      expect(h.ensure).not.toHaveBeenCalled()
+      expect(r.entries.restored).toBe(0)
+    })
+  })
+
   it('leaves out other entries on RupChain-linked tokens, with a note', async () => {
     const r = await restore(file({ assets: [asset({ id: 'l1', linkedToRupChainToken: true })], events: [entry({ assetId: 'l1' })], prices: [] }))
     expect(r.entries).toMatchObject({ restored: 0, notRestored: 1 })
@@ -243,6 +286,12 @@ describe('restorePortfolioBackup', () => {
     it('a date in the future', () => rejects(file({ events: [entry({ occurredAt: '2999-01-01T00:00:00.000Z' })] }), /Entry 1 cannot be restored/))
     it('a buy with no amount', () => rejects(file({ events: [entry({ consideration: null })] }), /Entry 1 cannot be restored/))
     it('an unsafe token (link with a script scheme)', () => rejects(file({ assets: [asset({ sourceUrl: 'javascript:alert(1)' })] }), /invalid or unsafe/))
+    it('a price dated in the future (it would stay the "latest price" forever)', () => rejects(file({ prices: [{ assetId: 'a1', price: '1', quote: 'PKR', observedAt: '2999-01-01T00:00:00.000Z' }] }), /impossible date/))
+    it('a price dated before Bitcoin existed', () => rejects(file({ prices: [{ assetId: 'a1', price: '1', quote: 'PKR', observedAt: '1999-01-01T00:00:00.000Z' }] }), /impossible date/))
+    it('a price of zero', () => rejects(file({ prices: [{ assetId: 'a1', price: '0.000', quote: 'PKR', observedAt: past }] }), /price of zero/))
+    it('a token created in the future', () => rejects(file({ assets: [asset({ createdAt: '2999-01-01T00:00:00.000Z' })] }), /impossible date/))
+    it('an entry edited in the future', () => rejects(file({ events: [entry({ editedAt: '2999-01-01T00:00:00.000Z' })] }), /impossible edit date/))
+    it('a correction record dated in the future', () => rejects(file({ revisions: [{ eventId: 'e1', assetId: 'a1', action: 'edit', createdAt: '2999-01-01T00:00:00.000Z', before: {} }] }), /impossible date/))
     it('a price for a token that is not in the file', () => rejects(file({ prices: [{ assetId: 'zzz', price: '1', quote: 'PKR', observedAt: past }] }), /not in the file/))
   })
 
@@ -254,6 +303,18 @@ describe('restorePortfolioBackup', () => {
     await expect(restore(file(), 'u1', { ...LIMITS, maxAssets: 0 })).rejects.toBeInstanceOf(AppError)
     for (const t of Object.values(h.tables)) expect(t).toHaveLength(0)
   })
+  it('keeps junk out of the correction history: bad keys are dropped, notes are cleaned, the restore still succeeds', async () => {
+    const bidi = String.fromCharCode(0x202e)
+    const r = await restore(file({
+      revisions: [{
+        eventId: 'e1', assetId: 'a1', action: 'edit', createdAt: past,
+        before: { type: 'FOO', quantity: '9', occurredAt: 'not a date', fee: '1e9', quote: 'EUR', note: `hi${bidi}there`, zeroCost: 'yes', priceBasis: 'own', extra: { deep: [1, 2, 3] } },
+      }],
+    }))
+    expect(r.history.restored).toBe(1)
+    expect(rowsOf('portfolioEventRevision')[0]!.before).toEqual({ quantity: '9', note: 'hi there', priceBasis: 'own' })
+  })
+
   it('caps history per entry instead of failing the restore', async () => {
     const revs = [1, 2, 3].map((i) => ({ eventId: 'e1', assetId: 'a1', action: 'edit', createdAt: `2026-09-0${i}T00:00:00.000Z`, before: { type: 'BUY' } }))
     const r = await restore(file({ revisions: revs }), 'u1', { ...LIMITS, maxRevisionsPerEvent: 2 })
