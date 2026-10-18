@@ -256,6 +256,30 @@ export default function GasOrderDetailPage() {
     }
   }
 
+  async function handleVerify() {
+    if (!order) return
+    setActionError(null)
+    try {
+      const r = await adminApi.verifyGasDelivery(order.id)
+      setActionSuccess(r.adopted ? 'The delivery had landed on-chain — the order is being finalized as delivered.' : `On-chain status of the delivery tx: ${r.state}.`)
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Verify failed')
+    }
+  }
+
+  async function handleCancelStuck() {
+    if (!order) return
+    setActionError(null)
+    try {
+      const r = await adminApi.cancelStuckGasTx(order.id)
+      setActionSuccess(r?.message ?? 'Cancel transaction sent.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Cancel failed')
+    }
+  }
+
   async function handleRetry() {
     if (!order) return
     setActionError(null)
@@ -562,6 +586,12 @@ export default function GasOrderDetailPage() {
             </p>
           )}
           <div className="flex gap-3 flex-wrap">
+            {isFailed && (order.failureReason ?? '').includes('delivery_unconfirmed') && (
+              <>
+                <Button variant="secondary" size="sm" onClick={handleVerify}>Verify on-chain</Button>
+                <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Send a cancel transaction (same nonce, higher fee) to unstick this delivery? After it is mined, Retry / Manual delivery / Refund unlock.')) void handleCancelStuck() }}>Cancel stuck tx</Button>
+              </>
+            )}
             {(isFailed || isAwaitingRefund) && (
               <Button variant="primary" size="sm" onClick={() => setRetryOpen(true)}>
                 Retry Delivery

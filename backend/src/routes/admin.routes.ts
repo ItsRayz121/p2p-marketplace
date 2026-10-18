@@ -6869,6 +6869,37 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { status: 'delivered', deliveryTxHash: txHash, deliveryMode: 'manual' } })
   })
 
+  // ── POST /admin/gas/orders/:id/cancel-stuck-tx — unstick an EVM delivery that never got mined ──
+  // Replaces the stuck delivery with a 0-value self-transfer at the same nonce and a higher fee.
+  // Once that is mined the old tx can never land, so Retry / Manual delivery / Refund unlock.
+  app.post('/admin/gas/orders/:id/cancel-stuck-tx', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const order = await db.gasFeeOrder.findUnique({ where: { id } })
+    if (!order) throw Errors.NOT_FOUND('Gas fee order')
+    if (order.deliveryTxHash) throw new AppError('CONFLICT', 'This order already has a recorded delivery.', 409)
+    if (!order.unconfirmedDeliveryTxHash) throw new AppError('CONFLICT', 'No stuck delivery transaction on this order.', 409)
+    if (!['failed', 'awaiting_refund', 'refund_pending'].includes(order.status)) {
+      throw new AppError('CONFLICT', `Order is '${order.status}' — a cancel is only offered once the order needs manual review.`, 409)
+    }
+    const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+    const prior = await assessPriorAttempt(order)
+    if (prior.verdict === 'landed' && prior.txHash) {
+      await handBackLandedDelivery(id, prior.txHash)
+      return reply.send({ success: true, message: 'The delivery tx had actually landed — the order is being finalized as delivered. Nothing was cancelled.' })
+    }
+    if (prior.verdict === 'dead') return reply.send({ success: true, message: 'The earlier tx is already proven dead — you can Retry, deliver manually or refund now.' })
+    if (prior.verdict === 'none') throw new AppError('CONFLICT', 'No earlier attempt found.', 409)
+    const { cancelStuckEvmDelivery } = await import('../lib/gas/gas.delivery')
+    let r
+    try { r = await cancelStuckEvmDelivery(order) } catch (err) {
+      throw new AppError('CONFLICT', err instanceof Error ? err.message : 'Cancel failed', 409)
+    }
+    await createAuditLog(req.user!.id, 'GAS_ORDER_CANCEL_STUCK_TX', 'GasFeeOrder', id, {
+      orderRef: order.orderRef, stuckTxHash: order.unconfirmedDeliveryTxHash, cancelTxHash: r.cancelTxHash, nonce: r.nonce,
+    }, clientIp(req), req.headers['user-agent'] as string | undefined)
+    return reply.send({ success: true, message: `Cancel transaction sent (${r.cancelTxHash}). When it is mined (usually under a minute), press "Verify on-chain" — then Retry, Manual delivery or Refund will unlock.`, data: r })
+  })
+
   // ── POST /admin/gas/orders/:id/verify-delivery — live on-chain check of the delivery tx ──
   // Read-mostly: asks the chain (several RPC endpoints) whether the order's delivery
   // (or still-unconfirmed broadcast) tx is really mined. If it is, and the order is

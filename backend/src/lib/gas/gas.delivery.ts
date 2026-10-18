@@ -16,7 +16,7 @@ import {
   HOT_WALLET_INDEX,
 } from './gasWalletService'
 import { getHotWalletBalance } from './gas.balance'
-import { getWorkingRpcUrl } from './rpcFallback'
+import { getWorkingRpcUrl, getRpcUrlsInOrder } from './rpcFallback'
 import { getTransactionCount } from '../evmRpc'
 import { withHotWalletLock } from '../hotWalletLock'
 import type { GasChainId } from './gas.chains'
@@ -80,6 +80,43 @@ const ERC20_TRANSFER_ABI = [
  */
 export type DeliveryJournal = (attempt: { txHash: string; nonce?: number; from?: string }) => Promise<void>
 
+// A tx priced at the bare minimum can sit unmined for hours when the base fee rises, and then
+// blocks every later send from the same wallet (same nonce queue). Price with real headroom:
+// max fee = 2x the current base fee + tip, and a sane minimum tip on Ethereum mainnet.
+const MIN_TIP_WEI: Record<number, bigint> = { 1: 1_500_000_000n }
+
+async function pickEip1559Fees(
+  pub: ReturnType<typeof createPublicClient>,
+  viemChain: Chain,
+): Promise<{ maxFeePerGas?: bigint; maxPriorityFeePerGas?: bigint }> {
+  try {
+    const block = await pub.getBlock({ blockTag: 'latest' })
+    // Legacy-gas chain, or a chain with a zero base fee (BSC): viem's default pricing is fine.
+    if (block.baseFeePerGas == null || block.baseFeePerGas === 0n) return {}
+    const est = await pub.estimateFeesPerGas({ chain: viemChain, type: 'eip1559' } as never) as { maxPriorityFeePerGas?: bigint }
+    const floor = MIN_TIP_WEI[viemChain.id] ?? 0n
+    let tip = est.maxPriorityFeePerGas ?? 0n
+    if (tip < floor) tip = floor
+    return { maxPriorityFeePerGas: tip, maxFeePerGas: block.baseFeePerGas * 2n + tip }
+  } catch (err) {
+    logger.warn({ err, chain: viemChain.name }, 'fee headroom lookup failed — using viem default fees')
+    return {}
+  }
+}
+
+async function relayToOtherNodes(viemChain: Chain, usedUrl: string, serialized: `0x${string}`): Promise<void> {
+  const id = (Object.entries(EVM_TOKEN_CHAINS).find(([, v]) => v.chain.id === viemChain.id)?.[0]) ?? null
+  if (!id) return
+  const urls = getRpcUrlsInOrder(id === 'ETH' ? 'ETHEREUM' : (id as GasChainId), EVM_TOKEN_CHAINS[id]!.rpc)
+    .filter((u) => u !== usedUrl).slice(0, 2)
+  await Promise.all(urls.map(async (url) => {
+    try {
+      await createPublicClient({ chain: viemChain, transport: http(url, { timeout: 8_000, retryCount: 0 }) })
+        .sendRawTransaction({ serializedTransaction: serialized })
+    } catch { /* "already known" / nonce errors are expected and harmless — same tx */ }
+  }))
+}
+
 /**
  * Sign locally -> journal the deterministic hash -> broadcast ONCE. Preparing/signing happens
  * before anything leaves the process, so those steps may be retried freely. The broadcast is
@@ -102,7 +139,8 @@ async function signJournalBroadcast(args: {
   let lastErr: unknown
   for (let attempt = 1; attempt <= 3 && !serialized; attempt++) {
     try {
-      const prepared = await wallet.prepareTransactionRequest({ account, chain: viemChain, nonce, ...tx } as never)
+      const fees = await pickEip1559Fees(pub, viemChain)
+      const prepared = await wallet.prepareTransactionRequest({ account, chain: viemChain, nonce, ...fees, ...tx } as never)
       serialized = await wallet.signTransaction(prepared as never)
     } catch (err) {
       lastErr = err
@@ -118,6 +156,9 @@ async function signJournalBroadcast(args: {
   } catch (err) {
     logger.warn({ err, txHash: hash, chain: viemChain.name }, 'Delivery broadcast returned an error — outcome unknown, hash journaled for verification')
   }
+  // Also hand the SAME signed tx (same hash, same nonce — it can only ever execute once) to a few
+  // independent nodes, so one node that accepts but never propagates cannot strand the delivery.
+  await relayToOtherNodes(viemChain, rpcUrl, serialized)
   return hash
 }
 
@@ -951,5 +992,52 @@ export async function deliverGas(order: GasFeeOrder, hdIndex = HOT_WALLET_INDEX,
     case 'SUI':   return deliverSui(order, hdIndex, journal)
     case 'APT':   return deliverAptosNative(order, journal)
     default: throw new Error(`deliverGas: unsupported chain ${order.chain}`)
+  }
+}
+
+/**
+ * Cancel a stuck EVM delivery: broadcast a 0-value self-transfer from the same hot wallet at the
+ * SAME nonce with a much higher fee. Only one tx can ever use that nonce, so once either lands the
+ * other is dead. If the original wins it simply lands (the order is then adopted as delivered).
+ * Admin-triggered only; never called by automation.
+ */
+export async function cancelStuckEvmDelivery(order: Pick<GasFeeOrder, 'chain' | 'unconfirmedDeliveryTxHash' | 'deliveryNonce' | 'fromHotWallet'>): Promise<{ cancelTxHash: string; nonce: number }> {
+  const m = EVM_TOKEN_CHAINS[order.chain]
+  if (!m) throw new Error(`Cancel is only available for EVM chains (got ${order.chain})`)
+  if (order.deliveryNonce === null || !order.fromHotWallet || !order.unconfirmedDeliveryTxHash) {
+    throw new Error('This order has no journaled nonce / sender, so the stuck tx cannot be cancelled automatically.')
+  }
+  const sender = order.fromHotWallet
+  const wallets = await db.gasHotWallet.findMany({ where: { chain: order.chain as never } })
+  const hw = wallets.find((w) => w.address.toLowerCase() === sender.toLowerCase())
+  if (!hw) throw new Error(`Hot wallet ${sender} not found for ${order.chain}`)
+
+  const nonce = order.deliveryNonce
+  const rpcUrl = await getWorkingRpcUrl(order.chain === 'ETH' ? 'ETHEREUM' : (order.chain as GasChainId), m.rpc)
+  const seed = decryptGasSeed()
+  try {
+    const account = privateKeyToAccount(deriveEvmPrivateKeyHex(seed, hw.hdIndex) as `0x${string}`)
+    if (account.address.toLowerCase() !== sender.toLowerCase()) throw new Error('Derived hot wallet does not match the order sender')
+    return await withHotWalletLock(order.chain, async () => {
+      const pub = createPublicClient({ chain: m.chain, transport: http(rpcUrl) })
+      const wallet = createWalletClient({ chain: m.chain, transport: http(rpcUrl), account })
+      const confirmed = await getTransactionCount(rpcUrl, order.chain, account.address, 'latest')
+      if (confirmed > nonce) throw new Error('That nonce is already used on-chain — nothing to cancel.')
+      const orig = await pub.getTransaction({ hash: order.unconfirmedDeliveryTxHash as `0x${string}` }).catch(() => null)
+      const now = await pickEip1559Fees(pub, m.chain)
+      let maxFee = (now.maxFeePerGas ?? 0n) * 2n
+      let tip = (now.maxPriorityFeePerGas ?? 0n) * 2n
+      // A replacement must beat the original by >=10% on both fee fields; take 50% headroom.
+      if (orig?.maxFeePerGas && orig.maxFeePerGas * 3n / 2n > maxFee) maxFee = orig.maxFeePerGas * 3n / 2n
+      if (orig?.maxPriorityFeePerGas && orig.maxPriorityFeePerGas * 3n / 2n > tip) tip = orig.maxPriorityFeePerGas * 3n / 2n
+      if (tip > maxFee) tip = maxFee
+      const base = { account, chain: m.chain, to: account.address, value: 0n, nonce, gas: 21_000n } as const
+      const cancelTxHash = maxFee > 0n
+        ? await wallet.sendTransaction({ ...base, maxFeePerGas: maxFee, maxPriorityFeePerGas: tip })
+        : await wallet.sendTransaction({ ...base, ...(orig?.gasPrice ? { gasPrice: orig.gasPrice * 3n / 2n } : {}) })
+      return { cancelTxHash, nonce }
+    })
+  } finally {
+    seed.fill(0)
   }
 }

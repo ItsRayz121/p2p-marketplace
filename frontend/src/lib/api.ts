@@ -3168,6 +3168,10 @@ export const adminApi = {
     apiRequest<unknown>(`/admin/gas/orders/${ref}`),
   retryGasOrder: (id: string) =>
     apiRequest<void>(`/admin/gas/orders/${id}/retry`, { method: 'POST' }),
+  cancelStuckGasTx: (id: string) =>
+    apiRequest<{ message?: string }>(`/admin/gas/orders/${id}/cancel-stuck-tx`, { method: 'POST' }),
+  verifyGasDelivery: (id: string) =>
+    apiRequest<{ state: string; txHash: string; adopted?: boolean }>(`/admin/gas/orders/${id}/verify-delivery`, { method: 'POST' }),
   refundGasOrder: (id: string, opts?: { mode?: 'auto' | 'manual'; toAddress?: string; toNetwork?: string }) =>
     apiRequest<{ message?: string }>(`/admin/gas/orders/${id}/refund`, { method: 'POST', body: JSON.stringify(opts ?? {}) }),
 

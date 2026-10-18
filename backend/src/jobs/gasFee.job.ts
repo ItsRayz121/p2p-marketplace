@@ -18,7 +18,7 @@ import { markShareRewardUsed } from '../lib/gas/gas.share'
 import { awardGasPointsForDelivery } from '../services/airdrop.service'
 import { REFUND_WINDOW_MS, AUTO_REFUND_SAFETY_MS, RETRY_INTERVAL_MS } from '../lib/gas/gas.refundWindow'
 import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
-import { awaitTxInclusion, getTxStatus } from '../lib/gas/gas.confirmation'
+import { awaitTxInclusion, getTxStatus, isEvmGasChain } from '../lib/gas/gas.confirmation'
 import type { TxStatus } from '../lib/gas/gas.confirmation'
 import type { GasFeeOrder } from '@prisma/client'
 
@@ -201,6 +201,36 @@ async function failUnconfirmedBroadcast(orderId: string, order: GasFeeOrder, txH
     source: 'worker', event: 'delivery_unconfirmed', txHash, expectedChain: order.chain, reason: status.state, detail: msg,
   })
   await markNeedsManual(orderId, order, msg)
+  if (status.state !== 'reverted') await autoCancelStuckEvm(orderId, order.chain, txHash)
+}
+
+/**
+ * A stuck EVM tx also blocks every later send from the same hot wallet (same nonce queue), so it is
+ * cleared automatically: a 0-value self-transfer at the SAME nonce. This can never pay anyone — it
+ * only guarantees the stuck delivery can no longer land, which unlocks Retry / Manual delivery /
+ * Refund for the admin. It sends no gas to the customer and the order stays `failed` for a human.
+ */
+async function autoCancelStuckEvm(orderId: string, chain: string, txHash: string): Promise<void> {
+  if (!isEvmGasChain(chain)) return
+  try {
+    const fresh = await db.gasFeeOrder.findUnique({ where: { id: orderId } })
+    if (!fresh || fresh.status !== 'failed' || fresh.unconfirmedDeliveryTxHash !== txHash) return
+    const prior = await assessPriorAttempt(fresh)
+    if (prior.verdict === 'landed' && prior.txHash) {
+      const { handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+      await handBackLandedDelivery(orderId, prior.txHash)
+      return
+    }
+    if (prior.verdict !== 'unresolved') return
+    const { cancelStuckEvmDelivery } = await import('../lib/gas/gas.delivery')
+    const r = await cancelStuckEvmDelivery(fresh)
+    await recordGasAudit({ orderId }, {
+      source: 'worker', event: 'stuck_tx_auto_cancelled', txHash: r.cancelTxHash, expectedChain: chain,
+      detail: `Stuck delivery ${txHash} replaced by a 0-value cancel tx at nonce ${r.nonce}. Once mined, Retry / Manual delivery / Refund unlock.`,
+    })
+  } catch (err) {
+    logger.warn({ err, orderId, txHash }, 'auto-cancel of stuck EVM delivery failed — admin can use "Cancel stuck tx"')
+  }
 }
 
 // Park the broadcast, wait briefly for inclusion, then either finalize, fail, or hand
