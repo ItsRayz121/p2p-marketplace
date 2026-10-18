@@ -163,7 +163,7 @@ describe('tapping a button', () => {
     await handleGasCallback(tap(rows[1]![0]!.callback_data!))
     expect(m.approve).not.toHaveBeenCalled()
     const restored = (called('editMessageReplyMarkup').at(-1)!.reply_markup as { inline_keyboard: TgKeyboard }).inline_keyboard
-    expect(restored[0]!.map((b) => b.text)).toEqual(['✅ Approve', '❌ Reject'])
+    expect(restored[0]!.map((b) => b.text)).toEqual(['✅ Approve', '❌ Reject', '🔍 Review'])
   })
 
   it('refuses a tap from a different Telegram account than the button was made for', async () => {
