@@ -129,9 +129,11 @@ async function signJournalBroadcast(args: {
   account: ReturnType<typeof privateKeyToAccount>
   tx: { to: `0x${string}`; value?: bigint; data?: `0x${string}` }
   nonce: number
+  /** Retry after a stuck/cancelled attempt: pay the higher, reliable fee. First attempts use the normal low fee. */
+  highFee?: boolean
   journal?: DeliveryJournal
 }): Promise<string> {
-  const { viemChain, rpcUrl, account, tx, nonce, journal } = args
+  const { viemChain, rpcUrl, account, tx, nonce, journal, highFee } = args
   const wallet = createWalletClient({ chain: viemChain, transport: http(rpcUrl), account })
   const pub = createPublicClient({ chain: viemChain, transport: http(rpcUrl) })
 
@@ -139,7 +141,7 @@ async function signJournalBroadcast(args: {
   let lastErr: unknown
   for (let attempt = 1; attempt <= 3 && !serialized; attempt++) {
     try {
-      const fees = await pickEip1559Fees(pub, viemChain)
+      const fees = highFee ? await pickEip1559Fees(pub, viemChain) : {}
       const prepared = await wallet.prepareTransactionRequest({ account, chain: viemChain, nonce, ...fees, ...tx } as never)
       serialized = await wallet.signTransaction(prepared as never)
     } catch (err) {
@@ -180,7 +182,7 @@ async function deliverEvmTokenTransfer(
 
   return withHotWalletLock(chainKey, async () => {
     const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
-    return signJournalBroadcast({ viemChain, rpcUrl, account, tx: { to: contract, data }, nonce, ...(journal ? { journal } : {}) })
+    return signJournalBroadcast({ viemChain, rpcUrl, account, tx: { to: contract, data }, nonce, highFee: order.retryCount > 0, ...(journal ? { journal } : {}) })
   })
 }
 
@@ -457,7 +459,7 @@ async function deliverEvm(
   return withHotWalletLock(chainKey, async () => {
     const nonce = await getTransactionCount(rpcUrl, chainKey, account.address, 'pending')
     return signJournalBroadcast({
-      viemChain, rpcUrl, account, nonce,
+      viemChain, rpcUrl, account, nonce, highFee: order.retryCount > 0,
       tx: { to: order.toAddress as `0x${string}`, value: parseEther(order.gasAmountNative.toString()) },
       ...(journal ? { journal } : {}),
     })
@@ -1024,12 +1026,15 @@ export async function cancelStuckEvmDelivery(order: Pick<GasFeeOrder, 'chain' | 
       const confirmed = await getTransactionCount(rpcUrl, order.chain, account.address, 'latest')
       if (confirmed > nonce) throw new Error('That nonce is already used on-chain — nothing to cancel.')
       const orig = await pub.getTransaction({ hash: order.unconfirmedDeliveryTxHash as `0x${string}` }).catch(() => null)
-      const now = await pickEip1559Fees(pub, m.chain)
-      let maxFee = (now.maxFeePerGas ?? 0n) * 2n
-      let tip = (now.maxPriorityFeePerGas ?? 0n) * 2n
-      // A replacement must beat the original by >=10% on both fee fields; take 50% headroom.
-      if (orig?.maxFeePerGas && orig.maxFeePerGas * 3n / 2n > maxFee) maxFee = orig.maxFeePerGas * 3n / 2n
-      if (orig?.maxPriorityFeePerGas && orig.maxPriorityFeePerGas * 3n / 2n > tip) tip = orig.maxPriorityFeePerGas * 3n / 2n
+      // Cheapest cancel that still replaces the original: the node requires >=10% more on BOTH fee
+      // fields, so use +20%, but never less than what the network needs right now to include it.
+      const head = await pub.getBlock({ blockTag: 'latest' }).catch(() => null)
+      const baseFee = head?.baseFeePerGas ?? 0n
+      const est = await pub.estimateFeesPerGas({ chain: m.chain, type: 'eip1559' } as never).catch(() => null) as { maxPriorityFeePerGas?: bigint } | null
+      let tip = est?.maxPriorityFeePerGas ?? 0n
+      if (orig?.maxPriorityFeePerGas && orig.maxPriorityFeePerGas * 12n / 10n + 1n > tip) tip = orig.maxPriorityFeePerGas * 12n / 10n + 1n
+      let maxFee = baseFee > 0n ? baseFee * 5n / 4n + tip : 0n
+      if (orig?.maxFeePerGas && orig.maxFeePerGas * 12n / 10n + 1n > maxFee) maxFee = orig.maxFeePerGas * 12n / 10n + 1n
       if (tip > maxFee) tip = maxFee
       const base = { account, chain: m.chain, to: account.address, value: 0n, nonce, gas: 21_000n } as const
       const cancelTxHash = maxFee > 0n
