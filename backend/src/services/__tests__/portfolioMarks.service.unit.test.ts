@@ -3,6 +3,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const m = vi.hoisted(() => ({ trades: vi.fn(), tokens: vi.fn(), audit: vi.fn() }))
 vi.mock('../../lib/prisma', () => ({ db: { ctmTrade: { findMany: m.trades }, ctmToken: { findMany: m.tokens }, auditLog: { findMany: m.audit } } }))
 
+vi.mock('../../lib/logger', () => ({ logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
+
 import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor, resetPlatformMarkCache } from '../portfolioMarks.service'
 
 beforeEach(() => {

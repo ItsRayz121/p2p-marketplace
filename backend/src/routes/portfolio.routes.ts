@@ -1,16 +1,20 @@
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
+import { D } from '../lib/portfolio/decimal'
 import { authenticate } from '../middleware/auth.middleware'
 import { db } from '../lib/prisma'
 import { AppError, Errors } from '../lib/errors'
 import { validateCustomAsset, type CustomAssetInput } from '../lib/portfolioAsset'
 import { eventSchema, priceSchema, cleanNote } from '../lib/portfolio/eventInput'
-import { buildSummary, type EventRow as SummaryEvent } from '../lib/portfolio/summaryBuilder'
+import { buildSummary } from '../lib/portfolio/summaryBuilder'
+import { computePeriodPerformance, sameDayInZone } from '../lib/portfolio/periodPerformance'
+import { openingMarketTotal, readLots, type OpeningLot } from '../lib/portfolio/period'
+import { toSummaryRow } from '../lib/portfolio/rows'
 import { chooseFxStamp, cleanRate, type Quote } from '../lib/portfolio/currency'
 import { computePerformance, currentMarksIn } from '../lib/portfolio/performance'
 import { getStringConfig } from '../services/platformFlags.service'
 import { runUsdtImport } from '../services/portfolioUsdtImport.service'
-import { USDT_ASSET_KEY, impliedUsdtRate } from '../lib/portfolio/usdtImport'
+import { USDT_ASSET_KEY } from '../lib/portfolio/usdtImport'
 import { mergeImportReports } from '../lib/portfolio/mergeImportReports'
 import { runCtmImport, listExcludedTrades, recordExcludedBatch, checkExcludedTradeRecordable, ensureLinkedAsset } from '../services/portfolioImport.service'
 import { platformMarksFor, platformHistoryFor, mergeMarks, logosFor, slugsFor } from '../services/portfolioMarks.service'
@@ -18,6 +22,8 @@ import { identityKey, MAX_ACTIVE_INTERESTS_PER_USER } from '../lib/portfolio/int
 import { isPortfolioEnabled } from '../lib/portfolio/flag'
 import { restorePortfolioBackup } from '../services/portfolioRestore.service'
 import { linkedTokenRef } from '../lib/portfolio/linkedTokenRef'
+import { currentRows, ensurePeriodForNewPortfolio, getActivePeriod, type PeriodView } from '../services/portfolioPeriod.service'
+import { snapshotSoon } from '../services/portfolioSnapshot.service'
 
 /** Per-user cap so a client bug or abuse cannot grow this table without bound. */
 export const MAX_PORTFOLIO_ASSETS = 200
@@ -25,11 +31,12 @@ export const MAX_PORTFOLIO_EVENTS = 5000
 /** Corrections kept per entry, and revisions kept per user, so history cannot grow without bound. */
 export const MAX_REVISIONS_PER_EVENT = 50
 export const MAX_REVISIONS_PER_USER = 20000
+const ARCHIVED_ENTRY_MESSAGE = 'This entry is part of your archived history (from before tracking started), so it is kept as it was. If something is missing now, record a new entry.'
 
 const EVENT_SELECT = {
   id: true, assetId: true, type: true, occurredAt: true, quantity: true, consideration: true,
   fee: true, basis: true, zeroCost: true, quote: true, fxRate: true, fxSource: true, note: true, createdAt: true,
-  source: true, voidedAt: true, voidReason: true, editedAt: true, linkedTradeRef: true, priceBasis: true,
+  source: true, voidedAt: true, voidReason: true, editedAt: true, linkedTradeRef: true, priceBasis: true, archivedInPeriodId: true,
 } as const
 
 type EventRow = {
@@ -38,7 +45,7 @@ type EventRow = {
   fee: { toFixed(): string } | null; basis: { toFixed(): string } | null
   zeroCost: boolean; quote: string; fxRate: { toFixed(): string } | null; fxSource: string | null
   note: string | null; createdAt: Date
-  source: string; voidedAt: Date | null; voidReason: string | null; editedAt?: Date | null; linkedTradeRef?: string | null; priceBasis?: string | null
+  source: string; voidedAt: Date | null; voidReason: string | null; editedAt?: Date | null; linkedTradeRef?: string | null; priceBasis?: string | null; archivedInPeriodId?: string | null
 }
 
 /** Decimal columns leave the API as strings, never numbers. */
@@ -68,6 +75,8 @@ function eventDto(r: EventRow) {
     linkedTradeRef: r.linkedTradeRef ?? null,
     /** 'platform' = the RupChain price was used, 'own' = the price the user got; null if not stated. */
     priceBasis: r.priceBasis ?? null,
+    /** True for an entry from before tracking started: kept for the record, read-only, and not part of the current period. */
+    archived: Boolean(r.archivedInPeriodId),
     createdAt: r.createdAt.toISOString(),
   }
 }
@@ -84,8 +93,8 @@ function backupBefore(raw: unknown) {
 
 /** The part of an entry a correction can change, as plain strings, for the revision log. */
 function revisionSnapshot(r: EventRow) {
-  const { id, assetId, source, voided, voidReason, createdAt, editedAt, linkedTradeRef, ...fields } = eventDto(r)
-  void id; void assetId; void source; void voided; void voidReason; void createdAt; void editedAt; void linkedTradeRef
+  const { id, assetId, source, voided, voidReason, createdAt, editedAt, linkedTradeRef, archived, ...fields } = eventDto(r)
+  void id; void assetId; void source; void voided; void voidReason; void createdAt; void editedAt; void linkedTradeRef; void archived
   return fields
 }
 
@@ -116,34 +125,6 @@ function assetDto<T extends { archivedAt: Date | null }>(a: T) {
   return { ...a, archivedAt: a.archivedAt ? a.archivedAt.toISOString() : null }
 }
 
-type DbEvent = {
-  source?: string
-  id: string; assetId: string; type: string; occurredAt: Date
-  quantity: { toFixed(): string }; consideration: { toFixed(): string } | null
-  fee: { toFixed(): string } | null; basis: { toFixed(): string } | null
-  zeroCost: boolean; quote: string; fxRate: { toFixed(): string } | null
-}
-
-/** DB row -> plain strings for the pure calculation modules (rates validated, never trusted blindly). */
-function toSummaryRow(r: DbEvent, platformRate?: string | null, usdtAssets?: ReadonlySet<string>): SummaryEvent {
-  // Imported RupChain trades paid in PKR carry no USDT rate of their own: use the platform rate so the USDT view works.
-  const own = cleanRate(r.fxRate?.toFixed())
-  return {
-    id: r.id,
-    assetId: r.assetId,
-    type: r.type as SummaryEvent['type'],
-    occurredAt: r.occurredAt,
-    quantity: r.quantity.toFixed(),
-    consideration: r.consideration?.toFixed() ?? null,
-    fee: r.fee?.toFixed() ?? null,
-    basis: r.basis?.toFixed() ?? null,
-    zeroCost: r.zeroCost,
-    quote: r.quote as Quote,
-    // For the USDT holding the price per USDT is the rate itself, so an entry for USDT bought or sold elsewhere converts at what it traded at.
-    fxRate: own ?? (r.source === 'ctm' ? cleanRate(platformRate) : usdtAssets?.has(r.assetId) && r.quote === 'PKR' ? impliedUsdtRate(r.consideration?.toFixed() ?? null, r.quantity.toFixed()) : null),
-  }
-}
-
 /** Platform trade prices for tokens that mirror a RupChain token, merged under the user's own newer prices. */
 async function withPlatformMarks(userId: string, manual: Array<{ assetId: string; price: string; quote: Quote; observedAt: Date }>) {
   const linked = await db.portfolioAsset.findMany({ where: { userId, ctmTokenId: { not: null } }, select: { id: true, ctmTokenId: true } })
@@ -172,6 +153,38 @@ function parseBody(body: unknown) {
     throw new AppError('VALIDATION_ERROR', first, 400)
   }
   return r.value
+}
+
+/**
+ * The opening holdings of a tracking period as one read-only line for a token's history. Its cost is the ACTUAL
+ * remaining cost of the units (null = not known; never the market price of that day).
+ */
+function baselineEntry(period: PeriodView, assetId: string, holdingId: string, quantity: string, lots: OpeningLot[]) {
+  const allKnown = lots.length > 0 && lots.every((l) => l.basisPkr !== null)
+  const basis = allKnown ? lots.reduce((sum, l) => sum.plus(l.basisPkr!), new D(0)).toFixed() : null
+  return {
+    id: `open:${holdingId}`,
+    assetId,
+    type: 'OPENING' as const,
+    occurredAt: period.startedAt.toISOString(),
+    quantity,
+    consideration: null,
+    fee: null,
+    basis,
+    zeroCost: basis !== null && new D(basis).isZero(),
+    quote: 'PKR' as const,
+    fxRate: null,
+    fxSource: null,
+    note: 'Holdings when tracking started (from your earlier records)',
+    source: 'baseline' as const,
+    voided: false,
+    voidReason: null,
+    editedAt: null,
+    linkedTradeRef: null,
+    priceBasis: null,
+    archived: false,
+    createdAt: period.startedAt.toISOString(),
+  }
 }
 
 /**
@@ -352,17 +365,28 @@ export async function portfolioRoutes(app: FastifyInstance) {
     })
   })
 
+  // One token's entries. By default the CURRENT period: the opening holdings tracking started with (a read-only
+  // line carrying their actual cost) followed by the entries since. `scope=archived` lists the earlier history
+  // (kept for the record, read-only); `scope=all` lists both.
+  const assetEventsQuery = z.object({ scope: z.enum(['current', 'archived', 'all']).default('current') })
   app.get('/portfolio/assets/:id/events', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const { id } = req.params as { id: string }
+    const q = assetEventsQuery.safeParse(req.query)
+    if (!q.success) throw new AppError('VALIDATION_ERROR', 'Invalid scope', 400)
     await ownedAsset(userId, id, { allowArchived: true })
+    const scope = q.data.scope
+    const period = scope === 'archived' ? null : await getActivePeriod(userId)
     const rows = await db.portfolioEvent.findMany({
-      where: { userId, assetId: id },
+      where: { userId, assetId: id, ...(scope === 'archived' ? { archivedInPeriodId: { not: null } } : period && scope === 'current' ? { archivedInPeriodId: null } : {}) },
       orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }],
       take: MAX_PORTFOLIO_EVENTS,
       select: EVENT_SELECT,
     })
-    return reply.send({ success: true, data: rows.map(eventDto) })
+    const items: unknown[] = rows.map(eventDto)
+    const holding = period?.holdings.find((h) => h.assetId === id)
+    if (period && holding && scope !== 'archived') items.unshift(baselineEntry(period, id, holding.id, holding.quantity, readLots(holding.lots)))
+    return reply.send({ success: true, data: items })
   })
 
   app.post('/portfolio/assets/:id/events', { preHandler: [authenticate] }, async (req, reply) => {
@@ -431,6 +455,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       }
       throw err
     }
+    snapshotSoon(userId, 'event')
     return reply.code(201).send({ success: true, data: eventDto(row) })
   })
 
@@ -443,6 +468,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     if (!entry) throw Errors.NOT_FOUND('Entry')
     // Entries read from a RupChain trade mirror a platform record and cannot be edited or removed here.
     if (entry.source !== 'manual') throw Errors.CONFLICT('This entry was imported from a RupChain trade and is read-only.')
+    if (entry.archivedInPeriodId) throw Errors.CONFLICT(ARCHIVED_ENTRY_MESSAGE)
     const removed = await db.$transaction(async (tx) => {
       const res = await tx.portfolioEvent.deleteMany({ where: { id: eventId, assetId: id, userId, source: 'manual' } })
       if (res.count === 0) return false
@@ -452,6 +478,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       return true
     })
     if (!removed) throw Errors.NOT_FOUND('Entry')
+    snapshotSoon(userId, 'event')
     return reply.send({ success: true })
   })
 
@@ -472,6 +499,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
     const current = await db.portfolioEvent.findFirst({ where: { id: eventId, assetId: id, userId }, select: EVENT_SELECT })
     if (!current) throw Errors.NOT_FOUND('Entry')
     if (current.source !== 'manual') throw Errors.CONFLICT('This entry was imported from a RupChain trade and is read-only.')
+    if (current.archivedInPeriodId) throw Errors.CONFLICT(ARCHIVED_ENTRY_MESSAGE)
     // An entry recorded for a RupChain trade keeps the side you had in that trade.
     if (current.linkedTradeRef && e.type !== current.type) {
       throw new AppError('VALIDATION_ERROR', 'This entry was recorded for a RupChain trade, so it stays a ' + (current.type === 'BUY' ? 'buy' : 'sell'), 400)
@@ -528,6 +556,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       return tx.portfolioEvent.findFirst({ where: { id: eventId, userId }, select: EVENT_SELECT })
     })
     if (!saved) throw Errors.CONFLICT('This entry was changed somewhere else. Reload it and try again.')
+    snapshotSoon(userId, 'event')
     return reply.send({ success: true, data: eventDto(saved) })
   })
 
@@ -565,19 +594,18 @@ export async function portfolioRoutes(app: FastifyInstance) {
       data: { userId, assetId: id, price: parsed.data.price, quote: parsed.data.quote ?? 'PKR', source: parsed.data.source ?? 'manual' },
       select: { price: true, quote: true, observedAt: true },
     })
+    snapshotSoon(userId, 'event')
     return reply.code(201).send({ success: true, data: { price: row.price.toFixed(), quote: row.quote, observedAt: row.observedAt.toISOString() } })
   })
 
-  // FIFO summary over the caller's recorded events and latest manual prices, in PKR or USDT.
-  // Unknown stays unknown: a token whose records lack a usable exchange rate is left out and listed.
-  app.get('/portfolio/summary', { preHandler: [authenticate] }, async (req, reply) => {
-    const userId = req.user!.id
-    const q = currencyQuery.safeParse(req.query)
-    if (!q.success) throw new AppError('VALIDATION_ERROR', 'currency must be PKR or USDT', 400)
-
-    const [events, prices, platformRate, usdtRows] = await Promise.all([
+  // The one place every figure is built from, so the summary, the chart and the exports cannot disagree:
+  // the opening baseline of the user's tracking period (with its ACTUAL costs) plus the entries since. A user
+  // with no period yet (an existing portfolio waiting for the cutover) is shown exactly as before.
+  async function loadContext(userId: string, currency: Quote) {
+    const period = (await getActivePeriod(userId)) ?? (await ensurePeriodForNewPortfolio(userId))
+    const [events, prices, platformRate, assets] = await Promise.all([
       db.portfolioEvent.findMany({
-        where: { userId, voidedAt: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
+        where: { userId, voidedAt: null, archivedInPeriodId: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
         select: EVENT_SELECT,
       }),
       db.portfolioPriceObservation.findMany({
@@ -585,49 +613,113 @@ export async function portfolioRoutes(app: FastifyInstance) {
         select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
       }),
       getStringConfig('rate_USDT_PKR', ''),
-      db.portfolioAsset.findMany({ where: { userId, ctmTokenId: USDT_ASSET_KEY }, select: { id: true } }),
+      db.portfolioAsset.findMany({ where: { userId, OR: [{ ctmTokenId: USDT_ASSET_KEY }, { archivedAt: { not: null } }] }, select: { id: true, ctmTokenId: true, archivedAt: true } }),
     ])
-    const usdtAssets = new Set(usdtRows.map((a) => a.id))
-
-    const rows = events.map((e) => toSummaryRow(e, platformRate, usdtAssets))
+    const usdtAssets = new Set(assets.filter((a) => a.ctmTokenId === USDT_ASSET_KEY).map((a) => a.id))
+    const archivedAssets = new Set(assets.filter((a) => a.archivedAt !== null).map((a) => a.id))
     const marks = await withPlatformMarks(userId, prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt, source: p.source })))
+    const rows = currentRows({ events, period, currency, platformRate, usdtAssets })
+    return { period, rows, marks, platformRate, archivedAssets }
+  }
 
+  /** Opening MARKET value of the baseline in `currency` (null unless every held token had a valid quote that day). */
+  function openingMarketIn(period: PeriodView, currency: Quote): string | null {
+    return openingMarketTotal(period.holdings.map((h) => ({ quantity: h.quantity, market: h.market })), currency, period.fxUsdtPkr)
+  }
+
+  // Results over the caller's recorded entries and the best current prices, in PKR or USDT. Unknown stays
+  // unknown: a token whose records lack a usable exchange rate keeps its quantity and value, its cost is
+  // unknown. Quantities never depend on the currency shown.
+  app.get('/portfolio/summary', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const q = currencyQuery.safeParse(req.query)
+    if (!q.success) throw new AppError('VALIDATION_ERROR', 'currency must be PKR or USDT', 400)
+
+    const { period, rows, marks, platformRate, archivedAssets } = await loadContext(userId, q.data.currency)
     try {
-      const data = buildSummary({
-        events: rows,
-        prices: marks,
-        currency: q.data.currency,
-        platformRate,
+      const data = buildSummary({ events: rows, prices: marks, currency: q.data.currency, platformRate })
+      const positions = data.summary.positions
+      const heldIds = positions.filter((p) => new D(p.quantity).gt(0) && !archivedAssets.has(p.assetId)).map((p) => p.assetId)
+      const asOf = new Date(data.asOf)
+      const tracking = period ? {
+        version: period.version,
+        startedAt: period.startedAt.toISOString(),
+        timezone: period.timezone,
+        startedToday: sameDayInZone(period.startedAt, asOf, period.timezone),
+        openingMarketValue: openingMarketIn(period, q.data.currency),
+      } : null
+      // A long quiet spell is closed by the next view, so the chart always has a recent point (never blocks the reply).
+      if (period) snapshotSoon(userId, 'view')
+      return reply.send({
+        success: true,
+        data: {
+          ...data,
+          /** Tokens with a positive balance, archived ones excluded. The same number in PKR and USDT. */
+          assetsHeld: heldIds.length,
+          tracking,
+        },
       })
-      return reply.send({ success: true, data })
     } catch (err) {
       req.log.error({ err }, 'portfolio summary failed')
       throw new AppError('PORTFOLIO_CALC_FAILED', 'Could not calculate your portfolio. Please contact support.', 500)
     }
   })
-  // Charts and period results. History uses only entries and prices the user actually recorded:
-  // gaps stay gaps, and an old price in another currency is never converted at today's rate.
+
+  // Value over time and period results. With a tracking period the series is the stored observations since
+  // tracking began (never anything before it, no gap filled) plus the live value the headline shows. Without
+  // one (an existing portfolio waiting for the cutover) it is the earlier on-the-fly history.
   app.get('/portfolio/performance', { preHandler: [authenticate] }, async (req, reply) => {
     const userId = req.user!.id
     const q = perfQuery.safeParse(req.query)
     if (!q.success) throw new AppError('VALIDATION_ERROR', 'Invalid date range or currency', 400)
+    const currency = q.data.currency
+    const now = new Date()
+    const to = q.data.to ? new Date(q.data.to) : now
+    const ctx = await loadContext(userId, currency)
 
-    const [events, prices, platformRate, usdtRows] = await Promise.all([
+    if (ctx.period) {
+      const period = ctx.period
+      const from = q.data.from ? new Date(q.data.from) : period.startedAt
+      if (from.getTime() > to.getTime() && q.data.from) throw new AppError('VALIDATION_ERROR', 'The start date must be before the end date', 400)
+      if (to.getTime() - from.getTime() > MAX_RANGE_MS) throw new AppError('VALIDATION_ERROR', 'That date range is too long', 400)
+      try {
+        const summary = buildSummary({ events: ctx.rows, prices: ctx.marks, currency, platformRate: ctx.platformRate, now })
+        const positions = summary.summary.positions.filter((p) => new D(p.quantity).gt(0))
+        const priced = positions.filter((p) => p.value !== null).length
+        const live = { value: priced === positions.length ? summary.summary.pricedValue : null, priced, held: positions.length }
+        const snaps = await db.portfolioSnapshot.findMany({
+          where: { periodId: period.id, takenAt: { gte: period.startedAt } }, orderBy: { takenAt: 'asc' }, take: 5000,
+          select: { takenAt: true, valuePkr: true, fxUsdtPkr: true, heldCount: true, pricedCount: true },
+        })
+        const data = computePeriodPerformance({
+          rows: ctx.rows,
+          snapshots: snaps.map((s) => ({ takenAt: s.takenAt, valuePkr: s.valuePkr?.toFixed() ?? null, fxUsdtPkr: s.fxUsdtPkr?.toFixed() ?? null, heldCount: s.heldCount, pricedCount: s.pricedCount })),
+          currency, version: period.version, startedAt: period.startedAt, timezone: period.timezone,
+          startedToday: sameDayInZone(period.startedAt, now, period.timezone),
+          ...(q.data.from ? { from } : {}), ...(q.data.to ? { to } : {}), now, live,
+          openingMarketValue: openingMarketIn(period, currency),
+        })
+        return reply.send({ success: true, data })
+      } catch (err) {
+        if (err instanceof AppError) throw err
+        req.log.error({ err }, 'portfolio performance failed')
+        throw new AppError('PORTFOLIO_CALC_FAILED', 'Could not calculate your portfolio. Please contact support.', 500)
+      }
+    }
+
+    // ── No tracking period yet: the earlier history, unchanged ──
+    const [events, prices, usdtRows] = await Promise.all([
       db.portfolioEvent.findMany({
-        where: { userId, voidedAt: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
+        where: { userId, voidedAt: null, archivedInPeriodId: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS,
         select: EVENT_SELECT,
       }),
       db.portfolioPriceObservation.findMany({
         where: { userId }, orderBy: { observedAt: 'asc' }, take: MAX_PORTFOLIO_EVENTS,
         select: { assetId: true, price: true, quote: true, observedAt: true },
       }),
-      getStringConfig('rate_USDT_PKR', ''),
       db.portfolioAsset.findMany({ where: { userId, ctmTokenId: USDT_ASSET_KEY }, select: { id: true } }),
     ])
     const usdtAssets = new Set(usdtRows.map((a) => a.id))
-
-    const now = new Date()
-    const to = q.data.to ? new Date(q.data.to) : now
     const first = events[0]?.occurredAt
     const from = q.data.from ? new Date(q.data.from) : (first ?? to)
     if (from.getTime() > to.getTime()) throw new AppError('VALIDATION_ERROR', 'The start date must be before the end date', 400)
@@ -644,10 +736,10 @@ export async function portfolioRoutes(app: FastifyInstance) {
 
     try {
       const data = computePerformance({
-        events: events.map((e) => toSummaryRow(e, platformRate, usdtAssets)),
+        events: events.map((e) => toSummaryRow(e, ctx.platformRate, usdtAssets)),
         prices: priceRows,
-        currency: q.data.currency,
-        currentMarks: currentMarksIn([...latest.values()], q.data.currency, cleanRate(platformRate)),
+        currency,
+        currentMarks: currentMarksIn([...latest.values()], currency, cleanRate(ctx.platformRate)),
         from,
         to,
         now,
@@ -658,6 +750,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
       throw new AppError('PORTFOLIO_CALC_FAILED', 'Could not calculate your portfolio. Please contact support.', 500)
     }
   })
+
   // Copy the caller's SETTLED RupChain trades into their tracker. One-way and read-only toward the
   // platform: it only reads trades and writes this user's own portfolio tables. `dryRun` previews.
   app.post('/portfolio/import/ctm', {
@@ -673,7 +766,9 @@ export async function portfolioRoutes(app: FastifyInstance) {
       // P2P USDT trades join the same tracker (as the "Tether USDT" holding). The CTM step has already used part
       // of the per-user room, so the USDT step re-reads it.
       const usdt = await runUsdtImport(userId, limits)
-      return reply.send({ success: true, data: mergeImportReports(ctm, usdt) })
+      const report = mergeImportReports(ctm, usdt)
+      if (!limits.dryRun && report.created + report.restored + report.voided > 0) snapshotSoon(userId, 'event')
+      return reply.send({ success: true, data: report })
     } catch (err) {
       req.log.error({ err }, 'portfolio import failed')
       throw new AppError('PORTFOLIO_IMPORT_FAILED', 'Could not read your RupChain trades right now. Please try again later.', 500)
@@ -721,6 +816,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         b.all ? { all: true } : { tradeIds: b.tradeIds! },
         { maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS },
       )
+      if (report.recorded > 0) snapshotSoon(userId, 'event')
       return reply.send({ success: true, data: report })
     } catch (err) {
       req.log.error({ err }, 'portfolio record-batch failed')
@@ -779,12 +875,45 @@ export async function portfolioRoutes(app: FastifyInstance) {
         },
         select: EVENT_SELECT,
       })
+      snapshotSoon(userId, 'event')
       return reply.code(201).send({ success: true, data: eventDto(row) })
     } catch (err) {
       // Two requests at once for the same trade: the database lets exactly one through.
       if ((err as { code?: string }).code === 'P2002') throw Errors.CONFLICT('You already recorded this trade.')
       throw err
     }
+  })
+
+  // What the tracking period was started from and what stayed behind: the reconciliation facts recorded at the
+  // cutover, and the earlier (lifetime) trading results over ALL entries, which are partial wherever the records
+  // are. Read-only; the archived entries themselves are listed by /portfolio/events and /portfolio/assets/:id/events.
+  app.get('/portfolio/archive', { preHandler: [authenticate] }, async (req, reply) => {
+    const userId = req.user!.id
+    const q = currencyQuery.safeParse(req.query)
+    if (!q.success) throw new AppError('VALIDATION_ERROR', 'currency must be PKR or USDT', 400)
+    const period = await getActivePeriod(userId)
+    if (!period) return reply.send({ success: true, data: { period: null } })
+
+    const [events, usdtRows, platformRate, archivedEntries] = await Promise.all([
+      db.portfolioEvent.findMany({ where: { userId, voidedAt: null }, orderBy: [{ occurredAt: 'asc' }, { createdAt: 'asc' }], take: MAX_PORTFOLIO_EVENTS, select: EVENT_SELECT }),
+      db.portfolioAsset.findMany({ where: { userId, ctmTokenId: USDT_ASSET_KEY }, select: { id: true } }),
+      getStringConfig('rate_USDT_PKR', ''),
+      db.portfolioEvent.count({ where: { userId, archivedInPeriodId: period.id } }),
+    ])
+    const usdtAssets = new Set(usdtRows.map((a) => a.id))
+    const lifetime = buildSummary({ events: events.map((e) => toSummaryRow(e, platformRate, usdtAssets)), prices: [], currency: q.data.currency, platformRate })
+    const sold = lifetime.summary.positions.reduce((n, p) => n + (p.soldCount ?? 0), 0)
+    const soldIncomplete = lifetime.summary.positions.reduce((n, p) => n + (p.soldIncompleteCount ?? 0), 0)
+    const rec = (period.reconciliation ?? {}) as { discrepancies?: unknown; context?: unknown }
+    return reply.send({
+      success: true,
+      data: {
+        period: { version: period.version, startedAt: period.startedAt.toISOString(), timezone: period.timezone, reason: period.reason },
+        archivedEntries,
+        discrepancies: Array.isArray(rec.discrepancies) ? rec.discrepancies : [],
+        lifetime: { currency: q.data.currency, knownRealized: lifetime.summary.knownRealized, sales: sold, salesWithUnknownResult: soldIncomplete, partial: soldIncomplete > 0 },
+      },
+    })
   })
 
   // Everything the caller has recorded, for CSV / JSON export. Includes archived tokens and voided
@@ -820,7 +949,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         // linkedTokenRef is a keyed hash of the platform token id, never the id itself: it lets a restore find the token again.
         assets: assets.map(({ ctmTokenId, ...a }) => ({ ...assetDto(a), linkedToRupChainToken: ctmTokenId !== null, linkedTokenRef: ctmTokenId !== null ? linkedTokenRef(ctmTokenId) : null })),
         // Exactly the documented backup fields (the backup reader is strict about unknown ones).
-        events: events.map((e) => { const { createdAt, ...rest } = eventDto(e); void createdAt; return rest }),
+        events: events.map((e) => { const { createdAt, archived, ...rest } = eventDto(e); void createdAt; void archived; return rest }),
         prices: prices.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote, observedAt: p.observedAt.toISOString(), source: p.source })),
         revisionsTruncated,
         revisions: revisions.reverse().map((r) => ({ eventId: r.eventId, assetId: r.assetId, action: r.action, before: backupBefore(r.before), createdAt: r.createdAt.toISOString() })),
@@ -841,6 +970,7 @@ export async function portfolioRoutes(app: FastifyInstance) {
         maxAssets: MAX_PORTFOLIO_ASSETS, maxEvents: MAX_PORTFOLIO_EVENTS,
         maxRevisionsPerEvent: MAX_REVISIONS_PER_EVENT, maxRevisionsPerUser: MAX_REVISIONS_PER_USER,
       })
+      snapshotSoon(userId, 'event')
       return reply.send({ success: true, data })
     } catch (err) {
       if (err instanceof AppError) throw err

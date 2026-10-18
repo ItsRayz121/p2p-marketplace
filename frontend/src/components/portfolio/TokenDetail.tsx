@@ -35,6 +35,8 @@ export interface TokenDetailProps {
   onBack: () => void
   onEdit?: () => void
   loadEvents: (assetId: string) => Promise<PortfolioEvent[]>
+  /** Signed-in only, when tracking has started: the earlier history kept from before it (read-only). */
+  loadEarlier?: (assetId: string) => Promise<PortfolioEvent[]>
   onRecordEvent: (assetId: string, input: PortfolioEventInput) => Promise<void>
   onDeleteEvent: (assetId: string, eventId: string) => Promise<void>
   /** Correct one of your own manual entries (signed-in and local trackers). */
@@ -59,6 +61,9 @@ type Mode =
   | { name: 'delete' }
 
 const TYPE_LABEL: Record<PortfolioEventType, string> = { BUY: 'Buy', SELL: 'Sell', OPENING: 'Previous holding' }
+/** What an entry is called in the table: the opening holdings tracking started with get their own name. */
+const typeName = (ev: PortfolioEvent) => (ev.source === 'baseline' ? 'Opening holdings' : TYPE_LABEL[ev.type])
+const originName = (ev: PortfolioEvent) => (ev.source === 'baseline' ? 'when tracking started' : ev.source !== 'manual' ? 'RupChain trade' : 'manual')
 
 /** One line describing an earlier version of an entry. */
 function describeBefore(b: EventRevision['before']): string {
@@ -163,6 +168,63 @@ function PriceForm({ assetName, defaultCurrency, onSubmit, onCancel }: { assetNa
 }
 
 /** Newest entry first for display. The list itself stays oldest-first because the oversold checks depend on that order. */
+/**
+ * Entries from before tracking started. They are kept for the record, read-only, and are not part of the current
+ * numbers (the opening holdings line in the history above carries them forward). Loaded only when opened.
+ */
+function EarlierHistory({ assetId, assetName, load }: { assetId: string; assetName: string; load: (assetId: string) => Promise<PortfolioEvent[]> }) {
+  const [open, setOpen] = useState(false)
+  const [rows, setRows] = useState<PortfolioEvent[] | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  useEffect(() => {
+    if (!open || rows !== null) return
+    let live = true
+    load(assetId).then((r) => { if (live) setRows(r) }).catch((e) => { if (live) setError(e instanceof Error ? e.message : 'Could not load the earlier history.') })
+    return () => { live = false }
+  }, [open, rows, load, assetId])
+  return (
+    <section aria-labelledby={`earlier-heading-${assetId}`}>
+      <button
+        type="button" id={`earlier-heading-${assetId}`} aria-expanded={open} onClick={() => setOpen((o) => !o)}
+        className="text-sm font-medium text-primary hover:underline"
+      >
+        {open ? 'Hide earlier history' : 'Show earlier history (before tracking started)'}
+      </button>
+      {open && (
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-text-muted">Kept for the record. These entries are read-only and are not part of your current numbers; what you held when tracking started is carried forward by the opening holdings line above.</p>
+          {error ? <p role="alert" className="text-sm text-danger">{error}</p>
+            : rows === null ? <p role="status" className="text-sm text-text-muted">Loading…</p>
+            : rows.length === 0 ? <p className="text-sm text-text-muted">No earlier entries.</p>
+            : (
+              <div className="bg-surface shadow-card rounded-xl border border-border overflow-x-auto">
+                <table className="w-full text-sm">
+                  <caption className="sr-only">Earlier entries for {assetName}</caption>
+                  <thead><tr className="text-left text-xs text-text-muted border-b border-border">
+                    <th scope="col" className="px-3 py-2 font-medium">Date</th><th scope="col" className="px-3 py-2 font-medium">Type</th>
+                    <th scope="col" className="px-3 py-2 font-medium text-right">Quantity</th><th scope="col" className="px-3 py-2 font-medium text-right">Amount</th>
+                  </tr></thead>
+                  <tbody className="divide-y divide-border">
+                    {[...rows].reverse().map((ev) => (
+                      <tr key={ev.id} className={ev.voided ? 'text-text-muted' : ''}>
+                        <td className="px-3 py-2 whitespace-nowrap">{new Date(ev.occurredAt).toLocaleString()}</td>
+                        <td className="px-3 py-2 whitespace-nowrap">{TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted">· {originName(ev)}</span></td>
+                        <td className="px-3 py-2 text-right">{formatQuantity(ev.quantity)}</td>
+                        <td className="px-3 py-2 text-right">
+                          {ev.type === 'OPENING' ? (ev.zeroCost ? '0 (zero cost)' : ev.basis !== null ? `${formatDecimal(ev.basis)} ${ev.quote}` : 'Cost not recorded') : `${formatDecimal(ev.consideration ?? '0')} ${ev.quote}`}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function newestFirst(events: PortfolioEvent[]): PortfolioEvent[] {
   return [...events].sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt) || (a.id < b.id ? -1 : 1))
 }
@@ -502,7 +564,7 @@ export function TokenDetail(p: TokenDetailProps) {
                   <tr>
                     <td className="px-3 py-2 whitespace-nowrap">{new Date(ev.occurredAt).toLocaleString()}</td>
                     <td className={`px-3 py-2 whitespace-nowrap ${ev.voided ? 'text-text-muted line-through' : ''}`}>
-                      {TYPE_LABEL[ev.type]} <span className="text-xs text-text-muted no-underline">· {ev.source !== 'manual' ? 'RupChain trade' : 'manual'}{ev.editedAt ? ', edited' : ''}{ev.priceBasis ? `, ${ev.priceBasis === 'platform' ? 'RupChain price' : 'own price'}` : ''}</span>
+                      {typeName(ev)} <span className="text-xs text-text-muted no-underline">· {originName(ev)}{ev.editedAt ? ', edited' : ''}{ev.priceBasis ? `, ${ev.priceBasis === 'platform' ? 'RupChain price' : 'own price'}` : ''}</span>
                       {ev.voided && (
                         <span className="block text-xs text-amber-800 no-underline" style={{ textDecoration: 'none' }}>
                           Not counted: {VOID_TEXT[ev.voidReason ?? ''] ?? 'it no longer qualifies'}
@@ -523,7 +585,7 @@ export function TokenDetail(p: TokenDetailProps) {
                     <td className="px-3 py-2 text-right">{ev.fee && !isZeroAmount(ev.fee) ? `${formatDecimal(ev.fee)} ${ev.quote}` : '—'}</td>
                     <td className="px-3 py-2 break-words max-w-[12rem]">{ev.note ?? ''}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-right">
-                      {ev.source !== 'manual' ? (
+                      {ev.source !== 'manual' || ev.archived ? (
                         <span className="text-xs text-text-muted">Read-only</span>
                       ) : confirmDelete === ev.id ? (
                         <span className="inline-flex flex-col items-end gap-1">
@@ -611,6 +673,8 @@ export function TokenDetail(p: TokenDetailProps) {
         )}
         {hasRecords && <p className="sr-only">A token with records can be archived but not deleted, so your history is never lost.</p>}
       </section>
+
+      {p.loadEarlier && <EarlierHistory assetId={asset.id} assetName={asset.name} load={p.loadEarlier} />}
     </div>
   )
 }

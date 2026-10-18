@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
-  BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  ArchiveResponse, BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioAsset, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from '@/lib/portfolio/types'
 import type { CustomAssetValue } from '@/lib/portfolio/customAsset'
 import type { ExportData } from '@/lib/portfolio/exportFile'
@@ -16,7 +16,8 @@ import { InfoTip } from './InfoTip'
 import { PerformanceSection } from './PerformanceSection'
 import { PortfolioHeadline } from './PortfolioHeadline'
 import { AllocationBar } from './AllocationBar'
-import { ReviewCenter, buildReview, reviewCount } from './ReviewCenter'
+import { ArchiveNote } from './ArchiveNote'
+import { ReviewCenter, buildReview, reviewCount, reviewNotes } from './ReviewCenter'
 import { TokenCard } from './TokenCard'
 import { TokenDetail, type StartWith } from './TokenDetail'
 import { TransactionHistory } from './TransactionHistory'
@@ -47,6 +48,10 @@ interface Props {
   onAddAsset?: (value: CustomAssetValue) => Promise<void> | void
   onEditAsset?: (id: string, value: CustomAssetValue) => Promise<void> | void
   loadEvents?: (assetId: string) => Promise<PortfolioEvent[]>
+  /** Earlier history kept from before tracking started (signed-in accounts with a tracking period). */
+  loadEarlier?: (assetId: string) => Promise<PortfolioEvent[]>
+  /** What tracking started from and the earlier results (signed-in accounts with a tracking period). */
+  loadArchive?: (currency: Currency) => Promise<ArchiveResponse>
   onRecordEvent?: (assetId: string, input: PortfolioEventInput) => Promise<void>
   onDeleteEvent?: (assetId: string, eventId: string) => Promise<void>
   onUpdateEvent?: (assetId: string, eventId: string, input: PortfolioEventInput) => Promise<void>
@@ -87,7 +92,7 @@ const noop = async () => {}
  */
 export function PortfolioTab({
   notice, walletSection, assets = [], summary = null, currency = 'PKR', onCurrencyChange, loading = false, error = null, onRetry,
-  onAddAsset, onEditAsset, loadEvents = noEvents, onRecordEvent = noop, onDeleteEvent = noop, onUpdateEvent, loadHistory, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
+  onAddAsset, onEditAsset, loadEvents = noEvents, loadEarlier, loadArchive, onRecordEvent = noop, onDeleteEvent = noop, onUpdateEvent, loadHistory, onSetPrice = noop, onArchive, onUnarchive, onDeleteAsset, loadPerformance,
   importReport = null, importBusy = false, importError = null, onImportTrades, onDismissImport, loadExport, loadExcluded, onRecordExcluded, onRecordBatch, loadAllEvents,
   onSuggestListing, onWithdrawListing, backupImportApi, onBackupImported, showBackupDownload = true,
 }: Props) {
@@ -118,7 +123,11 @@ export function PortfolioTab({
     [summary],
   )
   // Tokens you currently hold according to your records (archived ones are not counted).
-  const trackedHeld = activeAssets.filter((a) => /[1-9]/.test(positions.get(a.id)?.quantity ?? '0')).length
+  const isHeld = (id: string) => /[1-9]/.test(positions.get(id)?.quantity ?? '0')
+  // The server's count follows the same rule (positive balance, archived excluded); it is used when present so every screen agrees.
+  const trackedHeld = summary?.assetsHeld ?? activeAssets.filter((a) => isHeld(a.id)).length
+  const heldList = useMemo(() => listed.filter((a) => isHeld(a.id)), [listed, positions]) // eslint-disable-line react-hooks/exhaustive-deps
+  const notHeldList = useMemo(() => listed.filter((a) => !isHeld(a.id)), [listed, positions]) // eslint-disable-line react-hooks/exhaustive-deps
   // The first active token that lacks a price / a recorded cost, so an empty chart can offer a way to fix it.
   const firstToFix = useMemo(() => {
     const activeIds = new Set(activeAssets.map((x) => x.id))
@@ -131,6 +140,7 @@ export function PortfolioTab({
     [summary, assets, importReport, canReviewTrades],
   )
   const toReview = reviewCount(reviewSections)
+  const reviewInfo = useMemo(() => (summary ? reviewNotes(summary, assets) : []), [summary, assets])
   const waitingTrades = importReport?.attention.find((a) => a.reason === 'in_progress')?.count ?? 0
   // Labels follow the data on screen, not the switch: right after a click the numbers are still in the previous currency until the reply arrives.
   const shown: Currency = summary?.currency ?? currency
@@ -166,6 +176,7 @@ export function PortfolioTab({
         {view.name === 'review' && (
           <ReviewCenter
             sections={reviewSections}
+            notes={reviewInfo}
             waiting={waitingTrades}
             tokens={activeAssets.map((a) => ({ id: a.id, name: a.name }))}
             backRef={backRef}
@@ -214,6 +225,7 @@ export function PortfolioTab({
               onBack={() => setView({ name: 'overview' })}
               onEdit={onEditAsset && !current.linkedToRupChainToken ? () => setView({ name: 'edit', assetId: current.id }) : undefined}
               loadEvents={loadEvents}
+              loadEarlier={summary?.tracking ? loadEarlier : undefined}
               onRecordEvent={onRecordEvent}
               onDeleteEvent={onDeleteEvent}
               onUpdateEvent={onUpdateEvent}
@@ -316,19 +328,47 @@ export function PortfolioTab({
                 All your tracked tokens are archived. Their history still counts in the totals above.
               </div>
             ) : (
-              <ul className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                {listed.map((a) => (
-                  <TokenCard
-                    key={a.id}
-                    asset={a}
-                    position={positions.get(a.id)}
-                    price={summary?.prices[a.id]}
-                    shown={shown}
-                    buttonRef={(el) => { rowRefs.current[a.id] = el }}
-                    onOpen={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
-                  />
-                ))}
-              </ul>
+              <>
+                {heldList.length > 0 && (
+                  <ul className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                    {heldList.map((a) => (
+                      <TokenCard
+                        key={a.id}
+                        asset={a}
+                        position={positions.get(a.id)}
+                        price={summary?.prices[a.id]}
+                        shown={shown}
+                        tracking={Boolean(summary?.tracking)}
+                        buttonRef={(el) => { rowRefs.current[a.id] = el }}
+                        onOpen={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
+                      />
+                    ))}
+                  </ul>
+                )}
+                {notHeldList.length > 0 && (
+                  <div className={heldList.length > 0 ? 'mt-5' : ''}>
+                    <h3 className="text-sm font-semibold text-text-primary">Not currently held</h3>
+                    <p className="mb-2 text-xs text-text-muted">Your records show no units of these. They are not counted in Assets Held or in the portfolio value.</p>
+                    <ul className="grid grid-cols-1 min-[360px]:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                      {notHeldList.map((a) => (
+                        <TokenCard
+                          key={a.id}
+                          asset={a}
+                          position={positions.get(a.id)}
+                          price={summary?.prices[a.id]}
+                          shown={shown}
+                          tracking={Boolean(summary?.tracking)}
+                          buttonRef={(el) => { rowRefs.current[a.id] = el }}
+                          onOpen={() => { lastRowRef.current = a.id; setView({ name: 'token', assetId: a.id }) }}
+                        />
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </>
+            )}
+            {!loading && !error && summary?.tracking && loadArchive && (
+              <ArchiveNote currency={shown} load={loadArchive} onOpenHistory={loadAllEvents ? () => setView({ name: 'history' }) : undefined} />
             )}
             {!loading && !error && loadExport && assets.length > 0 && (
               <div className="mt-3"><ExportMenu load={loadExport} includeBackup={showBackupDownload} /></div>

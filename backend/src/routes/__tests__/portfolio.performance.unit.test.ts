@@ -63,7 +63,7 @@ describe('GET /portfolio/performance', () => {
   })
   it('reads only the caller\'s records', async () => {
     await get('?from=2026-01-01T00:00:00Z&to=2026-01-20T00:00:00Z')
-    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', voidedAt: null })
+    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', voidedAt: null, archivedInPeriodId: null })
     expect(m.prFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
   })
   it('returns the series and period results for the spec fixture, as strings', async () => {

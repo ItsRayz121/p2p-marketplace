@@ -50,9 +50,20 @@ export interface Mark {
 
 interface Lot {
   eventId: string
+  /** When the lot was acquired (the ISO time of the event that created it). */
+  at: string
   qty: Dec
   /** null = unknown basis */
   basis: Dec | null
+}
+
+/** What is left of one acquisition after the sales matched against it (oldest first in a position). */
+export interface RemainingLot {
+  eventId: string
+  at: string
+  qty: string
+  /** Remaining cost of this lot, or null when it is UNKNOWN (never zero). */
+  basis: string | null
 }
 
 export interface RealizedEntry {
@@ -79,6 +90,8 @@ export interface AssetPosition {
   /** False when some sold units came from lots with unknown basis. */
   realizedComplete: boolean
   unresolvedSales: UnresolvedSale[]
+  /** The units still held, as FIFO lots (oldest first). Internal: the summary leaves it out of API payloads. */
+  lots: RemainingLot[]
   /** Realized result of each SELL, for period reporting. complete is false if any matched lot had unknown cost or part of the sale was unresolved. */
   realizedByEvent: RealizedEntry[]
   /** Number of SELL records for this token. 0 means nothing was sold, so realized is a genuine zero. */
@@ -158,7 +171,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
         basis = dec('basis', e.basis, { positive: false })
         if (basis.isZero() && !e.zeroCost) throw new Error('zero basis must be declared with zeroCost')
       }
-      lots.push({ eventId: e.id, qty, basis })
+      lots.push({ eventId: e.id, at: e.at, qty, basis })
       continue
     }
 
@@ -167,7 +180,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
     const fee = unknownCost || e.fee === undefined ? new D(0) : dec('fee', e.fee, { positive: false })
 
     if (e.type === 'BUY') {
-      lots.push({ eventId: e.id, qty, basis: unknownCost ? null : gross.plus(fee) })
+      lots.push({ eventId: e.id, at: e.at, qty, basis: unknownCost ? null : gross.plus(fee) })
       continue
     }
 
@@ -227,6 +240,7 @@ export function computePosition(assetId: string, events: TradeEvent[]): AssetPos
     realizedKnown: out(realized),
     realizedComplete,
     unresolvedSales: unresolved,
+    lots: lots.map((l) => ({ eventId: l.eventId, at: l.at, qty: out(l.qty), basis: l.basis === null ? null : out(l.basis) })),
     realizedByEvent,
     soldCount,
     soldIncompleteCount,

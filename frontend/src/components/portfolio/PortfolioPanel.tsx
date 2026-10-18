@@ -229,6 +229,8 @@ export function PortfolioPanel({ walletSection, api = portfolioApi, userId }: Pr
       onAddAsset={add}
       onEditAsset={edit}
       loadEvents={(id) => apiRef.current.listEvents(id)}
+      loadEarlier={apiRef.current.archive ? (id) => apiRef.current.listEvents(id, 'archived') : undefined}
+      loadArchive={apiRef.current.archive ? (c) => apiRef.current.archive!(c) : undefined}
       onRecordEvent={record}
       onDeleteEvent={remove}
       onSetPrice={setPrice}

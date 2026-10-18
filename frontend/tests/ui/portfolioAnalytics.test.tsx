@@ -122,16 +122,17 @@ describe('charts that have nothing to draw say what is missing and offer the fix
   })
 })
 
-describe('charts keep an accessible table of the same data', () => {
-  it('offers the cost and realized series as a table, with gaps listed as not known', async () => {
+describe('charts are described in text (the table control is gone)', () => {
+  it('has no "View the data as a table" control and gives screen readers the facts as text', async () => {
     api.performance.mockResolvedValue(perf([
       point('2026-01-01T00:00:00Z', { costBasis: '100', realized: '0' }),
       point('2026-01-02T00:00:00Z', { costBasis: null, realized: '5' }),
     ]))
-    const user = userEvent.setup()
-    render(<PortfolioPanel />)
+    const { container } = render(<PortfolioPanel />)
     await screen.findAllByText('Cost and Realized Profit Over Time')
-    await user.click(screen.getAllByText('View the data as a table')[0]!)
-    expect(screen.getAllByRole('table', { hidden: true }).some((t) => within(t).queryByText('Not known'))).toBe(true)
+    expect(screen.queryByText('View the data as a table')).toBeNull()
+    expect(container.querySelector('table caption')).toBeNull()
+    const desc = [...container.querySelectorAll('svg[role="img"] desc')].map((d) => d.textContent ?? '')
+    expect(desc.some((t) => /known value/.test(t) && /unknown value/.test(t))).toBe(true)
   })
 })

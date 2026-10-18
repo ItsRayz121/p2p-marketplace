@@ -17,8 +17,10 @@ export interface PortfolioEvent {
   fxRate: string | null
   fxSource: 'platform' | 'manual' | null
   note: string | null
-  /** 'ctm' = read from a settled RupChain trade (read-only). Set by the server. */
-  source: 'manual' | 'ctm' | 'p2p'
+  /** 'ctm' = read from a settled RupChain trade (read-only). 'baseline' = the opening holdings tracking started with (read-only). Set by the server. */
+  source: 'manual' | 'ctm' | 'p2p' | 'baseline'
+  /** From before tracking started: kept for the record, read-only, not part of the current period. */
+  archived?: boolean
   /** Imported entry whose trade stopped qualifying: shown, but not counted. */
   voided: boolean
   voidReason: string | null
@@ -106,6 +108,20 @@ export interface PortfolioSummaryResponse {
   fxUnavailableAssets: string[]
   prices: Record<string, PortfolioPriceView>
   asOf: string
+  /** Tokens with a positive balance (archived tokens excluded): the number "Assets Held" shows. Same in PKR and USDT. Absent in older data. */
+  assetsHeld?: number
+  /** The tracking period the numbers belong to; null/absent when the portfolio has no period yet. */
+  tracking?: TrackingSummary | null
+}
+
+export interface TrackingSummary {
+  version: number
+  startedAt: string
+  timezone: string
+  /** Tracking began today (in the business timezone): one observation is normal. */
+  startedToday: boolean
+  /** Opening MARKET value in the shown currency; null when a held token had no valid price that day. Not the cost of anything. */
+  openingMarketValue: string | null
 }
 
 export interface SeriesPoint {
@@ -139,6 +155,15 @@ export interface PerformanceResponse {
   points: SeriesPoint[]
   period: PeriodStats
   fxUnavailableAssets: string[]
+  tracking?: TrackingSummary & { observations: number }
+}
+
+/** What stayed behind when tracking started, and the earlier (lifetime) results, which are partial wherever the records are. */
+export interface ArchiveResponse {
+  period: { version: number; startedAt: string; timezone: string; reason: string } | null
+  archivedEntries?: number
+  discrepancies?: Array<{ kind: string; assetId?: string; detail: string }>
+  lifetime?: { currency: Currency; knownRealized: string; sales: number; salesWithUnknownResult: number; partial: boolean }
 }
 
 /** A user-scoped, manually tracked asset. Identity is `id`; name/symbol/URL are display metadata only. */

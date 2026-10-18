@@ -35,7 +35,7 @@ export interface PriceView {
   source?: string
 }
 
-export type SummaryPosition = Omit<ValuedPosition, 'realizedByEvent'>
+export type SummaryPosition = Omit<ValuedPosition, 'realizedByEvent' | 'lots'>
 
 export interface SummaryResult {
   currency: Quote
@@ -144,8 +144,8 @@ export function buildSummary(args: {
       ...engine,
       // Per-sale detail is for period reports only; it is not part of the summary.
       positions: engine.positions.map((p) => {
-        const { realizedByEvent, ...rest } = p
-        void realizedByEvent
+        const { realizedByEvent, lots, ...rest } = p
+        void realizedByEvent; void lots
         return rest
       }),
       partial: engine.partial || fxUnavailableAssets.length > 0,

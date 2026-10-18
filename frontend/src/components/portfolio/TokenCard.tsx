@@ -32,7 +32,7 @@ export function StaleClock({ label }: { label: string }) {
  * action (record, price, history) lives on the token's own page, so the card carries none.
  */
 export function TokenCard({
-  asset, position, price, shown, onOpen, buttonRef, now = new Date(),
+  asset, position, price, shown, onOpen, buttonRef, now = new Date(), tracking = false,
 }: {
   asset: PortfolioAsset
   position: PortfolioPosition | undefined
@@ -43,6 +43,8 @@ export function TokenCard({
   onOpen: () => void
   buttonRef?: (el: HTMLButtonElement | null) => void
   now?: Date
+  /** Tracking has started: a token with no entry in the current period holds nothing (earlier entries are archived). */
+  tracking?: boolean
 }) {
   const archived = Boolean(asset.archivedAt)
   const age = price && price.price !== null ? priceAge(price.observedAt, now) : null
@@ -67,7 +69,13 @@ export function TokenCard({
           {age?.stale && <StaleClock label={age.label} />}
         </span>
 
-        {position ? (
+        {position && !isHeld ? (
+          // Nothing held according to the records: say so plainly instead of showing a value of 0.
+          <span className="block tabular-nums">
+            <span className="block truncate text-sm font-medium text-text-muted">Not held</span>
+            <span className="mt-0.5 block truncate text-[11px] text-text-muted">0 held</span>
+          </span>
+        ) : position ? (
           <span className="block tabular-nums">
             <span className="block truncate text-sm font-semibold text-text-primary">
               {position.value === null ? <span className="font-medium text-text-muted">No price</span> : `${shown} ${formatDecimal(position.value)}`}
@@ -82,7 +90,7 @@ export function TokenCard({
             </span>
           </span>
         ) : (
-          <span className="block text-[11px] text-text-muted">No entries yet</span>
+          <span className="block text-[11px] text-text-muted">{tracking ? 'Not held' : 'No entries yet'}</span>
         )}
       </button>
     </li>

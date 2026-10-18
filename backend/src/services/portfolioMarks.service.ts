@@ -1,4 +1,5 @@
 import { db } from '../lib/prisma'
+import { logger } from '../lib/logger'
 import { D, ALLOC_DP, ROUND } from '../lib/portfolio/decimal'
 import type { Quote } from '../lib/portfolio/currency'
 import { classifyTrade } from '../lib/portfolio/ctmImport'
@@ -25,12 +26,37 @@ const LOOKUP_PARALLEL = 5
 // Short, so a trade that just settled shows in the portfolio within seconds. It is not cleared by the trade
 // itself on purpose: that would put portfolio code into the trade-completion path.
 const CACHE_TTL_MS = 15_000
+/** After a failed refresh the previous series is served and the lookup is retried after this long. */
+const FAILURE_RETRY_MS = 5_000
 
 interface Point { price: string; observedAt: Date }
 /** Proven trade prices of a token, newest first. */
 const cache = new Map<string, { at: number; series: Point[] }>()
 /** Test hook. */
 export function resetPlatformMarkCache(): void { cache.clear() }
+
+/** One token's proven trade prices, newest first (a database read; may throw). */
+async function loadSeries(tokenId: string): Promise<Point[]> {
+  const trades = await db.ctmTrade.findMany({
+    where: { tokenId, status: 'completed', completedAt: { not: null } },
+    orderBy: { completedAt: 'desc' },
+    take: PRICE_LOOKBACK_TRADES,
+    select: TRADE_FACTS_SELECT,
+  })
+  const forced = await forcedReleaseRefs(trades.map((t) => t.tradeRef))
+  const series: Point[] = []
+  for (const t of trades) {
+    // The buyer's view is used only to ask "did this trade settle?"; the price is the same for both sides.
+    if (classifyTrade(factsFromTrade(t, t.buyerId, forced)).kind !== 'eligible') continue
+    const qty = new D(t.tokenAmount.toFixed())
+    const fiat = new D(t.fiatAmount.toFixed())
+    if (!qty.gt(0) || !fiat.gt(0) || !t.completedAt) continue
+    const price = fiat.div(qty).toDecimalPlaces(ALLOC_DP, ROUND)
+    if (!price.gt(0)) continue
+    series.push({ price: price.toFixed(), observedAt: t.completedAt })
+  }
+  return series
+}
 
 /**
  * Proven trade prices (PKR per token, newest first) for each token.
@@ -53,25 +79,19 @@ async function provenSeries(tokenIds: string[]): Promise<Map<string, Point[]>> {
   // One query per token (a few at a time), so a very busy token cannot crowd out the others' recent trades.
   for (let i = 0; i < missing.length; i += LOOKUP_PARALLEL) {
     await Promise.all(missing.slice(i, i + LOOKUP_PARALLEL).map(async (tokenId) => {
-      const trades = await db.ctmTrade.findMany({
-        where: { tokenId, status: 'completed', completedAt: { not: null } },
-        orderBy: { completedAt: 'desc' },
-        take: PRICE_LOOKBACK_TRADES,
-        select: TRADE_FACTS_SELECT,
-      })
-      const forced = await forcedReleaseRefs(trades.map((t) => t.tradeRef))
-      const series: Point[] = []
-      for (const t of trades) {
-        // The buyer's view is used only to ask "did this trade settle?"; the price is the same for both sides.
-        if (classifyTrade(factsFromTrade(t, t.buyerId, forced)).kind !== 'eligible') continue
-        const qty = new D(t.tokenAmount.toFixed())
-        const fiat = new D(t.fiatAmount.toFixed())
-        if (!qty.gt(0) || !fiat.gt(0) || !t.completedAt) continue
-        const price = fiat.div(qty).toDecimalPlaces(ALLOC_DP, ROUND)
-        if (!price.gt(0)) continue
-        series.push({ price: price.toFixed(), observedAt: t.completedAt })
+      let series: Point[]
+      try {
+        series = await loadSeries(tokenId)
+        cache.set(tokenId, { at: now, series })
+      } catch (err) {
+        // A failed refresh must not take the whole portfolio down or turn a known price into "none": keep the last
+        // good series (its own date still tells the truth about its age) and retry shortly. A token that never had
+        // a series stays unpriced for this request and is looked up again on the next one.
+        logger.warn({ err, tokenId }, 'portfolio platform price refresh failed')
+        const prev = cache.get(tokenId)
+        series = prev?.series ?? []
+        if (prev) cache.set(tokenId, { at: now - CACHE_TTL_MS + FAILURE_RETRY_MS, series })
       }
-      cache.set(tokenId, { at: now, series })
       out.set(tokenId, series)
     }))
   }
@@ -152,4 +172,21 @@ export async function slugsFor(links: Array<{ id: string; ctmTokenId: string | n
   const tokens = await db.ctmToken.findMany({ where: { id: { in: ids }, status: 'approved' }, select: { id: true, slug: true } })
   const slug = new Map(tokens.map((t) => [t.id, t.slug] as const))
   return new Map(links.flatMap((l) => (l.ctmTokenId && slug.has(l.ctmTokenId) ? [[l.id, slug.get(l.ctmTokenId)!] as const] : [])))
+}
+
+/**
+ * The best current quote per tracked token for one user: the newest of the user's own latest price and the
+ * latest proven platform trade price, with where it came from and when it was seen. A token with neither has
+ * no entry (unavailable, never zero). Read-only.
+ */
+export async function latestMarksForUser(userId: string): Promise<MarkRow[]> {
+  const manual = await db.portfolioPriceObservation.findMany({
+    where: { userId }, orderBy: { observedAt: 'desc' }, distinct: ['assetId'],
+    select: { assetId: true, price: true, quote: true, observedAt: true, source: true },
+  })
+  const linked = await db.portfolioAsset.findMany({ where: { userId, ctmTokenId: { not: null } }, select: { id: true, ctmTokenId: true } })
+  return mergeMarks(
+    manual.map((p) => ({ assetId: p.assetId, price: p.price.toFixed(), quote: p.quote as Quote, observedAt: p.observedAt, source: p.source })),
+    await platformMarksFor(linked),
+  )
 }

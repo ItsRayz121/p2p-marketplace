@@ -146,7 +146,9 @@ export function TransactionHistory({
                       <td className="px-3 py-2 text-xs">
                         {e.voided
                           ? <span className="text-amber-800">Not counted: {VOID_TEXT[e.voidReason ?? ''] ?? 'it no longer qualifies'}</span>
-                          : <span className="text-text-secondary">Counted</span>}
+                          : e.archived
+                            ? <span className="text-text-secondary" title="From before tracking started. Kept for the record; what you held then is carried forward as your opening holdings.">Earlier history</span>
+                            : <span className="text-text-secondary">Counted</span>}
                       </td>
                     </tr>
                   )

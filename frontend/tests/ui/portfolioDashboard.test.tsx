@@ -97,7 +97,20 @@ describe('Review center', () => {
     expect(screen.queryByRole('radio', { name: 'Buy' })).toBeNull() // a previous holding is not a buy or a sell
   })
 
-  it('flags a price older than a week and asks for an update', async () => {
+  it('a price from the latest RupChain trade that is old is a note, not a task: it updates by itself', async () => {
+    api.summary.mockResolvedValue(sum(
+      [pos('MEC', { quantity: '10', price: '12', value: '120' })],
+      { MEC: { price: '12', original: '12', quote: 'PKR', observedAt: iso(20), source: 'platform' } },
+    ))
+    const user = userEvent.setup()
+    render(<PortfolioPanel />)
+    await user.click(await screen.findByRole('button', { name: /^Review/ }))
+    expect(screen.queryByRole('button', { name: /Update price/ })).toBeNull()
+    expect(screen.getByText(/Meta Earth is valued at the latest RupChain trade price, which was a while ago/)).toBeInTheDocument()
+    expect(screen.getByText(/Nothing needs your attention/)).toBeInTheDocument()
+  })
+
+  it('flags a price you entered more than a week ago and asks for an update', async () => {
     api.summary.mockResolvedValue(sum(
       [pos('MEC', { quantity: '10', price: '12', value: '120' })],
       { MEC: { price: '12', original: '12', quote: 'PKR', observedAt: iso(20) } },
@@ -105,7 +118,7 @@ describe('Review center', () => {
     const user = userEvent.setup()
     render(<PortfolioPanel />)
     await user.click(await screen.findByRole('button', { name: /^Review/ }))
-    expect(screen.getByText(/may be out of date/)).toBeInTheDocument()
+    expect(screen.getByText(/Your price was entered 20 days ago/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Update price: Meta Earth' })).toBeInTheDocument()
   })
 

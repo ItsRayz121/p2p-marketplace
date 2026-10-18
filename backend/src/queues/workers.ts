@@ -36,6 +36,7 @@ import { runSupportIdleClose } from '../jobs/supportIdleClose.job'
 import { runMediaRetention } from '../jobs/mediaRetention.job'
 import { runChannelRetention } from '../jobs/channelRetention.job'
 import { runUserMediaRetention } from '../jobs/userMediaRetention.job'
+import { runPortfolioSnapshotJob } from '../jobs/portfolioSnapshot.job'
 import { runAnnouncementBroadcast } from '../services/announcement.service'
 import { env } from '../lib/env'
 
@@ -139,6 +140,10 @@ export function startWorkers() {
   // userMediaRetention.job.ts.
   scheduleSweep('user-media-retention', () => runUserMediaRetention(), 24 * 60 * 60 * 1000)
   void runUserMediaRetention().catch((err) => logger.error({ err }, 'User-media retention startup run failed'))
+
+  // Portfolio value snapshots — every 6 hours, one stored point per user with an active tracking period
+  // (the chart's series). Analytical tables only; a failure for one user never stops the others.
+  scheduleSweep('portfolio-snapshots', runPortfolioSnapshotJob, 6 * 60 * 60 * 1000)
 
   createWorker(QUEUE_NAMES.BADGE_RECALCULATE, async (job) => {
     await recalculateUserBadge(job.data.userId as string)

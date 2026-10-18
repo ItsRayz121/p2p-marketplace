@@ -19,7 +19,7 @@ export const API_BASE = resolveApiBase()
 import { useAuthStore } from '../store/auth.store'
 import type { GasInsights, TradesSummary, PaymentsSummary } from '@/lib/gasInsights'
 import type { ExportData, RestoreSummary } from '@/lib/portfolio/exportFile'
-import type { BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
+import type { ArchiveResponse, BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse } from '@/lib/portfolio/types'
 import type { AuthUser } from '../store/auth.store'
 import { promptForTotp } from './totpPrompt'
 import { beginRetry, endRetry, reportConnectionFailure, reportConnectionSuccess } from './connectionStatus'
@@ -1642,8 +1642,8 @@ export const portfolioApi = {
     apiRequest<PortfolioAssetDto>('/portfolio/assets', { method: 'POST', body: JSON.stringify(data) }),
   updateAsset: (id: string, data: PortfolioAssetInput) =>
     apiRequest<PortfolioAssetDto>(`/portfolio/assets/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
-  listEvents: (assetId: string) =>
-    apiRequest<PortfolioEvent[]>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`),
+  listEvents: (assetId: string, scope: 'current' | 'archived' | 'all' = 'current') =>
+    apiRequest<PortfolioEvent[]>(`/portfolio/assets/${encodeURIComponent(assetId)}/events${scope === 'current' ? '' : `?scope=${scope}`}`),
   addEvent: (assetId: string, data: PortfolioEventInput) =>
     apiRequest<PortfolioEvent>(`/portfolio/assets/${encodeURIComponent(assetId)}/events`, { method: 'POST', body: JSON.stringify(data) }),
   deleteEvent: (assetId: string, eventId: string) =>
@@ -1666,6 +1666,7 @@ export const portfolioApi = {
   setPrice: (assetId: string, price: string, quote: Currency = 'PKR', source?: string) =>
     apiRequest<{ price: string; quote: Currency; observedAt: string }>(`/portfolio/assets/${encodeURIComponent(assetId)}/price`, { method: 'POST', body: JSON.stringify({ price, quote, ...(source && source !== 'manual' ? { source } : {}) }) }),
   summary: (currency: Currency = 'PKR') => apiRequest<PortfolioSummaryResponse>(`/portfolio/summary?currency=${currency}`),
+  archive: (currency: Currency = 'PKR') => apiRequest<ArchiveResponse>(`/portfolio/archive?currency=${currency}`),
   exportAll: () => apiRequest<ExportData>('/portfolio/export'),
   restoreBackup: (data: ExportData) =>
     apiRequest<RestoreSummary>('/portfolio/restore', { method: 'POST', body: JSON.stringify({ format: 'rupchain-portfolio-backup', version: data.revisions ? 2 : 1, ...data }) }),

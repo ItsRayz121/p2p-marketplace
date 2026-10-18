@@ -84,7 +84,7 @@ export function PortfolioHeadline({ data, trackedHeld }: {
         <Metric label="Total Profit / Loss" tip="Profit from sales plus holding profit/loss. Only the parts with a recorded cost are counted; a missing cost is never treated as zero.">
           <Amount f={fig.total} cur={cur} signed noun="results" />
         </Metric>
-        <Metric label="Assets Held" tip="Tokens you currently hold according to your records. The same in PKR and USDT. Archived tokens are not counted.">
+        <Metric label="Assets Held" tip="Tokens with a balance above zero according to your records, including USDT. Tokens you hold none of, and archived tokens, are not counted. The same in PKR and USDT.">
           <span className="text-xl font-bold text-text-primary">{trackedHeld}</span>
         </Metric>
       </div>
@@ -98,7 +98,7 @@ export function PortfolioHeadline({ data, trackedHeld }: {
           </dl>
         </details>
         <span>
-          {cur} · as of {asOf}
+          {cur} · as of {asOf}{data.tracking ? <> · tracking since {new Date(data.tracking.startedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</> : null}
           <InfoTip text={`Based on your transactions and prices (RupChain trades use the latest platform trade price). Missing values are never counted as zero.${data.fx.usdtPkr !== null ? ` Current prices use today's RupChain rate of ${formatDecimal(data.fx.usdtPkr)} PKR per USDT; each entry keeps the rate recorded with it.` : ''} Method: FIFO. Not verified ownership, an exit price, or tax advice. Separate from your RupChain wallet balance.`} />
         </span>
       </div>

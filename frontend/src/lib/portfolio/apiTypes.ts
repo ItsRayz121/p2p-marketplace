@@ -1,7 +1,7 @@
 import type { PortfolioAssetDto, PortfolioAssetInput } from '@/lib/api'
 import type { ExportData, RestoreSummary } from './exportFile'
 import type {
-  BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
+  ArchiveResponse, BatchReport, BatchSelection, Currency, EventListQuery, EventRevision, EventsPage, ExcludedTradesPage, ImportReport, PerformanceResponse, PortfolioEvent, PortfolioEventInput, PortfolioSummaryResponse,
 } from './types'
 
 /**
@@ -19,7 +19,8 @@ export interface PortfolioApiLike {
   archiveAsset(id: string): Promise<void>
   unarchiveAsset(id: string): Promise<void>
   deleteAsset(id: string): Promise<void>
-  listEvents(assetId: string): Promise<PortfolioEvent[]>
+  /** `scope`: the current period (default), the earlier archived history, or both. Signed-in accounts only; the local tracker ignores it. */
+  listEvents(assetId: string, scope?: 'current' | 'archived' | 'all'): Promise<PortfolioEvent[]>
   addEvent(assetId: string, data: PortfolioEventInput): Promise<PortfolioEvent>
   deleteEvent(assetId: string, eventId: string): Promise<void>
   /** Every entry across all tokens, newest first, with search, filters and paging. */
@@ -29,6 +30,8 @@ export interface PortfolioApiLike {
   setPrice(assetId: string, price: string, quote?: Currency, source?: string): Promise<{ price: string; quote: Currency; observedAt: string }>
   summary(currency?: Currency): Promise<PortfolioSummaryResponse>
   performance(opts: { currency: Currency; from?: string; to?: string }): Promise<PerformanceResponse>
+  /** Signed-in only: what the tracking period started from and the earlier results. */
+  archive?(currency?: Currency): Promise<ArchiveResponse>
   exportAll(): Promise<ExportData>
   /** Signed-in only: copy settled RupChain trades into the tracker. */
   importCtm?(dryRun: boolean): Promise<ImportReport>

@@ -556,6 +556,7 @@ model User {
   portfolioEventRevisions PortfolioEventRevision[]
   portfolioPrices        PortfolioPriceObservation[]
   portfolioInterests     PortfolioListingInterest[]
+  portfolioPeriods       PortfolioTrackingPeriod[]
   adminNotes             AdminNote[]         @relation("AdminNoteTarget")
   moderationActions      ModerationAction[]  @relation("ModerationActionTarget")
   moderatorActions       ModerationAction[]  @relation("ModerationActionModerator")
@@ -1936,6 +1937,7 @@ model PortfolioAsset {
   events          PortfolioEvent[]
   prices          PortfolioPriceObservation[]
   interests       PortfolioListingInterest[]
+  openingHoldings PortfolioOpeningHolding[]
 
   @@unique([userId, ctmTokenId])
   @@index([userId, createdAt])
@@ -1989,6 +1991,10 @@ model PortfolioEvent {
   /// RupChain price) or 'own' (the price they actually got elsewhere). Informational only: it never
   /// changes a calculation. Null for entries made before this choice existed and for openings.
   priceBasis      String?        @db.VarChar(8)
+  /// Set (to a PortfolioTrackingPeriod id) when a cutover folded this entry into that period's opening
+  /// baseline. Archived entries stay readable and exportable but no longer feed the current period's
+  /// numbers. Null = part of the current period. Cleared again by a rollback.
+  archivedInPeriodId String?    @db.VarChar(40)
   createdAt       DateTime       @default(now())
 
   @@unique([userId, clientRequestId])
@@ -1996,6 +2002,7 @@ model PortfolioEvent {
   @@unique([userId, linkedTradeRef])
   @@index([userId, assetId, occurredAt])
   @@index([userId, occurredAt])
+  @@index([userId, archivedInPeriodId])
 }
 
 /// The earlier version of a manual entry, kept whenever the user corrects or removes it. Analytical
@@ -2051,6 +2058,87 @@ model PortfolioPriceObservation {
   observedAt DateTime       @default(now())
 
   @@index([userId, assetId, observedAt])
+}
+
+/// A versioned performance-tracking period for one user's portfolio. The first period starts at a single
+/// explicit cutover instant: what the user held then (reconciled from their own records) becomes the opening
+/// baseline, and everything recorded earlier is archived (kept, never deleted). Analytical only: no custody
+/// table is read for numbers or written, ever. One active period per user at a time (enforced by the
+/// per-user advisory lock + the unique version in the cutover service).
+model PortfolioTrackingPeriod {
+  id             String   @id @default(cuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  version        Int
+  /// 'active' | 'rolled_back'
+  status         String   @default("active") @db.VarChar(12)
+  /// 'cutover' (existing portfolio, migrated) | 'new_portfolio' (user had no records when tracking began)
+  reason         String   @db.VarChar(16)
+  /// The cutover instant (stored in UTC). Chart and performance start here.
+  startedAt      DateTime
+  /// Business timezone the cutover day is reported in (platform_timezone, default Asia/Karachi).
+  timezone       String   @db.VarChar(40)
+  /// PKR per 1 USDT used to value the opening baseline in USDT, and where it came from. Null = none available.
+  fxUsdtPkr      Decimal? @db.Decimal(46, 18)
+  fxSource       String?  @db.VarChar(24)
+  /// What was reconciled: counts, per-asset discrepancies, wallet/listing context. Audit only.
+  reconciliation Json
+  createdAt      DateTime @default(now())
+  rolledBackAt   DateTime?
+  holdings       PortfolioOpeningHolding[]
+  snapshots      PortfolioSnapshot[]
+
+  @@unique([userId, version])
+  @@index([userId, status])
+}
+
+/// What one token looked like at the cutover. Two separate concepts live here on purpose:
+/// `lots` = the ACTUAL remaining acquisition cost (from the user's own records; unknown stays null), used for
+/// trading profit/loss; `market*` = the quote the token was valued at on the cutover day, used only for
+/// "performance since tracking began". The market price never replaces a known purchase price.
+model PortfolioOpeningHolding {
+  id           String   @id @default(cuid())
+  periodId     String
+  period       PortfolioTrackingPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  userId       String
+  assetId      String
+  asset        PortfolioAsset @relation(fields: [assetId], references: [id], onDelete: NoAction)
+  quantity     Decimal  @db.Decimal(46, 18)
+  /// Remaining FIFO lots, oldest first: [{ eventId, acquiredAt, qty, basisPkr, basisUsdt, zeroCost }]. A basis of
+  /// null means the cost is UNKNOWN (never zero).
+  lots         Json
+  /// Cutover-day quote used for the opening market value (null = no valid quote existed then).
+  marketPrice      Decimal? @db.Decimal(46, 18)
+  marketQuote      String?  @db.VarChar(4)
+  marketSource     String?  @db.VarChar(16)
+  marketObservedAt DateTime?
+
+  @@unique([periodId, assetId])
+  @@index([userId, periodId])
+}
+
+/// One observation of the portfolio's value, stored so the chart is a real series and not a recomputation.
+/// `valuePkr` is null when not every held token had a quote at that moment (a genuine gap, never zero). The
+/// USDT figure is derived with `fxUsdtPkr` from the same moment, so both currencies show the same economics.
+model PortfolioSnapshot {
+  id          String   @id @default(cuid())
+  userId      String
+  periodId    String
+  period      PortfolioTrackingPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+  takenAt     DateTime
+  /// takenAt truncated to the minute: one row per minute at most, so retries and bursts cannot duplicate points.
+  bucket      DateTime
+  valuePkr    Decimal? @db.Decimal(46, 18)
+  fxUsdtPkr   Decimal? @db.Decimal(46, 18)
+  heldCount   Int
+  pricedCount Int
+  /// How many of the priced tokens used a quote older than the stale limit.
+  staleCount  Int      @default(0)
+  /// 'cutover' | 'schedule' | 'event' | 'view'
+  trigger     String   @db.VarChar(10)
+
+  @@unique([periodId, bucket])
+  @@index([userId, takenAt])
 }
 
 // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

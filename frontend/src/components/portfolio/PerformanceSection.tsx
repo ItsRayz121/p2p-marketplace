@@ -86,7 +86,7 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
             key={id} type="button" role="radio" aria-checked={preset === id} onClick={() => setPreset(id)}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${preset === id ? 'bg-primary text-white border-primary' : 'bg-surface text-text-secondary border-border hover:bg-surface-hover'}`}
           >
-            {PERIOD_LABEL[id]}
+            {id === 'all' && data?.tracking ? 'Since start' : PERIOD_LABEL[id]}
           </button>
         ))}
       </div>
@@ -113,15 +113,38 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
       ) : data && p ? (
         <div className="space-y-3" aria-busy={loading}>
           <p className="text-xs text-text-muted">
-            {day(data.from)} to {day(data.to)}<InfoTip text="Shown in your device's time zone. Entries on the start day count in the starting position; entries after it count in this period." />
+            {data.tracking ? <>Tracking began {day(data.tracking.startedAt)} · {day(data.from)} to {day(data.to)}</> : <>{day(data.from)} to {day(data.to)}</>}
+            <InfoTip text={data.tracking
+              ? "Shown in your device's time zone. The chart starts on the day tracking began; nothing earlier is drawn or estimated. Entries on the start day count in the starting position."
+              : "Shown in your device's time zone. Entries on the start day count in the starting position; entries after it count in this period."} />
           </p>
+
+          {data.tracking && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <Card
+                label="Change Since Start"
+                tip="How much the value of what you hold changed, after taking out money you put in and took out. It starts from the market value on the day tracking began, which is not what you paid. Needs a price for everything you hold at both ends."
+                value={p.gain === null ? 'Unavailable' : `${cur} ${formatSigned(p.gain)}`}
+                note={p.gain === null ? (p.gainUnavailableReason ?? undefined) : `Value ${formatDecimal(p.valueStart ?? '0')} to ${formatDecimal(p.valueEnd ?? '0')}`}
+              />
+              <Card
+                label="Return Since Start"
+                tip="An approximate return that weights money added or removed by how long it was invested (Modified Dietz). Not a time-weighted return and not tax advice."
+                value={p.returnPct === null ? 'Unavailable' : `${p.returnPct}%`}
+                note={p.returnPct === null ? 'Needs a starting value and money invested.' : 'Approximate (Modified Dietz)'}
+              />
+            </div>
+          )}
 
           <LineChart
             title="Portfolio Value Over Time"
-            description="Value of what you held, only on dates when every token you held had a price: one you entered, or a proven RupChain trade price that was current then. The latest point uses today's price."
+            description={data.tracking
+              ? 'Value of what you hold, recorded since tracking began. A date is blank when a held token had no price at that time. The latest point is the value in the summary above.'
+              : "Value of what you held, only on dates when every token you held had a price: one you entered, or a proven RupChain trade price that was current then. The latest point uses today's price."}
             currency={cur}
-            emptyMessage={valueEmpty.message}
-            emptyAction={valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}
+            emptyMessage={data.tracking && pts.length === 0 ? 'No values were recorded in this range. Pick a longer range.' : valueEmpty.message}
+            emptyAction={!(data.tracking && pts.length === 0) && valueEmpty.action && onAddPrice ? { label: valueEmpty.action, onClick: onAddPrice } : undefined}
+            singleNote={data.tracking ? (data.tracking.startedToday ? 'Tracking started today. The chart fills in as new values are recorded; nothing is estimated for earlier days.' : 'Only one value has been recorded so far. The chart fills in as new values are recorded.') : undefined}
             series={[{ name: 'Marked value', marker: 'circle', className: 'stroke-primary fill-primary', points: data.points.map((q) => ({ t: q.t, v: q.value })) }]}
           />
           <details className="group rounded-xl border border-border bg-surface">
@@ -144,20 +167,20 @@ export function PerformanceSection({ currency, load, refreshKey, onAddPrice, onF
               tip="What you received from sales in this period, after their fees."
               value={`${cur} ${formatDecimal(p.moneyOut)}`}
             />
-            <Card
+            {!data.tracking && <Card
               label="Portfolio Value Change After Cash Flows"
               tip="How much the value of what you hold changed, after taking out the money you put in and took out. Needs a price at the start and the end of the period."
               value={p.gain === null ? 'Unavailable' : `${cur} ${formatSigned(p.gain)}`}
               note={p.gain === null ? (p.gainUnavailableReason ?? undefined) : `Value ${formatDecimal(p.valueStart ?? '0')} to ${formatDecimal(p.valueEnd ?? '0')}`}
-            />
-            <Card
+            />}
+            {!data.tracking && <Card
               label="Percentage Return"
               tip="An approximate return that weights money added or removed during the period by how long it was invested (Modified Dietz). Not a time-weighted return and not tax advice."
               value={p.returnPct === null ? 'Return unavailable' : `${p.returnPct}%`}
               note={p.returnPct === null
                 ? 'Needs a price at the start and end of the period and money invested during it. A simple growth figure is never shown as a return.'
                 : 'Approximate (Modified Dietz)'}
-            />
+            />}
           </div>
 
           <LineChart

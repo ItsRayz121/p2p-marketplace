@@ -255,7 +255,7 @@ describe('GET /portfolio/summary runs the FIFO engine on stored records', () => 
     m.evFindMany.mockResolvedValue([])
     m.prFindMany.mockResolvedValue([])
     await app.inject({ method: 'GET', url: '/api/v1/portfolio/summary', headers: U })
-    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', voidedAt: null }) // voided entries never count
+    expect(m.evFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1', voidedAt: null, archivedInPeriodId: null }) // voided entries never count
     expect(m.prFindMany.mock.calls[0]![0].where).toEqual({ userId: 'u1' })
   })
   it('does not leak internals when stored data is corrupt', async () => {

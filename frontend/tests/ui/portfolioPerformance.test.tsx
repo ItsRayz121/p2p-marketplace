@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { resolvePeriod, parseLocalDate } from '@/lib/portfolio/periods'
 
@@ -59,22 +59,46 @@ describe('LineChart', () => {
     expect(screen.getByText('Enter a price first.')).toBeInTheDocument()
     expect(screen.queryByRole('img')).toBeNull()
   })
-  it('is labelled for assistive tech and offers the same data as a table', async () => {
-    const user = userEvent.setup()
-    render(<LineChart title="Value over time" description="Shows value." currency="PKR" emptyMessage="x"
+  it('is labelled for assistive tech: title, a text description of the values, and no data table', () => {
+    const { container } = render(<LineChart title="Value over time" description="Shows value." currency="PKR" emptyMessage="x"
       series={[s([['2026-01-01T00:00:00Z', '1000'], ['2026-01-02T00:00:00Z', '1500']])]} />)
     expect(screen.getByRole('img', { name: 'Value over time' })).toBeInTheDocument()
-    await user.click(screen.getByText('View the data as a table'))
-    const table = screen.getByRole('table', { hidden: true })
-    expect(within(table).getByText('1,000.00')).toBeInTheDocument()
-    expect(within(table).getByText('1,500.00')).toBeInTheDocument()
+    expect(screen.queryByText('View the data as a table')).toBeNull()
+    expect(container.querySelector('table')).toBeNull()
+    const desc = container.querySelector('svg[role="img"] desc')!.textContent!
+    expect(desc).toMatch(/2 known values, latest PKR 1,500.00/)
+    expect(desc).toMatch(/lowest PKR 1,000.00, highest PKR 1,500.00/)
   })
-  it('draws a gap as a break: two separate lines, never a joined one, and lists the gap as "Not known"', () => {
+  it('reads exact values with the arrow keys and on pointer move (tooltip), and states the currency', async () => {
+    const user = userEvent.setup()
+    const { container } = render(<LineChart title="Value" description="d" currency="USDT" emptyMessage="x"
+      series={[s([['2026-01-01T00:00:00Z', '1000'], ['2026-01-02T00:00:00Z', '1500'], ['2026-01-03T00:00:00Z', null]])]} />)
+    const svg = container.querySelector('svg[role="img"]') as SVGSVGElement
+    expect(svg.textContent).toContain('USDT') // axis unit label
+    await user.tab()
+    expect(svg).toHaveFocus()
+    // focus reads the latest point (a gap), then Left moves to the previous known one
+    expect(screen.getAllByText(/Not known/).length).toBeGreaterThan(0)
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getAllByText('USDT 1,500.00').length).toBeGreaterThan(0)
+    await user.keyboard('{Home}')
+    expect(screen.getAllByText('USDT 1,000.00').length).toBeGreaterThan(0)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByText('USDT 1,000.00', { selector: 'p.whitespace-nowrap span' })).toBeNull()
+  })
+  it('a single observation is a clear point with the note, never a trend line', () => {
+    const { container } = render(<LineChart title="V" description="d" currency="PKR" emptyMessage="x" singleNote="Tracking started today."
+      series={[s([['2026-10-18T09:00:00Z', '23741.54']])]} />)
+    expect(container.querySelectorAll('svg[role="img"] polyline')).toHaveLength(0)
+    expect(container.querySelectorAll('svg[role="img"] circle')).toHaveLength(1)
+    expect(screen.getByRole('status')).toHaveTextContent('Tracking started today.')
+  })
+  it('draws a gap as a break: two separate lines, never a joined one', () => {
     const { container } = render(<LineChart title="V" description="d" currency="PKR" emptyMessage="x"
       series={[s([['2026-01-01T00:00:00Z', '1'], ['2026-01-02T00:00:00Z', '2'], ['2026-01-03T00:00:00Z', null], ['2026-01-04T00:00:00Z', '3'], ['2026-01-05T00:00:00Z', '4']])]} />)
     expect(container.querySelectorAll('svg[role="img"] polyline')).toHaveLength(2)
-    expect(screen.getByText('Not known', { selector: 'td' })).toBeInTheDocument()
     expect(screen.getByText(/Gaps mean the value is unknown/)).toBeInTheDocument()
+    expect(container.querySelector('svg[role="img"] desc')!.textContent).toMatch(/1 date with an unknown value/)
   })
   it('a single known point is drawn as a marker, not as a line', () => {
     const { container } = render(<LineChart title="V" description="d" currency="PKR" emptyMessage="x"

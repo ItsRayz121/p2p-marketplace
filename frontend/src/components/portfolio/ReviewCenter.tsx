@@ -5,6 +5,7 @@ import type { ImportReport, PortfolioAsset, PortfolioSummaryResponse } from '@/l
 import { ATTENTION_TEXT } from '@/lib/portfolio/importText'
 import { formatQuantity } from '@/lib/portfolio/format'
 import { priceAge } from '@/lib/portfolio/priceStatus'
+import { D } from '@/lib/portfolio/engine/decimal'
 import { InfoTip } from './InfoTip'
 
 export type TokenAction = 'price' | 'opening' | 'history'
@@ -45,11 +46,16 @@ export function buildReview(
   const oversold = mine(s.unresolvedAssets)
   if (oversold.length > 0) {
     sections.push({
-      id: 'history', title: 'Fix transaction history',
-      tip: 'You recorded selling more than your history shows. No profit is counted for the excess. Add the holdings you had before your first record to complete the history.',
+      id: 'history', title: 'Sales larger than your records',
+      tip: 'You recorded selling more than your records show you had. No profit is counted for the excess. If you held the missing units before your first record, add them as previous holdings.',
       rows: oversold.map((id) => {
-        const units = s.positions.find((p) => p.assetId === id)?.unresolvedSales.map((u) => formatQuantity(u.quantity)).join(', ')
-        return { key: `history-${id}`, title: name(id), detail: units ? `Sold ${units} more than recorded` : 'Sales larger than recorded purchases', actionLabel: 'Add previous holdings', token: { assetId: id, action: 'opening' as const } }
+        const sales = s.positions.find((p) => p.assetId === id)?.unresolvedSales ?? []
+        const total = sales.reduce((sum, u) => sum.plus(u.quantity), new D(0))
+        return {
+          key: `history-${id}`, title: name(id),
+          detail: sales.length > 0 ? `${formatQuantity(total.toFixed())} sold beyond your records (${plural(sales.length, 'sale', 'sales')})` : 'Sales larger than recorded purchases',
+          actionLabel: 'Add previous holdings', token: { assetId: id, action: 'opening' as const },
+        }
       }),
     })
   }
@@ -64,17 +70,27 @@ export function buildReview(
     })
   }
 
+  // A price is only a task when the app cannot refresh it by itself: a token with no price at all, or a price the user typed
+  // that has aged. A price taken from the latest RupChain trade updates when the token trades again, so it is a note, not a task.
   const unpriced = mine(s.unpricedAssets)
-  const stale = mine(s.positions
-    .filter((p) => held(p.quantity) && p.value !== null && (() => { const o = summary.prices[p.assetId]?.observedAt; const a = o ? priceAge(o, now) : null; return a?.stale === true })())
+  const staleOwn = mine(s.positions
+    .filter((p) => held(p.quantity) && p.value !== null && (() => {
+      const v = summary.prices[p.assetId]
+      const a = v ? priceAge(v.observedAt, now) : null
+      return a?.stale === true && v?.source !== 'platform'
+    })())
     .map((p) => p.assetId))
-  if (unpriced.length + stale.length > 0) {
+  if (unpriced.length + staleOwn.length > 0) {
     sections.push({
       id: 'prices', title: 'Prices needing attention',
-      tip: 'A token without a price is left out of the portfolio value. An old price may no longer match the market.',
+      tip: 'A token without a price is left out of the portfolio value. A price you entered long ago may no longer match the market. Prices from RupChain trades update by themselves.',
       rows: [
-        ...unpriced.map((id) => ({ key: `price-${id}`, title: name(id), detail: 'No current price', actionLabel: 'Add price', token: { assetId: id, action: 'price' as const } })),
-        ...stale.map((id) => ({ key: `stale-${id}`, title: name(id), detail: `Price ${priceAge(summary.prices[id]!.observedAt, now)?.label ?? 'is old'}, may be out of date`, actionLabel: 'Update price', token: { assetId: id, action: 'price' as const } })),
+        ...unpriced.map((id) => ({
+          key: `price-${id}`, title: name(id),
+          detail: active.get(id)?.linkedToRupChainToken ? 'No RupChain trade price yet. Enter your own price to include it in the value.' : 'No price entered yet',
+          actionLabel: 'Add price', token: { assetId: id, action: 'price' as const },
+        })),
+        ...staleOwn.map((id) => ({ key: `stale-${id}`, title: name(id), detail: `Your price was entered ${priceAge(summary.prices[id]!.observedAt, now)?.label ?? 'a while ago'}`, actionLabel: 'Update price', token: { assetId: id, action: 'price' as const } })),
       ],
     })
   }
@@ -90,15 +106,31 @@ export function buildReview(
   return sections
 }
 
+/**
+ * Things worth knowing that are NOT tasks: nothing here needs the user to do anything, so they are not counted on the
+ * Review badge. Today: a price taken from the latest RupChain trade that was a while ago.
+ */
+export function reviewNotes(summary: PortfolioSummaryResponse, assets: PortfolioAsset[], now = new Date()): string[] {
+  const active = new Map(assets.filter((a) => !a.archivedAt).map((a) => [a.id, a]))
+  const old = summary.summary.positions
+    .filter((p) => held(p.quantity) && p.value !== null && active.has(p.assetId))
+    .filter((p) => { const v = summary.prices[p.assetId]; return v?.source === 'platform' && priceAge(v.observedAt, now)?.stale === true })
+    .map((p) => active.get(p.assetId)!.name)
+  if (old.length === 0) return []
+  return [`${old.join(', ')} ${old.length === 1 ? 'is' : 'are'} valued at the latest RupChain trade price, which was a while ago. ${old.length === 1 ? 'It updates' : 'They update'} automatically when ${old.length === 1 ? 'the token trades' : 'they trade'} again; you can also enter your own price on the token's page.`]
+}
+
 /** Number of things to look at, shown as a small badge on the Review button. */
 export function reviewCount(sections: ReviewSection[]): number {
   return sections.reduce((n, s) => n + s.rows.length, 0)
 }
 
 export function ReviewCenter({
-  sections, waiting = 0, tokens = [], onOpenToken, onReviewTrades, onBack, backRef,
+  sections, notes = [], waiting = 0, tokens = [], onOpenToken, onReviewTrades, onBack, backRef,
 }: {
   sections: ReviewSection[]
+  /** Information only (nothing to do): shown under the sections. */
+  notes?: string[]
   /** Tokens that can be given previous holdings from here (the fix for a gap in the history). */
   tokens?: Array<{ id: string; name: string }>
   /** Trades still in progress: informational only. */
@@ -143,6 +175,7 @@ export function ReviewCenter({
           </ul>
         </details>
       ))}
+      {notes.map((n) => <p key={n} className="rounded-2xl border border-border bg-surface px-4 py-3 text-xs text-text-secondary">{n}</p>)}
       {tokens.length > 0 && <PreviousHoldings tokens={tokens} onPick={(id) => onOpenToken(id, 'opening')} />}
       {waiting > 0 && <p className="text-xs text-text-muted">{plural(waiting, 'RupChain trade is', 'RupChain trades are')} still in progress and will be added once confirmed.</p>}
     </div>
