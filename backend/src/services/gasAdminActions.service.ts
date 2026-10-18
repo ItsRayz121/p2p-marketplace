@@ -163,3 +163,119 @@ export async function retryGasDelivery(id: string, actor: AdminActor): Promise<{
   await audit(actor, 'GAS_ORDER_RETRY', id, { previousStatus, oldStatus: previousStatus, newStatus: 'payment_detected' })
   return {}
 }
+
+// ── Ethereum "Speed up" ──────────────────────────────────────────────────────
+
+const ETH_SEND_GAS = 21_000
+const WEI = 1e18
+
+export interface EthRetryStep {
+  label: string
+  maxFeeGwei: number
+  /** Worst-case network cost of this tx (max fee x 21,000 gas), in USD. */
+  maxCostUsd: number
+  /** Platform margin left if the tx pays its worst-case fee. */
+  marginUsd: number
+}
+export interface EthRetryPlan {
+  marginBeforeNetworkCostUsd: number
+  speedUpsDone: number
+  speedUpsMax: number
+  steps: EthRetryStep[]
+}
+
+/**
+ * What an Ethereum order earns and what each further speed-up could cost, so the admin sees the margin
+ * shrinking BEFORE pressing the button. Worst case = the tx pays its full max fee (it normally pays less).
+ * Null when the stuck tx's fee can no longer be read from any node.
+ */
+export async function getEthRetryPlan(order: { id: string; chain: string; unconfirmedDeliveryTxHash: string | null; platformMarginUsdt: unknown; priceAtOrder: unknown }): Promise<EthRetryPlan | null> {
+  if (order.chain !== 'ETH' || !order.unconfirmedDeliveryTxHash) return null
+  const { readStuckTxFees, bumpedFees, SPEEDUP_MAX_STEPS } = await import('../lib/gas/gas.delivery')
+  const prev = await readStuckTxFees(order.chain, order.unconfirmedDeliveryTxHash)
+  if (!prev) return null
+  const ethUsd = Number(order.priceAtOrder)
+  const margin = Number(order.platformMarginUsdt ?? 0)
+  const done = await db.auditLog.count({ where: { targetType: 'GasFeeOrder', targetId: order.id, action: 'GAS_DELIVERY_SPEEDUP' } })
+  const cost = (maxFee: bigint) => (ETH_SEND_GAS * Number(maxFee)) / WEI * ethUsd
+  const steps: EthRetryStep[] = []
+  let cur = prev
+  steps.push({ label: done === 0 ? 'Current transaction' : `Current (speed-up ${done})`, maxFeeGwei: Number(cur.maxFeePerGas) / 1e9, maxCostUsd: cost(cur.maxFeePerGas), marginUsd: margin - cost(cur.maxFeePerGas) })
+  for (let n = done + 1; n <= SPEEDUP_MAX_STEPS; n++) {
+    cur = { ...cur, ...bumpedFees(cur) }
+    steps.push({ label: `Speed-up ${n} (+11%)`, maxFeeGwei: Number(cur.maxFeePerGas) / 1e9, maxCostUsd: cost(cur.maxFeePerGas), marginUsd: margin - cost(cur.maxFeePerGas) })
+  }
+  return { marginBeforeNetworkCostUsd: margin, speedUpsDone: done, speedUpsMax: SPEEDUP_MAX_STEPS, steps }
+}
+
+/**
+ * Ethereum only. Re-send the stuck payout under the SAME nonce with +11% fee. No extra transaction is
+ * spent (the replacement is the delivery) and a double delivery is impossible: one nonce, one winner,
+ * and every replaced hash is kept (audit log) so a late-landing earlier one is still adopted.
+ */
+export async function speedUpStuckDelivery(id: string, actor: AdminActor): Promise<{ message: string; txHash?: string }> {
+  const order = await db.gasFeeOrder.findUnique({ where: { id } })
+  if (!order) throw Errors.NOT_FOUND('Gas fee order')
+  if (order.chain !== 'ETH') throw new AppError('CONFLICT', 'Speed up is only available for Ethereum orders.', 409)
+  if (order.gasTokenConfigId) {
+    const cfg = await db.gasTokenConfig.findUnique({ where: { id: order.gasTokenConfigId }, select: { tokenType: true } })
+    if (cfg && cfg.tokenType !== 'native') throw new AppError('CONFLICT', 'Speed up only supports native ETH deliveries.', 409)
+  }
+  if (order.deliveryTxHash || !order.unconfirmedDeliveryTxHash) throw new AppError('CONFLICT', 'This order has no stuck delivery transaction.', 409)
+  if (order.status !== 'failed') throw new AppError('CONFLICT', `Order is '${order.status}' — speed up is offered once the delivery is reported stuck (failed).`, 409)
+
+  const { SPEEDUP_MAX_STEPS, speedUpEvmDelivery } = await import('../lib/gas/gas.delivery')
+  const done = await db.auditLog.count({ where: { targetType: 'GasFeeOrder', targetId: id, action: 'GAS_DELIVERY_SPEEDUP' } })
+  if (done >= SPEEDUP_MAX_STEPS) {
+    throw new AppError('CONFLICT', `Already sped up ${done} times (about +23%) — the fee cap is reached. Use "Cancel stuck tx", then deliver manually.`, 409)
+  }
+
+  const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+  const prior = await assessPriorAttempt(order)
+  if (prior.verdict === 'landed' && prior.txHash) {
+    await handBackLandedDelivery(id, prior.txHash)
+    return { message: 'The delivery had actually landed on-chain — the order is being finalized as delivered. Nothing was resent.' }
+  }
+  if (prior.verdict === 'dead') return { message: 'The earlier transaction is already proven dead — use the normal Retry instead.' }
+  if (prior.verdict === 'none') throw new AppError('CONFLICT', 'No earlier attempt found.', 409)
+
+  // Claim the order (failed -> sending) so a concurrent click, refund or retry cannot race this send.
+  const claimed = await db.gasFeeOrder.updateMany({ where: { id, status: 'failed', deliveryTxHash: null }, data: { status: 'sending', failureReason: null } })
+  if (claimed.count === 0) throw new AppError('CONFLICT', 'Order changed state — refresh and check again.', 409)
+
+  let sent: { txHash: string; nonce: number } | null = null
+  let journaled = false
+  try {
+    sent = await speedUpEvmDelivery(order, async (a) => {
+      const earlier = await db.auditLog.findMany({ where: { targetType: 'GasFeeOrder', targetId: id, action: 'GAS_DELIVERY_SPEEDUP' }, select: { metadata: true } })
+      const previous = new Set<string>([a.replacedTxHash])
+      for (const r of earlier) {
+        const p = (r.metadata as { previousTxHashes?: unknown } | null)?.previousTxHashes
+        if (Array.isArray(p)) for (const h of p) if (typeof h === 'string') previous.add(h)
+      }
+      // Durable record FIRST (it is what keeps a replaced-but-landed tx from being mistaken for dead).
+      await audit(actor, 'GAS_DELIVERY_SPEEDUP', id, {
+        orderRef: order.orderRef, step: done + 1, nonce: a.nonce, newTxHash: a.newTxHash, previousTxHashes: [...previous],
+        maxFeeGwei: Number(a.maxFeePerGas) / 1e9, maxPriorityFeeGwei: Number(a.maxPriorityFeePerGas) / 1e9,
+      })
+      await db.gasFeeOrder.update({ where: { id }, data: { unconfirmedDeliveryTxHash: a.newTxHash, deliveryAttemptAt: new Date() } })
+      journaled = true
+    })
+  } catch (err) {
+    if (!journaled) {
+      // Nothing left the process — put the order back for the admin.
+      await db.gasFeeOrder.updateMany({ where: { id, status: 'sending' }, data: { status: 'failed', failureReason: order.failureReason } })
+      throw new AppError('CONFLICT', err instanceof Error ? err.message : 'Speed up failed', 409)
+    }
+    throw err
+  }
+
+  // Hand the new hash to the verifier: it finalizes the order when mined, or reports it stuck again.
+  await queues.gasFee.add(
+    'verify-delivery',
+    { orderId: id, txHash: sent.txHash, startedAt: Date.now() },
+    { jobId: `gas-verify-speedup-${id}-${Date.now()}`, attempts: 1 },
+  )
+  try { await queues.gasFee.remove(`gas-auto-refund-${id}`) } catch { /* non-fatal */ }
+  return { txHash: sent.txHash, message: `Speed-up sent (+11% fee): ${sent.txHash}. You will be notified if it is still not mined in about 3 minutes.` }
+}

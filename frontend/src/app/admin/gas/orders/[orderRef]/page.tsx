@@ -64,6 +64,12 @@ interface GasOrderDetail {
   createdAt: string
   user: { username: string; email: string } | null
   audit?: GasAuditEvent[]
+  ethRetryPlan?: {
+    marginBeforeNetworkCostUsd: number
+    speedUpsDone: number
+    speedUpsMax: number
+    steps: { label: string; maxFeeGwei: number; maxCostUsd: number; marginUsd: number }[]
+  } | null
 }
 
 const REFUND_RAILS = ['BEP20', 'ERC20', 'TRC20', 'APTOS'] as const
@@ -265,6 +271,18 @@ export default function GasOrderDetailPage() {
       await fetchOrder()
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Verify failed')
+    }
+  }
+
+  async function handleSpeedUp() {
+    if (!order) return
+    setActionError(null)
+    try {
+      const r = await adminApi.speedUpGasDelivery(order.id)
+      setActionSuccess(r?.message ?? 'Speed-up sent.')
+      await fetchOrder()
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Speed up failed')
     }
   }
 
@@ -585,10 +603,25 @@ export default function GasOrderDetailPage() {
               Delivery failed — the system is still retrying and the user can request a refund once the window elapses. You can force a refund now, or retry delivery.
             </p>
           )}
+          {isFailed && order.ethRetryPlan && (
+            <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="font-semibold mb-1">Ethereum stuck delivery — margin if it still pays its full max fee</p>
+              <p className="mb-1">Platform margin before network cost: <b>${order.ethRetryPlan.marginBeforeNetworkCostUsd.toFixed(3)}</b> · speed-ups used {order.ethRetryPlan.speedUpsDone}/{order.ethRetryPlan.speedUpsMax}</p>
+              <ul className="space-y-0.5">
+                {order.ethRetryPlan.steps.map((st) => (
+                  <li key={st.label}>{st.label}: max fee {st.maxFeeGwei.toFixed(2)} gwei → network cost up to ${st.maxCostUsd.toFixed(3)} → margin <b className={st.marginUsd < 0 ? 'text-red-600' : ''}>${st.marginUsd.toFixed(3)}</b></li>
+                ))}
+              </ul>
+              <p className="mt-1 opacity-80">The real fee is usually lower than the max. If the margin is not worth it, use Cancel stuck tx and deliver manually.</p>
+            </div>
+          )}
           <div className="flex gap-3 flex-wrap">
             {isFailed && (order.failureReason ?? '').includes('delivery_unconfirmed') && (
               <>
                 <Button variant="secondary" size="sm" onClick={handleVerify}>Verify on-chain</Button>
+                {order.chain === 'ETH' && (order.ethRetryPlan?.speedUpsDone ?? 0) < (order.ethRetryPlan?.speedUpsMax ?? 2) && (
+                  <Button variant="primary" size="sm" onClick={() => { if (window.confirm('Re-send this same payout with +11% fee? It replaces the stuck transaction (same nonce), so the customer can only be paid once and no cancel fee is spent.')) void handleSpeedUp() }}>Speed up (+11%)</Button>
+                )}
                 <Button variant="secondary" size="sm" onClick={() => { if (window.confirm('Send a cancel transaction (same nonce, higher fee) to unstick this delivery? After it is mined, Retry / Manual delivery / Refund unlock.')) void handleCancelStuck() }}>Cancel stuck tx</Button>
               </>
             )}

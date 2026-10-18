@@ -1046,3 +1046,103 @@ export async function cancelStuckEvmDelivery(order: Pick<GasFeeOrder, 'chain' | 
     seed.fill(0)
   }
 }
+
+/** Each speed-up must beat the previous tx by >=10% on BOTH fee fields (node rule); +11% is the cheapest that is accepted. */
+export const SPEEDUP_BUMP_NUM = 111n
+export const SPEEDUP_BUMP_DEN = 100n
+/** Two speed-ups = about +23% over the first attempt. Beyond that the admin cancels and pays manually. */
+export const SPEEDUP_MAX_STEPS = 2
+
+export function bumpedFees(prev: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } {
+  const maxPriorityFeePerGas = prev.maxPriorityFeePerGas * SPEEDUP_BUMP_NUM / SPEEDUP_BUMP_DEN + 1n
+  let maxFeePerGas = prev.maxFeePerGas * SPEEDUP_BUMP_NUM / SPEEDUP_BUMP_DEN + 1n
+  if (maxFeePerGas < maxPriorityFeePerGas) maxFeePerGas = maxPriorityFeePerGas
+  return { maxFeePerGas, maxPriorityFeePerGas }
+}
+
+/** Fees of the currently stuck delivery tx, read from any reachable node. null = no node still has it. */
+export async function readStuckTxFees(chain: string, txHash: string): Promise<{ maxFeePerGas: bigint; maxPriorityFeePerGas: bigint; gas: bigint; to: `0x${string}` | null; value: bigint; input: `0x${string}` } | null> {
+  const m = EVM_TOKEN_CHAINS[chain]
+  if (!m) return null
+  for (const url of getRpcUrlsInOrder(chain === 'ETH' ? 'ETHEREUM' : (chain as GasChainId), m.rpc).slice(0, 4)) {
+    try {
+      const tx = await createPublicClient({ chain: m.chain, transport: http(url, { timeout: 8_000, retryCount: 0 }) })
+        .getTransaction({ hash: txHash as `0x${string}` })
+      if (!tx.maxFeePerGas || !tx.maxPriorityFeePerGas) {
+        if (!tx.gasPrice) continue
+        return { maxFeePerGas: tx.gasPrice, maxPriorityFeePerGas: tx.gasPrice, gas: tx.gas, to: tx.to ?? null, value: tx.value, input: tx.input }
+      }
+      return { maxFeePerGas: tx.maxFeePerGas, maxPriorityFeePerGas: tx.maxPriorityFeePerGas, gas: tx.gas, to: tx.to ?? null, value: tx.value, input: tx.input }
+    } catch { /* try next node */ }
+  }
+  return null
+}
+
+/**
+ * Speed up a stuck native EVM delivery: re-send the SAME payout (same recipient, amount and nonce)
+ * with fees +11%. Only one tx can ever be mined for that nonce, so this can never pay twice and,
+ * unlike a cancel, the replacement IS the delivery — no extra transaction fee is spent.
+ * `journal` runs BEFORE the broadcast (it records the new hash and the replaced one).
+ */
+export async function speedUpEvmDelivery(
+  order: Pick<GasFeeOrder, 'chain' | 'unconfirmedDeliveryTxHash' | 'deliveryNonce' | 'fromHotWallet' | 'toAddress' | 'gasAmountNative'>,
+  journal: (a: { newTxHash: string; replacedTxHash: string; nonce: number; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }) => Promise<void>,
+): Promise<{ txHash: string; nonce: number; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }> {
+  const m = EVM_TOKEN_CHAINS[order.chain]
+  if (!m) throw new Error(`Speed-up is only available for EVM chains (got ${order.chain})`)
+  if (order.deliveryNonce === null || !order.fromHotWallet || !order.unconfirmedDeliveryTxHash) {
+    throw new Error('This order has no journaled nonce / sender, so it cannot be sped up.')
+  }
+  const sender = order.fromHotWallet
+  const replaced = order.unconfirmedDeliveryTxHash
+  const wallets = await db.gasHotWallet.findMany({ where: { chain: order.chain as never } })
+  const hw = wallets.find((w) => w.address.toLowerCase() === sender.toLowerCase())
+  if (!hw) throw new Error(`Hot wallet ${sender} not found for ${order.chain}`)
+
+  const nonce = order.deliveryNonce
+  const rpcUrl = await getWorkingRpcUrl(order.chain === 'ETH' ? 'ETHEREUM' : (order.chain as GasChainId), m.rpc)
+  const seed = decryptGasSeed()
+  try {
+    const account = privateKeyToAccount(deriveEvmPrivateKeyHex(seed, hw.hdIndex) as `0x${string}`)
+    if (account.address.toLowerCase() !== sender.toLowerCase()) throw new Error('Derived hot wallet does not match the order sender')
+    return await withHotWalletLock(order.chain, async () => {
+      const confirmed = await getTransactionCount(rpcUrl, order.chain, account.address, 'latest')
+      if (confirmed > nonce) throw new Error('That nonce is already used on-chain — nothing to speed up. Use Verify on-chain.')
+      const value = parseEther(order.gasAmountNative.toString())
+      const prev = await readStuckTxFees(order.chain, replaced)
+      let fees: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint }
+      let gas = 21_000n
+      if (prev) {
+        if (prev.to?.toLowerCase() !== order.toAddress.toLowerCase() || prev.value !== value || prev.input !== '0x') {
+          throw new Error("The stuck transaction is not a plain native payout to this order's address — it cannot be sped up automatically.")
+        }
+        fees = bumpedFees(prev)
+        gas = prev.gas
+      } else {
+        // No node holds the tx any more (dropped). The nonce is still unused, so the same payout can safely
+        // be re-sent under it; there is no earlier fee to beat, so price it with the retry (headroom) fee.
+        const f = await pickEip1559Fees(createPublicClient({ chain: m.chain, transport: http(rpcUrl) }), m.chain)
+        if (!f.maxFeePerGas || !f.maxPriorityFeePerGas) throw new Error('Could not price the replacement transaction right now. Try again shortly.')
+        fees = { maxFeePerGas: f.maxFeePerGas, maxPriorityFeePerGas: f.maxPriorityFeePerGas }
+      }
+      const wallet = createWalletClient({ chain: m.chain, transport: http(rpcUrl), account })
+      // Same payout as the original: same recipient + amount, same nonce.
+      const prepared = await wallet.prepareTransactionRequest({
+        account, chain: m.chain, nonce, to: order.toAddress as `0x${string}`, value,
+        gas, ...fees,
+      } as never)
+      const serialized = await wallet.signTransaction(prepared as never)
+      const newTxHash = keccak256(serialized)
+      await journal({ newTxHash, replacedTxHash: replaced, nonce, ...fees })
+      try {
+        await createPublicClient({ chain: m.chain, transport: http(rpcUrl) }).sendRawTransaction({ serializedTransaction: serialized })
+      } catch (err) {
+        logger.warn({ err, txHash: newTxHash }, 'Speed-up broadcast returned an error — outcome unknown, hash journaled for verification')
+      }
+      await relayToOtherNodes(m.chain, rpcUrl, serialized)
+      return { txHash: newTxHash, nonce, ...fees }
+    })
+  } finally {
+    seed.fill(0)
+  }
+}

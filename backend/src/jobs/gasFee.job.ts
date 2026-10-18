@@ -18,7 +18,7 @@ import { markShareRewardUsed } from '../lib/gas/gas.share'
 import { awardGasPointsForDelivery } from '../services/airdrop.service'
 import { REFUND_WINDOW_MS, AUTO_REFUND_SAFETY_MS, RETRY_INTERVAL_MS } from '../lib/gas/gas.refundWindow'
 import { maybeSendTrustpilotReviewNudge } from '../services/trustpilotReview.service'
-import { awaitTxInclusion, getTxStatus, isEvmGasChain } from '../lib/gas/gas.confirmation'
+import { awaitTxInclusion, getTxStatus } from '../lib/gas/gas.confirmation'
 import type { TxStatus } from '../lib/gas/gas.confirmation'
 import type { GasFeeOrder } from '@prisma/client'
 
@@ -113,14 +113,18 @@ const INCLUSION_WAIT_MS = 90_000          // initial in-job wait for the tx to b
 const INCLUSION_POLL_MS = 6_000
 const VERIFY_INTERVAL_MS = 30_000         // follow-up polling cadence
 const VERIFY_DROPPED_AFTER_MS = 5 * 60_000   // no node has ever seen the tx → dropped
+const ETH_STUCK_AFTER_MS = 3 * 60_000
 const VERIFY_GIVE_UP_MS = 20 * 60_000        // seen in a mempool but never mined
 
 type BroadcastVerdict = 'confirmed' | 'failed' | 'wait'
 
 /** Pure decision: what to do with a broadcast tx given its live status and age. */
-export function decideBroadcastVerdict(status: TxStatus, ageMs: number): BroadcastVerdict {
+export function decideBroadcastVerdict(status: TxStatus, ageMs: number, chain?: string): BroadcastVerdict {
   if (status.state === 'success') return 'confirmed'
   if (status.state === 'reverted') return 'failed'
+  // Ethereum: blocks are 12s, so a tx unmined after ~3 min at the normal fee is stuck — tell the admin
+  // early (Speed up / Cancel) instead of leaving it, and every later send, queued for 20 minutes.
+  if (chain === 'ETH' && ageMs >= ETH_STUCK_AFTER_MS) return 'failed'
   if (status.state === 'not_found' && ageMs >= VERIFY_DROPPED_AFTER_MS) return 'failed'
   if (ageMs >= VERIFY_GIVE_UP_MS) return 'failed'
   return 'wait'
@@ -132,7 +136,7 @@ function describeUnconfirmed(txHash: string, status: TxStatus): string {
     : status.state === 'mempool'
       ? 'was seen by a node but never mined — it may STILL land'
       : 'was not seen on-chain — it may be dropped, but that is NOT proven and it may still land'
-  return `delivery_unconfirmed: broadcast tx ${txHash} ${why}. Do NOT resend or refund until it is verified (admin: use "Verify on-chain"); Retry is only allowed once the attempt is proven unable to land.`
+  return `delivery_unconfirmed: broadcast tx ${txHash} ${why}. Do NOT resend or refund until it is verified (admin: use "Verify on-chain"). Ethereum: use "Speed up" (re-sends the same payout with +11% fee, no double delivery) or "Cancel stuck tx". Retry is only allowed once the attempt is proven unable to land.`
 }
 
 /** Thrown when an earlier attempt exists that cannot be proven dead — automation must stop. */
@@ -201,37 +205,8 @@ async function failUnconfirmedBroadcast(orderId: string, order: GasFeeOrder, txH
     source: 'worker', event: 'delivery_unconfirmed', txHash, expectedChain: order.chain, reason: status.state, detail: msg,
   })
   await markNeedsManual(orderId, order, msg)
-  if (status.state !== 'reverted') await autoCancelStuckEvm(orderId, order.chain, txHash)
 }
 
-/**
- * A stuck EVM tx also blocks every later send from the same hot wallet (same nonce queue), so it is
- * cleared automatically: a 0-value self-transfer at the SAME nonce. This can never pay anyone — it
- * only guarantees the stuck delivery can no longer land, which unlocks Retry / Manual delivery /
- * Refund for the admin. It sends no gas to the customer and the order stays `failed` for a human.
- */
-async function autoCancelStuckEvm(orderId: string, chain: string, txHash: string): Promise<void> {
-  if (!isEvmGasChain(chain)) return
-  try {
-    const fresh = await db.gasFeeOrder.findUnique({ where: { id: orderId } })
-    if (!fresh || fresh.status !== 'failed' || fresh.unconfirmedDeliveryTxHash !== txHash) return
-    const prior = await assessPriorAttempt(fresh)
-    if (prior.verdict === 'landed' && prior.txHash) {
-      const { handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
-      await handBackLandedDelivery(orderId, prior.txHash)
-      return
-    }
-    if (prior.verdict !== 'unresolved') return
-    const { cancelStuckEvmDelivery } = await import('../lib/gas/gas.delivery')
-    const r = await cancelStuckEvmDelivery(fresh)
-    await recordGasAudit({ orderId }, {
-      source: 'worker', event: 'stuck_tx_auto_cancelled', txHash: r.cancelTxHash, expectedChain: chain,
-      detail: `Stuck delivery ${txHash} replaced by a 0-value cancel tx at nonce ${r.nonce}. Once mined, Retry / Manual delivery / Refund unlock.`,
-    })
-  } catch (err) {
-    logger.warn({ err, orderId, txHash }, 'auto-cancel of stuck EVM delivery failed — admin can use "Cancel stuck tx"')
-  }
-}
 
 // Park the broadcast, wait briefly for inclusion, then either finalize, fail, or hand
 // over to the follow-up verifier. NEVER throws into the send/retry path (a throw there
@@ -252,7 +227,7 @@ async function settleBroadcast(orderId: string, order: GasFeeOrder, txHash: stri
   })
 
   const status = await awaitTxInclusion(order.chain, txHash, { timeoutMs: INCLUSION_WAIT_MS, intervalMs: INCLUSION_POLL_MS })
-  const verdict = decideBroadcastVerdict(status, INCLUSION_WAIT_MS)
+  const verdict = decideBroadcastVerdict(status, INCLUSION_WAIT_MS, order.chain)
   if (verdict === 'confirmed') return finalizeDeliverySuccess(orderId, order, txHash, hotWallet)
   if (status.state === 'reverted') return failUnconfirmedBroadcast(orderId, order, txHash, status)
 
@@ -279,13 +254,21 @@ export async function processGasDeliveryVerify(job: Job<{ orderId: string; txHas
   }
 
   const ageMs = Date.now() - startedAt
-  const verdict = decideBroadcastVerdict(status, ageMs)
+  const verdict = decideBroadcastVerdict(status, ageMs, order.chain)
   if (verdict === 'confirmed') {
     const hotWallet = await selectHotWallet(order.chain).catch(() => null)
     await finalizeDeliverySuccess(orderId, order, txHash, hotWallet && hotWallet.address === order.fromHotWallet ? hotWallet : null)
     return
   }
-  if (verdict === 'failed') return failUnconfirmedBroadcast(orderId, order, txHash, status)
+  if (verdict === 'failed') {
+    // A speed-up replaces the tx under the same nonce: an EARLIER hash of this order may be the one that landed.
+    const prior = status.state === 'reverted' ? null : await assessPriorAttempt(order).catch(() => null)
+    if (prior?.verdict === 'landed' && prior.txHash && prior.txHash !== txHash) {
+      await db.gasFeeOrder.update({ where: { id: orderId }, data: { unconfirmedDeliveryTxHash: prior.txHash } })
+      return finalizeDeliverySuccess(orderId, { ...order, unconfirmedDeliveryTxHash: prior.txHash }, prior.txHash, null)
+    }
+    return failUnconfirmedBroadcast(orderId, order, txHash, status)
+  }
 
   await queues.gasFee.add(
     'verify-delivery',

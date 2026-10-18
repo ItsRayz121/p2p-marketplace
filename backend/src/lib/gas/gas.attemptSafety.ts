@@ -15,7 +15,7 @@ export interface PriorAttemptAssessment {
 }
 
 type OrderFacts = Pick<GasFeeOrder,
-  'chain' | 'unconfirmedDeliveryTxHash' | 'deliveryNonce' | 'deliveryAttemptAt' | 'fromHotWallet'>
+  'id' | 'chain' | 'unconfirmedDeliveryTxHash' | 'deliveryNonce' | 'deliveryAttemptAt' | 'fromHotWallet'>
 
 /**
  * Live, read-only check of whether an earlier delivery broadcast for this order can still
@@ -39,6 +39,31 @@ export async function assessPriorAttempt(order: OrderFacts): Promise<PriorAttemp
     }
   }
 
+  // Speed-ups re-send the SAME payout under the SAME nonce with a higher fee, so an EARLIER hash of
+  // this order can still be the one that lands. Every replaced hash is kept in the audit log; if any of
+  // them was mined, that is the delivery — adopt it. An unreadable one fails closed.
+  let unreadableEarlierHash = false
+  if (evm) {
+    const rows = await db.auditLog.findMany({
+      where: { targetType: 'GasFeeOrder', targetId: order.id, action: 'GAS_DELIVERY_SPEEDUP' },
+      select: { metadata: true },
+    })
+    const earlier = new Set<string>()
+    for (const r of rows) {
+      const prev = (r.metadata as { previousTxHashes?: unknown } | null)?.previousTxHashes
+      if (Array.isArray(prev)) for (const h of prev) if (typeof h === 'string' && h.toLowerCase() !== txHash.toLowerCase()) earlier.add(h)
+    }
+    for (const h of earlier) {
+      try {
+        const st = await getTxStatus(order.chain, h)
+        if (st.state === 'success') return { verdict: 'landed', txHash: h, detail: describePriorAttempt('landed', h) }
+      } catch (err) {
+        logger.warn({ err, chain: order.chain, txHash: h }, 'assessPriorAttempt: earlier (replaced) tx lookup failed — treating as unresolved')
+        unreadableEarlierHash = true
+      }
+    }
+  }
+
   let state: ObservedTxState
   try {
     state = (await getTxStatus(order.chain, txHash)).state
@@ -47,7 +72,7 @@ export async function assessPriorAttempt(order: OrderFacts): Promise<PriorAttemp
     state = 'unreachable'
   }
 
-  const verdict = classifyPriorAttempt({
+  const classified = classifyPriorAttempt({
     hasAttempt: true,
     chain: order.chain,
     evm,
@@ -56,6 +81,7 @@ export async function assessPriorAttempt(order: OrderFacts): Promise<PriorAttemp
     senderConfirmedCount,
     attemptAgeMs: order.deliveryAttemptAt ? Date.now() - order.deliveryAttemptAt.getTime() : null,
   })
+  const verdict = unreadableEarlierHash && classified !== 'landed' ? 'unresolved' : classified
   return { verdict, txHash, detail: describePriorAttempt(verdict, txHash) }
 }
 
@@ -68,7 +94,8 @@ export async function handBackLandedDelivery(orderId: string, txHash: string): P
   const { queues } = await import('../../queues/definitions')
   const moved = await db.gasFeeOrder.updateMany({
     where: { id: orderId, deliveryTxHash: null, status: { in: ['failed', 'awaiting_refund', 'refund_pending', 'payment_detected'] } },
-    data: { status: 'sending' },
+    // The landed hash may be an EARLIER (replaced) one — make it the tracked hash so the verifier accepts it.
+    data: { status: 'sending', unconfirmedDeliveryTxHash: txHash },
   })
   if (moved.count === 0) return false
   await queues.gasFee.add(

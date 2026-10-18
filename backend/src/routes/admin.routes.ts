@@ -13,7 +13,7 @@ import { AppError, Errors } from '../lib/errors'
 import { sendWithdrawalEmail } from '../services/email.service'
 import { queues } from '../queues/definitions'
 import { approvePart, rejectPart, recordItemDecision, requestChanges, reviewState } from '../services/kycReview.service'
-import { approveManualGasPayment, rejectManualGasPayment, retryGasDelivery, type AdminActor } from '../services/gasAdminActions.service'
+import { approveManualGasPayment, rejectManualGasPayment, retryGasDelivery, speedUpStuckDelivery, getEthRetryPlan, type AdminActor } from '../services/gasAdminActions.service'
 import { logger as log } from '../lib/logger'
 import { resolveBondOnDispute, releaseMakerBond } from '../services/makerBond.service'
 import { clawbackTradePoints } from '../services/airdrop.service'
@@ -5035,7 +5035,9 @@ export async function adminRoutes(app: FastifyInstance) {
       fromHotWallet = tonRawToFriendly(fromHotWallet)
     }
 
-    return reply.send({ success: true, data: { ...order, fromHotWallet, paymentSenderAddress, audit } })
+    // Ethereum stuck delivery: what each speed-up could cost and the margin that would remain.
+    const ethRetryPlan = order.status === 'failed' ? await getEthRetryPlan(order).catch(() => null) : null
+    return reply.send({ success: true, data: { ...order, fromHotWallet, paymentSenderAddress, audit, ethRetryPlan } })
   })
 
   // ── Financial aggregation helper ─────────────────────────────────────────────
@@ -6869,6 +6871,13 @@ export async function adminRoutes(app: FastifyInstance) {
     return reply.send({ success: true, data: { status: 'delivered', deliveryTxHash: txHash, deliveryMode: 'manual' } })
   })
 
+  // ── POST /admin/gas/orders/:id/speed-up — Ethereum: re-send the stuck payout at +11% fee (same nonce) ──
+  app.post('/admin/gas/orders/:id/speed-up', { preHandler: [authenticate, adminOrSuper] }, async (req, reply) => {
+    const { id } = req.params as { id: string }
+    const r = await speedUpStuckDelivery(id, adminActor(req))
+    return reply.send({ success: true, message: r.message, ...(r.txHash ? { data: { txHash: r.txHash } } : {}) })
+  })
+
   // ── POST /admin/gas/orders/:id/cancel-stuck-tx — unstick an EVM delivery that never got mined ──
   // Replaces the stuck delivery with a 0-value self-transfer at the same nonce and a higher fee.
   // Once that is mined the old tx can never land, so Retry / Manual delivery / Refund unlock.
@@ -6925,6 +6934,12 @@ export async function adminRoutes(app: FastifyInstance) {
     if (status.state === 'success' && !order.deliveryTxHash && order.unconfirmedDeliveryTxHash) {
       const { handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
       adopted = await handBackLandedDelivery(id, order.unconfirmedDeliveryTxHash)
+    }
+    if (!adopted && !order.deliveryTxHash && order.unconfirmedDeliveryTxHash && status.state !== 'success') {
+      // After a speed-up an EARLIER (replaced) hash may be the one that landed.
+      const { assessPriorAttempt, handBackLandedDelivery } = await import('../lib/gas/gas.attemptSafety')
+      const prior = await assessPriorAttempt(order)
+      if (prior.verdict === 'landed' && prior.txHash) adopted = await handBackLandedDelivery(id, prior.txHash)
     }
     let healed = false
     if (final && order.status === 'delivered' && order.deliveryTxHash && !order.deliveryConfirmed) {
