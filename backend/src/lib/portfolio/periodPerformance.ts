@@ -44,6 +44,17 @@ export interface PeriodPerformanceResult {
   tracking: TrackingInfo
 }
 
+/** At most this many stored points are drawn (always the first and the last); each needs its own cost/realized calculation. */
+export const MAX_CHART_POINTS = 120
+
+/** Evenly spaced pick of `items`, keeping the first and the last. */
+export function thin<T>(items: T[], max: number): T[] {
+  if (items.length <= max) return items
+  const out: T[] = []
+  for (let i = 0; i < max; i++) out.push(items[Math.round((i * (items.length - 1)) / (max - 1))]!)
+  return out
+}
+
 export const OPENING_ROW_PREFIX = 'open:'
 /** A stored point is only used as the value "at" a moment if it was taken this close to it. */
 export const SNAPSHOT_TOLERANCE_MS = 12 * 60 * 60 * 1000
@@ -110,7 +121,7 @@ export function computePeriodPerformance(args: {
     .sort((a, b) => a.takenAt.getTime() - b.takenAt.getTime())
   const seen = new Set<number>()
   const points: SeriesPoint[] = []
-  for (const s of stored) {
+  for (const s of thin(stored, MAX_CHART_POINTS - (includeLive ? 1 : 0))) {
     const t = s.takenAt.getTime()
     if (seen.has(t)) continue
     seen.add(t)

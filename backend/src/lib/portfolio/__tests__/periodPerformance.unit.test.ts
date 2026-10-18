@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { EventRow } from '../summaryBuilder'
-import { computePeriodPerformance, sameDayInZone, type StoredPoint } from '../periodPerformance'
+import { computePeriodPerformance, sameDayInZone, thin, MAX_CHART_POINTS, type StoredPoint } from '../periodPerformance'
 import { openingRows } from '../period'
 
 const START = new Date('2026-10-18T07:00:00Z')
@@ -116,6 +116,24 @@ describe('performance since tracking began (adjusted for money in and out)', () 
     expect(near.period.valueStart).toBe('1450')
     const far = computePeriodPerformance({ ...base, rows: baselineRows(), from: new Date('2026-10-19T12:00:00Z'), snapshots: [snap(START.toISOString(), '1400')], now: new Date('2026-10-20T00:00:00Z') })
     expect(far.period.valueStart).toBeNull()
+  })
+})
+
+describe('long histories', () => {
+  it('thins evenly, keeping the first and the last, and never more than the cap', () => {
+    const items = Array.from({ length: 1000 }, (_, i) => i)
+    const t = thin(items, 120)
+    expect(t).toHaveLength(120)
+    expect(t[0]).toBe(0)
+    expect(t.at(-1)).toBe(999)
+    expect(thin([1, 2, 3], 120)).toEqual([1, 2, 3])
+  })
+  it('a year of stored points stays within the cap and stays ordered', () => {
+    const snaps = Array.from({ length: 1500 }, (_, i) => snap(new Date(START.getTime() + i * 60_000).toISOString(), String(1400 + i)))
+    const r = computePeriodPerformance({ ...base, now: new Date(START.getTime() + 2000 * 60_000), rows: baselineRows(), snapshots: snaps })
+    expect(r.points.length).toBeLessThanOrEqual(MAX_CHART_POINTS)
+    const ts = r.points.map((p) => Date.parse(p.t))
+    expect([...ts].sort((a, b) => a - b)).toEqual(ts)
   })
 })
 

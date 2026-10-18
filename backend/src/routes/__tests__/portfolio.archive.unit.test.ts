@@ -16,6 +16,7 @@ vi.mock('../../lib/prisma', () => ({
   }, { get(t, p: string) { if (p in t) return (t as Record<string, unknown>)[p]; throw new Error(`unexpected db access: ${p}`) } }),
 }))
 vi.mock('../../services/platformFlags.service', () => ({ getStringConfig: async () => '', getBoolConfig: async () => true }))
+vi.mock('../../services/portfolioPeriod.service', async (orig) => ({ ...(await orig<typeof import('../../services/portfolioPeriod.service')>()), getActivePeriod: async () => null, ensurePeriodForNewPortfolio: async () => null }))
 vi.mock('../../lib/env', () => ({ env: { NODE_ENV: 'test' } }))
 vi.mock('../../middleware/auth.middleware', () => ({
   authenticate: async (req: { headers: Record<string, string | undefined>; user?: { id: string } }) => {

@@ -45,8 +45,8 @@ export interface PeriodView {
 
 /**
  * The user's active period, or null when they have none yet (the portfolio then behaves exactly as before the
- * tracking-period feature). A failure to read is treated the same way and logged, so a deployment that is
- * briefly ahead of its database migration keeps the portfolio working instead of breaking it.
+ * tracking-period feature). A missing table (a deployment briefly ahead of its migration) counts as none; any other
+ * failure is thrown.
  */
 export async function getActivePeriod(userId: string): Promise<PeriodView | null> {
   try {
@@ -79,8 +79,14 @@ export async function getActivePeriod(userId: string): Promise<PeriodView | null
       })),
     }
   } catch (err) {
-    logger.warn({ err, userId }, 'portfolio: could not read tracking period; using the unversioned portfolio')
-    return null
+    // Only "the period tables are not there yet" means "no period". Any other failure must surface: quietly showing the
+    // unversioned portfolio to someone who HAS a baseline would drop their opening holdings from every number.
+    const code = (err as { code?: string }).code
+    if (code === 'P2021' || code === 'P2022') {
+      logger.warn({ err, userId }, 'portfolio: tracking period tables are not migrated yet; using the unversioned portfolio')
+      return null
+    }
+    throw err
   }
 }
 
