@@ -16,11 +16,16 @@ import { UserAvatar } from '@/components/ui/UserAvatar'
 import { adminApi } from '@/lib/api'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
-import { isTrustedImageUrl } from '@/lib/utils'
+import { isTrustedImageUrl, isVoiceNoteUrl } from '@/lib/utils'
 import { Send, UserPlus, Search, X, Trash2, ArrowLeft } from 'lucide-react'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
 import { ComposerPlusMenu } from '@/components/chat/ComposerPlusMenu'
-import { MessageActions, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
+import { MessageActions, MessageMenu, makeMenuAnchor, type MessageMenuAnchor, ReactionChips, ReplyQuote, ReplyBanner, getReplyRef, type ReplyRef } from '@/components/chat/MessageActions'
+import { VoiceRecorder, type VoiceRecorderHandle } from '@/components/chat/VoiceRecorder'
+import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
+import { useVoiceEnabled } from '@/hooks/useVoiceEnabled'
+
+type Reaction = { emoji: string; count: number; mine: boolean }
 
 interface ConversationSummary {
   id: string
@@ -41,6 +46,7 @@ interface ThreadMessage {
   rating?: number | null
   kind?: 'text' | 'refund_request' | 'refund_response'
   metadata?: Record<string, unknown> | null
+  reactions?: Reaction[]
   createdAt: string
   deliveredAt?: string | null
   readAt?: string | null
@@ -81,6 +87,9 @@ export default function AdminSupportPage() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const draftRef = useRef<HTMLTextAreaElement>(null)
   const [replyTo, setReplyTo] = useState<(ReplyRef & { name: string }) | null>(null)
+  const [menu, setMenu] = useState<MessageMenuAnchor | null>(null)
+  const voiceRef = useRef<VoiceRecorderHandle>(null)
+  const voiceEnabled = useVoiceEnabled()
   const { user } = useAuth()
 
   // Debounced user search for the "Message a user" composer.
@@ -162,6 +171,7 @@ export default function AdminSupportPage() {
 
   function openConversation(id: string) {
     setReplyTo(null)
+    setMenu(null)
     setActiveId(id)
     setThread(null)
     fetchThread(id)
@@ -169,27 +179,66 @@ export default function AdminSupportPage() {
     setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, unreadByAdmin: false } : c)))
   }
 
-  async function handleSend() {
-    const text = draft.trim()
-    const image = pendingImage
-    if ((!text && !image) || !activeId || sending) return
+  // `voiceUrl` is set only by the voice recorder: a voice note posts on its own
+  // (empty body) and leaves any half-typed draft / staged image untouched.
+  async function handleSend(voiceUrl?: string) {
+    const text = voiceUrl ? '' : draft.trim()
+    const image = voiceUrl ? null : pendingImage
+    const attachment = voiceUrl ?? image
+    if ((!text && !attachment) || !activeId || sending) {
+      if (voiceUrl) toast.error('Voice message not sent', 'Another message is still sending — try again.')
+      return
+    }
     const quoting = replyTo
     setSending(true)
-    setDraft('')
-    setPendingImage(null)
+    if (!voiceUrl) {
+      setDraft('')
+      setPendingImage(null)
+    }
     setReplyTo(null)
     try {
       await apiRequest(`/admin/support/conversations/${activeId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ body: text, ...(image ? { attachmentUrl: image } : {}), ...(quoting ? { replyToId: quoting.id } : {}) }),
+        body: JSON.stringify({ body: text, ...(attachment ? { attachmentUrl: attachment } : {}), ...(quoting ? { replyToId: quoting.id } : {}) }),
       })
       await fetchThread(activeId)
-    } catch {
-      setDraft(text)
-      setPendingImage(image)
+    } catch (e) {
+      if (!voiceUrl) {
+        setDraft(text)
+        setPendingImage(image)
+      } else {
+        toast.error(e instanceof Error ? e.message : 'Voice message failed')
+      }
       setReplyTo(quoting)
     } finally {
       setSending(false)
+    }
+  }
+
+  // Optimistic reaction: apply locally, then reconcile with the server's summary.
+  async function reactTo(msgId: string, emoji: string) {
+    if (!activeId) return
+    const convId = activeId
+    const apply = (list: Reaction[], e: string): Reaction[] => {
+      const mineNow = list.find((r) => r.mine)
+      let next = list.map((r) => (r.mine ? { ...r, count: r.count - 1, mine: false } : r)).filter((r) => r.count > 0)
+      if (mineNow?.emoji !== e) {
+        const hit = next.find((r) => r.emoji === e)
+        next = hit ? next.map((r) => (r.emoji === e ? { ...r, count: r.count + 1, mine: true } : r)) : [...next, { emoji: e, count: 1, mine: true }]
+      }
+      return next
+    }
+    const patch = (fn: (m: ThreadMessage) => ThreadMessage) =>
+      setThread((prev) => (prev && prev.id === convId ? { ...prev, messages: prev.messages.map((m) => (m.id === msgId ? fn(m) : m)) } : prev))
+    patch((m) => ({ ...m, reactions: apply(m.reactions ?? [], emoji) }))
+    try {
+      const r = await apiRequest<{ reactions: Reaction[] }>(`/admin/support/conversations/${convId}/messages/${msgId}/react`, {
+        method: 'POST',
+        body: JSON.stringify({ emoji }),
+      })
+      patch((m) => ({ ...m, reactions: r.reactions }))
+    } catch {
+      await fetchThread(convId)
     }
   }
 
@@ -425,8 +474,15 @@ export default function AdminSupportPage() {
                           })}
                         />
                       )}
+                      <div className={`order-2 max-w-[75%] flex flex-col gap-1 ${item.msg.sender === 'admin' ? 'items-end' : 'items-start'}`}>
                       <div
-                        className={`order-2 max-w-[75%] px-3 py-2 rounded-2xl text-sm break-words ${
+                        onClick={(ev) => {
+                          const m = item.msg
+                          if (m.deletedAt || m.id.startsWith('tmp-') || (m.kind && m.kind !== 'text') || (!m.body && !m.attachmentUrl)) return
+                          if ((ev.target as HTMLElement).closest('a,button,audio')) return
+                          setMenu(menu?.id === m.id ? null : makeMenuAnchor(ev.currentTarget, m.id, m.sender === 'admin'))
+                        }}
+                        className={`${!item.msg.deletedAt && (item.msg.body || item.msg.attachmentUrl) ? 'cursor-pointer ' : ''}px-3 py-2 rounded-2xl text-sm break-words ${
                           item.msg.deletedAt ? 'opacity-60 ring-1 ring-dashed ring-danger/40' : ''
                         } ${
                           item.msg.sender === 'admin'
@@ -444,7 +500,9 @@ export default function AdminSupportPage() {
                           const orig = thread.messages.find((x) => x.id === rr.id)
                           return <ReplyQuote reply={rr} own={item.msg.sender === 'admin'} name={rr.sender === 'admin' ? 'Support' : thread.user.name} deleted={!!orig?.deletedAt} />
                         })()}
-                        {isTrustedImageUrl(item.msg.attachmentUrl) && (
+                        {isVoiceNoteUrl(item.msg.attachmentUrl) ? (
+                          <VoiceNotePlayer url={item.msg.attachmentUrl!} mine={item.msg.sender === 'admin'} />
+                        ) : isTrustedImageUrl(item.msg.attachmentUrl) && (
                           <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img loading="lazy" decoding="async" src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />
@@ -456,6 +514,26 @@ export default function AdminSupportPage() {
                           {item.msg.sender === 'admin' && !item.msg.deletedAt && <MessageTicks status={receiptStatus(item.msg)} pending={item.msg.id.startsWith('tmp-')} />}
                         </span>
                       </div>
+                      {!item.msg.deletedAt && <ReactionChips reactions={item.msg.reactions ?? []} mine={item.msg.sender === 'admin'} onToggle={(e) => void reactTo(item.msg.id, e)} />}
+                      </div>
+                      {menu?.id === item.msg.id && (
+                        <MessageMenu
+                          anchor={menu}
+                          body={item.msg.body}
+                          onClose={() => setMenu(null)}
+                          onReact={(e) => void reactTo(item.msg.id, e)}
+                          onReply={() => {
+                            setReplyTo({
+                              id: item.msg.id,
+                              sender: item.msg.sender,
+                              name: item.msg.sender === 'admin' ? 'Support' : thread.user.name,
+                              preview: item.msg.body.slice(0, 120),
+                              hasImage: !!item.msg.attachmentUrl,
+                            })
+                            requestAnimationFrame(() => draftRef.current?.focus())
+                          }}
+                        />
+                      )}
                     </div>
                   ),
                 )}
@@ -484,7 +562,7 @@ export default function AdminSupportPage() {
                 )}
                 {replyTo && <ReplyBanner reply={replyTo} name={replyTo.name} onCancel={() => setReplyTo(null)} />}
                 <FormatToolbar onFormat={(m) => applyFormat(draftRef, draft, setDraft, m)} />
-                <div className="flex items-end gap-2 p-3">
+                <div className="relative flex items-end gap-2 p-3">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -513,13 +591,23 @@ ${text}` : text)); requestAnimationFrame(() => draftRef.current?.focus()) }}
                     placeholder="Type your reply…"
                     className="flex-1 resize-none max-h-24 px-3 py-2 text-sm bg-canvas border border-border rounded-xl focus:outline-none focus:ring-1 focus:ring-primary text-text-primary"
                   />
-                  <button
-                    onClick={handleSend}
-                    disabled={(!draft.trim() && !pendingImage) || sending || uploading}
-                    className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
+                  <VoiceRecorder
+                    ref={voiceRef}
+                    maxSeconds={120}
+                    disabled={sending || uploading}
+                    onSend={(url) => handleSend(url)}
+                    showMic={voiceEnabled && !draft.trim() && !pendingImage}
+                    micClassName="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
                   >
-                    <Send className="w-4 h-4" />
-                  </button>
+                    <button
+                      onClick={() => void handleSend()}
+                      disabled={(!draft.trim() && !pendingImage) || sending || uploading}
+                      aria-label="Send reply"
+                      className="p-2.5 rounded-xl bg-primary text-white disabled:opacity-40 hover:bg-primary/90 transition-colors flex-shrink-0"
+                    >
+                      <Send className="w-4 h-4" />
+                    </button>
+                  </VoiceRecorder>
                 </div>
               </div>
             </>

@@ -10,7 +10,8 @@ import { ReviewNudgeCard } from '@/components/support/ReviewNudgeCard'
 import { MessageTicks } from '@/components/chat/MessageTicks'
 import { useFileUpload } from '@/hooks/useFileUpload'
 import { UploadProgress } from '@/components/ui/UploadProgress'
-import { isTrustedImageUrl } from '@/lib/utils'
+import { isTrustedImageUrl, isVoiceNoteUrl } from '@/lib/utils'
+import { VoiceNotePlayer } from '@/components/chat/VoiceNotePlayer'
 import { SUPPORT_EMAIL } from '@/lib/contact'
 import { fmtTime } from '@/lib/fmt'
 import { RichText, FormatToolbar, applyFormat } from '@/components/chat/richText'
@@ -291,11 +292,11 @@ export function SupportChatThread() {
                 <div
                   onClick={(ev) => {
                     const m = item.msg
-                    if (m.id.startsWith('tmp-') || (m.kind && m.kind !== 'text') || !m.body) return
-                    if ((ev.target as HTMLElement).closest('a,button')) return
+                    if (m.id.startsWith('tmp-') || (m.kind && m.kind !== 'text') || (!m.body && !isVoiceNoteUrl(m.attachmentUrl))) return
+                    if ((ev.target as HTMLElement).closest('a,button,audio')) return
                     setMenu(menu?.id === m.id ? null : makeMenuAnchor(ev.currentTarget, m.id, m.sender === 'user'))
                   }}
-                  className={`${item.msg.body ? 'cursor-pointer ' : ''}px-3 py-2 rounded-2xl text-sm break-words ${
+                  className={`${item.msg.body || isVoiceNoteUrl(item.msg.attachmentUrl) ? 'cursor-pointer ' : ''}px-3 py-2 rounded-2xl text-sm break-words ${
                     item.msg.sender === 'user'
                       ? 'bg-primary text-white rounded-br-sm'
                       : 'bg-surface border border-border text-text-primary rounded-bl-sm'
@@ -307,7 +308,9 @@ export function SupportChatThread() {
                     const orig = messages.find((x) => x.id === rr.id)
                     return <ReplyQuote reply={rr} own={item.msg.sender === 'user'} name={rr.sender === 'user' ? 'You' : 'Support'} deleted={!!orig?.deletedAt} />
                   })()}
-                  {isTrustedImageUrl(item.msg.attachmentUrl) && (
+                  {isVoiceNoteUrl(item.msg.attachmentUrl) ? (
+                    <VoiceNotePlayer url={item.msg.attachmentUrl!} mine={item.msg.sender === 'user'} />
+                  ) : isTrustedImageUrl(item.msg.attachmentUrl) && (
                     <a href={item.msg.attachmentUrl!} target="_blank" rel="noopener noreferrer" className="block mb-1">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img loading="lazy" decoding="async" src={item.msg.attachmentUrl!} alt="Attachment" className="rounded-lg max-h-64 w-auto max-w-full object-cover" />

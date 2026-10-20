@@ -9,6 +9,7 @@ import { notify } from '../lib/notify'
 import { recordAuditLog } from '../lib/audit'
 import { mergeDuplicateSupportConversations } from '../services/supportMaintenance.service'
 import { REACTION_EMOJIS, summarizeReactions } from '../services/chatThread.service'
+import { FLAGS, isFlagEnabled } from '../services/platformFlags.service'
 import { Prisma } from '@prisma/client'
 
 // Push a support-chat SSE event to every connected admin / super-admin so the
@@ -26,6 +27,30 @@ async function emitToAdmins(data: unknown): Promise<void> {
 }
 
 const MAX_BODY = 2000
+
+// Voice notes are Cloudinary audio (/video/upload/); honour the admin kill-switch.
+async function assertVoiceAllowed(attachmentUrl?: string): Promise<void> {
+  if (attachmentUrl?.includes('/video/upload/') && !(await isFlagEnabled(FLAGS.VOICE_MESSAGES, true))) {
+    throw Errors.VALIDATION_ERROR('Voice messages are currently disabled')
+  }
+}
+
+// Short text for notifications / inbox previews when a message has no body.
+function attachmentPreview(attachmentUrl?: string | null): string {
+  return attachmentUrl?.includes('/video/upload/') ? '🎤 Voice message' : '📷 Photo'
+}
+
+// Set / toggle (same emoji again) / clear (null) one user's reaction in a message's
+// metadata.reactions map. Returns the metadata to persist and the updated map.
+function applyReaction(metadata: unknown, userId: string, emoji: string | null) {
+  const meta = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? { ...(metadata as Record<string, unknown>) } : {}
+  const current = meta.reactions && typeof meta.reactions === 'object' && !Array.isArray(meta.reactions) ? { ...(meta.reactions as Record<string, string>) } : {}
+  if (emoji === null || current[userId] === emoji) delete current[userId]
+  else current[userId] = emoji
+  if (Object.keys(current).length) meta.reactions = current
+  else delete meta.reactions
+  return { current, data: Object.keys(meta).length ? (meta as Prisma.InputJsonValue) : Prisma.DbNull }
+}
 
 // A message can only be retracted within this window of being sent. The original
 // is retained for dispute review regardless; the window additionally prevents
@@ -253,7 +278,7 @@ export async function supportRoutes(app: FastifyInstance) {
         select: { fullName: true, username: true, email: true },
       })
       const name = sender ? displayName(sender) : 'A user'
-      const preview = body.trim() ? body.slice(0, 120) : '📷 Photo'
+      const preview = body.trim() ? body.slice(0, 120) : attachmentPreview(attachmentUrl)
       void createAdminNotif({
         category: 'SYSTEM',
         title: 'New support message',
@@ -322,13 +347,13 @@ export async function supportRoutes(app: FastifyInstance) {
     if (!message || message.conversation.userId !== userId || message.deletedAt || message.sender === 'system' || message.kind !== 'text') {
       throw Errors.NOT_FOUND('Message')
     }
-    const meta = message.metadata && typeof message.metadata === 'object' && !Array.isArray(message.metadata) ? { ...(message.metadata as Record<string, unknown>) } : {}
-    const current = meta.reactions && typeof meta.reactions === 'object' && !Array.isArray(meta.reactions) ? { ...(meta.reactions as Record<string, string>) } : {}
-    if (emoji === null || current[userId] === emoji) delete current[userId]
-    else current[userId] = emoji
-    if (Object.keys(current).length) meta.reactions = current
-    else delete meta.reactions
-    await db.supportMessage.update({ where: { id }, data: { metadata: Object.keys(meta).length ? (meta as Prisma.InputJsonValue) : Prisma.DbNull } })
+    const { current, data } = applyReaction(message.metadata, userId, emoji)
+    await db.supportMessage.update({ where: { id }, data: { metadata: data } })
+    // Let any admin viewing the thread see the reaction live.
+    void emitToAdmins({
+      type: 'support_message',
+      payload: { scope: 'admin', conversationId: message.conversationId, sender: 'user' },
+    })
     return reply.send({ success: true, data: { reactions: summarizeReactions(current, userId) } })
   })
 
@@ -692,7 +717,7 @@ export async function supportRoutes(app: FastifyInstance) {
           status: c.status,
           unreadByAdmin: c.unreadByAdmin,
           lastMessageAt: c.lastMessageAt,
-          lastMessage: c.messages[0]?.body ?? null,
+          lastMessage: c.messages[0] ? (c.messages[0].body || (c.messages[0].attachmentUrl ? attachmentPreview(c.messages[0].attachmentUrl) : null)) : null,
           user: {
             id: c.user.id,
             name: displayName(c.user),
@@ -741,7 +766,7 @@ export async function supportRoutes(app: FastifyInstance) {
           },
           // Admin/dispute view: deleted messages keep their original content (with
           // a deletedAt marker) so retracted evidence stays visible here.
-          messages: [...conversation.messages].reverse().map((m) => serializeMessage(m, { viewerIsAdmin: true })),
+          messages: [...conversation.messages].reverse().map((m) => serializeMessage(m, { viewerIsAdmin: true, viewerId: req.user!.id })),
         },
       })
     },
@@ -754,6 +779,7 @@ export async function supportRoutes(app: FastifyInstance) {
     async (req, reply) => {
       const { id } = req.params as { id: string }
       const { body, attachmentUrl, replyToId } = sendSchema.parse(req.body)
+      await assertVoiceAllowed(attachmentUrl)
 
       const conversation = await db.supportConversation.findUnique({ where: { id } })
       if (!conversation) throw Errors.NOT_FOUND('Conversation')
@@ -788,14 +814,42 @@ export async function supportRoutes(app: FastifyInstance) {
         conversation.userId,
         'support',
         'New reply from Support',
-        body.trim() ? body.slice(0, 140) : '📷 Photo',
+        body.trim() ? body.slice(0, 140) : attachmentPreview(attachmentUrl),
         { conversationId: id },
       )
 
       return reply.send({
         success: true,
-        data: serializeMessage(message),
+        data: serializeMessage(message, { viewerIsAdmin: true, viewerId: req.user!.id }),
       })
+    },
+  )
+
+  // POST /admin/support/conversations/:id/messages/:msgId/react — set / toggle (same
+  // emoji again) / clear (null) the signed-in staff member's reaction on any
+  // user/admin message in the thread. The user's widget updates live.
+  app.post(
+    '/admin/support/conversations/:id/messages/:msgId/react',
+    { preHandler: [authenticate, requireRole('admin', 'super_admin', 'support_agent')] },
+    async (req, reply) => {
+      const adminId = req.user!.id
+      const { id, msgId } = req.params as { id: string; msgId: string }
+      const { emoji } = z.object({ emoji: z.string().max(16).nullable() }).parse(req.body)
+      if (emoji !== null && !(REACTION_EMOJIS as readonly string[]).includes(emoji)) throw Errors.VALIDATION_ERROR('Unsupported reaction')
+      const message = await db.supportMessage.findUnique({
+        where: { id: msgId },
+        include: { conversation: { select: { userId: true } } },
+      })
+      if (!message || message.conversationId !== id || message.deletedAt || message.sender === 'system' || message.kind !== 'text') {
+        throw Errors.NOT_FOUND('Message')
+      }
+      const { current, data } = applyReaction(message.metadata, adminId, emoji)
+      await db.supportMessage.update({ where: { id: msgId }, data: { metadata: data } })
+      sseEmit(message.conversation.userId, {
+        type: 'support_message',
+        payload: { scope: 'user', conversationId: id },
+      })
+      return reply.send({ success: true, data: { reactions: summarizeReactions(current, adminId) } })
     },
   )
 
