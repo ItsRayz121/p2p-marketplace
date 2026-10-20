@@ -1599,7 +1599,12 @@ export async function selectTradePaymentAccount(tradeRef: string, buyerId: strin
   const trade = await db.ctmTrade.findUnique({ where: { tradeRef } })
   if (!trade) throw new AppError('NOT_FOUND', 'Trade not found', 404)
   if (trade.buyerId !== buyerId) throw new AppError('FORBIDDEN', 'Only the buyer can select the payment account', 403)
-  if (trade.status !== 'awaiting_payment') throw new AppError('CONFLICT', 'Payment account can only be selected while awaiting payment', 409)
+  // The buyer pays at 'awaiting_payment' in the classic flow but only after the
+  // tokens arrive ('seller_transferring') in taker-first — gate on the buyer's
+  // pay step, not a raw status, or the taker-first picker always 409s.
+  if (ctmStepFromStatus(trade.takerFirst, trade.status)?.action !== 'send_fiat') {
+    throw new AppError('CONFLICT', 'Payment account can only be selected while payment is due', 409)
+  }
 
   const snapshot = trade.sellerPaymentSnapshot as Record<string, unknown> | null
   if (!snapshot || !Array.isArray(snapshot.accounts)) {
