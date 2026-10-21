@@ -250,8 +250,8 @@ export async function hasXProviderKey(): Promise<boolean> {
 export async function checkXFollowTask(handle: string, target: string, userId: string): Promise<XTaskCheck> {
   const provider = await buildProvider()
   if (!provider) return 'unavailable'
-  if (!(await takeLookups(2))) return 'unavailable'
   try {
+    if (!(await takeLookups(2))) return 'unavailable'
     let bio: string | null
     try {
       bio = await provider.getProfileBio(handle)

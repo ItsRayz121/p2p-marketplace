@@ -184,6 +184,9 @@ export async function updateTask(id: string, p: TaskPatch) {
   const endsAt = p.endsAt !== undefined ? p.endsAt : task.endsAt
   if (startsAt && endsAt && endsAt <= startsAt) throw new AppError('VALIDATION_ERROR', 'End time must be after the start time.', 400)
   if (p.url && !/^https:\/\//i.test(p.url)) throw new AppError('VALIDATION_ERROR', 'Task link must start with https://', 400)
+  if (task.verifyMode === 'x_follow' && p.url !== undefined && !parseXProfileHandle(p.url)) {
+    throw new AppError('VALIDATION_ERROR', 'X follow tasks need the task link to be the profile to follow, e.g. https://x.com/RupChain.', 400)
+  }
   if (p.platform && !(PLATFORMS as readonly string[]).includes(p.platform)) throw new AppError('VALIDATION_ERROR', 'Unknown platform.', 400)
 
   const changed = (k: (typeof REQUIREMENT_FIELDS)[number]) =>
@@ -454,7 +457,8 @@ export async function claimTask(userId: string, taskId: string, input: ClaimInpu
     if (!target) throw new AppError('TASK_MISCONFIGURED', 'This task is not set up correctly. Please try again later.', 503)
     if (handle.toLowerCase() === target.toLowerCase()) throw new AppError('VALIDATION_ERROR', 'Use your own X account, not the account to follow.', 400)
     // Each check spends paid provider lookups, so a member can only retry every few seconds.
-    const turn = await redis.set(`xtask:cd:${userId}:${task.id}`, '1', 'EX', 15, 'NX')
+    // If Redis is down the wait is skipped (fail open); the daily lookup budget still caps spend.
+    const turn = await redis.set(`xtask:cd:${userId}:${task.id}`, '1', 'EX', 15, 'NX').catch(() => 'OK')
     if (!turn) throw new AppError('RATE_LIMITED', 'Please wait a few seconds before checking again.', 429)
     const res = await checkXFollowTask(handle, target, userId)
     if (res === 'not_found') throw new AppError('X_ACCOUNT_NOT_FOUND', `We could not find @${handle} on X. Check the spelling and that the account is not private or suspended.`, 400)

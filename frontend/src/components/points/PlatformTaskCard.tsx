@@ -205,7 +205,8 @@ export function PlatformTaskCard({
               Link your Telegram account first in <Link href="/settings" className="underline font-semibold">Settings</Link>.
             </p>
           )}
-          {isXFollow && !resubmitting && (
+          {isXFollow && !resubmitting && !task.xTarget && <p className="text-xs text-warning">This task is not available right now.</p>}
+          {isXFollow && !resubmitting && task.xTarget && (
             <div className="space-y-2">
               <ol className="list-decimal space-y-1 rounded-lg bg-surface-alt px-6 py-2 text-xs text-text-secondary">
                 <li>Follow <span className="font-semibold text-text-primary">@{task.xTarget}</span> on X.</li>
@@ -240,7 +241,7 @@ export function PlatformTaskCard({
           )}
           <button
             onClick={submit}
-            disabled={busy || blockedKyc || blockedTelegram || !evidenceOk || (isXFollow && !resubmitting && !xHandle.trim()) || (needsAddress && !resubmitting && !address.trim())}
+            disabled={busy || blockedKyc || blockedTelegram || !evidenceOk || (isXFollow && !resubmitting && (!task.xTarget || !xHandle.trim())) || (needsAddress && !resubmitting && !address.trim())}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
             <Send className="w-3.5 h-3.5" aria-hidden />
