@@ -216,12 +216,14 @@ export async function getSubmissionDetail(id: string) {
     // What is and is not verified. A screenshot or link is evidence the member submitted, not platform verification.
     verification: {
       method: c.task.verifyMode,
-      automatic: c.task.verifyMode === 'telegram_auto' || c.task.verifyMode === 'self_claim',
+      automatic: c.task.verifyMode === 'telegram_auto' || c.task.verifyMode === 'x_follow' || c.task.verifyMode === 'self_claim',
       note: c.task.verifyMode === 'manual_proof'
         ? 'Submitted evidence only. Nothing here was checked against the platform automatically.'
         : c.task.verifyMode === 'telegram_auto'
           ? 'Membership was checked automatically through the Telegram bot at submission time.'
-          : 'Self-confirmed by the member. Not verified.',
+          : c.task.verifyMode === 'x_follow'
+            ? 'Account ownership (code in the X bio) and the follow were checked automatically at submission time.'
+            : 'Self-confirmed by the member. Not verified.',
     },
     revisions: c.revisions.map((r) => ({
       number: r.number,

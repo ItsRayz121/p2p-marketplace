@@ -19,6 +19,8 @@ import { AppError } from '../lib/errors'
 import { logger } from '../lib/logger'
 import { notify } from '../lib/notify'
 import { telegramRequest } from '../lib/telegram.client'
+import { redis } from '../lib/redis'
+import { checkXFollowTask, hasXProviderKey, normaliseXHandle, parseXProfileHandle, xOwnershipCode } from '../lib/social/xVerification'
 import { awardTaskPointsTx } from './airdrop.service'
 import { announceTaskLive } from './platformTaskAnnounce.service'
 import {
@@ -28,7 +30,7 @@ import {
 
 type Tx = Prisma.TransactionClient
 
-export const VERIFY_MODES = ['telegram_auto', 'manual_proof', 'self_claim'] as const
+export const VERIFY_MODES = ['telegram_auto', 'x_follow', 'manual_proof', 'self_claim'] as const
 export const REWARD_TYPES = ['points', 'usdt'] as const
 export const PAYOUT_MODES = ['auto', 'manual'] as const
 export const PAYOUT_NETWORKS = ['BEP20', 'ERC20', 'TRC20', 'APTOS'] as const
@@ -90,6 +92,9 @@ export function assertTaskConfig(t: TaskInput): void {
   if (t.verifyMode === 'telegram_auto' && !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(t.telegramChat ?? '')) {
     throw new AppError('VALIDATION_ERROR', 'Auto-verify needs the channel username, e.g. @RupChainOfficial (the bot must be an admin of that channel).', 400)
   }
+  if (t.verifyMode === 'x_follow' && !parseXProfileHandle(t.url)) {
+    throw new AppError('VALIDATION_ERROR', 'X follow tasks need the task link to be the profile to follow, e.g. https://x.com/RupChain.', 400)
+  }
   if (t.startsAt && t.endsAt && t.endsAt <= t.startsAt) throw new AppError('VALIDATION_ERROR', 'End time must be after the start time.', 400)
 
   if (t.rewardType === 'points') {
@@ -121,6 +126,9 @@ function outcomeStatus(task: { rewardType: string; payoutMode: string }): 'compl
 export async function createTask(adminId: string, t: TaskInput) {
   assertTaskConfig(t)
   if (t.platform && !(PLATFORMS as readonly string[]).includes(t.platform)) throw new AppError('VALIDATION_ERROR', 'Unknown platform.', 400)
+  if (t.verifyMode === 'x_follow' && !t.isDraft && !(await hasXProviderKey())) {
+    throw new AppError('VALIDATION_ERROR', 'Save the twitterapi.io API key first (Admin → Gas → Share rewards → X verification), then publish this task.', 400)
+  }
   const created = await db.platformTask.create({
     data: {
       title: t.title.trim(),
@@ -285,6 +293,9 @@ export async function listTasksForUser(userId: string) {
       requireKyc: t.requireKyc,
       endsAt: t.endsAt,
       spotsLeft,
+      // X follow: the account to follow and the code the member must put in their X bio.
+      xTarget: t.verifyMode === 'x_follow' ? parseXProfileHandle(t.url) : null,
+      xCode: t.verifyMode === 'x_follow' ? xOwnershipCode(userId) : null,
       claim: claim
         ? {
             status: claim.status,
@@ -385,6 +396,8 @@ export interface ClaimInput {
   attachments?: unknown
   payoutNetwork?: string | undefined
   payoutAddress?: string | undefined
+  /** X follow tasks: the member's X username. */
+  xHandle?: string | undefined
 }
 
 /** Validate + normalise the evidence a member submits (shared by claim and resubmit). */
@@ -433,6 +446,23 @@ export async function claimTask(userId: string, taskId: string, input: ClaimInpu
   const evidence = task.verifyMode === 'manual_proof'
     ? normaliseEvidence(task, input)
     : { proof: '', links: [] as string[], attachments: [] as Attachment[] }
+  let xProof: string | null = null
+  if (task.verifyMode === 'x_follow') {
+    const handle = normaliseXHandle(input.xHandle)
+    const target = parseXProfileHandle(task.url)
+    if (!handle) throw new AppError('VALIDATION_ERROR', 'Enter your X username, e.g. @yourname.', 400)
+    if (!target) throw new AppError('TASK_MISCONFIGURED', 'This task is not set up correctly. Please try again later.', 503)
+    if (handle.toLowerCase() === target.toLowerCase()) throw new AppError('VALIDATION_ERROR', 'Use your own X account, not the account to follow.', 400)
+    // Each check spends paid provider lookups, so a member can only retry every few seconds.
+    const turn = await redis.set(`xtask:cd:${userId}:${task.id}`, '1', 'EX', 15, 'NX')
+    if (!turn) throw new AppError('RATE_LIMITED', 'Please wait a few seconds before checking again.', 429)
+    const res = await checkXFollowTask(handle, target, userId)
+    if (res === 'not_found') throw new AppError('X_ACCOUNT_NOT_FOUND', `We could not find @${handle} on X. Check the spelling and that the account is not private or suspended.`, 400)
+    if (res === 'code_missing') throw new AppError('X_CODE_MISSING', `Add your code ${xOwnershipCode(userId)} to your X bio, save it, then tap Verify again. You can remove it afterwards.`, 400)
+    if (res === 'not_following') throw new AppError('X_NOT_FOLLOWING', `We could not see @${handle} following @${target} yet. Follow, then tap Verify again.`, 400)
+    if (res === 'unavailable') throw new AppError('X_UNAVAILABLE', 'X verification is unavailable right now. Please try again in a minute.', 503)
+    xProof = `@${handle}`
+  }
   if (task.verifyMode === 'telegram_auto') {
     if (!user.telegramId) throw new AppError('TELEGRAM_NOT_LINKED', 'Link your Telegram account first, then try again.', 400)
     const res = await checkTelegramMembership(task.telegramChat!, user.telegramId)
@@ -446,6 +476,12 @@ export async function claimTask(userId: string, taskId: string, input: ClaimInpu
 
   try {
     const completion = await db.$transaction(async (tx) => {
+      // One X account can back only one claim per task (also stops one account feeding many members).
+      if (xProof) {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`xtask:${task.id}:${xProof.toLowerCase()}`}))`
+        const used = await tx.platformTaskCompletion.findFirst({ where: { taskId: task.id, proof: { equals: xProof, mode: 'insensitive' } }, select: { id: true } })
+        if (used) throw new AppError('X_HANDLE_USED', 'That X account was already used to claim this task.', 409)
+      }
       // Reserve a claim slot (max-claims cap).
       if (task.maxClaims != null) {
         const slot = await tx.platformTask.updateMany({
@@ -473,7 +509,7 @@ export async function claimTask(userId: string, taskId: string, input: ClaimInpu
           taskId: task.id,
           userId,
           status,
-          proof: evidence.proof || null,
+          proof: xProof ?? (evidence.proof || null),
           rewardType: task.rewardType,
           rewardPoints: task.rewardPoints,
           rewardUsdt: task.rewardUsdt,
@@ -490,7 +526,7 @@ export async function claimTask(userId: string, taskId: string, input: ClaimInpu
         data: {
           completionId: created.id,
           number: 1,
-          proof: evidence.proof || null,
+          proof: xProof ?? (evidence.proof || null),
           links: evidence.links as Prisma.InputJsonValue,
           attachments: evidence.attachments as unknown as Prisma.InputJsonValue,
           ...(instant ? { decision: 'approved', reviewedAt: new Date() } : {}),

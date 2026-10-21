@@ -45,6 +45,7 @@ function validate(f: Form): string | null {
   if (f.title.trim().length < 3) return 'Give the task a title (at least 3 characters).'
   if (f.url && !/^https:\/\//i.test(f.url)) return 'The task link must start with https://'
   if (f.verifyMode === 'telegram_auto' && !/^@[A-Za-z][A-Za-z0-9_]{4,31}$/.test(f.telegramChat)) return 'Auto-verify needs the channel username, like @RupChainOfficial.'
+  if (f.verifyMode === 'x_follow' && !/^https:\/\/(www\.)?(x|twitter)\.com\/[A-Za-z0-9_]{1,15}\/?$/i.test(f.url.trim())) return 'X follow tasks need the task link to be the profile to follow, like https://x.com/RupChain.'
   if (f.startsAt && f.endsAt && new Date(f.endsAt) <= new Date(f.startsAt)) return 'The end time must be after the start time.'
   if (f.rewardType === 'points') {
     const p = Number(f.rewardPoints)
@@ -148,11 +149,18 @@ export function TaskDrawer({ task, open, onClose, onSaved }: { task: AdminPlatfo
                 <select id="t-ver" className={inputCls} disabled={editing} value={f.verifyMode} onChange={(e) => set('verifyMode', e.target.value as VerifyMode)}>
                   <option value="manual_proof">Manual review (member submits proof)</option>
                   <option value="telegram_auto">Telegram auto-check (bot)</option>
+                  <option value="x_follow">X follow auto-check (twitterapi.io)</option>
                   <option value="self_claim" disabled={f.rewardType === 'usdt'}>Self-claim (points only, not verified)</option>
                 </select></div>
               {f.verifyMode === 'telegram_auto' && (
                 <div><label className={labelCls} htmlFor="t-tg">Telegram channel username</label><input id="t-tg" disabled={editing} className={inputCls} value={f.telegramChat} onChange={(e) => set('telegramChat', e.target.value)} placeholder="@RupChainOfficial" />
                   <p className="mt-1 text-[11px] text-text-muted">The RupChain bot must be an administrator of that channel, and members must have linked Telegram.</p></div>
+              )}
+              {f.verifyMode === 'x_follow' && (
+                <p className="rounded-lg bg-surface-alt px-3 py-2 text-[11px] text-text-secondary">
+                  Set the task link above to the profile to follow (https://x.com/YourHandle). Members follow it, put their personal code in their X bio and enter their username; we check both automatically.
+                  Needs the twitterapi.io key in Admin → Gas → Share rewards → X verification. Each check uses 2 lookups from its daily budget.
+                </p>
               )}
               {f.verifyMode === 'manual_proof' && (
                 <>

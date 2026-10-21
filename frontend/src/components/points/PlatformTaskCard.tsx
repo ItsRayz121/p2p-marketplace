@@ -17,6 +17,7 @@ const CLAIM_BADGE: Record<ClaimStatus, { text: string; cls: string }> = {
 
 const METHOD: Record<UserPlatformTask['verifyMode'], { label: string; hint: string }> = {
   telegram_auto: { label: 'Verified automatically', hint: 'We check your linked Telegram account is a member. Opening the link alone does not count.' },
+  x_follow: { label: 'Verified automatically', hint: 'We check that your X account follows the profile and that your code is in your X bio. Opening the link alone does not count.' },
   manual_proof: { label: 'Manual review', hint: 'Submit your proof; our team reviews it before the reward is released.' },
   self_claim: { label: 'Self-confirmed', hint: 'Only claim after you have actually done the task — opening the link does not verify it.' },
 }
@@ -96,6 +97,7 @@ export function PlatformTaskCard({
   const [files, setFiles] = useState<ProofAttachment[]>([])
   const [network, setNetwork] = useState<(typeof PAYOUT_NETWORKS)[number]>('BEP20')
   const [address, setAddress] = useState('')
+  const [xHandle, setXHandle] = useState('')
   const [busy, setBusy] = useState(false)
   // Collapsed by default so many tasks fit on screen; open straight away when the user must act on feedback.
   const [open, setOpen] = useState(!!task.claim?.canResubmit)
@@ -104,6 +106,7 @@ export function PlatformTaskCard({
   const needsProof = task.verifyMode === 'manual_proof'
   const blockedKyc = task.requireKyc && !kycOk
   const blockedTelegram = task.verifyMode === 'telegram_auto' && !telegramLinked
+  const isXFollow = task.verifyMode === 'x_follow'
   const hasEvidence = proof.trim().length > 0 || splitLinks(links).length > 0 || files.length > 0
   const evidenceOk = !needsProof || (hasEvidence && (!task.proofFileRequired || files.length > 0))
   const resubmitting = !!task.claim?.canResubmit
@@ -119,6 +122,7 @@ export function PlatformTaskCard({
         const res = await platformTaskApi.claim(task.id, {
           ...evidence,
           ...(needsAddress ? { payoutNetwork: network, payoutAddress: address } : {}),
+          ...(isXFollow ? { xHandle } : {}),
         })
         toast.success(res.status === 'pending_review' ? 'Submitted! We will review it soon.' : res.status === 'awaiting_payout' ? 'Verified! Your USDT payout is being prepared.' : 'Done! Reward added.')
       }
@@ -131,7 +135,7 @@ export function PlatformTaskCard({
   }
 
   const badge = task.claim ? CLAIM_BADGE[task.claim.status] : null
-  const submitLabel = resubmitting ? 'Resubmit' : task.verifyMode === 'telegram_auto' ? 'Verify' : needsProof ? 'Submit' : 'Claim reward'
+  const submitLabel = resubmitting ? 'Resubmit' : task.verifyMode === 'telegram_auto' || isXFollow ? 'Verify' : needsProof ? 'Submit' : 'Claim reward'
 
   return (
     <div className="rounded-xl border border-border">
@@ -201,6 +205,19 @@ export function PlatformTaskCard({
               Link your Telegram account first in <Link href="/settings" className="underline font-semibold">Settings</Link>.
             </p>
           )}
+          {isXFollow && !resubmitting && (
+            <div className="space-y-2">
+              <ol className="list-decimal space-y-1 rounded-lg bg-surface-alt px-6 py-2 text-xs text-text-secondary">
+                <li>Follow <span className="font-semibold text-text-primary">@{task.xTarget}</span> on X.</li>
+                <li>
+                  Add this code to your X bio: <code className="rounded bg-canvas px-1.5 py-0.5 font-mono font-bold text-text-primary select-all">{task.xCode}</code>
+                  {' '}(you can remove it after verifying).
+                </li>
+                <li>Enter your X username below and tap Verify.</li>
+              </ol>
+              <input value={xHandle} onChange={(e) => setXHandle(e.target.value)} maxLength={120} placeholder="Your X username, e.g. @yourname" aria-label="Your X username" className={fieldCls} />
+            </div>
+          )}
           {needsProof && <EvidenceFields task={task} proof={proof} setProof={setProof} links={links} setLinks={setLinks} files={files} setFiles={setFiles} />}
           {needsAddress && !resubmitting && (
             <div className="flex gap-2">
@@ -223,7 +240,7 @@ export function PlatformTaskCard({
           )}
           <button
             onClick={submit}
-            disabled={busy || blockedKyc || blockedTelegram || !evidenceOk || (needsAddress && !resubmitting && !address.trim())}
+            disabled={busy || blockedKyc || blockedTelegram || !evidenceOk || (isXFollow && !resubmitting && !xHandle.trim()) || (needsAddress && !resubmitting && !address.trim())}
             className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
             <Send className="w-3.5 h-3.5" aria-hidden />

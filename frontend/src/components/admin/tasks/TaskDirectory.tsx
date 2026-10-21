@@ -13,7 +13,7 @@ const LIFE_FILTERS: Array<{ key: string; label: string }> = [
   { key: 'paused', label: 'Paused' }, { key: 'ended', label: 'Ended' }, { key: 'archived', label: 'Archived' },
 ]
 
-const VERIFY: Record<string, string> = { telegram_auto: 'Auto (Telegram)', manual_proof: 'Manual review', self_claim: 'Self-claim' }
+const VERIFY: Record<string, string> = { telegram_auto: 'Auto (Telegram)', x_follow: 'Auto (X follow)', manual_proof: 'Manual review', self_claim: 'Self-claim' }
 
 export function TaskDirectory({ tasks, life, platform, q, setFilter, onEdit, onReload, onReviewTask }: {
   tasks: AdminPlatformTask[]

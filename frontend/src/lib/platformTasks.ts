@@ -1,6 +1,6 @@
 import { apiRequest } from '@/lib/api'
 
-export type VerifyMode = 'telegram_auto' | 'manual_proof' | 'self_claim'
+export type VerifyMode = 'telegram_auto' | 'x_follow' | 'manual_proof' | 'self_claim'
 export type RewardType = 'points' | 'usdt'
 export type ClaimStatus = 'pending_review' | 'needs_changes' | 'awaiting_payout' | 'completed' | 'rejected'
 export type TaskLifecycle = 'draft' | 'scheduled' | 'active' | 'paused' | 'ended' | 'archived'
@@ -30,6 +30,9 @@ export interface UserPlatformTask {
   requireKyc: boolean
   endsAt: string | null
   spotsLeft: number | null
+  /** X follow tasks: the account to follow and the code to put in the member's X bio. */
+  xTarget?: string | null
+  xCode?: string | null
   claim: {
     status: ClaimStatus
     rejectionReason: string | null
@@ -218,7 +221,7 @@ export interface EvidenceInput { proof?: string; links?: string[]; attachments?:
 
 export const platformTaskApi = {
   list: () => apiRequest<UserTasksView>('/platform-tasks'),
-  claim: (id: string, body: EvidenceInput & { payoutNetwork?: string; payoutAddress?: string }) =>
+  claim: (id: string, body: EvidenceInput & { payoutNetwork?: string; payoutAddress?: string; xHandle?: string }) =>
     apiRequest<{ status: ClaimStatus }>(`/platform-tasks/${id}/claim`, json(body)),
   resubmit: (id: string, body: EvidenceInput) =>
     apiRequest<{ status: ClaimStatus; revisionNo: number }>(`/platform-tasks/${id}/resubmit`, json(body)),

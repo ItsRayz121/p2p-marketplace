@@ -27,6 +27,7 @@ function telegramHandle(c: CommunityChannel): string | null {
 
 const VERIFY_HELP: Record<VerifyMode, string> = {
   telegram_auto: 'Verified automatically by the RupChain bot. The bot must be an administrator of the chat, and the user must have linked Telegram.',
+  x_follow: 'Verified automatically through twitterapi.io: the user follows the profile and has their personal code in their X bio.',
   manual_proof: 'An admin reviews the proof (username or screenshot link) the user submits before the reward is released.',
   self_claim: 'Honour-based: the user confirms they joined and the reward is granted instantly. Nothing proves it — keep the reward small.',
 }

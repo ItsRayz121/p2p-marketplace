@@ -91,6 +91,7 @@ const evidenceSchema = z.object({
 const claimSchema = evidenceSchema.extend({
   payoutNetwork: z.string().max(10).optional(),
   payoutAddress: z.string().max(100).optional(),
+  xHandle: z.string().max(120).optional(),
 })
 
 // Zod's optional-with-exactOptionalPropertyTypes friendly strip of undefined keys.

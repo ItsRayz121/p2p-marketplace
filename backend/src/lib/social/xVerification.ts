@@ -9,8 +9,9 @@
  * with a green summary), or comes back inconclusive (provider down / data missing) and stays in
  * manual review. A provider error is never treated as a failed post.
  */
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto'
+import { createCipheriv, createDecipheriv, createHmac, randomBytes } from 'node:crypto'
 import { db } from '../prisma'
+import { redis } from '../redis'
 import { env } from '../env'
 import { logger } from '../logger'
 import { AppError } from '../errors'
@@ -99,6 +100,10 @@ export interface XProvider {
   readonly name: string
   getPost(id: string): Promise<XPost | null>
   getCredits(): Promise<number | null>
+  /** Profile bio text of an account, or null when the account does not exist. */
+  getProfileBio(handle: string): Promise<string | null>
+  /** Whether `source` follows `target`; null when the provider did not say. */
+  isFollowing(source: string, target: string): Promise<boolean | null>
 }
 
 type Json = Record<string, unknown>
@@ -141,7 +146,7 @@ class TwitterApiIoProvider implements XProvider {
       const res = await fetch(`${this.base}${path}`, { headers: { 'X-API-Key': this.apiKey, accept: 'application/json' }, signal: ctrl.signal })
       if (res.status === 401 || res.status === 403) throw new ProviderError('The provider rejected the API key', 'auth')
       if (res.status === 402) throw new ProviderError('The provider account is out of credits', 'budget')
-      if (res.status === 404) throw new ProviderError('Not found', 'not_found')
+      if (res.status === 404 || res.status === 400) throw new ProviderError('Not found', 'not_found')
       if (!res.ok) throw new ProviderError(`Provider answered HTTP ${res.status}`, 'transient')
       return (await res.json()) as Json
     } catch (err) {
@@ -159,6 +164,19 @@ class TwitterApiIoProvider implements XProvider {
     return first ? parseTweet(first) : null
   }
 
+  async getProfileBio(handle: string): Promise<string | null> {
+    const body = await this.get(`/twitter/user/info?userName=${encodeURIComponent(handle)}`)
+    const data = (body.data ?? null) as Json | null
+    if (body.status === 'error' || !data) return null
+    return typeof data.description === 'string' ? data.description : typeof data.profile_bio === 'string' ? data.profile_bio : ''
+  }
+
+  async isFollowing(source: string, target: string): Promise<boolean | null> {
+    const body = await this.get(`/twitter/user/check_follow_relationship?source_user_name=${encodeURIComponent(source)}&target_user_name=${encodeURIComponent(target)}`)
+    const data = (body.data ?? null) as Json | null
+    return typeof data?.following === 'boolean' ? data.following : null
+  }
+
   async getCredits(): Promise<number | null> {
     const body = await this.get('/oapi/my/info')
     const a = typeof body.recharge_credits === 'number' ? body.recharge_credits : 0
@@ -174,6 +192,87 @@ async function buildProvider(): Promise<XProvider | null> {
   // Only ever call an https provider: the key travels in a header.
   if (!/^https:\/\//i.test(base)) return null
   return new TwitterApiIoProvider(base, key)
+}
+
+// ── X follow tasks (Platform Tasks) ──────────────────────────────────────────
+
+const RESERVED_X_PATHS = new Set(['home', 'i', 'intent', 'share', 'search', 'hashtag', 'settings', 'explore', 'messages', 'notifications', 'compose', 'login', 'signup'])
+const X_HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/
+
+/** `https://x.com/RupChain` → `RupChain`. Null for anything that is not a bare profile link. */
+export function parseXProfileHandle(url: string | null | undefined): string | null {
+  const m = /^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/?(?:[?#].*)?$/i.exec((url ?? '').trim())
+  return m && m[1] && !RESERVED_X_PATHS.has(m[1].toLowerCase()) ? m[1] : null
+}
+
+/** What a member typed (`@name`, `name` or a profile link) → a bare handle, or null if invalid. */
+export function normaliseXHandle(input: string | null | undefined): string | null {
+  const raw = (input ?? '').trim()
+  const fromUrl = parseXProfileHandle(raw)
+  const h = (fromUrl ?? raw.replace(/^@/, '')).trim()
+  return X_HANDLE_RE.test(h) ? h : null
+}
+
+/**
+ * Per-member code the member puts in their X bio. A follow alone proves nothing (follower lists are
+ * public, so anyone could type another follower's handle); the code proves they own the account.
+ * Stateless: derived from the user id, so there is nothing to store or expire.
+ */
+export function xOwnershipCode(userId: string): string {
+  return `RC-${createHmac('sha256', env.JWT_SECRET).update(`x-task-owner:${userId}`).digest('hex').slice(0, 8).toUpperCase()}`
+}
+
+export type XTaskCheck = 'ok' | 'not_following' | 'code_missing' | 'not_found' | 'unavailable'
+
+/** Spend `n` provider lookups from today's shared budget. False when the day's budget is used up. */
+async function takeLookups(n: number): Promise<boolean> {
+  const raw = Number((await readConfig(X_VERIFY_DAILY_BUDGET_KEY)) ?? '200')
+  const cap = Number.isFinite(raw) && raw > 0 ? raw : 200
+  const key = `xtask:lookups:${new Date().toISOString().slice(0, 10)}`
+  const used = await redis.incrby(key, n)
+  if (used === n) await redis.expire(key, 2 * 86_400)
+  if (used > cap) {
+    await recordError('Daily verification budget reached; X follow tasks cannot be checked until tomorrow.')
+    return false
+  }
+  return true
+}
+
+/** Whether a provider key is saved (used to refuse publishing an X task that could never verify). */
+export async function hasXProviderKey(): Promise<boolean> {
+  return !!(await getApiKey())
+}
+
+/**
+ * Checks (1) the account exists and its bio carries the member's code, then (2) that it follows
+ * `target`. A provider failure is `unavailable`, never "not following".
+ */
+export async function checkXFollowTask(handle: string, target: string, userId: string): Promise<XTaskCheck> {
+  const provider = await buildProvider()
+  if (!provider) return 'unavailable'
+  if (!(await takeLookups(2))) return 'unavailable'
+  try {
+    let bio: string | null
+    try {
+      bio = await provider.getProfileBio(handle)
+    } catch (err) {
+      if (err instanceof ProviderError && err.kind === 'not_found') return 'not_found'
+      throw err
+    }
+    if (bio === null) return 'not_found'
+    if (!bio.toUpperCase().includes(xOwnershipCode(userId))) return 'code_missing'
+    const following = await provider.isFollowing(handle, target)
+    if (following === null) {
+      await recordError('The provider did not return follow data.')
+      return 'unavailable'
+    }
+    await recordError(null)
+    return following ? 'ok' : 'not_following'
+  } catch (err) {
+    logger.warn({ err }, 'x follow task check failed')
+    await recordError(err instanceof Error ? err.message : 'Provider error')
+    return 'unavailable'
+  }
 }
 
 // ── Pure checks (unit-testable) ──────────────────────────────────────────────
