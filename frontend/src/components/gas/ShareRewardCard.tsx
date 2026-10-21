@@ -6,6 +6,8 @@ import { shareApi } from '@/lib/api'
 import type { ShareInfo } from '@/lib/api'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
+import { isTelegramMiniApp } from '@/lib/telegram'
+import { blobToDataUrl, downloadBlob, shareImageInTelegram, ShareCancelledError } from '@/lib/cardImageExport'
 
 function fmtCountdown(ms: number): string {
   const t = Math.max(0, Math.floor(ms / 1000))
@@ -44,6 +46,7 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
   const [busy, setBusy] = useState(false)
   const [imgReady, setImgReady] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [manualSave, setManualSave] = useState<{ src: string; name: string } | null>(null)
   const alive = useRef(true)
 
   useEffect(() => { alive.current = true; return () => { alive.current = false } }, [])
@@ -115,13 +118,24 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
     try {
       const res = await fetch(imageSrc)
       if (!res.ok) throw new Error('image')
-      const blob = await res.blob()
-      const href = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = href
-      a.download = `rupchain-gas-${orderRef}.png`
-      a.click()
-      setTimeout(() => URL.revokeObjectURL(href), 2000)
+      const raw = await res.blob()
+      const blob = raw.type === 'image/png' ? raw : new Blob([raw], { type: 'image/png' })
+      const filename = `rupchain-gas-${orderRef}.png`
+
+      // Telegram's WebView silently ignores blob downloads: try the share sheet, else show a long-press preview.
+      if (isTelegramMiniApp()) {
+        try {
+          if ((await shareImageInTelegram(blob, filename)) === 'shared') return
+        } catch (err) {
+          if (err instanceof ShareCancelledError) return
+          throw err
+        }
+        setManualSave({ src: await blobToDataUrl(blob), name: filename })
+        return
+      }
+
+      downloadBlob(blob, filename)
+      toast.success('Image downloaded')
     } catch { toast.error('Could not download the image') }
   }
 
@@ -260,6 +274,15 @@ export function ShareRewardCard({ orderRef }: { orderRef: string }) {
       )}
 
       <RewardStatus info={info} url={url} setUrl={setUrl} busy={busy} onSubmit={submit} />
+
+      {manualSave && (
+        <div role="dialog" aria-modal="true" aria-label="Save image" className="fixed inset-0 z-[300] flex flex-col items-center justify-center gap-4 bg-black/85 p-4" onClick={() => setManualSave(null)}>
+          <button type="button" onClick={() => setManualSave(null)} aria-label="Close" className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/15 text-white"><XIcon className="h-5 w-5" /></button>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={manualSave.src} alt={manualSave.name} onClick={(e) => e.stopPropagation()} className="max-h-[70vh] max-w-full rounded-xl shadow-2xl" />
+          <p className="max-w-xs text-center text-sm font-medium text-white">Press and hold the image, then choose “Save to Photos” / “Download image”.</p>
+        </div>
+      )}
     </section>
   )
 }
