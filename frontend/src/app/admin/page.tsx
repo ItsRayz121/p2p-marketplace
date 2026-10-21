@@ -104,11 +104,15 @@ export default function AdminDashboardPage() {
     { label: `${rangePrefix} Withdrawal Fees`,  value: `${(stats as any)?.todayWithdrawalFeesUsdt ?? '0.000000'} USDT`,sub: 'fee revenue from withdrawals', color: 'text-success',       icon: <ArrowDownToLine className="w-5 h-5 text-success" /> },
   ]
 
+  // Users snapshot: fixed windows, not affected by the time-frame tabs above.
+  const userCards = [
+    { label: 'Total Users',          value: fmt(stats?.totalUsers ?? 0),          sub: 'registered on the platform' },
+    { label: 'Daily Active Users',   value: fmt(stats?.dailyActiveUsers ?? 0),    sub: 'seen in the last 24 hours' },
+    { label: 'Weekly Active Users',  value: fmt(stats?.weeklyActiveUsers ?? 0),   sub: 'seen in the last 7 days' },
+    { label: 'Monthly Active Users', value: fmt(stats?.monthlyActiveUsers ?? 0),  sub: 'seen in the last 30 days' },
+  ]
+
   const totalCards = [
-    { label: 'Total Users',              value: fmt(stats?.totalUsers ?? 0) },
-    { label: 'Daily Active Users (24h)', value: fmt(stats?.dailyActiveUsers ?? 0) },
-    { label: 'Weekly Active Users (7d)', value: fmt(stats?.weeklyActiveUsers ?? 0) },
-    { label: 'Monthly Active Users (30d)', value: fmt(stats?.monthlyActiveUsers ?? 0) },
     { label: 'Total Trades',             value: fmt(stats?.totalTrades ?? 0) },
     { label: 'Total Volume PKR',          value: `PKR ${fmt(stats?.totalVolumePkr ?? 0)}` },
     { label: 'Total Gas Orders',          value: fmt(stats?.totalGasOrders ?? 0) },
@@ -218,6 +222,18 @@ export default function AdminDashboardPage() {
                 <p className="text-[11px] font-medium text-text-muted leading-tight">{card.label}</p>
               </div>
               <p className={cn('text-base font-bold leading-tight', card.color)}>{card.value}</p>
+              <p className="text-[10px] text-text-muted mt-0.5">{card.sub}</p>
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2">
+          {userCards.map((card) => (
+            <div key={card.label} className="bg-surface shadow-card rounded-lg border border-border p-3">
+              <div className="flex items-center gap-1.5 mb-1">
+                <Users className="w-5 h-5 text-violet-600 dark:text-violet-400" />
+                <p className="text-[11px] font-medium text-text-muted leading-tight">{card.label}</p>
+              </div>
+              <p className="text-base font-bold leading-tight text-violet-600 dark:text-violet-400">{card.value}</p>
               <p className="text-[10px] text-text-muted mt-0.5">{card.sub}</p>
             </div>
           ))}
