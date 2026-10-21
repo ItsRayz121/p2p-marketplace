@@ -231,6 +231,9 @@ export async function adminRoutes(app: FastifyInstance) {
         todayWithdrawalFeesResult,
         totalWithdrawalFeesResult,
         recentGasActivity,
+        dailyActiveUsers,
+        weeklyActiveUsers,
+        monthlyActiveUsers,
       ] = await Promise.all([
         db.kycSubmission.count({ where: KYC_NEEDS_REVIEW }),
         db.dispute.count({ where: { status: { in: ['open', 'escalated'] } } }),
@@ -298,6 +301,10 @@ export async function adminRoutes(app: FastifyInstance) {
             createdAt: true, updatedAt: true, deliveredAt: true,
           },
         }),
+        // Active users (by last seen) — fixed windows, independent of the selected range
+        db.user.count({ where: { lastSeenAt: { gte: new Date(now.getTime() - DAY_MS) } } }),
+        db.user.count({ where: { lastSeenAt: { gte: new Date(now.getTime() - 7 * DAY_MS) } } }),
+        db.user.count({ where: { lastSeenAt: { gte: new Date(now.getTime() - 30 * DAY_MS) } } }),
       ])
 
       // Gas economics: gross = what users paid; cost = USD value of gas delivered;
@@ -323,6 +330,9 @@ export async function adminRoutes(app: FastifyInstance) {
           todayVolumePkr:    (todayRevenueResult._sum.fiatAmount ?? 0).toString(),
           totalVolumePkr:    (totalVolumePkrResult._sum.fiatAmount ?? 0).toString(),
           totalUsers,
+          dailyActiveUsers,
+          weeklyActiveUsers,
+          monthlyActiveUsers,
           newUsersToday,
           totalTrades,
           todayTrades,

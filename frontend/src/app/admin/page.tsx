@@ -106,6 +106,9 @@ export default function AdminDashboardPage() {
 
   const totalCards = [
     { label: 'Total Users',              value: fmt(stats?.totalUsers ?? 0) },
+    { label: 'Daily Active Users (24h)', value: fmt(stats?.dailyActiveUsers ?? 0) },
+    { label: 'Weekly Active Users (7d)', value: fmt(stats?.weeklyActiveUsers ?? 0) },
+    { label: 'Monthly Active Users (30d)', value: fmt(stats?.monthlyActiveUsers ?? 0) },
     { label: 'Total Trades',             value: fmt(stats?.totalTrades ?? 0) },
     { label: 'Total Volume PKR',          value: `PKR ${fmt(stats?.totalVolumePkr ?? 0)}` },
     { label: 'Total Gas Orders',          value: fmt(stats?.totalGasOrders ?? 0) },

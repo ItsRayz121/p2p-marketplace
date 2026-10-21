@@ -2628,6 +2628,9 @@ export const adminApi = {
       todayVolumePkr: string
       totalVolumePkr: string
       totalUsers: number
+      dailyActiveUsers: number
+      weeklyActiveUsers: number
+      monthlyActiveUsers: number
       newUsersToday: number
       totalTrades: number
       todayTrades: number
