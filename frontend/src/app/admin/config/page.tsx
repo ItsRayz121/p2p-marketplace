@@ -33,8 +33,20 @@ const PK_BANKS = [
   'Other',
 ]
 
+// Open gas orders a user may hold at once, per trader rank. Fallbacks mirror the backend
+// defaults in rankPerks.service.ts (DEFAULT_GAS_OPEN_ORDERS).
+const GAS_LIMIT_RANKS = [
+  { badge: 'new', label: 'Bronze', fallback: 3 },
+  { badge: 'active', label: 'Silver', fallback: 4 },
+  { badge: 'trusted', label: 'Gold', fallback: 4 },
+  { badge: 'top', label: 'Diamond', fallback: 5 },
+  { badge: 'elite', label: 'Elite', fallback: 5 },
+] as const
+const gasLimitKey = (badge: string) => `rank_gas_open_orders_${badge}`
+
 // ── Keys handled by structured panels (hidden from raw table) ─────────────────
 const STRUCTURED_KEYS = new Set([
+  ...GAS_LIMIT_RANKS.map((r) => gasLimitKey(r.badge)),
   'gas_pkr_jazzcash_name', 'gas_pkr_jazzcash_number', 'gas_pkr_jazzcash_logo',
   'gas_pkr_easypaisa_name', 'gas_pkr_easypaisa_number', 'gas_pkr_easypaisa_logo',
   'gas_pkr_nayapay_name', 'gas_pkr_nayapay_number', 'gas_pkr_nayapay_logo',
@@ -267,6 +279,13 @@ export default function ConfigPage() {
   const [bypassUserIds, setBypassUserIds] = useState('')
   const [limitsSaving, setLimitsSaving] = useState(false)
 
+  // ── Gas order limits (open orders per user, by trader rank) ──────────────────
+  const [gasLimitsOpen, setGasLimitsOpen] = useState(false)
+  const [gasLimits, setGasLimits] = useState<Record<string, string>>(
+    () => Object.fromEntries(GAS_LIMIT_RANKS.map((r) => [r.badge, String(r.fallback)])),
+  )
+  const [gasLimitsSaving, setGasLimitsSaving] = useState(false)
+
   // ── Non-Custodial P2P ────────────────────────────────────────────────────────
   const [ncEnabled, setNcEnabled] = useState(false)
   const [ncMaxOrderL1, setNcMaxOrderL1] = useState('50')
@@ -483,6 +502,7 @@ export default function ConfigPage() {
       setUsdtBidMargin(m['usdt_bid_margin_pct'] ?? '10')
       setCtmBidMargin(m['ctm_bid_margin_pct'] ?? '10')
       setMaxConcurrent(m['max_concurrent_trades'] ?? '8')
+      setGasLimits(Object.fromEntries(GAS_LIMIT_RANKS.map((r) => [r.badge, m[gasLimitKey(r.badge)] ?? String(r.fallback)])))
       setMaxConcurrentDispute(m['max_concurrent_trades_with_dispute'] ?? '2')
       setBypassUserIds(m['trade_limit_bypass_user_ids'] ?? '')
       setMediaEnabled(m['media_retention_enabled'] === 'true')
@@ -730,6 +750,21 @@ export default function ConfigPage() {
       showToast('Trade limits saved.')
     } catch { showToast('Failed to save trade limits.', false) }
     finally { setLimitsSaving(false) }
+  }
+
+  async function saveGasLimits() {
+    setGasLimitsSaving(true)
+    try {
+      // The backend clamps to 1–50; mirror that so the form shows what is stored.
+      const clean = GAS_LIMIT_RANKS.map((r) => ({
+        key: gasLimitKey(r.badge),
+        value: String(Math.min(50, Math.max(parseInt(gasLimits[r.badge] ?? '', 10) || r.fallback, 1))),
+      }))
+      await saveKeys(clean)
+      setGasLimits(Object.fromEntries(GAS_LIMIT_RANKS.map((r, i) => [r.badge, clean[i]!.value])))
+      showToast('Gas order limits saved.')
+    } catch { showToast('Failed to save gas order limits.', false) }
+    finally { setGasLimitsSaving(false) }
   }
 
   async function saveMediaRetention() {
@@ -1312,6 +1347,39 @@ export default function ConfigPage() {
           </div>
           <div className="flex justify-end">
             <Button size="sm" loading={limitsSaving} onClick={saveLimits}>Save Trade Limits</Button>
+          </div>
+        </div>
+      </Accordion>
+
+      {/* ══ Gas Order Limits ══════════════════════════════════════════════════ */}
+      <Accordion
+        title="Gas Order Limits"
+        subtitle="How many gas orders a signed-in user can have in progress at once, by rank"
+        open={gasLimitsOpen}
+        onToggle={() => setGasLimitsOpen((v) => !v)}
+        badge={<Badge variant="success" size="sm">{GAS_LIMIT_RANKS.map((r) => gasLimits[r.badge] || r.fallback).join(' / ')}</Badge>}
+      >
+        <div className="p-5 space-y-5">
+          <p className="text-xs text-text-muted">
+            Counts orders that are unpaid, paid and awaiting delivery, or being sent. Delivered, expired,
+            cancelled and refunded orders free up a slot. Higher trader ranks can hold more at once.
+            Guests are not affected (they have per-IP and daily-spend limits). Allowed range is 1–50.
+          </p>
+          {GAS_LIMIT_RANKS.map((r) => (
+            <Field key={r.badge} label={`${r.label} (max open orders)`} hint={`Default ${r.fallback}.`}>
+              <input
+                className={inputCls}
+                type="number"
+                min="1"
+                max="50"
+                value={gasLimits[r.badge] ?? ''}
+                onChange={(e) => setGasLimits((prev) => ({ ...prev, [r.badge]: e.target.value }))}
+                placeholder={String(r.fallback)}
+              />
+            </Field>
+          ))}
+          <div className="flex justify-end">
+            <Button size="sm" loading={gasLimitsSaving} onClick={saveGasLimits}>Save Gas Order Limits</Button>
           </div>
         </div>
       </Accordion>
