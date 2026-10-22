@@ -8,6 +8,7 @@ interface RankPerk {
   gasDiscountPct: number
   pointsBonusPct: number
   listingPriority: boolean
+  gasOpenOrderLimit?: number
 }
 
 /** Live rank perks (admin-tuned). Renders nothing until loaded, and nothing if no rank has a perk. */
@@ -22,7 +23,7 @@ export function RankPerksTable() {
     return () => { alive = false }
   }, [])
 
-  const rows = (ladder ?? []).filter((p) => p.gasDiscountPct > 0 || p.pointsBonusPct > 0 || p.listingPriority)
+  const rows = (ladder ?? []).filter((p) => p.gasDiscountPct > 0 || p.pointsBonusPct > 0 || p.listingPriority || (p.gasOpenOrderLimit ?? 0) > 0)
   if (rows.length === 0) return null
 
   return (
@@ -34,6 +35,7 @@ export function RankPerksTable() {
             <tr>
               <th className="text-left text-xs font-semibold text-text-muted px-3 py-2">Rank</th>
               <th className="text-left text-xs font-semibold text-text-muted px-3 py-2">Gas fee discount</th>
+              <th className="text-left text-xs font-semibold text-text-muted px-3 py-2">Open gas orders</th>
               <th className="text-left text-xs font-semibold text-text-muted px-3 py-2">Points earning</th>
               <th className="text-left text-xs font-semibold text-text-muted px-3 py-2">Ad listing</th>
             </tr>
@@ -43,6 +45,7 @@ export function RankPerksTable() {
               <tr key={p.badge}>
                 <td className="px-3 py-2 text-sm font-semibold text-text-primary">{p.rankLabel}</td>
                 <td className="px-3 py-2 text-sm text-text-secondary">{p.gasDiscountPct > 0 ? `${p.gasDiscountPct}% off our margin` : '—'}</td>
+                <td className="px-3 py-2 text-sm text-text-secondary">{p.gasOpenOrderLimit ? `Up to ${p.gasOpenOrderLimit} at a time` : '—'}</td>
                 <td className="px-3 py-2 text-sm text-text-secondary">{p.pointsBonusPct > 0 ? `+${p.pointsBonusPct}% on trades & gas orders` : '—'}</td>
                 <td className="px-3 py-2 text-sm text-text-secondary">{p.listingPriority ? 'Priority placement' : '—'}</td>
               </tr>

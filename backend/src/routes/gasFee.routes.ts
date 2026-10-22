@@ -48,6 +48,7 @@ import { isFlagEnabled, FLAGS } from '../services/platformFlags.service'
 import { releaseShareReward, releaseStaleShareRewards } from '../lib/gas/gas.share'
 import { getAffiliateDashboard, recordReferralClick } from '../lib/gas/gas.affiliateDashboard'
 import { resolveLoyaltyDiscount } from '../lib/gas/gas.loyalty'
+import { getRankPerks } from '../services/rankPerks.service'
 import { acceptsProof, manualPaymentWindowMs, manualReviewWindowMs } from '../lib/gas/gas.manualWindow'
 import { bindReferral, getReferralSummary, withdrawReferralEarnings, setOwnCodeLabel } from '../lib/gas/gas.referral'
 import {
@@ -279,6 +280,26 @@ async function assertNoUnpaidGasOrder(userId: string | null | undefined): Promis
     throw new AppError(
       'UNPAID_ORDER_EXISTS',
       `You already have an unpaid gas order (${existing.orderRef}). Please pay or cancel it before starting a new one.`,
+      409,
+    )
+  }
+  await assertWithinOpenGasOrderLimit(userId)
+}
+
+// Orders still in flight: not yet delivered, refunded, cancelled or expired.
+const OPEN_GAS_ORDER_STATUSES = ['created', 'payment_pending', 'payment_uploaded', 'payment_verified', 'payment_detected', 'sending'] as const
+
+// Caps how many gas orders a user can have open at once; the cap grows with trader rank
+// (see rankPerks.service). Guests are covered by the per-IP and daily-spend limits instead.
+async function assertWithinOpenGasOrderLimit(userId: string): Promise<void> {
+  const [perks, open] = await Promise.all([
+    getRankPerks(userId),
+    db.gasFeeOrder.count({ where: { userId, status: { in: [...OPEN_GAS_ORDER_STATUSES] } } }),
+  ])
+  if (open >= perks.gasOpenOrderLimit) {
+    throw new AppError(
+      'OPEN_ORDER_LIMIT',
+      `You can have up to ${perks.gasOpenOrderLimit} gas orders in progress at a time. Wait for one to finish before starting another.`,
       409,
     )
   }

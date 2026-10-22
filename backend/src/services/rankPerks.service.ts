@@ -4,6 +4,8 @@
  *    other loyalty offers (highest single offer wins; see gas.loyalty.ts), so it never stacks.
  *  - Points bonus: Gold and above earn a few % more points on trades and gas orders.
  *  - Listing priority: Elite sellers' ads list ahead of ordinary ads (after Points-boosted ads).
+ *  - Open gas orders: how many gas orders a user may have in flight at once (3 for Bronze, up to 5).
+ *    Unlike the perks above this is a limit, so it still applies (at the Bronze base) when perks are off.
  * All values are admin-tunable PlatformConfig keys; `rank_perks_enabled=false` switches every perk off.
  */
 import { db } from '../lib/prisma'
@@ -20,8 +22,12 @@ const RANK_LABEL: Record<RankBadge, string> = { new: 'Bronze', active: 'Silver',
 const DEFAULT_GAS_DISCOUNT_PCT: Record<RankBadge, number> = { new: 0, active: 0, trusted: 3, top: 4, elite: 5 }
 const DEFAULT_POINTS_BONUS_PCT: Record<RankBadge, number> = { new: 0, active: 0, trusted: 5, top: 10, elite: 15 }
 
+const DEFAULT_GAS_OPEN_ORDERS: Record<RankBadge, number> = { new: 3, active: 4, trusted: 4, top: 5, elite: 5 }
+const BASE_GAS_OPEN_ORDERS = DEFAULT_GAS_OPEN_ORDERS.new
+
 const gasKey = (b: RankBadge) => `rank_gas_discount_pct_${b}`
 const pointsKey = (b: RankBadge) => `rank_points_bonus_pct_${b}`
+const openOrdersKey = (b: RankBadge) => `rank_gas_open_orders_${b}`
 
 export interface RankPerks {
   badge: RankBadge
@@ -29,9 +35,12 @@ export interface RankPerks {
   gasDiscountPct: number
   pointsBonusPct: number
   listingPriority: boolean
+  gasOpenOrderLimit: number
 }
 
-const ZERO = (badge: RankBadge): RankPerks => ({ badge, rankLabel: RANK_LABEL[badge], gasDiscountPct: 0, pointsBonusPct: 0, listingPriority: false })
+const ZERO = (badge: RankBadge): RankPerks => ({ badge, rankLabel: RANK_LABEL[badge], gasDiscountPct: 0, pointsBonusPct: 0, listingPriority: false, gasOpenOrderLimit: BASE_GAS_OPEN_ORDERS })
+
+const clampOrders = (n: number) => (Number.isFinite(n) ? Math.min(50, Math.max(1, Math.floor(n))) : BASE_GAS_OPEN_ORDERS)
 
 const clampPct = (n: number, max: number) => (Number.isFinite(n) ? Math.min(max, Math.max(0, n)) : 0)
 
@@ -41,12 +50,13 @@ export function isRankBadge(v: unknown): v is RankBadge {
 
 export async function getRankPerksForBadge(badge: RankBadge): Promise<RankPerks> {
   if (!(await getBoolConfig(RANK_PERKS_ENABLED_KEY, true))) return ZERO(badge)
-  const [gas, pts, prio] = await Promise.all([
+  const [gas, pts, prio, openOrders] = await Promise.all([
     getNumberConfig(gasKey(badge), DEFAULT_GAS_DISCOUNT_PCT[badge]),
     getNumberConfig(pointsKey(badge), DEFAULT_POINTS_BONUS_PCT[badge]),
     badge === 'elite' ? getBoolConfig(RANK_LISTING_PRIORITY_KEY, true) : Promise.resolve(false),
+    getNumberConfig(openOrdersKey(badge), DEFAULT_GAS_OPEN_ORDERS[badge]),
   ])
-  return { badge, rankLabel: RANK_LABEL[badge], gasDiscountPct: clampPct(gas, 50), pointsBonusPct: clampPct(pts, 100), listingPriority: prio }
+  return { badge, rankLabel: RANK_LABEL[badge], gasDiscountPct: clampPct(gas, 50), pointsBonusPct: clampPct(pts, 100), listingPriority: prio, gasOpenOrderLimit: clampOrders(openOrders) }
 }
 
 export async function getRankPerks(userId: string | null | undefined): Promise<RankPerks> {
