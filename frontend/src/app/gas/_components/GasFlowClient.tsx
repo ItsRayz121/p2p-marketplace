@@ -48,6 +48,8 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
 
   // ── Phase ──────────────────────────────────────────────────────────────────
   const [phase, setPhase] = useState<Phase>(PHASE.CHAINS)
+  // A paid order still being confirmed: shown as a banner so it doesn't block a new order.
+  const [inProgressOrder, setInProgressOrder] = useState<{ orderRef: string; trackingToken: string | null } | null>(null)
 
   // ── Step 0: Chains ─────────────────────────────────────────────────────────
   const [chains, setChains]               = useState<GasChain[]>([])
@@ -520,14 +522,17 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
           setOrder(o); setPhase(PHASE.CRYPTO_QR)
           // Re-arm the refresh-restore pointer when resuming from a deep link.
           try { localStorage.setItem(ACTIVE_ORDER_KEY, JSON.stringify({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })) } catch { /* */ }
-        } else if (['payment_detected', 'sending', 'payment_verified'].includes(o.status)) {
+        } else if (fromUrl && ['payment_detected', 'sending', 'payment_verified'].includes(o.status)) {
           setOrder(o); setPhase(PHASE.PROCESSING)
         } else {
-          // Terminal, or proof already submitted → tracking page owns it from here.
+          // Paid / confirming / terminal: nothing left to do on the payment screen, so
+          // /gas must stay free for a new order. A deep link still opens the tracking page.
           try { localStorage.removeItem(ACTIVE_ORDER_KEY) } catch { /* */ }
-          if (fromUrl || o.status === 'payment_uploaded') {
+          if (fromUrl) {
             const t = o.trackingToken ? `?token=${encodeURIComponent(o.trackingToken)}` : ''
             router.replace(`/gas/orders/${o.orderRef}${t}`)
+          } else if (['payment_uploaded', 'payment_detected', 'sending', 'payment_verified'].includes(o.status)) {
+            setInProgressOrder({ orderRef: o.orderRef, trackingToken: o.trackingToken ?? null })
           }
         }
       } catch {
@@ -713,6 +718,20 @@ export function GasFlowClient({ initialChainSlug, initialTokenSymbol }: {
         )}
 
         <div className={`mx-auto px-4 py-6 pb-16 ${phase === PHASE.CHAINS ? 'max-w-5xl' : 'max-w-xl'}`}>
+
+          {phase === PHASE.CHAINS && inProgressOrder && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm">
+              <span className="text-text-secondary">
+                Order <span className="font-semibold text-text-primary">{inProgressOrder.orderRef}</span> is being confirmed. You can start another order below.
+              </span>
+              <Link
+                href={`/gas/orders/${inProgressOrder.orderRef}${inProgressOrder.trackingToken ? `?token=${encodeURIComponent(inProgressOrder.trackingToken)}` : ''}`}
+                className="shrink-0 font-semibold text-primary hover:underline"
+              >
+                Track
+              </Link>
+            </div>
+          )}
 
           {/* Phase 0 — Chain grid */}
           {phase === PHASE.CHAINS && <GasChainGrid />}
